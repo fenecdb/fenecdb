@@ -171,4 +171,4 @@ store.similarity_search("how do I compact", k=4, mode="hybrid")
 `./run-tests.sh` runs LangChain's standard vector store suite and the tests
 LlamaIndex's own integrations run against a fennec-server it builds and starts,
 and the query builder against every case of `integrations/builder-golden.json`.
-Full reference: https://fenecdb.com/docs/integrations
+Full reference: https://fennecdb.com/docs/integrations

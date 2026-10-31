@@ -12,7 +12,7 @@
     "description": "fennecdb's rows in Grafana: FennecQL with the time range and variables bound as parameters, alerting, annotations",
     "author": {
       "name": "fennecdb",
-      "url": "https://fenecdb.com"
+      "url": "https://fennecdb.com"
     },
     "keywords": ["fennecdb", "database", "vector", "analytics", "fennecql"],
     "logos": {
@@ -20,7 +20,7 @@
       "large": "img/logo.svg"
     },
     "links": [
-      { "name": "Docs", "url": "https://fenecdb.com/docs/grafana" },
+      { "name": "Docs", "url": "https://fennecdb.com/docs/grafana" },
       { "name": "Source", "url": "https://github.com/fennec-db/fennecdb/tree/main/integrations/grafana" }
     ],
     "screenshots": [],

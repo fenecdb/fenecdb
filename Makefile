@@ -985,7 +985,7 @@ packaging-test:
 	python3 tools/test_homebrew_formula.py
 	python3 tools/homebrew-formula.py --check packaging/homebrew/Formula/fennecdb.rb
 
-## Publishes to Cloudflare Workers (fenecdb.com). Needs `wrangler login`
+## Publishes to Cloudflare Workers (fennecdb.com). Needs `wrangler login`
 ## or CLOUDFLARE_API_TOKEN; CI does the same thing on a push to main.
 site-deploy: site
 	npx wrangler deploy

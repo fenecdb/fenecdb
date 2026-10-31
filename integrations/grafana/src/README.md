@@ -24,4 +24,4 @@ get ticks select bucket(at, $__interval_ms) as time, sym, sum(qty) as volume
 Configure the server's URL and a token: the server's, or a JSON Web Token
 whose policy reads what the dashboards show and writes nothing.
 
-Documentation: https://fenecdb.com/docs/grafana
+Documentation: https://fennecdb.com/docs/grafana

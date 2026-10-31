@@ -74,7 +74,7 @@ store.similarity_search("trip to Istanbul", k=4, mode="hybrid")   # match and ne
 ```
 
 `embeddings` is any LangChain `Embeddings`; LlamaIndex has a store too
-([Integrations](https://fenecdb.com/docs/integrations)).
+([Integrations](https://fennecdb.com/docs/integrations)).
 
 ## The toy embedding
 

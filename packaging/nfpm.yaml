@@ -11,9 +11,9 @@ version_schema: semver
 release: "1"
 section: database
 priority: optional
-maintainer: fennecdb <noreply@fenecdb.com>
+maintainer: fennecdb <noreply@fennecdb.com>
 vendor: fennecdb
-homepage: https://fenecdb.com
+homepage: https://fennecdb.com
 license: Apache-2.0
 description: |
   Embedded database with its own query language, FennecQL.

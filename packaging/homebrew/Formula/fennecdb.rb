@@ -3,7 +3,7 @@
 # compares, and `--verify` holds its sums to the release's files.
 class Fennecdb < Formula
   desc "Embedded database with its own query language, FennecQL"
-  homepage "https://fenecdb.com"
+  homepage "https://fennecdb.com"
   license "Apache-2.0"
 
   livecheck do

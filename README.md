@@ -13,7 +13,7 @@ gzipped WebAssembly, in an iOS, Android or Flutter app as a file on the
 device, in a Rust process, or as a server any language reaches over HTTP,
 and it has its own query language (**FennecQL**).
 
-**[fenecdb.com](https://fenecdb.com)** — the website and documentation. The
+**[fennecdb.com](https://fennecdb.com)** — the website and documentation. The
 home page shows each part at work, and its playground runs the real
 WebAssembly module in your browser with fennec studio over it.
 Source in [`site/`](site/): `make site-serve` runs it locally, `make site-deploy`
@@ -123,7 +123,7 @@ needs no cache in front, a service with a file per tenant in one region or sever
 and search over its own rows, a store's, a docs site's or an agent's
 memory. The scale limit is **the indexes fitting in memory**: the documents
 stay in the mapped file, so a server's memory follows its indexes, not its
-data ([Limits](https://fenecdb.com/docs/limits#memory-and-scale)).
+data ([Limits](https://fennecdb.com/docs/limits#memory-and-scale)).
 
 **SQLite** when you need relational data, SQL with JOINs and a mature
 toolchain. Also in very short-lived processes: for a tool that runs
@@ -136,24 +136,24 @@ other way, though: `fennec import` copies one from PostgreSQL, and `--follow`
 keeps it following the table's commits.
 
 The numbers behind the comparison, and the method that produced them, are in
-[Benchmarks](https://fenecdb.com/docs/benchmarks). On YCSB's
+[Benchmarks](https://fennecdb.com/docs/benchmarks). On YCSB's
 workloads in process, fennecdb does B with 16 threads at 545 k operations a
 second against SQLite's 47.9 k, and C on one thread at 438 k against
-279 k, its file compacted on its own as updates grow it ([YCSB](https://fenecdb.com/docs/benchmarks-ycsb#ycsb));
+279 k, its file compacted on its own as updates grow it ([YCSB](https://fennecdb.com/docs/benchmarks-ycsb#ycsb));
 over HTTP, `fennec-server` does B at 16 clients, durable, at 18.2 k against
 PostgreSQL's 13.0 k, both in Docker. At a million vectors it answers the
 nearest ten at 99.1% recall in 0.141 ms, against pgvector's 98.6% in 2.076
-([At scale](https://fenecdb.com/docs/benchmarks-vector#scale)).
+([At scale](https://fennecdb.com/docs/benchmarks-vector#scale)).
 
 ---
 
 ## Install
 
-A first query in a few commands: **[Quickstart](https://fenecdb.com/docs/quickstart)**
+A first query in a few commands: **[Quickstart](https://fennecdb.com/docs/quickstart)**
 starts the server and writes two rows, and [in the
-browser](https://fenecdb.com/docs/quickstart-browser) there is no server at
-all. Every way to install is on **[Install](https://fenecdb.com/docs/install)**.
-From a clone instead ([Build from source](https://fenecdb.com/docs/build)):
+browser](https://fennecdb.com/docs/quickstart-browser) there is no server at
+all. Every way to install is on **[Install](https://fennecdb.com/docs/install)**.
+From a clone instead ([Build from source](https://fennecdb.com/docs/build)):
 
 ```bash
 git clone https://github.com/fennec-db/fennecdb && cd fennecdb
@@ -171,17 +171,17 @@ and Linux on arm64 and x86_64 (not Windows yet; the image runs anywhere):
 
 ```bash
 brew install fennec-db/tap/fennecdb            # Homebrew
-curl -fsSL https://fenecdb.com/install.sh | sh # ~/.fennecdb/bin, no sudo
+curl -fsSL https://fennecdb.com/install.sh | sh # ~/.fennecdb/bin, no sudo
 sudo apt install ./fennecdb_X.Y.Z-1_amd64.deb  # or: sudo dnf install ./fennecdb-X.Y.Z-1.x86_64.rpm
 ```
 
 The script downloads the release from GitHub and checks the tarball against
 the release's `SHA256SUMS` before it unpacks it; it touches no shell startup
 file, only prints the `PATH` line to add. Read it first with
-`curl -fsSL https://fenecdb.com/install.sh | less`
+`curl -fsSL https://fennecdb.com/install.sh | less`
 ([`site/install.sh`](site/install.sh)). The `.deb` and `.rpm` are attached to
 each release after 0.1.11, for amd64 and arm64, with their checksums in
-`SHA256SUMS`. [Install](https://fenecdb.com/docs/install) has each of them,
+`SHA256SUMS`. [Install](https://fennecdb.com/docs/install) has each of them,
 and the tarball, the image and the language packages too; the tap's formula is
 [`packaging/homebrew`](packaging/homebrew).
 
@@ -198,7 +198,7 @@ The shell holds `data.fennec.lock` while it has the file open, as the server
 does, and a `--dir` node each tenant's it has open: a file a server, a node, an
 agent's session, an app or another shell has open is refused, its holder named,
 since two processes writing one file corrupt it.
-[The shell](https://fenecdb.com/docs/shell) has a first session and its flags.
+[The shell](https://fennecdb.com/docs/shell) has a first session and its flags.
 
 **Browser.** Dependency-free ES modules and the wasm file beside them:
 
@@ -210,15 +210,15 @@ const db = await Fennec.open('./fennec.wasm');
 330 KB of gzipped WebAssembly and a 60 KB gzipped client — no wasm-bindgen, no
 build step. An app whose queries run on a server can import
 `@fennecdb/web/client`, 10 KB brotli in its bundle, which cannot pull in the
-engine, sync or storage ([which package](https://fenecdb.com/docs/javascript#packages)). With live
+engine, sync or storage ([which package](https://fennecdb.com/docs/javascript#packages)). With live
 queries (`db.live`, React's `useLiveQuery`) it can be an app's whole state,
-no server: [state in the page](https://fenecdb.com/docs/javascript#state). [Quickstart: in the browser](https://fenecdb.com/docs/quickstart-browser) · [JavaScript client](https://fenecdb.com/docs/javascript).
+no server: [state in the page](https://fennecdb.com/docs/javascript#state). [Quickstart: in the browser](https://fennecdb.com/docs/quickstart-browser) · [JavaScript client](https://fennecdb.com/docs/javascript).
 
 **Server.** `fennec-server` serves a file, or a directory of tenants, over
 HTTP and JSON: REST routes, FennecQL through `POST /query`, all-or-nothing
 `/batch`es, subscriptions over SSE and change data capture. Every language
 reaches it with its own HTTP client
-([languages](https://fenecdb.com/docs/languages)), and these have a client
+([languages](https://fennecdb.com/docs/languages)), and these have a client
 of their own, each its standard library alone:
 
 | Language | Package | From |
@@ -243,9 +243,9 @@ is promoted by hand; `fennec backup`, `fennec archive` and `fennec restore --to
 stood at a moment -- with `--tenants`, every tenant of a `--dir` node over
 one connection. With `--follow postgres://...` it mirrors a PostgreSQL
 table into its file as the table commits, and serves the mirror while it
-follows. [Server](https://fenecdb.com/docs/server) ·
-[HTTP endpoint](https://fenecdb.com/docs/http) ·
-[Replication](https://fenecdb.com/docs/replication).
+follows. [Server](https://fennecdb.com/docs/server) ·
+[HTTP endpoint](https://fennecdb.com/docs/http) ·
+[Replication](https://fennecdb.com/docs/replication).
 
 Past one machine, a `--dir` node holds a file per tenant and `fennec-shard`
 routes each request to its tenant's node, gives each tenant a replica on
@@ -260,10 +260,10 @@ client's own write. `deploy/` is the kit to run it on machines of your own
 -- systemd units, alert rules and the operator's runbook -- and `make drill`
 kills a node and a router of a two-region deployment in Docker and checks
 that no acknowledged write was lost.
-[Tenants and sharding](https://fenecdb.com/docs/sharding) ·
-[Regions](https://fenecdb.com/docs/sharding-regions#regions) ·
-[One URL for every region](https://fenecdb.com/docs/sharding-entry#global-entry) ·
-[Read replicas](https://fenecdb.com/docs/sharding-read-replicas#read-replicas) ·
+[Tenants and sharding](https://fennecdb.com/docs/sharding) ·
+[Regions](https://fennecdb.com/docs/sharding-regions#regions) ·
+[One URL for every region](https://fennecdb.com/docs/sharding-entry#global-entry) ·
+[Read replicas](https://fennecdb.com/docs/sharding-read-replicas#read-replicas) ·
 [Deploying it](deploy/RUNBOOK.md).
 
 **Container.** 2.99 MB, and the `Dockerfile` is two-stage: static musl build
@@ -299,10 +299,10 @@ let db = try await Fennec.sync(url: "https://api.example.com", token: jwt,
                               shapes: [Shape("todos", key: "key")], path: path)
 ```
 
-[Mobile and native apps](https://fenecdb.com/docs/mobile).
+[Mobile and native apps](https://fennecdb.com/docs/mobile).
 
 **Embedded in Rust.** `fennec-core` is the engine as a library:
-[Embedded Rust](https://fenecdb.com/docs/embedding).
+[Embedded Rust](https://fennecdb.com/docs/embedding).
 
 ---
 
@@ -312,36 +312,36 @@ let db = try await Fennec.sync(url: "https://api.example.com", token: jwt,
 |---|---|
 | **Documents** | `insert` (refuses a taken id), `put` (upsert), `set` and `del` by filter, a batch landing whole |
 | **Atomic batches** | `POST /batch` and the browser's `run` of several statements land whole or not at all; an `Idempotency-Key` makes a write once |
-| **Live state and sync** | a query a screen follows: a write runs again every live query reading what it wrote (`db.live`, `useLiveQuery`, SwiftUI observables, Flows, Streams) · a replica in the page or the app that reads with no network, queues its writes in its file and sends each once under an `Idempotency-Key`, the server owning the data ([Sync](https://fenecdb.com/docs/sync)) |
+| **Live state and sync** | a query a screen follows: a write runs again every live query reading what it wrote (`db.live`, `useLiveQuery`, SwiftUI observables, Flows, Streams) · a replica in the page or the app that reads with no network, queues its writes in its file and sends each once under an `Idempotency-Key`, the server owning the data ([Sync](https://fennecdb.com/docs/sync)) |
 | **Schema** | `alter collection` adds, drops and renames a field without rewriting a document |
 | **Schema in code** | tables declared in TypeScript Drizzle's way, or a `schema.fennecql` in any SDK, checked at every open: what only adds is applied, a drop, a rename or a type change refused until a migration says, run once and recorded; `fennec types` writes TypeScript, Python, Go or C# from a database or a schema file |
 | **Types** | `bool` `int` `float` `text` `bytes` `timestamp` `[type]` `json` (objects, lists and scalars; a path such as `meta.source.rank` reads into it in `where`, `select`, `order` and `set`; imported from PostgreSQL's `jsonb`) `geo` (a point, `[lon, lat]`; imported from PostGIS) `vector<N[, f16]>` `sparse<N>` |
 | **Indexes** | `@hash`, `@unique` (a second document holding a value refused, `null` aside), `@sorted`, `@sorted(a, b desc)` and `@unique(a, b)` over several fields, `@ttl(30m)`, `@text(k1=.., b=.., prefix=..)`, `@geo`, `@hnsw(metric, m=.., ef_construction=.., ef_search=.., quant=int8\|bit)`, `@inverted`; `@hash`, `@unique` and `@sorted` on a path into a `json` field too |
 | **Operators** | `= != < <= > >=`, `~` (text contains, case-insensitive), `has` (list contains), `in [..]`, `in (get ...)` (another collection's rows, run once, up to 100 000 values), `is null`, `between`, `like` and `ilike` |
-| **SQL's spellings** | `CREATE TABLE` and `CREATE INDEX` (types as `fennec import` maps them), `INSERT INTO … VALUES`, `UPDATE … SET a = …`, `JOIN` and `LEFT JOIN` on a key (a `lookup`, answered flat), `IN (…)`, `EXISTS`, `DISTINCT`, `BETWEEN`, `LIKE` and `ILIKE`, `ON CONFLICT`, pgvector's `ORDER BY emb <=> $1`, single quotes and `\|\|` read as the FennecQL they mean, through every client; what would answer otherwise refused with the FennecQL to write ([From SQL](https://fenecdb.com/docs/sql)) |
+| **SQL's spellings** | `CREATE TABLE` and `CREATE INDEX` (types as `fennec import` maps them), `INSERT INTO … VALUES`, `UPDATE … SET a = …`, `JOIN` and `LEFT JOIN` on a key (a `lookup`, answered flat), `IN (…)`, `EXISTS`, `DISTINCT`, `BETWEEN`, `LIKE` and `ILIKE`, `ON CONFLICT`, pgvector's `ORDER BY emb <=> $1`, single quotes and `\|\|` read as the FennecQL they mean, through every client; what would answer otherwise refused with the FennecQL to write ([From SQL](https://fennecdb.com/docs/sql)) |
 | **Aggregates** | `count(*)` `sum` `avg` `min` `max`, whole or per `group`, ordered and paged by any of them |
 | **Relations** | `lookup` — a collection's matching documents attached per row, `limit` counted per parent, keyed by one field or several (`on (org, order) = (org, id)`), chainable to 8 levels |
 | **Expiry** | `seen timestamp @ttl(30m)` — a row gone that long after its time: out of every read at once, deleted by the server's sweeper as ordinary deletes |
 | **Collation** | `order name collate und` — Unicode's order for every script, as ICU's root orders it (PostgreSQL's `und-x-icu`); `collate tr` Turkish (`ç` after `c`, `ı` before `i`, `tr-x-icu`); a field declared in one pages by its last row; bytes otherwise |
 | **Case-insensitive text** | `email text nocase @unique` — compared by its Unicode case fold wherever it is compared (`=`, its indexes, `order`, `group`, `facet`), kept as written, PostgreSQL's `citext`; Turkish's `I`/`ı` and `İ`/`i` under `collate tr` |
 | **Text search** | `match` ranked by BM25 over `@text` · `fuzzy` for a word typed wrong and `prefix` for one half typed · `highlight()` and `snippet()` marking what matched · `facet` counts beside the page, disjunctive and by ranges · Chinese, Japanese, Korean and Thai split into runs of characters |
-| **Places** | `distance(loc, p) <= 500` and `within(loc, [w, s, e, n])` over a `geo` field, through `@geo`, nearest first with `near` (in metres) — Redis's `GEOSEARCH`, the metres its `GEODIST`'s ([Points and distances](https://fenecdb.com/docs/geo)) |
-| **Instead of Redis** | counters (`set c {n: n + 1}`), rate limits (fixed and sliding windows, token buckets), locks with fencing tokens, sessions and caches under `@ttl`, leaderboards, sets, HyperLogLog, job queues with leases and a claim held until a job comes, delayed jobs, streams, pub/sub, idempotency keys — each a statement or two a test runs; no LRU eviction, no Lua ([Instead of Redis](https://fenecdb.com/docs/redis)) |
-| **No cache in front** | the file is mapped, so the operating system keeps the pages in use in memory and fennecdb copies none into a buffer pool of its own: a separate cache in front of `fennec-server` is usually unnecessary while the working set fits in memory. On YCSB in Docker against Redis 7.4, the same durability mode against the same, Redis does more operations a second in none of the 33 cells measured both ways (A to F at 1, 4 and 16 clients, durable and buffered; C, which writes nothing, buffered alone): fennec-server's C at 16 clients, buffered, is 18.4 k against Redis's 14.0 k, and its B, durable, 18.2 k against 9.25 k (one node over Docker's network, 1 KB records; a cache nearer the app than the database is not measured; about a database's reads, not an HTTP or CDN response cache — [the figures and their conditions](https://fenecdb.com/docs/redis#cache-in-front)) |
+| **Places** | `distance(loc, p) <= 500` and `within(loc, [w, s, e, n])` over a `geo` field, through `@geo`, nearest first with `near` (in metres) — Redis's `GEOSEARCH`, the metres its `GEODIST`'s ([Points and distances](https://fennecdb.com/docs/geo)) |
+| **Instead of Redis** | counters (`set c {n: n + 1}`), rate limits (fixed and sliding windows, token buckets), locks with fencing tokens, sessions and caches under `@ttl`, leaderboards, sets, HyperLogLog, job queues with leases and a claim held until a job comes, delayed jobs, streams, pub/sub, idempotency keys — each a statement or two a test runs; no LRU eviction, no Lua ([Instead of Redis](https://fennecdb.com/docs/redis)) |
+| **No cache in front** | the file is mapped, so the operating system keeps the pages in use in memory and fennecdb copies none into a buffer pool of its own: a separate cache in front of `fennec-server` is usually unnecessary while the working set fits in memory. On YCSB in Docker against Redis 7.4, the same durability mode against the same, Redis does more operations a second in none of the 33 cells measured both ways (A to F at 1, 4 and 16 clients, durable and buffered; C, which writes nothing, buffered alone): fennec-server's C at 16 clients, buffered, is 18.4 k against Redis's 14.0 k, and its B, durable, 18.2 k against 9.25 k (one node over Docker's network, 1 KB records; a cache nearer the app than the database is not measured; about a database's reads, not an HTTP or CDN response cache — [the figures and their conditions](https://fennecdb.com/docs/redis#cache-in-front)) |
 | **Functions** | `lower upper len coalesce now timestamp cosine l2 dot norm normalize distance within` + plugins |
 | **Vector search** | `near` over `vector<N[, f16]>` (HNSW, with `int8` and `bit` codes; exact by dot product over a `sparse<N>` such as SPLADE's), by `cosine`, `l2` or `dot` · `rerank` (exact vector reordering of `match` candidates, no graph needed) · `fuse` (`match` and `near` ranking together, by reciprocal rank) |
 | **Interfaces** | FennecQL · a query builder in seven languages · REST/JSON + SSE · WASM C ABI · a native C ABI for apps · change data capture (`/_changes`, every write on disk as a JSON line, resumable) · import from SQLite and PostgreSQL |
 | **Agents** | an MCP server (`fennec-server --mcp`, `fennec mcp` over stdio): `schema`, `search` (words, an embedding, or both fused), `query`, `get`, and `write` and a memory (`remember`, `recall`) where asked for, held to the token's rules |
 | **Integrations** | `useLiveQuery` for React, over a database in the page or a synced replica · SDKs for Python, JavaScript, Go and .NET · embedded in Swift, Kotlin and Dart/Flutter apps, live queries as SwiftUI observables, Flows and Streams · LangChain and LlamaIndex vector stores, each passing its framework's own tests |
-| **Access** | a server token · HS256, RS256 and ES256 JSON Web Tokens (JWKS, rotated by `kid`) held to [the issuer and audience you name](https://fenecdb.com/docs/http-access#whom-a-token-is-for) and to a policy, down to the rows (`owner = $jwt.sub`, a provider's own claims such as `$jwt."cognito:groups"`) and the fields each row shows · a refused token waiting longer each time · an audit log of refusals, schema changes and admin actions |
-| **Backend recipes** | what a backend platform bundles, done with fennecdb and a standard service and each run against a real server: sign-in from your [identity provider](https://fenecdb.com/docs/auth) · [files in S3 or R2](https://fenecdb.com/docs/files) behind links the rules decide · [functions and webhooks](https://fenecdb.com/docs/functions) on a write (a Worker, a job queue, a consumer of the change stream) |
-| **Operations** | read replicas and promotion · archives and backups sealed with a key, restored to a moment, every tenant of a node over one connection · a file per tenant behind a router, failed over on a lease, a replica that did not take tried again and the tenants left without one counted ([replicas of their own](https://fenecdb.com/docs/sharding-failover#replicas-of-their-own)) |
-| **Regions** | nodes in regions and zones, a tenant's replica in another zone of its region · a region keeping its own directory, leased and failed over by its own router while cut off ([its own directory](https://fenecdb.com/docs/sharding-regions#region-directories)) · one URL for every region: a Cloudflare Worker that learns each tenant's home from the routers and names each client to them under an HMAC, so a refused token waits by the client's address ([global entry](https://fenecdb.com/docs/sharding-entry#global-entry)) · read replicas in other regions: the reads a client marks, through any SDK (`reads: 'nearest'` in JavaScript), answered near it and never from before its own write, a subscription sent after that write waiting for it too, and a JavaScript live query's runs after each change its stream at home tells of ([read replicas](https://fenecdb.com/docs/sharding-read-replicas#read-replicas)) · a kit to run them: systemd units, alert rules, a runbook and a failover drill ([deploy/](deploy/RUNBOOK.md)) |
+| **Access** | a server token · HS256, RS256 and ES256 JSON Web Tokens (JWKS, rotated by `kid`) held to [the issuer and audience you name](https://fennecdb.com/docs/http-access#whom-a-token-is-for) and to a policy, down to the rows (`owner = $jwt.sub`, a provider's own claims such as `$jwt."cognito:groups"`) and the fields each row shows · a refused token waiting longer each time · an audit log of refusals, schema changes and admin actions |
+| **Backend recipes** | what a backend platform bundles, done with fennecdb and a standard service and each run against a real server: sign-in from your [identity provider](https://fennecdb.com/docs/auth) · [files in S3 or R2](https://fennecdb.com/docs/files) behind links the rules decide · [functions and webhooks](https://fennecdb.com/docs/functions) on a write (a Worker, a job queue, a consumer of the change stream) |
+| **Operations** | read replicas and promotion · archives and backups sealed with a key, restored to a moment, every tenant of a node over one connection · a file per tenant behind a router, failed over on a lease, a replica that did not take tried again and the tenants left without one counted ([replicas of their own](https://fennecdb.com/docs/sharding-failover#replicas-of-their-own)) |
+| **Regions** | nodes in regions and zones, a tenant's replica in another zone of its region · a region keeping its own directory, leased and failed over by its own router while cut off ([its own directory](https://fennecdb.com/docs/sharding-regions#region-directories)) · one URL for every region: a Cloudflare Worker that learns each tenant's home from the routers and names each client to them under an HMAC, so a refused token waits by the client's address ([global entry](https://fennecdb.com/docs/sharding-entry#global-entry)) · read replicas in other regions: the reads a client marks, through any SDK (`reads: 'nearest'` in JavaScript), answered near it and never from before its own write, a subscription sent after that write waiting for it too, and a JavaScript live query's runs after each change its stream at home tells of ([read replicas](https://fennecdb.com/docs/sharding-read-replicas#read-replicas)) · a kit to run them: systemd units, alert rules, a runbook and a failover drill ([deploy/](deploy/RUNBOOK.md)) |
 | **Monitoring** | `/_metrics` for Prometheus — statements and their latency per transport, data, replication — a Grafana dashboard, `--slow-ms`, and OpenTelemetry traces over OTLP (`--otlp-endpoint`) |
 | **Studio** | `fennec-server --studio`: collections, rows, edits, a query editor, the schema, live rows and the server's numbers in a browser at `/_studio/`, with the token you paste and no authority of its own · a Mac app (beta, built from source: [`integrations/studio-desktop`](integrations/studio-desktop/README.md)) that makes, opens, serves and backs up `.fennec` files: a served database's port, reach and token (kept in the Keychain) picked in a sheet, its server stopped with the app; saved servers and their tokens in the Keychain |
 | **Runtime size** | 330 KB gzip wasm + 60 KB gzip client, or the client alone (`@fennecdb/web/client`) · 1880–3013 KB binary · 2.99 MB container image |
 
-Full reference: [FennecQL](https://fenecdb.com/docs/fennecql).
+Full reference: [FennecQL](https://fennecdb.com/docs/fennecql).
 
 What it deliberately does **not** do — no second writer (a batch holds the
 database from its first write to its end), no interactive transactions, no
@@ -350,7 +350,7 @@ wire protocol, no join of arbitrary conditions (a JOIN on an indexed key is
 a `lookup`, and an uncorrelated `in (get ...)` a filter),
 no change of a field's type in place, no multi-writer replication, no decimal
 type, no TLS (a terminator goes in front) — is listed
-with its reasoning in [Limits](https://fenecdb.com/docs/limits), alongside every
+with its reasoning in [Limits](https://fennecdb.com/docs/limits), alongside every
 ceiling baked into the code. Relations are `lookup`, which attaches a
 collection's matching documents to the row they belong to with a `limit` that
 counts children per parent, and chains — `products → reviews → authors` is one
@@ -362,48 +362,48 @@ query; it is not a join and is not trying to be one.
 
 | | |
 |---|---|
-| [Quickstart](https://fenecdb.com/docs/quickstart) | Start the server, write two rows, query and search them with curl and from your language, and see them in the studio |
-| [Quickstart: in the browser](https://fenecdb.com/docs/quickstart-browser) | The database in a page with no server: a Vite project, one npm package and a script, then kept in IndexedDB |
-| [Install](https://fenecdb.com/docs/install) | The install script, Homebrew, a .deb or .rpm, a tarball, the image, a package for each language, or a build from source |
-| [The shell](https://fenecdb.com/docs/shell) | `fennec`: open a file, run FennecQL a statement at a time, script it, and import, back up and generate types |
-| [Build from source](https://fenecdb.com/docs/build) | Clone, build the shell, the server and the browser module, run the tests and build the site |
-| [How it works](https://fenecdb.com/docs/concepts) | Segments, the offset index, the mapped file, why there is no buffer pool of its own and exactly one writer, and HNSW with a filter |
-| [FennecQL](https://fenecdb.com/docs/fennecql) | A tour from the first write to a lookup and a total, the grammar, and a reference page for each family of statements: [reading](https://fenecdb.com/docs/fennecql-reading), [writing](https://fenecdb.com/docs/fennecql-writing), [collections and types](https://fenecdb.com/docs/fennecql-schema), [indexes](https://fenecdb.com/docs/fennecql-indexes), [lookup and subqueries](https://fenecdb.com/docs/fennecql-lookup), [aggregates](https://fenecdb.com/docs/fennecql-aggregates), [text search](https://fenecdb.com/docs/fennecql-search) and [vector search](https://fenecdb.com/docs/fennecql-vector) |
-| [From SQL](https://fenecdb.com/docs/sql) | The SQL FennecQL reads as written — tables, joins, subqueries, pgvector's distances — what it refuses and what to write instead, where the meaning is not SQL's: nulls, double quotes, text, joins |
-| [JavaScript client](https://fenecdb.com/docs/javascript) | The browser client, the immutable query builder, binding it to a transport, live queries as an app's state, a schema declared in code |
-| [Mobile and native apps](https://fenecdb.com/docs/mobile) | Swift, Kotlin and Dart/Flutter: a file on the device, the builder, live queries driving the UI, syncing with a server, TLS and the background, where the file lives, durability |
-| [HTTP endpoint](https://fenecdb.com/docs/http) | Start a server and send it FennecQL from curl or any language's standard library: REST/JSON derived from the schema, raw FennecQL, batches, writes safe to retry; then the [reference](https://fenecdb.com/docs/http-reference) (every route, filter, header and status, SSE, vector search over POST, a read marked for a replica) and [security and scoped access](https://fenecdb.com/docs/http-access) |
-| [Server](https://fenecdb.com/docs/server) | Running `fennec-server`: flags, durability, tokens and policies, the audit log, limits, containers |
-| [Replication](https://fenecdb.com/docs/replication) | Read replicas fed the writes on the primary's disk, promotion by hand, what a failover loses, backups and restoring to a moment, every tenant of a node archived over one connection |
-| [Integrations](https://fenecdb.com/docs/integrations) | `useLiveQuery` for React, the Go and .NET SDKs, and LangChain and LlamaIndex vector stores over HTTP |
-| [Agents and MCP](https://fenecdb.com/docs/mcp) | An agent's search and memory over the Model Context Protocol: `fennec-server --mcp` and `fennec mcp` for Claude Code, Cursor and Claude Desktop, each tool held to the token's rules, answers past a bound refused rather than cut |
-| [Monitoring](https://fenecdb.com/docs/monitoring) | `/_metrics` in Prometheus's format, the Grafana dashboard in `monitoring/`, the slow-statement log and a request id in every line |
-| [Datadog and others](https://fenecdb.com/docs/datadog) | The Datadog Agent's check, logs pipeline and dashboard in `monitoring/datadog/`; New Relic, Elastic and Grafana Cloud |
-| [Grafana](https://fenecdb.com/docs/grafana) | The server's metrics through Prometheus and the database's own rows through `fennecdb-datasource` (`integrations/grafana`), each panel FennecQL with the time range and variables bound as parameters, alert rules included, under a read-only token; or through the Infinity plugin; the dashboards in `monitoring/` |
-| [Sync](https://fenecdb.com/docs/sync) | A local replica that reads without the network and writes optimistically |
-| [Instead of Redis](https://fenecdb.com/docs/redis) | The patterns an app adds Redis for, each with its recipe — counters, rate limits, locks with fencing tokens, sessions, caches, leaderboards, sets, unique visitors, delayed jobs, streams, pub/sub, idempotency keys — and what fennecdb does not do that Redis does |
-| [Job queues](https://fenecdb.com/docs/queues) | Claims under a lease, acks, retries with a backoff, dead letters, delays and priorities, and a claim held at the server until a job comes |
-| [Auth with your identity provider](https://fenecdb.com/docs/auth) | Clerk's, Auth0's, Supabase Auth's, Cognito's, Firebase's or Cloudflare Access's tokens held to a policy down to the rows and fields: what the server checks and what it does not, the keys kept fresh, the issuer and audience that hold a token to your application, claims by name in a rule, a tenant claim, a run |
-| [Files with S3 and R2](https://fenecdb.com/docs/files) | The bytes in an object store and the facts in a collection: presigned upload and download links (an insert for an upload, a read for a download), the object deleted by a consumer of the change stream when its row goes, orphans reconciled, and why the bytes stay out of the file |
-| [Functions and webhooks](https://fenecdb.com/docs/functions) | Reacting to a write with no code in the database: a Worker as an endpoint, a job queue, a signed webhook from the change stream, and when each fits |
-| [Points and distances](https://fenecdb.com/docs/geo) | A `geo` field: distances in metres, rows within a radius or a box, the nearest first, positions that expire |
-| [Analytics and market data](https://fenecdb.com/docs/analytics) | Rollups by the minute, distinct users, funnels and retention over events; bars, VWAP and the latest price over ticks |
-| [Tenants and sharding](https://fenecdb.com/docs/sharding) | A tutorial that runs a router and two nodes and fails one over, then a guide to [tenants](https://fenecdb.com/docs/sharding-tenants) (schema, quotas, moves, archives, queries across them), [replicas and failover](https://fenecdb.com/docs/sharding-failover), [regions](https://fenecdb.com/docs/sharding-regions), [the global entry](https://fenecdb.com/docs/sharding-entry) and [read replicas](https://fenecdb.com/docs/sharding-read-replicas), the [reference](https://fenecdb.com/docs/sharding-reference) and the [design](https://fenecdb.com/docs/sharding-design) |
+| [Quickstart](https://fennecdb.com/docs/quickstart) | Start the server, write two rows, query and search them with curl and from your language, and see them in the studio |
+| [Quickstart: in the browser](https://fennecdb.com/docs/quickstart-browser) | The database in a page with no server: a Vite project, one npm package and a script, then kept in IndexedDB |
+| [Install](https://fennecdb.com/docs/install) | The install script, Homebrew, a .deb or .rpm, a tarball, the image, a package for each language, or a build from source |
+| [The shell](https://fennecdb.com/docs/shell) | `fennec`: open a file, run FennecQL a statement at a time, script it, and import, back up and generate types |
+| [Build from source](https://fennecdb.com/docs/build) | Clone, build the shell, the server and the browser module, run the tests and build the site |
+| [How it works](https://fennecdb.com/docs/concepts) | Segments, the offset index, the mapped file, why there is no buffer pool of its own and exactly one writer, and HNSW with a filter |
+| [FennecQL](https://fennecdb.com/docs/fennecql) | A tour from the first write to a lookup and a total, the grammar, and a reference page for each family of statements: [reading](https://fennecdb.com/docs/fennecql-reading), [writing](https://fennecdb.com/docs/fennecql-writing), [collections and types](https://fennecdb.com/docs/fennecql-schema), [indexes](https://fennecdb.com/docs/fennecql-indexes), [lookup and subqueries](https://fennecdb.com/docs/fennecql-lookup), [aggregates](https://fennecdb.com/docs/fennecql-aggregates), [text search](https://fennecdb.com/docs/fennecql-search) and [vector search](https://fennecdb.com/docs/fennecql-vector) |
+| [From SQL](https://fennecdb.com/docs/sql) | The SQL FennecQL reads as written — tables, joins, subqueries, pgvector's distances — what it refuses and what to write instead, where the meaning is not SQL's: nulls, double quotes, text, joins |
+| [JavaScript client](https://fennecdb.com/docs/javascript) | The browser client, the immutable query builder, binding it to a transport, live queries as an app's state, a schema declared in code |
+| [Mobile and native apps](https://fennecdb.com/docs/mobile) | Swift, Kotlin and Dart/Flutter: a file on the device, the builder, live queries driving the UI, syncing with a server, TLS and the background, where the file lives, durability |
+| [HTTP endpoint](https://fennecdb.com/docs/http) | Start a server and send it FennecQL from curl or any language's standard library: REST/JSON derived from the schema, raw FennecQL, batches, writes safe to retry; then the [reference](https://fennecdb.com/docs/http-reference) (every route, filter, header and status, SSE, vector search over POST, a read marked for a replica) and [security and scoped access](https://fennecdb.com/docs/http-access) |
+| [Server](https://fennecdb.com/docs/server) | Running `fennec-server`: flags, durability, tokens and policies, the audit log, limits, containers |
+| [Replication](https://fennecdb.com/docs/replication) | Read replicas fed the writes on the primary's disk, promotion by hand, what a failover loses, backups and restoring to a moment, every tenant of a node archived over one connection |
+| [Integrations](https://fennecdb.com/docs/integrations) | `useLiveQuery` for React, the Go and .NET SDKs, and LangChain and LlamaIndex vector stores over HTTP |
+| [Agents and MCP](https://fennecdb.com/docs/mcp) | An agent's search and memory over the Model Context Protocol: `fennec-server --mcp` and `fennec mcp` for Claude Code, Cursor and Claude Desktop, each tool held to the token's rules, answers past a bound refused rather than cut |
+| [Monitoring](https://fennecdb.com/docs/monitoring) | `/_metrics` in Prometheus's format, the Grafana dashboard in `monitoring/`, the slow-statement log and a request id in every line |
+| [Datadog and others](https://fennecdb.com/docs/datadog) | The Datadog Agent's check, logs pipeline and dashboard in `monitoring/datadog/`; New Relic, Elastic and Grafana Cloud |
+| [Grafana](https://fennecdb.com/docs/grafana) | The server's metrics through Prometheus and the database's own rows through `fennecdb-datasource` (`integrations/grafana`), each panel FennecQL with the time range and variables bound as parameters, alert rules included, under a read-only token; or through the Infinity plugin; the dashboards in `monitoring/` |
+| [Sync](https://fennecdb.com/docs/sync) | A local replica that reads without the network and writes optimistically |
+| [Instead of Redis](https://fennecdb.com/docs/redis) | The patterns an app adds Redis for, each with its recipe — counters, rate limits, locks with fencing tokens, sessions, caches, leaderboards, sets, unique visitors, delayed jobs, streams, pub/sub, idempotency keys — and what fennecdb does not do that Redis does |
+| [Job queues](https://fennecdb.com/docs/queues) | Claims under a lease, acks, retries with a backoff, dead letters, delays and priorities, and a claim held at the server until a job comes |
+| [Auth with your identity provider](https://fennecdb.com/docs/auth) | Clerk's, Auth0's, Supabase Auth's, Cognito's, Firebase's or Cloudflare Access's tokens held to a policy down to the rows and fields: what the server checks and what it does not, the keys kept fresh, the issuer and audience that hold a token to your application, claims by name in a rule, a tenant claim, a run |
+| [Files with S3 and R2](https://fennecdb.com/docs/files) | The bytes in an object store and the facts in a collection: presigned upload and download links (an insert for an upload, a read for a download), the object deleted by a consumer of the change stream when its row goes, orphans reconciled, and why the bytes stay out of the file |
+| [Functions and webhooks](https://fennecdb.com/docs/functions) | Reacting to a write with no code in the database: a Worker as an endpoint, a job queue, a signed webhook from the change stream, and when each fits |
+| [Points and distances](https://fennecdb.com/docs/geo) | A `geo` field: distances in metres, rows within a radius or a box, the nearest first, positions that expire |
+| [Analytics and market data](https://fennecdb.com/docs/analytics) | Rollups by the minute, distinct users, funnels and retention over events; bars, VWAP and the latest price over ticks |
+| [Tenants and sharding](https://fennecdb.com/docs/sharding) | A tutorial that runs a router and two nodes and fails one over, then a guide to [tenants](https://fennecdb.com/docs/sharding-tenants) (schema, quotas, moves, archives, queries across them), [replicas and failover](https://fennecdb.com/docs/sharding-failover), [regions](https://fennecdb.com/docs/sharding-regions), [the global entry](https://fennecdb.com/docs/sharding-entry) and [read replicas](https://fennecdb.com/docs/sharding-read-replicas), the [reference](https://fennecdb.com/docs/sharding-reference) and the [design](https://fennecdb.com/docs/sharding-design) |
 | [Deploying across regions](deploy/RUNBOOK.md) | `deploy/`: systemd units for nodes, routers, archivers and the tunnel, alert rules, the operator's runbook, and `make drill`, which kills a node and a router of a two-region deployment in Docker and checks no acknowledged write was lost |
-| [Import](https://fenecdb.com/docs/import) | Build a collection from SQLite or a live PostgreSQL server in one command, and keep it following the table's changes |
-| [Embedded Rust](https://fenecdb.com/docs/embedding) | `fennec-core` as a library: opening a file, executing parsed statements |
-| [File format](https://fenecdb.com/docs/file-format) | One file, replayed in a single pass; record kinds, and the crate layout |
-| [Benchmarks](https://fenecdb.com/docs/benchmarks) | An overview and a page for each family: [YCSB](https://fenecdb.com/docs/benchmarks-ycsb) against SQLite, PostgreSQL, MongoDB and Redis, [writers beside readers and a request over HTTP](https://fenecdb.com/docs/benchmarks-requests), [text search](https://fenecdb.com/docs/benchmarks-text); then [vectors](https://fenecdb.com/docs/benchmarks-vector), against SQLite and pgvector in process and fennec-server against pgvector at scale, and [sizes and memory](https://fenecdb.com/docs/benchmarks-size) |
-| [Limits](https://fenecdb.com/docs/limits) | What it does not do, every hard-coded ceiling, memory and scale |
+| [Import](https://fennecdb.com/docs/import) | Build a collection from SQLite or a live PostgreSQL server in one command, and keep it following the table's changes |
+| [Embedded Rust](https://fennecdb.com/docs/embedding) | `fennec-core` as a library: opening a file, executing parsed statements |
+| [File format](https://fennecdb.com/docs/file-format) | One file, replayed in a single pass; record kinds, and the crate layout |
+| [Benchmarks](https://fennecdb.com/docs/benchmarks) | An overview and a page for each family: [YCSB](https://fennecdb.com/docs/benchmarks-ycsb) against SQLite, PostgreSQL, MongoDB and Redis, [writers beside readers and a request over HTTP](https://fennecdb.com/docs/benchmarks-requests), [text search](https://fennecdb.com/docs/benchmarks-text); then [vectors](https://fennecdb.com/docs/benchmarks-vector), against SQLite and pgvector in process and fennec-server against pgvector at scale, and [sizes and memory](https://fennecdb.com/docs/benchmarks-size) |
+| [Limits](https://fennecdb.com/docs/limits) | What it does not do, every hard-coded ceiling, memory and scale |
 
 The docs are the long-form reference; their source is
 [`site/content/docs/`](site/content/docs/), so a correction is a pull request
 like any other.
 
 Coding agents get the same docs as text, rendered from those pages on every
-build: [`llms.txt`](https://fenecdb.com/llms.txt) is a brief with the rules
+build: [`llms.txt`](https://fennecdb.com/llms.txt) is a brief with the rules
 FennecQL does not share with SQL, and
-[`llms-full.txt`](https://fenecdb.com/llms-full.txt) is every page in one file.
+[`llms-full.txt`](https://fennecdb.com/llms-full.txt) is every page in one file.
 
 ---
 

@@ -1,9 +1,9 @@
 #!/bin/sh
 # Install fennecdb: `fennec`, the shell, and `fennec-server`, from a release.
 #
-#   curl -fsSL https://fenecdb.com/install.sh | sh
+#   curl -fsSL https://fennecdb.com/install.sh | sh
 #
-# Read it first with `curl -fsSL https://fenecdb.com/install.sh | less`. It
+# Read it first with `curl -fsSL https://fennecdb.com/install.sh | less`. It
 #
 #   - works out the platform: macOS or Linux, arm64 or x86_64;
 #   - downloads the release's tarball and its SHA256SUMS from GitHub, over
@@ -45,8 +45,8 @@ usage() {
     cat <<'EOF'
 Install fennecdb (fennec, the shell, and fennec-server) from a release.
 
-    curl -fsSL https://fenecdb.com/install.sh | sh
-    curl -fsSL https://fenecdb.com/install.sh | sh -s -- --help
+    curl -fsSL https://fennecdb.com/install.sh | sh
+    curl -fsSL https://fennecdb.com/install.sh | sh -s -- --help
 
   FENNEC_VERSION  X.Y.Z; the latest release when unset
   FENNEC_INSTALL  installs into $FENNEC_INSTALL/bin; default ~/.fennecdb
@@ -311,7 +311,7 @@ main() {
     fi
 
     say ""
-    say "A first query: https://fenecdb.com/docs/quickstart"
+    say "A first query: https://fennecdb.com/docs/quickstart"
 }
 
 main "$@"

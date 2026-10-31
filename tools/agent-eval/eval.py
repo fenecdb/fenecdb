@@ -68,7 +68,7 @@ not ask for. When you are done, reply with one short line.
 CONDITIONS = {
     # A: told what the database speaks, and given the brief /llms.txt opens with.
     "A": "The database is fennecdb. Its query language is FennecQL, which is not "
-         "SQL: write FennecQL. Its brief, from https://fenecdb.com/llms.txt:\n\n"
+         "SQL: write FennecQL. Its brief, from https://fennecdb.com/llms.txt:\n\n"
          "{brief}\n"
          "The schema, as the server gives it (GET /_schema?as=fennecql):\n\n{schema}",
     # B and C: the same schema, and SQL by habit. C is B against another build.

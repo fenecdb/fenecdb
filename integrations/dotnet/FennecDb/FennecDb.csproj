@@ -15,7 +15,7 @@
     <Description>A client for fennecdb's server over HTTP: FennecQL queries, vector search, atomic batches, subscriptions and the change stream.</Description>
     <PackageTags>fennecdb;database;vector;search;hnsw</PackageTags>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <PackageProjectUrl>https://fenecdb.com/docs/languages</PackageProjectUrl>
+    <PackageProjectUrl>https://fennecdb.com/docs/languages</PackageProjectUrl>
     <RepositoryUrl>https://github.com/fennec-db/fennecdb</RepositoryUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>

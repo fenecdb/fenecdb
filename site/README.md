@@ -116,11 +116,11 @@ in the backlex repo, including its two hard-won rules:
 - **Routes are not declared in `wrangler.jsonc`.** A deploy token with Workers
   Scripts permissions but without *Zone › Workers Routes* uploads the worker and
   the assets fine and then fails reconciling the route (Authentication error
-  10000). The routes for `fenecdb.com` are stable, so they stay
+  10000). The routes for `fennecdb.com` are stable, so they stay
   dashboard-managed and CI deploys cleanly. To move them into the config, grant
   the token *Zone › Workers Routes › Edit* on the zone.
-- **The apex needs its own proxied A/AAAA record.** A `*.fenecdb.com` wildcard
-  does not cover `fenecdb.com`.
+- **The apex needs its own proxied A/AAAA record.** A `*.fennecdb.com` wildcard
+  does not cover `fennecdb.com`.
 
 `.github/workflows/site.yml` builds the wasm and deploys on a push to `main`
 that touches `site/`, `wrangler.jsonc` or the crates the module is built from.
@@ -133,7 +133,7 @@ Locally, `wrangler login` once, then `make site-deploy`.
 
 `site/dist/_headers` is written by `build.py` on every build: security headers
 for everything, five minutes of caching and `text/plain` for `/install.sh` (the
-installer, `curl -fsSL https://fenecdb.com/install.sh | sh`: it reaches the next
+installer, `curl -fsSL https://fennecdb.com/install.sh | sh`: it reaches the next
 install when a change merges, and a browser shows it rather than saving it),
 and a year of immutable caching for every content-hashed asset.
 That now includes the engine — the site loads `fennec.<hash>.js` and
@@ -177,7 +177,7 @@ site/
   search-fixture.json     the tests' queries' vectors, so CI needs no network
   search-mock.mjs   dist and a stand-in endpoint, to try it with no account
   install.sh      the installer, copied to dist/install.sh and served as
-                  text/plain at https://fenecdb.com/install.sh
+                  text/plain at https://fennecdb.com/install.sh
   test_install.sh it against a release of its own served from localhost
   worker.js       /api/embed, the only code that runs on the edge
   worker.test.mjs its limits and refusals, its bindings faked
@@ -338,10 +338,10 @@ it needs, all once:
    /accounts/<account>/ai-gateway/gateways` with `{"id": "fenecdb-site",
    "cache_ttl": 2592000, "collect_logs": true, "rate_limiting_interval":
    60, "rate_limiting_limit": 120, "rate_limiting_technique": "sliding"}`.
-3. **No new route.** The Worker is the site's own: `fenecdb.com/*` already
+3. **No new route.** The Worker is the site's own: `fennecdb.com/*` already
    reaches it, and `run_worker_first` sends it `/api/*` alone. Check under
    *Workers & Pages* > `fenecdb-site` > *Domains & Routes* that the route
-   is `fenecdb.com/*` and not a narrower one.
+   is `fennecdb.com/*` and not a narrower one.
 4. **Tokens.** The deploy needs nothing new for the bindings it adds (a
    Durable Object, a rate limit, Workers AI); if a deploy fails on the
    `ai` binding, give `CLOUDFLARE_API_TOKEN` *Account* > *Workers AI* >
@@ -354,8 +354,8 @@ it needs, all once:
    its own; a usage notification for it under *Notifications*, where the
    account's plan offers one, says if anything else spends.
 6. **Turn it on.** `"SEMANTIC": "on"` in `wrangler.jsonc`, merged and
-   deployed. Then `curl -s -X POST https://fenecdb.com/api/embed -H
-   'origin: https://fenecdb.com' -H 'content-type: application/json'
+   deployed. Then `curl -s -X POST https://fennecdb.com/api/embed -H
+   'origin: https://fennecdb.com' -H 'content-type: application/json'
    -d '{"q":"keep data on a phone"}' | head -c 80` answers
    `{"vector":[...`, and once more is a cache hit.
 7. **Once, best before step 6**: make the cache and the fixture again

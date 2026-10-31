@@ -68,4 +68,4 @@ opens in the other. Without the graph a `near` measures every vector, as
 naming it, and so does what needs any other feature a module lacks.
 
 Serve `.wasm` as `application/wasm`, compressed once at build time.
-Full reference: https://fenecdb.com/docs/javascript
+Full reference: https://fennecdb.com/docs/javascript

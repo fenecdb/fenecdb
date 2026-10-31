@@ -66,4 +66,4 @@ await docs.Lookup("reviews", on: "article_id", limit: 3, order: [new("created", 
 
 `dotnet test FennecDb.Tests` runs against `fennec-server` processes it starts (`cargo build -p fennec-server`, or
 `FENNEC_SERVER`), and the builder against every case of `integrations/builder-golden.json`.
-Full reference: https://fenecdb.com/docs/languages
+Full reference: https://fennecdb.com/docs/languages

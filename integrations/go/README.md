@@ -84,4 +84,4 @@ docs.Where("year", "<", 2000).Delete(ctx)      // no filter: refused unless fenn
 
 `go test` runs against `fennec-server` processes it starts (`cargo build -p fennec-server`, or `FENNEC_SERVER`), and the
 builder against every case of `integrations/builder-golden.json`.
-Full reference: https://fenecdb.com/docs/languages
+Full reference: https://fennecdb.com/docs/languages

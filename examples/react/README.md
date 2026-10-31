@@ -52,7 +52,7 @@ Open the page in two browsers: a note added in one shows in the other.
 `VITE_FENNEC_URL` and `VITE_FENNEC_TOKEN` point it at another server. The
 `secret` default is for development: the server's own token can change its
 schema, and a real app hands each user a JWT scoped to their rows
-([Sync](https://fenecdb.com/docs/sync)).
+([Sync](https://fennecdb.com/docs/sync)).
 
 ## The core
 
