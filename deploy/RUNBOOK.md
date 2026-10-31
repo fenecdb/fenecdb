@@ -2,7 +2,7 @@
 
 The operator's runbook for a self-hosted, multi-region fennecdb: what runs
 where, the order it comes up in, and what to do when something breaks. The
-design behind each step is in [Sharding design](https://fenecdb.com/docs/sharding-design);
+design behind each step is in [Sharding design](https://fennecdb.com/docs/sharding-design);
 this page is the procedures, and the files beside it are the kit:
 
 | File | What it is |

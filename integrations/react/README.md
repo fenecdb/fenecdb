@@ -61,5 +61,5 @@ const rows = useLiveQuery(db.from('products').match('title', text).facet('brand'
 ```
 
 React is the one peer dependency; the database is `@fennecdb/web`'s.
-Full reference: https://fenecdb.com/docs/javascript#state and
-https://fenecdb.com/docs/integrations
+Full reference: https://fennecdb.com/docs/javascript#state and
+https://fennecdb.com/docs/integrations

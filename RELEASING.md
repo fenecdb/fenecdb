@@ -98,7 +98,7 @@ the .NET SDK is installed.
 | `fennecdb_flutter` on pub.dev | `integrations/dart/fennecdb_flutter` | the Flutter plugin: the package with the library for iOS, Android and macOS |
 | `fennecdb` in the Homebrew tap `fennec-db/homebrew-tap` | `packaging/homebrew`, `tools/homebrew-formula.py` | the formula: `fennec` and `fennec-server` from the release's tarballs, by platform, each with its SHA-256 |
 | `fennecdb_X.Y.Z-1_<arch>.deb`, `fennecdb-X.Y.Z-1.<arch>.rpm` on the release | `packaging/nfpm.yaml`, `tools/linux-packages.sh` | `/usr/bin/fennec` and `/usr/bin/fennec-server` from the musl tarballs, for amd64 and arm64; no dependencies |
-| `https://fenecdb.com/install.sh` | `site/install.sh` | the installer: the release's tarball for the machine, checked against `SHA256SUMS`, into `~/.fennecdb/bin`; deployed with the site, not with a release |
+| `https://fennecdb.com/install.sh` | `site/install.sh` | the installer: the release's tarball for the machine, checked against `SHA256SUMS`, into `~/.fennecdb/bin`; deployed with the site, not with a release |
 
 ## Once: the desktop app's signing Environment
 
@@ -214,7 +214,7 @@ and approve pull requests"); without it the run pushes the branch
 bundle `packages.yml` makes, with no Gradle plugin. Once:
 
 1. Sign in to the Portal and add the namespace `com.fennecdb`, the
-   domain's: the Portal verifies it by a TXT record on `fenecdb.com`
+   domain's: the Portal verifies it by a TXT record on `fennecdb.com`
    holding the key it gives, which can be removed after.
 2. Under *View Account*, *Generate User Token*: its two halves are the
    secrets `MAVEN_CENTRAL_USERNAME` and `MAVEN_CENTRAL_PASSWORD`.
@@ -316,7 +316,7 @@ the packages are files on the release.
 **install.sh.** Nothing to set up: `site/install.sh` is built into the site
 (`site/build.py` checks that nothing before `main`, called on its last line,
 is more than `set -eu`, comments, assignments and function definitions) and
-deployed with it, so a change reaches `https://fenecdb.com/install.sh` when
+deployed with it, so a change reaches `https://fennecdb.com/install.sh` when
 it merges, not when a release is made. It finds the latest release itself.
 `sh site/test_install.sh` runs it against a release of its own on localhost.
 

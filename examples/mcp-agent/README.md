@@ -36,4 +36,4 @@ const message = await new Anthropic().beta.messages.toolRunner({
 ```
 
 `.mcp.json` here is the same server for Claude Code: open this folder in it
-and the tools are there. See [Agents and MCP](https://fenecdb.com/docs/mcp).
+and the tools are there. See [Agents and MCP](https://fennecdb.com/docs/mcp).

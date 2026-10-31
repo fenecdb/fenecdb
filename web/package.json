@@ -46,7 +46,7 @@
     "local-first",
     "sync"
   ],
-  "homepage": "https://fenecdb.com/docs/javascript",
+  "homepage": "https://fennecdb.com/docs/javascript",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/fennec-db/fennecdb.git",

@@ -3,7 +3,7 @@
      POST /api/embed  {"q": "how do I stop my file from growing"}
        -> 200 {"vector": [0.0123, ...]}   (1024 numbers, bge-m3)
 
-   Everything else on fenecdb.com is a static file the asset router answers
+   Everything else on fennecdb.com is a static file the asset router answers
    without running this (`run_worker_first` names /api/* alone). The search
    runs in the page; this only turns words into the vector the page's
    `near` needs, and the page searches by the words alone whenever it says

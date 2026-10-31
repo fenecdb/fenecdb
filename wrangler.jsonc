@@ -31,12 +31,19 @@
   // reconciling the route (Authentication error 10000). The routes are stable,
   // so they stay dashboard-managed and CI deploys cleanly.
   //
-  //   fenecdb.com          needs a proxied A/AAAA record; a *.fenecdb.com
+  //   fennecdb.com          needs a proxied A/AAAA record; a *.fennecdb.com
   //                        wildcard does NOT cover the apex
-  //   www.fenecdb.com      redirect or second route, as you prefer
+  //   www.fennecdb.com      redirect or second route, as you prefer
   //
   // To declare them here instead, grant the token Zone > Workers Routes > Edit
-  // on the fenecdb.com zone.
+  // on the fennecdb.com zone.
+  //
+  //   fenecdb.com, www.     the first name: a redirect rule on its zone
+  //                        answers 301 to fennecdb.com, path and query kept,
+  //                        for the links in 0.1.x's published READMEs
+  //
+  // The Worker and its AI Gateway keep the first name, fenecdb-site:
+  // renaming either makes the next deploy a new one, with no custom domain.
 
   // The embedding endpoint. Off until the AI Gateway below exists: it
   // answers 404 and the search stays with the words. The owner's steps to

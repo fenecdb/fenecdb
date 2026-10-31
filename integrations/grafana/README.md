@@ -20,7 +20,7 @@ The backend sends that as
 
 and answers a series a symbol. `make grafana-check` runs it in Grafana 13.2.2
 beside the Infinity data source, every panel held to fennec-server's own
-answer; the docs are at https://fenecdb.com/docs/grafana.
+answer; the docs are at https://fennecdb.com/docs/grafana.
 
 ## Queries
 

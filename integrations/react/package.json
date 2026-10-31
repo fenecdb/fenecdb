@@ -18,7 +18,7 @@
     "state-management",
     "sync"
   ],
-  "homepage": "https://fenecdb.com/docs/sync",
+  "homepage": "https://fennecdb.com/docs/sync",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/fennec-db/fennecdb.git",
