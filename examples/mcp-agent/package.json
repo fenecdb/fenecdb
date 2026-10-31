@@ -1,7 +1,7 @@
 {
-  "name": "fenecdb-mcp-agent",
+  "name": "fennecdb-mcp-agent",
   "private": true,
-  "description": "An agent with a memory that outlives its conversations: Claude with fenecdb's MCP tools",
+  "description": "An agent with a memory that outlives its conversations: Claude with fennecdb's MCP tools",
   "license": "Apache-2.0",
   "type": "module",
   "dependencies": {

@@ -1,5 +1,5 @@
 <!--
-title: Services and events — fenecdb
+title: Services and events — fennecdb
 description: Give each service its own database and token, and follow its writes as a stream of events in place of an outbox table.
 -->
 
@@ -15,14 +15,14 @@ rows each caller may touch.</p>
 
 <details class="deep"><summary>How a tenant keeps a service apart</summary>
 <p>Each service keeps its own data and tells the others what changed.
-fenecdb gives a service a database of its own on a shared node, a token that
+fennecdb gives a service a database of its own on a shared node, a token that
 reaches only that, and the writes on its disk as a stream of events — which
 is what an outbox table and a relay are usually built for.</p>
 
-<p>A tenant node (<code>fenec-server --dir</code>) keeps a file per tenant, and
+<p>A tenant node (<code>fennec-server --dir</code>) keeps a file per tenant, and
 a tenant is named by the path, <code>/t/&lt;tenant&gt;/</code> — never by
 the query, so one service cannot read another's rows. Give each service its tenant,
-and a router (<code>fenec-shard</code>) in front of the nodes when there are
+and a router (<code>fennec-shard</code>) in front of the nodes when there are
 several: see <a href="/docs/sharding">Tenants and sharding</a>.</p>
 
 <p>Within a database, a JSON Web Token held to a policy gives each caller
@@ -39,7 +39,7 @@ grants <code>read</code> alone.</p>
 event a consumer can read. You do not need an outbox table: a batch's
 rows are announced together.</p>
 
-<pre data-lang="bash">fenec-server --file orders.fenec --http 127.0.0.1:8080 --cdc
+<pre data-lang="bash">fennec-server --file orders.fennec --http 127.0.0.1:8080 --cdc
 
 # a consumer the server keeps the cursor of: made if it is not there,
 # left where it stands if it is, so a service can do this at every start
@@ -48,7 +48,7 @@ curl -X POST http://127.0.0.1:8080/_changes/consumers/billing
 
 <details class="deep"><summary>Why the collection is its own outbox</summary>
 <p>An outbox table exists because a service must change its data and
-announce the change together, or not at all. A fenecdb
+announce the change together, or not at all. A fennecdb
 <code>/batch</code> is one record on disk, so the rows it
 writes are announced together already: <code>GET /_changes</code> hands
 over every write once it is on disk, the documents with it
@@ -62,7 +62,7 @@ collection, is on <a href="/docs/functions#webhook">Functions and
 webhooks</a>, beside the other two ways to react to a write. A consumer in
 Python:</p>
 
-<pre data-lang="python">from fenecdb import Client
+<pre data-lang="python">from fennecdb import Client
 
 db = Client("http://127.0.0.1:8080", token="...")
 for batch in db.follow("billing"):        # committed when the loop comes back
@@ -77,17 +77,17 @@ for batch in db.follow("billing"):        # committed when the loop comes back
 <p>The relay passes a consumer's events on, as JSON lines or to a webhook.
 Pipe the lines into Kafka with any tool that writes to a topic.</p>
 
-<pre data-lang="bash">python -m fenecdb.relay http://127.0.0.1:8080 --consumer kafka \
+<pre data-lang="bash">python -m fennecdb.relay http://127.0.0.1:8080 --consumer kafka \
   | kcat -P -b broker:9092 -t orders
 </pre>
 
 <details class="deep"><summary>How the relay hands writes on</summary>
-<p><code>python -m fenecdb.relay</code> reads a consumer's writes and hands
+<p><code>python -m fennecdb.relay</code> reads a consumer's writes and hands
 them on — to standard output, one JSON object a line, or to a webhook —
 and moves the cursor only once they are out. Kafka takes them through any
 tool that writes lines to a topic, as above; a webhook:</p>
 
-<pre data-lang="bash">python -m fenecdb.relay http://127.0.0.1:8080 --consumer search \
+<pre data-lang="bash">python -m fennecdb.relay http://127.0.0.1:8080 --consumer search \
   --to https://indexer.internal/hook
 </pre>
 </details>
@@ -112,15 +112,15 @@ from a fresh read.</p>
   as <code>--replication-buffer</code> holds, 64 MiB unless given. A
   consumer further behind is answered 410, never handed writes with a gap
   in the middle. To start over: take the last write on disk
-  (<code>Fenec-Next</code> of <code>GET /_changes</code> with no
+  (<code>Fennec-Next</code> of <code>GET /_changes</code> with no
   <code>since</code>), read the collections whole, then go on from that
   number — a write read in both is applied twice, which a <code>put</code>
   by id makes harmless.</li>
   <li><b>What is on disk.</b> A write the server lost in a crash was never
   handed to anyone, as it was never sent to a replica.</li>
   <li><b>Reading one's own writes.</b> A service that writes on the primary
-  and reads on a replica sends the write's <code>Fenec-Seq</code> back as
-  <code>Fenec-After</code>, and the replica answers once it holds the write
+  and reads on a replica sends the write's <code>Fennec-Seq</code> back as
+  <code>Fennec-After</code>, and the replica answers once it holds the write
   (<a href="/docs/replication#read-your-writes">Reading your own
   writes</a>).</li>
   <li><b>Retries.</b> A service that sends a write again after a timeout

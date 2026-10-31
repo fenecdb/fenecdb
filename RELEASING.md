@@ -1,4 +1,4 @@
-# Releasing fenecdb
+# Releasing fennecdb
 
 A release is a tag. Its binaries, browser bundle and image are built from the
 tag and left in a draft; the packages follow once the draft is published, so
@@ -25,12 +25,12 @@ nothing reaches a registry before the notes have had a read.
    it from main, tests it on macOS and an iOS simulator, keeps it as its
    artifact and opens a pull request writing its checksum into
    `Package.swift` (`integrations/swift/set-binary.sh`). It keeps the
-   Flutter plugin's `FenecFFIDynamic.xcframework.zip` beside it, built from
+   Flutter plugin's `FennecFFIDynamic.xcframework.zip` beside it, built from
    the same commit and named by nothing. Merge it.
 3. Tag what was merged and push the tag:
    `git tag vX.Y.Z origin/main && git push origin vX.Y.Z`.
-   `release.yml` builds the binaries for Linux and macOS, the `fenec-web`
-   bundle, the Android AAR (`fenecdb-android-X.Y.Z.aar`, the native library
+   `release.yml` builds the binaries for Linux and macOS, the `fennec-web`
+   bundle, the Android AAR (`fennecdb-android-X.Y.Z.aar`, the native library
    for each ABI inside) and the multi-arch image on ghcr.io, takes the
    XCFramework zips step 2's run kept -- the static one held to the checksum the tag's
    `Package.swift` names, and stopping the release where none matches --
@@ -43,7 +43,7 @@ nothing reaches a registry before the notes have had a read.
    lists them in `SHA256SUMS` with the rest. Beside `vX.Y.Z` it pushes `integrations/go/vX.Y.Z` at
    the same commit: a Go module in a subdirectory is fetched by a tag that
    names it, so that tag is the Go SDK's release (`go get
-   github.com/fenecdb/fenecdb/integrations/go@vX.Y.Z`), and there is no
+   github.com/fennec-db/fennecdb/integrations/go@vX.Y.Z`), and there is no
    registry to publish to. A release built again, by the tag or by a
    dispatch, replaces the assets of a draft; a published release's are never
    replaced, and it only gets the files it has no asset of, with a warning
@@ -55,22 +55,22 @@ nothing reaches a registry before the notes have had a read.
 4. Read the draft, then publish it: `gh release edit vX.Y.Z --draft=false`.
    `packages.yml` builds the three packages again, installs them where a user
    would and uses them (`integrations/packages.sh`), and only then publishes
-   `fenecdb` to PyPI, `@fenecdb/web`, `@fenecdb/react`,
-   `@fenecdb/cloudflare` and `@fenecdb/langchain` to npm, and `FenecDb` to
+   `fennecdb` to PyPI, `@fennecdb/web`, `@fennecdb/react`,
+   `@fennecdb/cloudflare` and `@fennecdb/langchain` to npm, and `FennecDb` to
    NuGet -- packed, installed into a fresh console app and used against a
    server (`integrations/dotnet/package.sh`) before it is pushed, and
    skipped with a notice where `NUGET_API_KEY` is not set. With their
-   secrets it also publishes `com.fenecdb:fenecdb` and
-   `fenecdb-android` to Maven Central and `fenecdb` and `fenecdb_flutter`
+   secrets it also publishes `com.fennecdb:fennecdb` and
+   `fennecdb-android` to Maven Central and `fennecdb` and `fennecdb_flutter`
    to pub.dev -- the plugin with the release's dynamic XCFramework and AAR libraries
    in it -- each skipped with a notice where its secrets are not set. A
    package whose version is not the tag's stops it before anything goes out.
    SwiftPM has no registry: the tag and the zip on the release are the
    Swift package. With `HOMEBREW_TAP_TOKEN` it also writes the Homebrew
-   formula (`brew install fenecdb/tap/fenecdb`) from the release's
+   formula (`brew install fennec-db/tap/fennecdb`) from the release's
    `SHA256SUMS`, holds it to what the public download URLs serve
    (`tools/homebrew-formula.py --verify`) and pushes it to
-   `fenecdb/homebrew-tap`: here, after the publish, because the formula
+   `fennec-db/homebrew-tap`: here, after the publish, because the formula
    names the release's download URLs and a draft's are not public. It
    skips with a notice where the secret is not set, for a draft or a
    pre-release, and for a version older than the tap's formula (the tap is
@@ -84,21 +84,21 @@ the .NET SDK is installed.
 
 | Package | From | What it holds |
 | --- | --- | --- |
-| `fenecdb` on PyPI | `integrations/python` | the HTTP client and the LangChain and LlamaIndex stores; the standard library alone |
-| `@fenecdb/web` on npm | `web/` | `fenec.js` and its types, `fenec.wasm` and `collate/` |
-| `@fenecdb/react` on npm | `integrations/react` | `FenecProvider`, `useFenec`, `useLiveQuery` |
-| `@fenecdb/cloudflare` on npm | `integrations/cloudflare` | `persist`, `restore`, `checkpoint`: a database kept in a Durable Object's storage |
-| `@fenecdb/langchain` on npm | `integrations/langchain` | `FenecVectorStore` for LangChain.js, over a `Fenec` or a `FenecHttp` |
-| `FenecDb` on NuGet | `integrations/dotnet/FenecDb` | `FenecClient`, the .NET SDK over HTTP; `HttpClient` and `System.Text.Json` alone |
-| `github.com/fenecdb/fenecdb/integrations/go` | the tag `integrations/go/vX.Y.Z` | package `fenecdb`, the Go SDK over HTTP; the standard library alone |
-| `FenecDB` for SwiftPM | `Package.swift`, `integrations/swift` | the tag, and `FenecFFI.xcframework.zip` on the release: the library embedded in a macOS or iOS app |
-| `com.fenecdb:fenecdb` on Maven Central | `integrations/kotlin/fenecdb` | the Kotlin library for the JVM; kotlinx-coroutines alone, the native library brought by the app |
-| `com.fenecdb:fenecdb-android` on Maven Central | `integrations/kotlin/android` | the AAR: the same library and `libfenec_ffi.so` for arm64-v8a, armeabi-v7a, x86_64 |
-| `fenecdb` on pub.dev | `integrations/dart/fenecdb` | the Dart package over `dart:ffi`; `package:ffi` alone |
-| `fenecdb_flutter` on pub.dev | `integrations/dart/fenecdb_flutter` | the Flutter plugin: the package with the library for iOS, Android and macOS |
-| `fenecdb` in the Homebrew tap `fenecdb/homebrew-tap` | `packaging/homebrew`, `tools/homebrew-formula.py` | the formula: `fenec` and `fenec-server` from the release's tarballs, by platform, each with its SHA-256 |
-| `fenecdb_X.Y.Z-1_<arch>.deb`, `fenecdb-X.Y.Z-1.<arch>.rpm` on the release | `packaging/nfpm.yaml`, `tools/linux-packages.sh` | `/usr/bin/fenec` and `/usr/bin/fenec-server` from the musl tarballs, for amd64 and arm64; no dependencies |
-| `https://fenecdb.com/install.sh` | `site/install.sh` | the installer: the release's tarball for the machine, checked against `SHA256SUMS`, into `~/.fenecdb/bin`; deployed with the site, not with a release |
+| `fennecdb` on PyPI | `integrations/python` | the HTTP client and the LangChain and LlamaIndex stores; the standard library alone |
+| `@fennecdb/web` on npm | `web/` | `fennec.js` and its types, `fennec.wasm` and `collate/` |
+| `@fennecdb/react` on npm | `integrations/react` | `FennecProvider`, `useFennec`, `useLiveQuery` |
+| `@fennecdb/cloudflare` on npm | `integrations/cloudflare` | `persist`, `restore`, `checkpoint`: a database kept in a Durable Object's storage |
+| `@fennecdb/langchain` on npm | `integrations/langchain` | `FennecVectorStore` for LangChain.js, over a `Fennec` or a `FennecHttp` |
+| `FennecDb` on NuGet | `integrations/dotnet/FennecDb` | `FennecClient`, the .NET SDK over HTTP; `HttpClient` and `System.Text.Json` alone |
+| `github.com/fennec-db/fennecdb/integrations/go` | the tag `integrations/go/vX.Y.Z` | package `fennecdb`, the Go SDK over HTTP; the standard library alone |
+| `FennecDB` for SwiftPM | `Package.swift`, `integrations/swift` | the tag, and `FennecFFI.xcframework.zip` on the release: the library embedded in a macOS or iOS app |
+| `com.fennecdb:fennecdb` on Maven Central | `integrations/kotlin/fennecdb` | the Kotlin library for the JVM; kotlinx-coroutines alone, the native library brought by the app |
+| `com.fennecdb:fennecdb-android` on Maven Central | `integrations/kotlin/android` | the AAR: the same library and `libfennec_ffi.so` for arm64-v8a, armeabi-v7a, x86_64 |
+| `fennecdb` on pub.dev | `integrations/dart/fennecdb` | the Dart package over `dart:ffi`; `package:ffi` alone |
+| `fennecdb_flutter` on pub.dev | `integrations/dart/fennecdb_flutter` | the Flutter plugin: the package with the library for iOS, Android and macOS |
+| `fennecdb` in the Homebrew tap `fennec-db/homebrew-tap` | `packaging/homebrew`, `tools/homebrew-formula.py` | the formula: `fennec` and `fennec-server` from the release's tarballs, by platform, each with its SHA-256 |
+| `fennecdb_X.Y.Z-1_<arch>.deb`, `fennecdb-X.Y.Z-1.<arch>.rpm` on the release | `packaging/nfpm.yaml`, `tools/linux-packages.sh` | `/usr/bin/fennec` and `/usr/bin/fennec-server` from the musl tarballs, for amd64 and arm64; no dependencies |
+| `https://fenecdb.com/install.sh` | `site/install.sh` | the installer: the release's tarball for the machine, checked against `SHA256SUMS`, into `~/.fennecdb/bin`; deployed with the site, not with a release |
 
 ## Once: the desktop app's signing Environment
 
@@ -111,23 +111,23 @@ job from any branch that names it.
 A required reviewer (you: the dispatch waits for a person) and deployment
 branches limited to `main` alone (the code that is signed is main's):
 
-    gh api -X PUT repos/fenecdb/fenecdb/environments/desktop-signing --input - <<EOF
+    gh api -X PUT repos/fennec-db/fennecdb/environments/desktop-signing --input - <<EOF
     {"reviewers":[{"type":"User","id":$(gh api user -q .id)}],
      "deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}
     EOF
-    gh api -X POST repos/fenecdb/fenecdb/environments/desktop-signing/deployment-branch-policies -f name=main -f type=branch
+    gh api -X POST repos/fennec-db/fennecdb/environments/desktop-signing/deployment-branch-policies -f name=main -f type=branch
 
 Look at what it holds (one reviewer, `main`, and nothing else) before going on:
 
-    gh api repos/fenecdb/fenecdb/environments/desktop-signing -q '.protection_rules'
-    gh api repos/fenecdb/fenecdb/environments/desktop-signing/deployment-branch-policies -q '[.branch_policies[].name]'
+    gh api repos/fennec-db/fennecdb/environments/desktop-signing -q '.protection_rules'
+    gh api repos/fennec-db/fennecdb/environments/desktop-signing/deployment-branch-policies -q '[.branch_policies[].name]'
 
 Only then the secrets, in the Environment and not in the repository's own,
 pasting each when asked (the `.p12` and the `.p8` as base64):
 
     for s in ELECTROBUN_DEVELOPER_ID MACOS_CERTIFICATE_P12 MACOS_CERTIFICATE_PASSWORD \
              ELECTROBUN_APPLEAPIKEY ELECTROBUN_APPLEAPIISSUER ELECTROBUN_APPLEAPIKEY_P8; do
-      gh secret set "$s" --env desktop-signing -R fenecdb/fenecdb
+      gh secret set "$s" --env desktop-signing -R fennec-db/fennecdb
     done
 
 A release whose server has `--studio` and `--exit-on-stdin-close` (0.1.12 and
@@ -143,49 +143,49 @@ a workflow's token is not given), so the order above is what stands behind it.
 and with its own OIDC identity (trusted publishing) where it does not.
 Either is set up once, by whoever owns the names.
 
-**With tokens.** On npm, create the organization `fenecdb` (the `@fenecdb`
+**With tokens.** On npm, create the organization `fennecdb` (the `@fennecdb`
 scope) and an automation token with publish access to it. npm answers a
 publish into a scope nobody has made `404 Not Found - PUT`, as it answers a
 token without access -- 0.1.5's dispatch stopped there -- and
-`https://registry.npmjs.org/-/org/fenecdb/package` says `Scope not found`
+`https://registry.npmjs.org/-/org/fennecdb/package` says `Scope not found`
 until the organization exists. On PyPI, an API token for the whole account,
 since a token scoped to a project cannot make the project on its first
 upload. Then, pasting each when asked:
 
-    gh secret set NPM_TOKEN -R fenecdb/fenecdb
-    gh secret set PYPI_API_TOKEN -R fenecdb/fenecdb
+    gh secret set NPM_TOKEN -R fennec-db/fennecdb
+    gh secret set PYPI_API_TOKEN -R fennec-db/fennecdb
 
 After the first upload the PyPI token can be replaced by one scoped to
-`fenecdb`. A release published before the secrets were set gets its
+`fennecdb`. A release published before the secrets were set gets its
 packages from a dispatch: `gh workflow run packages.yml -f tag=vX.Y.Z`.
 
 **Without tokens,** the registries trust the workflow itself:
 
-**PyPI.** Signed in as the account that will own `fenecdb`, under
-*Publishing*, add a pending publisher: project `fenecdb`, owner `fenecdb`,
-repository `fenecdb`, workflow `packages.yml`, environment `pypi`. The first
+**PyPI.** Signed in as the account that will own `fennecdb`, under
+*Publishing*, add a pending publisher: project `fennecdb`, owner `fennecdb`,
+repository `fennecdb`, workflow `packages.yml`, environment `pypi`. The first
 published release creates the project.
 
-**npm.** Create the organization `fenecdb`, which is the `@fenecdb` scope. npm
+**npm.** Create the organization `fennecdb`, which is the `@fennecdb` scope. npm
 trusts a workflow only for a package that already exists, so each package's
 first version goes out with a token:
 
-1. Make a granular access token with read and write on `@fenecdb` and store it
+1. Make a granular access token with read and write on `@fennecdb` and store it
    as the repository secret `NPM_TOKEN`.
-2. Publish the release: the four `@fenecdb` packages go out with it.
+2. Publish the release: the four `@fennecdb` packages go out with it.
 3. On npmjs.com, for each of the four, *Settings*, *Trusted publishing*,
-   GitHub Actions: `fenecdb/fenecdb`, workflow `packages.yml`, environment
+   GitHub Actions: `fennec-db/fennecdb`, workflow `packages.yml`, environment
    `npm`.
 4. Delete the secret and revoke the token. Later releases publish with the
    workflow's identity alone.
 
 **NuGet.** NuGet takes an API key here, with no OIDC fallback: without the
 secret the `NuGet` job logs a notice and stops, and the other registries go
-on. Signed in to nuget.org as the account that will own `FenecDb`, under
+on. Signed in to nuget.org as the account that will own `FennecDb`, under
 *API Keys*, create a key with *Push new packages and package versions* for
-the glob pattern `FenecDb` -- the first push creates the package -- then:
+the glob pattern `FennecDb` -- the first push creates the package -- then:
 
-    gh secret set NUGET_API_KEY -R fenecdb/fenecdb
+    gh secret set NUGET_API_KEY -R fennec-db/fennecdb
 
 A key expires (365 days at most); a new one goes into the same secret. A
 release published before the secret was set gets its package from a
@@ -196,10 +196,11 @@ tag, and `proxy.golang.org` keeps a version once someone has fetched it.
 A tag pushed by mistake is not moved; the next version replaces it. The
 module path is the repository's name: v0.1.11 and earlier declare
 `github.com/fenecdb/fenec/integrations/go`, from before the repository
-became `fenecdb`, and the first release after them declares
-`github.com/fenecdb/fenecdb/integrations/go`. A version's `go.mod` is what
-`go get` checks the path against, so an app moves to the new path with that
-release, and `examples/go/go.mod` (which `make version` writes) names a
+became `fenecdb`, v0.1.12 declares `github.com/fenecdb/fenecdb/integrations/go`,
+and the first release after it declares
+`github.com/fennec-db/fennecdb/integrations/go`, the repository's name since
+fenecdb became fennecdb. A version's `go.mod` is what `go get` checks the
+path against, so an app moves to the new path with that release, and `examples/go/go.mod` (which `make version` writes) names a
 version of the new path that resolves from then on.
 
 **Swift.** Nothing to set up either: SwiftPM fetches the package by the
@@ -212,21 +213,21 @@ and approve pull requests"); without it the run pushes the branch
 **Maven Central.** The Central Portal (central.sonatype.com) takes the
 bundle `packages.yml` makes, with no Gradle plugin. Once:
 
-1. Sign in to the Portal and add the namespace `com.fenecdb`, the
+1. Sign in to the Portal and add the namespace `com.fennecdb`, the
    domain's: the Portal verifies it by a TXT record on `fenecdb.com`
    holding the key it gives, which can be removed after.
 2. Under *View Account*, *Generate User Token*: its two halves are the
    secrets `MAVEN_CENTRAL_USERNAME` and `MAVEN_CENTRAL_PASSWORD`.
 3. Every file is signed: make a GPG key for the releases
-   (`gpg --quick-gen-key "fenecdb releases" rsa4096 sign never`), send its
+   (`gpg --quick-gen-key "fennecdb releases" rsa4096 sign never`), send its
    public half to a key server the Portal reads
    (`gpg --keyserver keyserver.ubuntu.com --send-keys <id>`), and store the
    private half, armored, and its passphrase:
 
-       gpg --armor --export-secret-keys <id> | gh secret set SIGNING_KEY -R fenecdb/fenecdb
-       gh secret set SIGNING_PASSWORD -R fenecdb/fenecdb
-       gh secret set MAVEN_CENTRAL_USERNAME -R fenecdb/fenecdb
-       gh secret set MAVEN_CENTRAL_PASSWORD -R fenecdb/fenecdb
+       gpg --armor --export-secret-keys <id> | gh secret set SIGNING_KEY -R fennec-db/fennecdb
+       gh secret set SIGNING_PASSWORD -R fennec-db/fennecdb
+       gh secret set MAVEN_CENTRAL_USERNAME -R fennec-db/fennecdb
+       gh secret set MAVEN_CENTRAL_PASSWORD -R fennec-db/fennecdb
 
 The upload is `publishingType=AUTOMATIC`: the Portal releases the
 deployment once it validates, and a version is there for good.
@@ -234,21 +235,21 @@ deployment once it validates, and a version is there for good.
 **pub.dev.** pub.dev's automated publishing trusts only a workflow started
 by a tag's push, and `packages.yml` follows a published release, so it
 publishes with an account's credentials. Signed in to pub.dev as the account
-that will own `fenecdb` and `fenecdb_flutter` (a verified publisher,
-`fenecdb.dev` or the like, can own them after): `dart pub login` on any
+that will own `fennecdb` and `fennecdb_flutter` (a verified publisher,
+`fennecdb.dev` or the like, can own them after): `dart pub login` on any
 machine writes `pub-credentials.json` (`~/Library/Application
 Support/dart/` on macOS, `~/.config/dart/` on Linux); then
 
-    gh secret set PUB_CREDENTIALS -R fenecdb/fenecdb < <that file>
+    gh secret set PUB_CREDENTIALS -R fennec-db/fennecdb < <that file>
 
 The first publish creates both packages. The credentials hold a refresh
 token: logging out of that machine's pub (`dart pub logout`) revokes it,
 and a new login goes into the same secret.
 
-**Homebrew.** `brew install fenecdb/tap/fenecdb` reads the repository
-`fenecdb/homebrew-tap`: Homebrew drops the `homebrew-` from the name, and
-the formula is `Formula/fenecdb.rb` on the default branch, `main`. The
-repository is public, and `brew install fenecdb/tap/fenecdb` works today: it
+**Homebrew.** `brew install fennec-db/tap/fennecdb` reads the repository
+`fennec-db/homebrew-tap`: Homebrew drops the `homebrew-` from the name, and
+the formula is `Formula/fennecdb.rb` on the default branch, `main`. The
+repository is public, and `brew install fennec-db/tap/fennecdb` works today: it
 installs 0.1.11, from the formula and README below, which were copied in by
 hand so that the first install need not wait for a release's job. Once, and
 if the tap is ever made again:
@@ -257,18 +258,18 @@ if the tap is ever made again:
    `packaging/homebrew/`:
 
        mkdir -p Formula
-       cp packaging/homebrew/Formula/fenecdb.rb Formula/
+       cp packaging/homebrew/Formula/fennecdb.rb Formula/
        cp packaging/homebrew/README.md README.md
 
    The copy in the repository is the formula of the release it names
    (0.1.11), as `tools/homebrew-formula.py` writes it; CI holds it to that
-   (`--check`, which needs the repository to be `fenecdb/fenecdb`, and
+   (`--check`, which needs the repository to be `fennec-db/fennecdb`, and
    `--verify`, which downloads the release's four tarballs and holds the
    sums to them), and the release job never edits it. The tap's is
    rewritten at each release.
 2. Make a fine-grained personal access token (*Settings*, *Developer
-   settings*, *Fine-grained tokens*): resource owner `fenecdb`, repository
-   access *Only select repositories*, `fenecdb/homebrew-tap` alone,
+   settings*, *Fine-grained tokens*): resource owner `fennecdb`, repository
+   access *Only select repositories*, `fennec-db/homebrew-tap` alone,
    permission *Contents: Read and write* (Metadata, read-only, comes with
    it) and nothing else. It expires within a year at most: note the date, as
    a job with an expired token fails rather than skipping.
@@ -277,13 +278,13 @@ if the tap is ever made again:
    so that a branch's workflow (or a pull request's) cannot ask for it. By
    hand, as the owner (the same is *Settings*, *Environments*, *homebrew*):
 
-       gh api -X PUT repos/fenecdb/fenecdb/environments/homebrew \
+       gh api -X PUT repos/fennec-db/fennecdb/environments/homebrew \
          -F 'deployment_branch_policy[protected_branches]=false' \
          -F 'deployment_branch_policy[custom_branch_policies]=true'
-       gh api -X POST repos/fenecdb/fenecdb/environments/homebrew/deployment-branch-policies -f name=main -f type=branch
-       gh api -X POST repos/fenecdb/fenecdb/environments/homebrew/deployment-branch-policies -f name='v*' -f type=tag
-       gh secret set HOMEBREW_TAP_TOKEN --env homebrew -R fenecdb/fenecdb
-       gh secret delete HOMEBREW_TAP_TOKEN -R fenecdb/fenecdb    # a repository secret of that name, if there is one
+       gh api -X POST repos/fennec-db/fennecdb/environments/homebrew/deployment-branch-policies -f name=main -f type=branch
+       gh api -X POST repos/fennec-db/fennecdb/environments/homebrew/deployment-branch-policies -f name='v*' -f type=tag
+       gh secret set HOMEBREW_TAP_TOKEN --env homebrew -R fennec-db/fennecdb
+       gh secret delete HOMEBREW_TAP_TOKEN -R fennec-db/fennecdb # a repository secret of that name, if there is one
 
    The job runs under that environment and reads the secret from it, in an
    environment variable (an environment's secret wins over a repository's of
@@ -296,12 +297,12 @@ if the tap is ever made again:
    older than the formula in the tap is left out. Or by hand, from a clone of
    this repository and the tap:
 
-       gh release download vX.Y.Z -R fenecdb/fenecdb -p SHA256SUMS
-       python3 tools/homebrew-formula.py --version X.Y.Z --sums SHA256SUMS -o ../homebrew-tap/Formula/fenecdb.rb
-       python3 tools/homebrew-formula.py --verify ../homebrew-tap/Formula/fenecdb.rb
+       gh release download vX.Y.Z -R fennec-db/fennecdb -p SHA256SUMS
+       python3 tools/homebrew-formula.py --version X.Y.Z --sums SHA256SUMS -o ../homebrew-tap/Formula/fennecdb.rb
+       python3 tools/homebrew-formula.py --verify ../homebrew-tap/Formula/fennecdb.rb
 
 To try a formula before it is pushed: `brew tap-new --no-git you/test`, copy
-it into that tap's `Formula/`, then `brew install you/test/fenecdb`, `brew
+it into that tap's `Formula/`, then `brew install you/test/fennecdb`, `brew
 test` and `brew audit --strict --online` on it, and `brew untap you/test`
 (Homebrew installs no formula from a bare path).
 
@@ -325,7 +326,7 @@ yes. `homebrew` is the one that holds a secret of its own, and is limited to
 `main` and `v*` tags (the Homebrew section above).
 
 **After the first publish.** The docs install what a registry holds: PyPI's
-`fenecdb` since 0.1.5 (`pip install "fenecdb[langchain]"`). Until
-`@fenecdb/web` is on npm the React example imports `sync` from
-`./fenec.js`; then from `@fenecdb/web`, with `npm install @fenecdb/web
-@fenecdb/react` beside it.
+`fennecdb` since 0.1.5 (`pip install "fennecdb[langchain]"`). Until
+`@fennecdb/web` is on npm the React example imports `sync` from
+`./fennec.js`; then from `@fennecdb/web`, with `npm install @fennecdb/web
+@fennecdb/react` beside it.

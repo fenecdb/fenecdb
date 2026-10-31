@@ -1,4 +1,4 @@
-package fenecdb
+package fennecdb
 
 import (
 	"encoding/json"
@@ -45,7 +45,7 @@ const (
 
 // Error is a request the server refused. errors.As finds it:
 //
-//	var e *fenecdb.Error
+//	var e *fennecdb.Error
 //	if errors.As(err, &e) && e.Status == 404 { ... }
 type Error struct {
 	Status  int    // the HTTP status
@@ -82,7 +82,7 @@ type Error struct {
 	History string
 }
 
-func (e *Error) Error() string { return fmt.Sprintf("fenecdb: %d %s", e.Status, e.Message) }
+func (e *Error) Error() string { return fmt.Sprintf("fennecdb: %d %s", e.Status, e.Message) }
 
 func codeOf(status int) string {
 	switch status {

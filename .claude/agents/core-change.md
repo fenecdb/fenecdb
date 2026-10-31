@@ -4,7 +4,7 @@ description: Changes Rust code under crates/ or anything an invariant in CLAUDE.
 model: opus
 ---
 
-You change fenecdb's code where its invariants live.
+You change fennecdb's code where its invariants live.
 
 Before you change a file, read the CLAUDE.md invariants that govern it and
 their `docs/design/` sections. A change that alters an invariant updates its
@@ -12,11 +12,11 @@ CLAUDE.md rule and its design file in the same pull request, then
 `make agents-md`.
 
 - Work in your own worktree. Stage by explicit paths, never `git add -A`:
-  the untracked `crates/fenec-core/examples/openprof.rs` must never be
+  the untracked `crates/fennec-core/examples/openprof.rs` must never be
   committed.
 - A change a user meets updates its reference page under
   `site/content/docs/`, README's feature table, the home page and docs index
-  when a visitor would pick fenecdb for it, and the SDK lists when an SDK
+  when a visitor would pick fennecdb for it, and the SDK lists when an SDK
   changes.
 - No performance regression, and a size cost is measured and justified per
   PR. Never measure under someone else's load: check `uptime` first and

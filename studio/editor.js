@@ -1,4 +1,4 @@
-// The query editor: FenecQL as a person types it, run as typed.
+// The query editor: FennecQL as a person types it, run as typed.
 //
 // It has no more authority than the token: the text goes to `/query` --
 // several statements to `/batch`, one block that lands whole or not at all
@@ -16,10 +16,10 @@ import { Grid } from './grid.js';
 import { overlay } from './highlight.js';
 import { writable } from './statements.js';
 import { editorRequest, splitStatements, explainable, isExplain, explained, StatementError } from './statements-views.js';
-import { call, refused, fenecql, columnsOf, ms, dialog, kept } from './kit.js';
+import { call, refused, fennecql, columnsOf, ms, dialog, kept } from './kit.js';
 
-const HISTORY = 'fenec-studio-history';
-const SAVED = 'fenec-studio-saved';
+const HISTORY = 'fennec-studio-history';
+const SAVED = 'fennec-studio-saved';
 const KEEP = 100;
 /** Past this the JSON view shows the start of the answer, not all of it. */
 const JSON_SHOWN = 2_000_000;
@@ -31,7 +31,7 @@ export function mount(host, ctx) {
     spellcheck: 'false',
     autocomplete: 'off',
     autocapitalize: 'off',
-    'aria-label': 'FenecQL',
+    'aria-label': 'FennecQL',
     'aria-describedby': 'query-note',
   });
   const mirror = h('pre', { class: 'hl-mirror q', 'aria-hidden': 'true' });
@@ -74,7 +74,7 @@ export function mount(host, ctx) {
               'button',
               { type: 'button', class: 'ed-item', title: x.text, onclick: () => (load(x.text, x.params ?? '[]', true), area.focus()) },
               h('span', { class: 'ed-item-name' }, x.name),
-              fenecql(x.text.split('\n').find((l) => l.trim() && !l.trim().startsWith('--')) ?? '', 'q ed-item-text'),
+              fennecql(x.text.split('\n').find((l) => l.trim() && !l.trim().startsWith('--')) ?? '', 'q ed-item-text'),
             ),
           ),
         ),
@@ -133,7 +133,7 @@ export function mount(host, ctx) {
     ),
   );
 
-  const redraw = overlay(area, 'fenecql');
+  const redraw = overlay(area, 'fennecql');
   const grid = new Grid(gridHost, {
     onSort: () => {},
     onQuick: () => {},
@@ -336,7 +336,7 @@ export function mount(host, ctx) {
     if (last.req.kind === 'batch') bits.push(h('span', { class: 'ed-fact' }, h('span', { class: 'ed-label' }, 'batch of'), String(last.req.items.length)));
     const rows = rowsOf(answerOf(pick));
     if (rows) bits.push(h('span', { class: 'ed-fact' }, h('span', { class: 'ed-label' }, 'rows'), number(rows.length)));
-    if (r.seq !== null) bits.push(h('span', { class: 'ed-fact', title: 'Fenec-Seq: the change this write left the database at' }, h('span', { class: 'ed-label' }, 'change'), String(r.seq)));
+    if (r.seq !== null) bits.push(h('span', { class: 'ed-fact', title: 'Fennec-Seq: the change this write left the database at' }, h('span', { class: 'ed-label' }, 'change'), String(r.seq)));
     if (r.requestId) bits.push(h('span', { class: 'ed-fact', title: 'X-Request-Id: the id of this request in the server’s logs' }, h('span', { class: 'ed-label' }, 'request'), h('span', { class: 'ed-rid' }, r.requestId)));
     fill(meta, bits);
   }
@@ -361,7 +361,7 @@ export function mount(host, ctx) {
             },
           },
           h('span', { class: 'ed-pick-n' }, String(i + 1)),
-          fenecql(text.split('\n')[0].slice(0, 60)),
+          fennecql(text.split('\n')[0].slice(0, 60)),
         ),
       ),
     );
@@ -399,7 +399,7 @@ export function mount(host, ctx) {
     return h(
       'div',
       { class: 'ed-plan' },
-      h('p', { class: 'hint' }, 'The path the engine took, a step a line, in the order the steps ran. ', h('span', { class: 'ed-label' }, 'Asked as'), ' ', fenecql(asked.split('\n')[0].slice(0, 120))),
+      h('p', { class: 'hint' }, 'The path the engine took, a step a line, in the order the steps ran. ', h('span', { class: 'ed-label' }, 'Asked as'), ' ', fennecql(asked.split('\n')[0].slice(0, 120))),
       h(
         'ol',
         { class: 'plan-steps' },
@@ -478,7 +478,7 @@ export function mount(host, ctx) {
         'button',
         { type: 'button', class: 'ed-item', title: item.text, onclick: () => onPick(item) },
         item.name ? h('span', { class: 'ed-item-name' }, item.name) : null,
-        fenecql(item.text.split('\n').find((l) => l.trim()) ?? '', 'q ed-item-text'),
+        fennecql(item.text.split('\n').find((l) => l.trim()) ?? '', 'q ed-item-text'),
       ),
       extra,
     );
@@ -528,7 +528,7 @@ export function mount(host, ctx) {
         },
         h('label', { for: 'save-name' }, 'Name'),
         nameBox,
-        h('pre', { class: 'statement q-block' }, fenecql(text)),
+        h('pre', { class: 'statement q-block' }, fennecql(text)),
         problem,
         h('div', { class: 'dialog-actions' }, h('button', { type: 'button', class: 'btn', onclick: () => d.close() }, 'Cancel'), h('button', { type: 'submit', class: 'btn primary' }, 'Save')),
       ),

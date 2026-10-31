@@ -1,17 +1,17 @@
 <!--
-title: Playground — fenecdb
-description: fenec studio over a fenecdb database in your own browser tab: browse, filter and edit rows, run FenecQL and see its plan, watch rows change. Nothing is uploaded; the database lives in this tab.
+title: Playground — fennecdb
+description: fennec studio over a fennecdb database in your own browser tab: browse, filter and edit rows, run FennecQL and see its plan, watch rows change. Nothing is uploaded; the database lives in this tab.
 -->
 
 <section class="pg" aria-labelledby="pg-title">
   <div class="pg-head">
     <h1 class="pg-title" id="pg-title">Playground</h1>
-    <p class="pg-say">fenec studio on a database in this tab. Nothing you
+    <p class="pg-say">fennec studio on a database in this tab. Nothing you
       type leaves your browser.</p>
     <a class="pg-docs" href="docs/studio.html">The studio on your server</a>
   </div>
   <div class="pg-window">
-    <iframe class="pg-frame" src="studio/" title="fenec studio, over a database in this tab"></iframe>
+    <iframe class="pg-frame" src="studio/" title="fennec studio, over a database in this tab"></iframe>
   </div>
 </section>
 
@@ -19,8 +19,8 @@ description: fenec studio over a fenecdb database in your own browser tab: brows
   <div class="pg-more-in">
     <div>
       <h2>What runs here</h2>
-      <p>fenecdb itself, compiled to WebAssembly (330 KB gzipped) and run
-        on a worker of this tab: the engine <code>fenec-server</code> runs,
+      <p>fennecdb itself, compiled to WebAssembly (330 KB gzipped) and run
+        on a worker of this tab: the engine <code>fennec-server</code> runs,
         answering the studio as a server would. It holds three collections,
         made as the page opens:</p>
       <ul class="pg-list">
@@ -37,13 +37,13 @@ description: fenec studio over a fenecdb database in your own browser tab: brows
         <code>create index</code> too: <b>Reset data</b> puts every
         collection back. The database lives in this tab's memory and goes
         with it, unless you keep it in this browser. The language is in
-        <a href="docs/fenecql.html">the FenecQL reference</a>.</p>
+        <a href="docs/fennecql.html">the FennecQL reference</a>.</p>
     </div>
     <div>
       <h2>On your server</h2>
       <p>The same studio, served by the server to its operators, over its
         own data and with its token:</p>
-<pre data-lang="bash">fenec-server --file data.fenec \
+<pre data-lang="bash">fennec-server --file data.fennec \
   --http-token "$TOKEN" --studio
 open http://127.0.0.1:8080/_studio/</pre>
       <p>There it signs in, holds a scoped token to the rows its policy

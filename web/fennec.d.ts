@@ -1,0 +1,1653 @@
+// Type declarations for the fennecdb client.
+//
+// A database's schema reaches the types two ways, side by side:
+//
+// - Declared in code, Drizzle's way (`@fennecdb/web/schema`): tables written
+//   in TypeScript, handed to `Fennec.open`, which checks the database against
+//   them at every open -- what only adds is made, what would lose data or
+//   could mean two things is refused, listed with how to resolve it. Two
+//   places hold the schema, and the check is what keeps them one: they cannot
+//   drift apart unseen. For an app that makes its own database.
+//
+//     import { fennecTable, text, boolean } from './schema.js';
+//     const todos = fennecTable('todos', { title: text().notNull(), done: boolean() });
+//     const db = await Fennec.open('./fennec.wasm', { schema: { todos } });
+//     const rows = await db.from(todos).select('title').rows();   // { title: string }[]
+//
+// - Read out of a database: `fennec types data.fennec` generates `FennecSchema`
+//   from the file a server runs, which owns its schema. For an app over an
+//   existing database. `fennec types --schema` writes the tables instead, for
+//   a project that moves to the first way.
+//
+//     import type { FennecSchema } from './fennec-schema.js';
+//     const db = await Fennec.open<FennecSchema>('./fennec.wasm');
+
+/** A `timestamp` field. ISO-8601 text when read; Date/number on write. */
+export type Timestamp = string & { readonly __fennec: 'timestamp' };
+/** A `vector<N>` field. */
+export type Vector = number[] & { readonly __fennec: 'vector' };
+/** A `sparse<N>` field: pgvector's text form, `{1:0.5,3:0.25}/N`, indices from 1. */
+export type Sparse = string & { readonly __fennec: 'sparse' };
+/** A `bytes` field: an array of bytes in JSON. */
+export type Bytes = number[] & { readonly __fennec: 'bytes' };
+/** A `json` field: any value JSON holds. A path reads into it, `'meta.lang'`. */
+export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+/** A `geo` field: a point, its longitude and latitude in degrees. */
+export type Point = [lon: number, lat: number];
+
+/**
+ * A path into one of `F`'s json fields, `'meta.lang'` or
+ * `'meta.source.rank'`: what `where`, `select` and `order` take beside a
+ * field, reading a `Json` value -- `null` where the path leads nowhere.
+ */
+export type JsonPath<F extends Fields> = {
+  [K in keyof F & string]: { [key: string]: Json } extends NonNullable<F[K]>
+    ? `${K}.${string}`
+    : never;
+}[keyof F & string];
+
+/** A collection's read shape; `fennec types` generates these. */
+export type Fields = Record<string, unknown>;
+export type Schema = Record<string, Fields>;
+
+/**
+ * A table declared in code (`fennecTable`, `@fennecdb/web/schema`), as the
+ * client takes one wherever it takes a collection's name: `db.from(todos)`,
+ * `lookup(reviews, ...)`, a shape's `collection`.
+ */
+export interface TableRef<N extends string = string, F extends Fields = Fields> {
+  readonly $name: N;
+  /** The fields as read, a type alone: what `fennec types` makes of the collection. */
+  readonly $fields: F;
+}
+
+/** A schema's tables, by any key: `{ todos, reviews }`. */
+export type Tables = Record<string, TableRef>;
+
+/** The schema the client is typed by, of tables declared in code: each table's fields by its name. */
+export type SchemaOf<T extends Tables> = Typed<{ [K in keyof T as T[K]['$name']]: T[K]['$fields'] }>;
+/** A schema the client takes: what a mapped type over generic tables cannot be shown to be. */
+type Typed<S> = S extends AnySchema<S> ? S : never;
+
+/** A relation of `defineRelations`, which `lookup` names: the table it reaches. */
+export interface RelationRef<T extends TableRef = TableRef> {
+  readonly $target: T;
+}
+
+/** What `defineRelations` makes: by table, its relations by name. */
+export type Relations = Record<string, Record<string, RelationRef>>;
+
+/**
+ * A migration: FennecQL run once, in order, and recorded in `_migrations`
+ * -- or a field rebuilt as the code declares it (`rebuild`).
+ */
+export type Migration = string | { rebuild: { collection: string; field: string } };
+
+/** What every SDK's declarations compile to (`describe`): versioned JSON. */
+export interface SchemaDescription {
+  format: 1;
+  /** The collections as JSON; or, the browser module's way, `fennecql`. */
+  collections?: CollectionDescription[];
+  /** The collections as FennecQL text, which the browser module reads. */
+  fennecql?: string;
+  migrations?: readonly Migration[];
+}
+export interface CollectionDescription {
+  name: string;
+  fields: FieldDescription[];
+  /** Its indexes over several fields. */
+  indexes?: CompositeDescription[];
+}
+/** An index over several fields: `@sorted(owner, at desc)`, `@unique(org, slug)`. */
+export interface CompositeDescription {
+  kind: 'sorted' | 'unique';
+  /** Each part: a field, or a path into a json one (`meta.lang`). */
+  keys: { field: string; desc?: true }[];
+}
+export interface FieldDescription {
+  name: string;
+  /** As FennecQL spells it: `text`, `int`, `vector<768, f16>`, `[text]` ... */
+  type: string;
+  required?: true;
+  collate?: Collation;
+  /** `nocase`: compared by its case fold, kept as written. */
+  nocase?: true;
+  index?: IndexDescription;
+  /** Indexes on paths into a json field. */
+  paths?: { path: string; index: IndexDescription }[];
+}
+export type IndexDescription =
+  | { kind: 'hash' | 'unique' | 'sorted' | 'inverted' }
+  | { kind: 'ttl'; ms: number }
+  | { kind: 'text'; k1?: number; b?: number; prefix?: number; prefix_min?: number; chars?: boolean }
+  | {
+      kind: 'hnsw';
+      metric?: 'cosine' | 'l2' | 'dot';
+      m?: number;
+      ef_construction?: number;
+      ef_search?: number;
+      quant?: 'none' | 'int8' | 'bit';
+    };
+
+/** A difference the check did not apply, and how to resolve it. */
+export interface SchemaRefusal {
+  kind:
+    | 'field_not_declared'
+    | 'type_changed'
+    | 'required_changed'
+    | 'required_added'
+    | 'collate_changed'
+    | 'nocase_changed'
+    | 'index_changed'
+    | 'index_removed'
+    | 'collection_missing'
+    | 'field_missing'
+    | 'index_missing';
+  collection: string;
+  /** The field, or the path into a json field; `null` for the collection. */
+  field: string | null;
+  message: string;
+  fix: string;
+}
+
+/** What `checkSchema` found and did. */
+export interface SchemaOutcome {
+  kind: 'schema';
+  /** Whether anything was written. */
+  applied: boolean;
+  /** Whether the migrations recorded ran: a database made from the code records them without running. */
+  ran: boolean;
+  /** The migrations recorded (planned: to be), by number from 1. */
+  migrations: number[];
+  /** The FennecQL that adds what is missing. */
+  statements: string[];
+  refusals: SchemaRefusal[];
+}
+
+/**
+ * A schema written as FennecQL -- `create collection` and `create index`
+ * statements, a `schema.fennecql` file -- as every SDK can hand it over. It
+ * types nothing: the type is given (`Fennec.open<FennecSchema>`), or made by
+ * `fennec types schema.fennecql`.
+ */
+export interface SchemaText {
+  schema: string;
+  /** Run once each, in order, before the rest is compared. */
+  migrations?: readonly Migration[];
+}
+
+/** A database's schema declared in code, as `Fennec.open`, `openFile`, `sync` and `connect` take it. */
+export interface SchemaOptions<T extends Tables = Tables, R extends Relations = Relations> {
+  schema: T;
+  /** `defineRelations`: what `lookup` names a relation by. */
+  relations?: R;
+  /** Run once each, in order, before the rest is compared. */
+  migrations?: readonly Migration[];
+}
+
+// The schema constraint is `Record<keyof S, Fields>` rather than
+// `Record<string, Fields>`: a hand-written `interface` has no implicit index
+// signature and the latter would reject it. `fennec types` emits a `type`, but
+// both have to work.
+type AnySchema<S> = Record<keyof S, Fields>;
+
+/** A row as read: the fields plus the automatic `id`. */
+/** An aggregate of a select list, as FennecQL spells it. */
+export type Aggregate<F extends Fields> =
+  | 'count(*)'
+  | `count(distinct ${keyof F & string})`
+  | `${'sum' | 'avg' | 'min' | 'max' | 'first' | 'last'}(${keyof F & string})`;
+
+export type Row<F extends Fields> = F & { id: number };
+
+/** Where a mark stands: `[start, end)` in UTF-16 code units, a string's index. */
+export type Mark = [start: number, end: number];
+
+/** A `snippet()` without tags: the window's text and its marks in it. */
+export interface Snippet {
+  text: string;
+  marks: Mark[];
+}
+
+/** One value of a `facet` and how many matched rows hold it. */
+export interface FacetCount<V = unknown> {
+  value: V | null;
+  count: number;
+}
+
+/** What `facet` counted: each field asked, its values most first. */
+export type Facets = Record<string, FacetCount[]>;
+
+/** The value a facet of a field counts: a list's elements one by one. */
+export type FacetValue<T> = NonNullable<T> extends readonly (infer E)[] ? E : NonNullable<T>;
+
+/**
+ * A query's rows, and when it asked for facets, the counts as `facets`,
+ * typed by each field asked. A query whose type names no facet may still
+ * have asked for some: a `let` keeps the type it was declared with, so
+ * `let q = db.from(t); q = q.facet('brand')` reads its rows as one asking
+ * none. Those are `Facets`, each field's counts untyped, and may be
+ * absent; to keep each field's type, ask the facets in the expression the
+ * query is declared with -- `let q = db.from(t).facet('brand')` -- and
+ * reassign it with what keeps the row's type (`where`, `match`, `order`,
+ * `limit`).
+ */
+export type Rows<P, Fa> = {} extends Fa ? P[] & { facets?: Facets } : P[] & { facets: Fa };
+
+/**
+ * The row shape a chained `lookup` produces: the new collection's rows are
+ * attached to the level named by `Path`, not to the parent.
+ *
+ * `Path` is the chain walked so far. Empty, the key lands on the parent row,
+ * which is the single-level case; otherwise the first name is followed into
+ * its element type and the rest of the path from there. Linear, so the
+ * recursion is as deep as the chain and no deeper.
+ */
+type Attach<T, Path extends readonly string[], N extends string, C extends Fields> =
+  Path extends readonly [infer H extends keyof T & string, ...infer R extends readonly string[]]
+    ? Omit<T, H> & {
+        [K in H]: T[H] extends readonly (infer E)[] ? Attach<E, R, N, C>[] : never;
+      }
+    : T & { [K in N]: Row<C>[] };
+
+/**
+ * A collation `order` can put text in: `'und'` is Unicode's order, for every
+ * language (`collate und`); `'tr'` is Turkish (`collate tr`).
+ */
+export type Collation = 'und' | 'tr';
+
+/**
+ * The child side of a `lookup`. `on` is the child's field; the parent's key
+ * is `id` unless `parentKey` names another. A key over several fields names
+ * a field of each side for each part, in order -- `on: ['org', 'order'],
+ * parentKey: ['org', 'id']` -- which an index over several fields led by the
+ * child's answers. `order` takes `[field, dir]` pairs -- `{ collate }`
+ * third, as `order()` takes it -- or a bare field name for one ascending
+ * key.
+ *
+ * With no `C` every name is a plain `string`, which is the honest default:
+ * the builder carries one collection's fields, so the child's are only
+ * known when the caller names them. `parentKey` stays `string` for the same
+ * reason from the other side.
+ */
+export interface LookupOptions<C extends Fields = Fields> {
+  on: ChildKey<C> | ChildKey<C>[];
+  parentKey?: string | string[];
+  /**
+   * Drop a parent that no child matches — "products that have a five-star
+   * review" rather than "products, with their five-star reviews". Tested
+   * before `limit`, so the page still comes back full.
+   */
+  required?: boolean;
+  /**
+   * The children's fields, or a list that aggregates them -- `'count(*)'`,
+   * `'sum(total)'`, `expr(...).as(name)` -- each parent's children folded
+   * into one row, or one a group with `group`. Ungrouped, `order`, `limit`
+   * and `offset` pick the children folded. A folding level's rows are its
+   * columns, which the attached row type does not narrow to.
+   */
+  select?: LookupItem<C> | LookupItem<C>[];
+  /** With an aggregating `select`: a row a group of each parent's children. */
+  group?: string | Expression | (string | Expression)[];
+  where?: Where<C> | Cond<C>;
+  order?:
+    | ChildKey<C>
+    | Array<
+        | ChildKey<C>
+        | Aggregate<C>
+        | [ChildKey<C> | Aggregate<C>, ('asc' | 'desc')?, { collate?: Collation }?]
+      >;
+  limit?: number;
+  offset?: number;
+}
+
+/** An item of a `lookup`'s list: a field, an aggregate of one, a named expression. */
+type LookupItem<C extends Fields> = ChildKey<C> | Aggregate<C> | Named<string> | Expression;
+
+type ChildKey<C extends Fields> = keyof Row<C> & string;
+
+/** The widened type accepted in write position. */
+export type Writable<T> = T extends Timestamp
+  ? Timestamp | string | number | Date
+  : T extends Vector
+    ? number[] | Float32Array
+    : T extends Sparse
+      ? string
+    : T extends Bytes
+      ? number[] | Uint8Array | string
+      : T;
+
+type Elem<T> = T extends readonly (infer U)[] ? U : never;
+
+/**
+ * Fields of type `vector<N>`, `sparse<N>` or `geo` -- the only ones `near` accepts.
+ * An optional field is generated as `Vector | null`, so `null` is peeled off
+ * first.
+ */
+export type VectorKey<F extends Fields> = {
+  [K in keyof F]: NonNullable<F[K]> extends Vector | Sparse | Point ? K : never;
+}[keyof F] &
+  string;
+
+/**
+ * Fields of type `text` -- the only ones `match` accepts. Whether the field
+ * actually carries a `@text` index is a schema question the engine answers;
+ * the type only rules out the fields that could never have one.
+ */
+export type TextKey<F extends Fields> = {
+  [K in keyof F]: NonNullable<F[K]> extends string ? K : never;
+}[keyof F] &
+  string;
+
+export type Op =
+  | '=' | '!=' | '<' | '<=' | '>' | '>=' | '~' | 'has' | 'in'
+  | 'eq' | 'ne' | 'neq' | 'lt' | 'lte' | 'le' | 'gt' | 'gte' | 'ge'
+  | 'like' | 'contains';
+
+/** The operator object inside `{ year: { gte: 2024 } }`. */
+export interface Spec<T> {
+  '='?: Writable<T> | null;
+  eq?: Writable<T> | null;
+  '!='?: Writable<T> | null;
+  ne?: Writable<T> | null;
+  neq?: Writable<T> | null;
+  '<'?: Writable<T>;
+  lt?: Writable<T>;
+  '<='?: Writable<T>;
+  lte?: Writable<T>;
+  le?: Writable<T>;
+  '>'?: Writable<T>;
+  gt?: Writable<T>;
+  '>='?: Writable<T>;
+  gte?: Writable<T>;
+  ge?: Writable<T>;
+  '~'?: string;
+  like?: string;
+  contains?: string;
+  has?: Elem<T>;
+  /**
+   * A list, or a query whose one column is the list: `from('customers')
+   * .select('id').where(...)` runs once, before the outer query
+   * (`in (get ...)`).
+   */
+  in?: Writable<T>[] | Query<any, any, any, any, any, any>;
+  not?: Writable<T> | null | Spec<T>;
+  /** A point's: in the box `[west, south, east, north]` (`within(loc, $1)`). */
+  within?: NonNullable<T> extends Point ? [number, number, number, number] : never;
+  /** A point's: the metres from `from`, compared (`distance(loc, $1) <= $2`). */
+  distance?: NonNullable<T> extends Point ? DistanceSpec : never;
+}
+
+/** `{ distance: { from: [lon, lat], lte: 500 } }`: metres from a point, compared. */
+export interface DistanceSpec {
+  from: Point;
+  '<'?: number;
+  lt?: number;
+  '<='?: number;
+  lte?: number;
+  le?: number;
+  '>'?: number;
+  gt?: number;
+  '>='?: number;
+  gte?: number;
+  ge?: number;
+  '='?: number;
+  eq?: number;
+  '!='?: number;
+  ne?: number;
+}
+
+// `F` is not inferred: the object inside `or({...})` is checked against the
+// collection `where` expects -- not against the first argument.
+type Hold<T> = [T][T extends any ? 0 : never];
+
+declare const cond: unique symbol;
+
+/**
+ * The output of `or()` / `not()` / `raw()`. Its contents are opaque: the
+ * brand is a `unique symbol`, so it does not interfere with field-name
+ * completion. `F` stays contravariant, which means a condition built
+ * without a context (`Cond<Fields>`) is valid for every collection, but not
+ * the other way round.
+ */
+export interface Cond<F extends Fields = Fields> {
+  readonly [cond]: (f: F) => void;
+}
+
+/** A field-value object: every condition is joined with `and`. */
+export type Where<F extends Fields> = {
+  [K in keyof Row<F>]?: Writable<Row<F>[K]> | null | Spec<Row<F>[K]>;
+};
+
+export function or<F extends Fields = Fields>(...conds: (Where<Hold<F>> | Cond<Hold<F>>)[]): Cond<F>;
+export function and<F extends Fields = Fields>(...conds: (Where<Hold<F>> | Cond<Hold<F>>)[]): Cond<F>;
+export function not<F extends Fields = Fields>(cond: Where<Hold<F>> | Cond<Hold<F>>): Cond<F>;
+
+/**
+ * Escape hatch for everything the builder cannot express; `?` placeholders
+ * are bound to parameters in order.
+ *
+ *   .where(raw('cosine(embed, ?) > ?', vec, 0.5))
+ */
+export function raw<F extends Fields = Fields>(sql: string, ...params: unknown[]): Cond<F>;
+
+declare const computed: unique symbol;
+
+/**
+ * A value a write works out over the row it writes: what `inc()` and
+ * `expr()` make. Opaque, as a `Cond` is.
+ */
+export interface Computed {
+  readonly [computed]: true;
+}
+
+/**
+ * `{ n: inc(1) }` in an update: the field plus `by`, counting from 0 where
+ * it is null (`n: coalesce(n, 0) + $1`), worked out under the write lock --
+ * increments from many clients all land.
+ */
+export function inc(by?: number): Computed;
+
+/**
+ * A value as a FennecQL expression over the row, `?` placeholders bound to
+ * parameters in order: `{ at: expr('now()') }`, `{ total: expr('price * ?', 1.2) }`,
+ * `{ entry: expr('? + ":dr"', ref) }` (`+` joins two texts, and only two texts).
+ */
+export function expr(sql: string, ...params: unknown[]): Expression;
+
+declare const named: unique symbol;
+
+/**
+ * An expression for a select list or a group, as well as a value: what
+ * `expr()`, `bucket()`, `countDistinct()`, `first()` and `last()` make.
+ */
+export interface Expression extends Computed {
+  /** The name the column answers under: `select ... as <name>`. */
+  as<N extends string>(name: N): Named<N>;
+}
+
+/** An expression `as` named: a column of the select list under `N`. */
+export interface Named<N extends string> extends Expression {
+  readonly [named]: N;
+}
+
+/** What `bucket` takes: `'15m'`, `'1h'`, `'1d'`, `'1w'`, `'1mo'`, `'1y'`. */
+export type Interval = `${number}${'ms' | 's' | 'm' | 'h' | 'd' | 'w' | 'mo' | 'y'}`;
+
+/**
+ * `bucket(field, interval [, zone])`: the start of the interval a timestamp
+ * falls in, in UTC -- weeks from a Monday, months and years by the
+ * calendar -- or by a zone's clock: an IANA name, `'Europe/Istanbul'`, or
+ * an offset, `'+03:00'`, bound as a parameter.
+ */
+export function bucket(field: string, interval: Interval, zone?: string): Expression;
+
+/** `count(distinct field)`: how many distinct values the rows hold. */
+export function countDistinct(field: string): Expression;
+
+/**
+ * `distance(field, point)`: the metres from `point` to a row's point, on
+ * Redis's sphere -- `distance('loc', [13.4, 52.5]).as('m')`.
+ */
+export function distance(field: string, point: Point): Expression;
+
+/**
+ * `first(field [by key])`: the value of the row least by `key` -- by the
+ * order the rows were written without one -- that has a value.
+ */
+export function first(field: string, by?: string): Expression;
+
+/** `last(field [by key])`: as `first`, the row greatest by `key`. */
+export function last(field: string, by?: string): Expression;
+
+/** Executor: `(sql, params)` -> response. A `Fennec` instance also works. */
+export type Exec = (sql: string, params: unknown[], held?: { wait?: number; signal?: AbortSignal }) => unknown;
+
+export declare class FennecError extends Error {
+  /**
+   * Set when what refused the statement was collation data the module has
+   * not been handed: the names to hand it (`Fennec.collation`).
+   */
+  collation?: string[];
+  /** How many statements of the same text ran before this one. */
+  ran?: number;
+  /**
+   * The HTTP status a server refused with (`connect`, and a write
+   * `FennecSync` was refused): 412 a write's `require` not met, its batch
+   * put back; 409 an id or a `@unique` value taken; 403 outside the
+   * token's rules.
+   */
+  status?: number;
+  /** A write the server refused: the text of its first statement. */
+  query?: string;
+  /**
+   * The statement a `/batch` stopped at, from 0 (`FennecHttp.batch`): with
+   * `status` 412, the write whose `require` was not met. `Fennec.run` and
+   * `query` name it the same way for a text of several statements.
+   */
+  at?: number;
+  /**
+   * The reason the statement's `require n else '<reason>'` gave, where that
+   * refused it (412 over HTTP, a write `FennecSync` was refused, an error in
+   * the page): its own words, by which a caller tells "insufficient funds"
+   * from "no such account" -- beside `at`, which moves with every
+   * statement added in front.
+   */
+  reason?: string;
+  /**
+   * How many statements of a stopped `/batch` stayed applied: none, but
+   * for a batch holding a `compact`, whose statements run on their own.
+   */
+  completed?: number;
+  /**
+   * The tenant's quota that refused the request (`connect` to a tenant
+   * node): `bytes` and `rows` answer 507 -- delete rows to make room --
+   * `streams`, `held`, `requests`, `writes` and `write_bytes` answer 429
+   * with `retryAfter`.
+   */
+  quota?: 'bytes' | 'rows' | 'streams' | 'held' | 'requests' | 'writes' | 'write_bytes';
+  /**
+   * Seconds to wait before sending again, where the server said: a quota's
+   * 429 to the millisecond (`retry_after_ms`, so 0.002 where a bucket
+   * refills in 2 ms), and the 503 of a tenant being moved or failed over,
+   * or of a server at its ceiling of connections, in whole seconds
+   * (`Retry-After`).
+   */
+  retryAfter?: number;
+  /**
+   * `'unknown'` on a 500 of a write a tenant's node landed and answered
+   * after its lease from the router lapsed: its tenant may have been
+   * failed over without it. Send it again with the same idempotency key,
+   * or read it back a lease and a tenth later.
+   */
+  outcome?: 'unknown';
+  /**
+   * Where a write whose `outcome` is unknown left its node's database, and
+   * of which history: a read sent after them once its tenant has settled
+   * is answered by a primary holding the write and refused 504 by one
+   * without it. Not the client's position, which the answer does not move.
+   */
+  seq?: number;
+  /** The history `seq` is a change of, as `Fennec-History` writes one. */
+  history?: string;
+}
+
+/**
+ * One statement of `FennecHttp.batch`: a builder query (a read), a FennecQL
+ * text, or `[text, params]` -- what `toInsert`, `toUpdate` and `toDelete`
+ * make.
+ */
+export type BatchStatement =
+  | Query<any, any, any, any, any, any>
+  | string
+  | readonly [sql: string, params?: unknown[]];
+
+/** One statement's answer in a batch, as the server writes it. */
+export type BatchItem =
+  | { rows: Record<string, unknown>[]; facets?: Facets }
+  | { affected: number }
+  | { message: string };
+
+/** What `FennecHttp.batch` answers. */
+export interface BatchResult {
+  /** Each statement's answer, in order. */
+  results: BatchItem[];
+  /** The change the batch left the database at (`Fennec-Seq`). */
+  seq: number | null;
+  /** Whether the answer is the one kept for its `idempotencyKey`. */
+  replayed: boolean;
+}
+
+/**
+ * `{ idempotencyKey }`: a write sent again with the key is answered as it
+ * was the first time and not made twice; the key with another request is
+ * refused (422).
+ *
+ * `{ wait }`, over a server: a `set` or a `del` that writes nothing is held
+ * there until it can -- a job enqueued, a delayed one come due, a lease
+ * lapsed -- or for that many milliseconds, at most 30 000, and answered
+ * then: a claim waiting for a job (`Fennec-Wait`). A database in the page
+ * refuses it. `{ signal }` gives the request up, as `fetch`'s.
+ */
+export interface WriteOptions {
+  idempotencyKey?: string;
+  wait?: number;
+  signal?: AbortSignal;
+}
+
+/**
+ * Where the collation data the browser module does not carry comes from:
+ * the URL of the directory holding `<name>.bin`, or a function handed the
+ * name and returning its bytes or a `Response`.
+ */
+export type CollationSource =
+  | string
+  | URL
+  | ((name: string) => BufferSource | Response | Promise<BufferSource | Response>);
+
+/** The relations `defineRelations` gave the collection `At`, by name. */
+type RelationsAt<R extends Relations, At extends string> = At extends keyof R ? R[At] : {};
+type RelTarget<R extends Relations, At extends string, K> = K extends keyof RelationsAt<R, At>
+  ? RelationsAt<R, At>[K] extends RelationRef<infer T>
+    ? T
+    : never
+  : never;
+
+/**
+ * Immutable query builder. `F` is the collection's fields, `P` the result
+ * of the projection so far, and `L` the chain of `lookup` names so far,
+ * `Rel` the relations a schema in code declared and `At` the collection
+ * the next `lookup` hangs off -- bookkeeping, never written out by a caller.
+ */
+export declare class Query<
+  F extends Fields = Fields,
+  P = Row<F>,
+  L extends readonly string[] = [],
+  Rel extends Relations = {},
+  At extends string = string,
+  Fa extends Facets = {},
+> {
+  /** Binds the query to an executor (wasm, HTTP, fennec-server). */
+  bind(exec: Exec | { run(sql: string, params: unknown[]): unknown }): Query<F, P, L, Rel, At, Fa>;
+
+  select<K extends keyof Row<F> & string>(
+    ...cols: (K | K[])[]
+  ): Query<F, Pick<Row<F>, K>, L, Rel, At, Fa>;
+  /**
+   * An aggregating list: the field grouped by, and aggregates spelled as
+   * FennecQL spells them -- each answers under that name.
+   *
+   *   db.from('orders').select('status', 'count(*)', 'sum(total)').group('status')
+   */
+  select<K extends keyof Row<F> & string, A extends Aggregate<F>>(
+    ...cols: (K | A)[]
+  ): Query<F, Pick<Row<F>, K> & { [N in A]: number | string | null }, L, Rel, At, Fa>;
+  /**
+   * Expressions among the fields and aggregates, each answering under the
+   * name its `as` gives it:
+   *
+   *   db.from('ticks').select('sym', expr('sum(px * qty) / sum(qty)').as('vwap')).group('sym')
+   */
+  select<K extends keyof Row<F> & string, A extends Aggregate<F>, N extends string>(
+    ...cols: (K | A | Named<N> | Expression)[]
+  ): Query<
+    F,
+    Pick<Row<F>, K> & { [X in A]: number | string | null } & { [X in N]: Json },
+    L,
+    Rel,
+    At,
+    Fa
+  >;
+  select(): Query<F, Row<F>, L, Rel, At, Fa>;
+  /** Fields and paths into json fields, each path answering under its text. */
+  select<C extends (keyof Row<F> & string) | JsonPath<F>>(
+    ...cols: C[]
+  ): Query<F, { [N in C]: N extends keyof Row<F> ? Row<F>[N] : Json }, L, Rel, At, Fa>;
+
+  /**
+   * `highlight(field)` in the select list: where the terms `match` found
+   * stand in the field's text, `[start, end]` pairs of UTF-16 offsets --
+   * a JavaScript string's own -- or, given `{ pre, post }`, the text with
+   * each mark between them, not escaped. Needs `match`; answers under
+   * `highlight(<field>)`, after the fields `select` named.
+   */
+  highlight<K extends TextKey<F>>(
+    field: K,
+  ): Query<F, P & { [N in `highlight(${K})`]: Mark[] | null }, L, Rel, At, Fa>;
+  highlight<K extends TextKey<F>>(
+    field: K,
+    opts: { pre: string; post: string },
+  ): Query<F, P & { [N in `highlight(${K})`]: string | null }, L, Rel, At, Fa>;
+
+  /**
+   * `snippet(field, words)`: the window of `words` words around the densest
+   * marks, `{ text, marks }` -- or, given `{ pre, post }`, the marked text --
+   * with `ellipsis` where text is left out. Answers under
+   * `snippet(<field>)`.
+   */
+  snippet<K extends TextKey<F>>(
+    field: K,
+    words: number,
+    opts?: { ellipsis?: string },
+  ): Query<F, P & { [N in `snippet(${K})`]: Snippet | null }, L, Rel, At, Fa>;
+  snippet<K extends TextKey<F>>(
+    field: K,
+    words: number,
+    opts: { ellipsis?: string; pre: string; post: string },
+  ): Query<F, P & { [N in `snippet(${K})`]: string | null }, L, Rel, At, Fa>;
+
+  /**
+   * `facet field [top N]`: each value the field holds over every row the
+   * query matches -- not only the page -- and how many rows hold it, most
+   * first; a list counts once a row for each value. Beside the rows:
+   * `rows().facets`, `run().facets`.
+   */
+  /**
+   * `facet field ranges [...]`: how many rows hold a number in each range,
+   * from a bound, included, to the next, excluded -- every range, in
+   * order, its `value` the `[from, to]` pair. Through a `@sorted` field's
+   * index, or the field read.
+   */
+  facet<K extends (keyof Row<F> & string) | JsonPath<F>>(
+    field: K,
+    opts: { ranges: readonly number[]; disjunctive?: boolean },
+  ): Query<F, P, L, Rel, At, Fa & { [N in K]: FacetCount<[number, number]>[] }>;
+  /**
+   * `{ disjunctive: true }`: counted with the filter's own conditions on
+   * the field left out, so a brand chosen still lists every brand the
+   * other conditions leave.
+   */
+  facet<K extends keyof Row<F> & string>(
+    field: K,
+    opts?: { top?: number; disjunctive?: boolean },
+  ): Query<F, P, L, Rel, At, Fa & { [N in K]: FacetCount<FacetValue<Row<F>[K]>>[] }>;
+  facet<K extends JsonPath<F>>(
+    field: K,
+    opts?: { top?: number; disjunctive?: boolean },
+  ): Query<F, P, L, Rel, At, Fa & { [N in K]: FacetCount<Json>[] }>;
+
+  /**
+   * `group a, b`: one row per distinct set of the keys' values, for a
+   * select list that aggregates. A key is a field or a path, a name the
+   * list gives a column with `as`, or an expression -- `bucket('at', '1h')`.
+   */
+  group(...keys: (string | Expression | (string | Expression)[])[]): Query<F, P, L, Rel, At, Fa>;
+
+  where(cond: Where<F> | Cond<F>): Query<F, P, L, Rel, At, Fa>;
+  where<K extends keyof Row<F> & string>(
+    field: K,
+    value: Writable<Row<F>[K]> | null | Spec<Row<F>[K]>,
+  ): Query<F, P, L, Rel, At, Fa>;
+  where<K extends keyof Row<F> & string>(
+    field: K,
+    op: 'in',
+    values: Writable<Row<F>[K]>[],
+  ): Query<F, P, L, Rel, At, Fa>;
+  where<K extends keyof Row<F> & string>(
+    field: K,
+    op: 'has',
+    value: Elem<Row<F>[K]>,
+  ): Query<F, P, L, Rel, At, Fa>;
+  where<K extends keyof Row<F> & string>(
+    field: K,
+    op: Op,
+    value: Writable<Row<F>[K]> | null,
+  ): Query<F, P, L, Rel, At, Fa>;
+  /** A path into a json field: `where('meta.lang', '=', 'tr')`. */
+  where(field: JsonPath<F>, value: Json | Spec<Json>): Query<F, P, L, Rel, At, Fa>;
+  where(field: JsonPath<F>, op: 'in', values: Json[]): Query<F, P, L, Rel, At, Fa>;
+  where(field: JsonPath<F>, op: Op, value: Json): Query<F, P, L, Rel, At, Fa>;
+
+  orWhere(cond: Where<F> | Cond<F>): Query<F, P, L, Rel, At, Fa>;
+  orWhere<K extends keyof Row<F> & string>(
+    field: K,
+    value: Writable<Row<F>[K]> | null | Spec<Row<F>[K]>,
+  ): Query<F, P, L, Rel, At, Fa>;
+  orWhere<K extends keyof Row<F> & string>(
+    field: K,
+    op: Op,
+    value: unknown,
+  ): Query<F, P, L, Rel, At, Fa>;
+
+  /**
+   * Vector search; `_score` is added to the result. Over a `sparse<N>` field
+   * the vector is its text form and the score its dot product; over a
+   * `geo` field the vector is a point, `[lon, lat]`, and the score the
+   * distance in metres, nearest first.
+   */
+  near(
+    field: VectorKey<F>,
+    vector: number[] | Float32Array | string,
+    opts?: { ef?: number; exact?: boolean },
+  ): Query<F, P & { _score: number }, L, Rel, At, Fa>;
+
+  /**
+   * Full-text search over a `@text` index; `_score` is added to the result.
+   * `fuzzy: true` matches each word within the edits its length allows
+   * (none under 5 characters, one up to 8, two from 9), `fuzzy: 1` one at
+   * most; `prefix: true` matches the last word as the start of a word too.
+   */
+  match(
+    field: TextKey<F>,
+    query: string,
+    opts?: { fuzzy?: boolean | 0 | 1 | 2; prefix?: boolean },
+  ): Query<F, P & { _score: number }, L, Rel, At, Fa>;
+
+  /**
+   * With both `match` and `near`: ranks by both. Each side takes its own
+   * `candidates` (20 unless given, never fewer than the page) and a
+   * document scores `1 / (k + rank)` from each list it is on (`k` 60).
+   */
+  fuse(opts?: { k?: number; candidates?: number }): Query<F, P, L, Rel, At, Fa>;
+
+  /**
+   * Reorders what `match` found by exact vector distance. Requires `match`,
+   * but not an `@hnsw` index: the vectors are read out of the store.
+   */
+  rerank(
+    field: VectorKey<F>,
+    vector: number[] | Float32Array,
+    opts?: { candidates?: number },
+  ): Query<F, P & { _score: number }, L, Rel, At, Fa>;
+
+  /**
+   * Attaches the children of another collection to each row.
+   *
+   * Everything in `opts` binds to the looked-up collection: `limit` there
+   * counts children **per parent**, which is the shape a join cannot
+   * express. The clause is terminal in FennecQL, so it is emitted last
+   * whatever order the builder was called in.
+   *
+   * The child's field type cannot be reached from `Query<F>` -- the builder
+   * carries one collection's fields, not the schema -- so it defaults to a
+   * loose row. Pass it to get the tight one:
+   *
+   *     q.lookup<'reviews', FennecSchema['reviews']>('reviews', { on: 'product_id' })
+   *
+   * Calling it again chains rather than replaces: the second call binds to
+   * the collection the first one named, and its rows are attached to *those*
+   * rows. The type follows, which is why `Query` carries the chain so far --
+   * `L` is bookkeeping, never written out by a caller.
+   *
+   *     db.from('shops')
+   *       .lookup('orders', { on: 'shop_id' })
+   *       .lookup('lines',  { on: 'order_id' })
+   *     // -> { ...shop, orders: { ...order, lines: {...}[] }[] }[]
+   *
+   * `C` is never inferred from `opts`: taken from a `where` it was the
+   * fields that `where` named and no others, and an `on` or an `order` by
+   * any other field was refused.
+   */
+  lookup<M extends string, C extends Fields = Fields>(
+    name: M,
+    opts: LookupOptions<Hold<C>>,
+  ): Query<F, Attach<P, L, M, C>, [...L, M], Rel, M, Fa>;
+  /**
+   * A relation of `defineRelations`, by its name: its key comes from the
+   * relation, and its rows are typed by the table it reaches -- attached
+   * under that table's name, as `lookup` attaches them.
+   *
+   *     db.from(products).lookup('reviews', { where: { stars: 5 } })
+   */
+  lookup<K extends keyof RelationsAt<Rel, At> & string>(
+    name: K,
+    opts?: Omit<LookupOptions<Hold<RelTarget<Rel, At, K>['$fields']>>, 'on' | 'parentKey'>,
+  ): Query<
+    F,
+    Attach<P, L, RelTarget<Rel, At, K>['$name'], RelTarget<Rel, At, K>['$fields']>,
+    [...L, RelTarget<Rel, At, K>['$name']],
+    Rel,
+    RelTarget<Rel, At, K>['$name'],
+    Fa
+  >;
+  /** A table (`fennecTable`): its fields type the child rows. */
+  lookup<T extends TableRef>(
+    table: T,
+    opts: LookupOptions<Hold<T['$fields']>>,
+  ): Query<F, Attach<P, L, T['$name'], T['$fields']>, [...L, T['$name']], Rel, T['$name'], Fa>;
+
+  /**
+   * Successive calls add a sort key (the second decides when the first ties).
+   * `{ collate: 'und' }` orders text as Unicode does for every language,
+   * `{ collate: 'tr' }` as Turkish does, rather than by its bytes.
+   */
+  order(
+    field: (keyof Row<F> & string) | Aggregate<F> | JsonPath<F>,
+    dir?: 'asc' | 'desc',
+    opts?: { collate?: Collation },
+  ): Query<F, P, L, Rel, At, Fa>;
+  limit(n: number): Query<F, P, L, Rel, At, Fa>;
+  offset(n: number): Query<F, P, L, Rel, At, Fa>;
+  /**
+   * `require n`: the rows the query answers, after `limit`, must number
+   * `n`, or it is refused -- 412 (`unmet`) over HTTP -- and the batch it is
+   * in put back. A checkout's guard on a read: `.where({ sku, price })
+   * .require(1)`. Not with `count` or an aggregate without `group`; a
+   * write takes `{ require: n }` instead. `{ reason }` says why in the
+   * refusal (`require n else '<reason>'`), the error's `reason`: 1 to 200
+   * bytes, written into the text.
+   */
+  require(n: number, opts?: { reason?: string }): Query<F, P, L, Rel, At, Fa>;
+
+  /** The generated FennecQL and its parameters -- inspectable before running. */
+  toFennecQL(): [sql: string, params: unknown[]];
+
+  /** The text of the write statements, without running them. The write side of `toFennecQL`. */
+  toInsert(docs: InsertRow<F> | InsertRow<F>[], opts?: InsertOptions): [sql: string, params: unknown[]];
+  /**
+   * The `set` text. `order` and `limit` before it pick the rows it writes
+   * -- the page a `get` with them answers -- and `{ returning }` answers
+   * them as written.
+   */
+  toUpdate(patch: Insert<F>, opts?: WriteOptions): [sql: string, params: unknown[]];
+  toUpsert(docs: InsertRow<F> | InsertRow<F>[], patch: Insert<F>, opts?: UpsertOptions): [sql: string, params: unknown[]];
+  toDelete(opts?: WriteOptions): [sql: string, params: unknown[]];
+
+  /** The query's collection. */
+  readonly collection: string;
+  /**
+   * Every collection the query reads -- its own, each `lookup`'s, each inner
+   * query's -- or `null` when a `raw` fragment may read more. A live query
+   * runs again when one of them is written.
+   */
+  readonly reads: string[] | null;
+  /**
+   * Whether `order` or `limit` was given: an update or a delete then picks
+   * the rows it writes, which a sync replica leaves to the server.
+   */
+  readonly picks: boolean;
+  /** The opaque context carried by `bind` (for subclasses). */
+  readonly context: unknown;
+  /** The same body as a plain `Query`: bypasses subclass behaviour. */
+  plain(): Query<F, P, L, Rel, At, Fa>;
+
+  /** The raw response; `facets` holds what `facet` counted. */
+  run(): Promise<{ columns: string[]; rows: P[]; facets?: Fa }>;
+  /** The rows -- with what `facet` counted as `facets`, when it was asked. */
+  rows(): Promise<Rows<P, Fa>>;
+  first(): Promise<P | null>;
+  /** Number of matching rows (`get ... count`); rows are not decoded. */
+  count(): Promise<number>;
+  /**
+   * The path the query took (`explain get ...`): which index answered and
+   * how many rows each stage read, one line a step. The query runs.
+   */
+  explain(): Promise<string[]>;
+
+  /**
+   * Writes the documents as FennecQL's `put`: new ones, and one naming an
+   * `id` written over. FennecQL's `insert` refuses a taken id instead.
+   * `{ ifAbsent: true }` passes over a document whose id or `@unique` value
+   * is held (`put ... if absent`), and the count says what was written: a
+   * lock taken (1) or not (0). `{ returning }` answers the rows written
+   * instead, ids and all, in the documents' order: `insert(order, {
+   * returning: ['id'] })`.
+   */
+  insert(docs: InsertRow<F> | InsertRow<F>[], opts: InsertOptions & { returning: true | readonly ['*'] }): Promise<Row<F>[]>;
+  insert<K extends keyof Row<F> & string>(
+    docs: InsertRow<F> | InsertRow<F>[],
+    opts: InsertOptions & { returning: readonly K[] },
+  ): Promise<Pick<Row<F>, K>[]>;
+  insert(docs: InsertRow<F> | InsertRow<F>[], opts?: InsertOptions): Promise<number>;
+  /**
+   * `set`: the rows it changed, or with `{ returning }` the rows as
+   * written. With `order` and `limit` before it, a job queue's claim:
+   * `.where(raw('run_at <= now()')).order('run_at').limit(10)
+   * .update({ owner, run_at: expr('now() + ?', 30000), attempts: inc(1) },
+   * { returning: true })`.
+   */
+  update(patch: Insert<F>, opts: WriteOptions & { returning: true | readonly ['*'] }): Promise<Row<F>[]>;
+  update<K extends keyof Row<F> & string>(
+    patch: Insert<F>,
+    opts: WriteOptions & { returning: readonly K[] },
+  ): Promise<Pick<Row<F>, K>[]>;
+  update(patch: Insert<F>, opts?: WriteOptions): Promise<number>;
+  /**
+   * `put ... if absent else set {patch}`: each document inserted, or,
+   * where a row holds its `id` or first `@unique` value, that row set by
+   * the patch -- an update's, `inc(n)` and `expr(...)` with it, and in an
+   * expression `new.f` the document's own `f`:
+   * `upsert({ key, n: 1 }, { n: expr('n + new.n') })`. The count is the
+   * rows set and made together, or with `{ returning }` those rows as
+   * written, in the documents' order.
+   */
+  upsert(docs: InsertRow<F> | InsertRow<F>[], patch: Insert<F>, opts: UpsertOptions & { returning: true | readonly ['*'] }): Promise<Row<F>[]>;
+  upsert<K extends keyof Row<F> & string>(
+    docs: InsertRow<F> | InsertRow<F>[],
+    patch: Insert<F>,
+    opts: UpsertOptions & { returning: readonly K[] },
+  ): Promise<Pick<Row<F>, K>[]>;
+  upsert(docs: InsertRow<F> | InsertRow<F>[], patch: Insert<F>, opts?: UpsertOptions): Promise<number>;
+  /** `del`: the rows it deleted, or with `{ returning }` the rows as they were -- a pop. */
+  delete(opts: WriteOptions & { returning: true | readonly ['*'] }): Promise<Row<F>[]>;
+  delete<K extends keyof Row<F> & string>(opts: WriteOptions & { returning: readonly K[] }): Promise<Pick<Row<F>, K>[]>;
+  delete(opts?: WriteOptions): Promise<number>;
+}
+
+/**
+ * `require`: the write must write exactly this many rows, a whole number
+ * from 0 (`... require n`), or it is refused -- 412 over HTTP, an error in
+ * the page -- and the batch it is in put back whole. `reason` beside it
+ * says why (`require n else '<reason>'`), the error's `reason`: 1 to 200
+ * bytes, written into the text, never a parameter.
+ */
+export interface RequireOptions {
+  require?: number;
+  reason?: string;
+}
+
+/**
+ * An update's or a delete's options: `all` covers every row, on purpose --
+ * a `limit` bounds it without -- and `returning` answers the rows written
+ * rather than their count: `true` or `['*']` every field, or those named.
+ */
+export interface WriteOptions extends RequireOptions {
+  all?: boolean;
+  returning?: true | readonly string[];
+}
+
+/**
+ * An insert's options: `ifAbsent` passes over a document whose id or
+ * `@unique` value is held, and `returning` answers the rows written rather
+ * than their count, ids and all: `true` or `['*']` every field, or those
+ * named.
+ */
+export interface InsertOptions extends UpsertOptions {
+  ifAbsent?: boolean;
+}
+
+/** An upsert's options: `require`, and `returning` as an insert's. */
+export interface UpsertOptions extends RequireOptions {
+  returning?: true | readonly string[];
+}
+
+/** A patch (`update`): every field optional, a value written or worked out (`inc`, `expr`). */
+export type Insert<F extends Fields> = {
+  [K in keyof Row<F>]?: Writable<Row<F>[K]> | null | Computed;
+};
+
+/** The fields a write must give: those that read back never null (`required`, `.notNull()`). */
+type RequiredKeys<F> = { [K in keyof F]-?: null extends F[K] ? never : K }[keyof F];
+
+/**
+ * A document as `insert` writes it: a required field given, the others
+ * optional or null, and `id` only to write over the document holding it.
+ */
+export type InsertRow<F extends Fields> = { id?: number } & {
+  [K in RequiredKeys<F>]: Writable<F[K]> | Computed;
+} & {
+  [K in Exclude<keyof F, RequiredKeys<F>>]?: Writable<F[K]> | null | Computed;
+};
+
+/**
+ * Unbound builder: it only generates text, and `bind()` runs it. The
+ * collection name is free here; the schema type is given per query as the
+ * field type, or for all of them with `TypedFrom`.
+ *
+ *   from<FennecSchema['articles']>('articles').where('year', 2024)
+ */
+export function from<F extends Fields = Fields>(name: string): Query<F>;
+export function from<T extends TableRef>(table: T): Query<T['$fields'], Row<T['$fields']>, [], {}, T['$name']>;
+
+/**
+ * Binds `from` to a schema -- purely a type, the same function at runtime.
+ * Completes collection and field names just like `db.from`.
+ *
+ *   const from: TypedFrom<FennecSchema> = fennecFrom;
+ *   from('articles').where('year', '>=', 2024)
+ */
+export type TypedFrom<S extends AnySchema<S>> = <K extends keyof S & string>(
+  name: K,
+) => Query<S[K]>;
+
+/** Schema information from the `collections` output. */
+export interface SchemaInfo {
+  name: string;
+  fields: { name: string; type: string; index?: string }[];
+}
+
+/** Remote endpoint options. Without `fetch`, `globalThis.fetch` is used. */
+export interface HttpOptions {
+  token?: string;
+  fetch?: typeof globalThis.fetch;
+  /**
+   * `'nearest'`: the builder's reads, and a `run` or `batch` given `{ read:
+   * true }`, are marked (`Fennec-Read: replica`) so that a router near a
+   * region holding the tenant's read replica answers them there, each sent
+   * after the furthest position an answer from home named to this client
+   * (`Fennec-After`, `Fennec-History`: the change and its history) -- never
+   * older than its own writes, nor a write a failover replaced. A `live`
+   * query's streams stay home and its runs go near, each after the change
+   * a stream told of too; its polls (`{ poll }`) go home. `'home'`, the
+   * default: every request goes to the tenant's home.
+   */
+  reads?: 'home' | 'nearest';
+}
+
+/**
+ * `run`'s and `batch`'s options: a write's, and `{ read: true }`, which says
+ * a text only reads -- on a client reading near, it may be answered by a
+ * read replica near it. A batch of builder queries alone says so on its own.
+ */
+export interface RunOptions extends WriteOptions {
+  read?: boolean;
+}
+
+/**
+ * Remote fennecdb HTTP endpoint (`fennec-server --http`). The builder generates the
+ * same FennecQL text; only the transport differs.
+ */
+export declare class FennecHttp<S extends AnySchema<S> = Schema, Rel extends Relations = {}> {
+  constructor(url: string, opts?: HttpOptions);
+  from<T extends TableRef>(table: T): Query<T['$fields'], Row<T['$fields']>, [], Rel, T['$name']>;
+  from<K extends keyof S & string>(name: K): Query<S[K], Row<S[K]>, [], Rel, K>;
+  /**
+   * Runs FennecQL; a write also answers `seq`, the change it left the
+   * database at, and `replayed`, whether the answer is the one kept for
+   * its `idempotencyKey`. A read sent near (`{ read: true }` on a client
+   * reading near) answers `seq` too: where the copy that answered stood as
+   * it read -- maybe a read replica behind home -- which moves nothing of
+   * the client's.
+   */
+  run(sql: string, params?: unknown[], opts?: RunOptions): Promise<any>;
+  rows(sql: string, params?: unknown[]): Promise<any[]>;
+  /**
+   * `POST /batch`: the statements in order as one block -- every write
+   * lands or none does -- and each one's answer. A statement that stops
+   * it throws a `FennecError` with its place (`at`) and the refusal's
+   * `status`: 412 for a `require` not met.
+   */
+  batch(statements: readonly BatchStatement[], opts?: RunOptions): Promise<BatchResult>;
+  /**
+   * A copy whose writes carry `key` as their `Idempotency-Key` -- a
+   * builder's writes among them -- sharing this one's `seq`.
+   */
+  withIdempotencyKey(key: string): FennecHttp<S, Rel>;
+  /** The change the last write through this client, or a copy of it, left the database at. */
+  readonly seq: number | null;
+  schemas(): Promise<{ collections?: SchemaInfo[] } | SchemaInfo[]>;
+  /**
+   * The server's database against a schema declared in code, in the
+   * server (`/_schema`): `'follow'` says what the code declares and the
+   * server lacks, `'plan'` what an apply would do, `'apply'` runs it -- the
+   * last two with the server's token.
+   */
+  checkSchema(description: SchemaDescription | string, mode?: 'follow' | 'plan' | 'apply'): Promise<SchemaOutcome>;
+
+  /** Where a live query's error goes when it has no `onError` of its own. */
+  onError: ((e: unknown) => void) | null;
+
+  /**
+   * Live query over the server: `cb` is handed the rows once a
+   * subscription to every collection the query reads is open, and again
+   * after every write to one of them, the query run on the server each
+   * time. A text names what it reads with `{collections}`, or is refused.
+   * On a client reading near the streams stay home and each run is a read
+   * near, sent after the change that ran it. Returns the function that
+   * stops it.
+   */
+  live<F extends Fields, P, L extends readonly string[], R2 extends Relations, A extends string, Fa extends Facets>(
+    query: Query<F, P, L, R2, A, Fa>,
+    cb: (rows: Rows<P, Fa>) => void,
+    opts?: LiveOptions,
+  ): () => void;
+  live(
+    query: string | [sql: string, params: unknown[]],
+    cb: (rows: any[]) => void,
+    opts: LiveOptions & ({ collections: string[] } | { poll: number }),
+  ): () => void;
+
+  /**
+   * A shape's rows and every change to them (`GET /<collection>/changes`):
+   * a `seed` first, the whole shape, then each `change` as it lands. A
+   * stream that ends is opened again and seeds again; one refused or ended
+   * for its token (a `FennecError` of status 401 to `onError`, as the server
+   * ends one at its token's `exp`) is not. Returns the function that stops it.
+   */
+  subscribe<K extends keyof S & string>(
+    collection: K,
+    shape: ShapeFilter | null | undefined,
+    onEvent: (ev: ShapeEvent<Row<S[K]>>) => void,
+    opts?: SubscribeOptions,
+  ): () => void;
+}
+
+/**
+ * A subscription's shape, as the REST surface writes it: a field's filter
+ * (`{ team: 'eq.design', year: 'gte.2024' }`), `where` (a FennecQL
+ * condition) and `select` (the fields kept, `id` always among them).
+ */
+export type ShapeFilter = { select?: string | readonly string[]; where?: string } & {
+  [field: string]: string | readonly string[] | undefined;
+};
+
+/** The whole shape: what the subscriber held is replaced by `rows`. */
+export interface ShapeSeed<R = Row<Fields>> {
+  type: 'seed';
+  /** The change the shape stands at. */
+  seq: number;
+  rows: R[];
+}
+
+/** What changed since the last event: rows written into the shape, ids that left it. */
+export interface ShapeChange<R = Row<Fields>> {
+  type: 'change';
+  seq: number;
+  puts: R[];
+  dels: number[];
+  /** The collection's schema changed. */
+  schema: boolean;
+}
+
+export type ShapeEvent<R = Row<Fields>> = ShapeSeed<R> | ShapeChange<R>;
+
+export interface SubscribeOptions {
+  /** Why a stream ended or was refused; else the client's `onError`, else thrown. */
+  onError?: (e: unknown) => void;
+  /** `'open'` at each seed, `'retry'` while it waits to open the stream again. */
+  onState?: (state: 'open' | 'retry') => void;
+}
+
+/** An event of a server-sent event stream: its name and its data as sent. */
+export interface SseEvent {
+  name: string;
+  data: string;
+}
+
+/**
+ * The events of a server-sent event stream read off a `fetch` answer's
+ * body -- `EventSource` cannot send `Authorization`.
+ */
+export function sseEvents(res: Response): AsyncGenerator<SseEvent, void, unknown>;
+
+/**
+ * With a schema declared in code: the server's schema is checked against it,
+ * and with `migrate` -- and the server's token -- brought to it. The server
+ * owns its schema, so without `migrate` nothing is applied.
+ */
+export function connect<T extends Tables, R extends Relations = {}>(
+  url: string,
+  opts: HttpOptions & SchemaOptions<T, R> & { migrate?: boolean },
+): Promise<FennecHttp<SchemaOf<T>, R>>;
+export function connect<S extends AnySchema<S> = Schema>(
+  url: string,
+  opts: HttpOptions & SchemaText & { migrate?: boolean },
+): Promise<FennecHttp<S>>;
+export function connect<S extends AnySchema<S> = Schema>(
+  url: string,
+  opts?: HttpOptions,
+): FennecHttp<S>;
+
+export declare class Fennec<S extends AnySchema<S> = Schema, Rel extends Relations = {}> {
+  /** Connects to a remote HTTP endpoint. */
+  static connect<T extends Tables, R extends Relations = {}>(
+    url: string,
+    opts: HttpOptions & SchemaOptions<T, R> & { migrate?: boolean },
+  ): Promise<FennecHttp<SchemaOf<T>, R>>;
+  static connect<S extends AnySchema<S> = Schema>(
+    url: string,
+    opts: HttpOptions & SchemaText & { migrate?: boolean },
+  ): Promise<FennecHttp<S>>;
+  static connect<S extends AnySchema<S> = Schema>(
+    url: string,
+    opts?: HttpOptions,
+  ): FennecHttp<S>;
+
+  /**
+   * Loads the WASM module. On Node the file bytes are passed directly:
+   * `Fennec.open(await readFile('fennec.wasm'))`; in a Cloudflare Worker the
+   * module as the Worker imports it, compiled:
+   * `import wasm from './fennec.wasm'; Fennec.open(wasm)`. `collation` says
+   * where the collation data it does not carry comes from: by default
+   * `collate/` beside the module, when `src` is a URL.
+   */
+  static open<T extends Tables, R extends Relations = {}>(
+    src: string | BufferSource | WebAssembly.Module | undefined,
+    opts: { collation?: CollationSource } & SchemaOptions<T, R>,
+  ): Promise<Fennec<SchemaOf<T>, R>>;
+  /**
+   * With `schema` -- tables declared in code -- the database is checked
+   * against them: what only adds (a collection, a field, an index where
+   * there is none) is made, the migrations not yet recorded run first, all
+   * one block; anything that would lose data or could mean two things is
+   * refused, and the open throws a `FennecError` naming every difference and
+   * how to resolve it (`refusals`). `restore` and `openFile` check the
+   * database they load again.
+   */
+  static open<S extends AnySchema<S> = Schema>(
+    src?: string | BufferSource | WebAssembly.Module,
+    opts?: { collation?: CollationSource } & Partial<SchemaText>,
+  ): Promise<Fennec<S>>;
+
+  readonly version: string;
+
+  /**
+   * The time, in milliseconds since the epoch, a statement is answered at:
+   * a read of a collection whose rows expire (`@ttl`) leaves out those past
+   * their time by it. `Date.now` unless set; the module has no clock.
+   */
+  now: () => number;
+
+  /** Where a live query's error goes when it has no `onError` of its own. */
+  onError: ((e: unknown) => void) | null;
+
+  /** Query builder, over a collection by name or a table declared in code. */
+  from<T extends TableRef>(table: T): Query<T['$fields'], Row<T['$fields']>, [], Rel, T['$name']>;
+  from<K extends keyof S & string>(name: K): Query<S[K], Row<S[K]>, [], Rel, K>;
+
+  /**
+   * The database against a schema declared in code -- its description,
+   * `describe(...)` -- in the engine: `'plan'` says what an apply would do
+   * and writes nothing, `'apply'` runs the migrations not yet recorded and
+   * makes what only adds, one block, or nothing while anything is refused.
+   * `Fennec.open`'s `schema` is this, throwing on a refusal.
+   */
+  checkSchema(description: SchemaDescription | string, mode?: 'plan' | 'apply'): SchemaOutcome;
+
+  /**
+   * The database's schema as the engine describes a server's (`GET
+   * /_schema`): a description, or with `'fennecql'` the statements that
+   * make it (`?as=fennecql`). The database's own collections are left out.
+   */
+  describe(): SchemaDescription & { collections: CollectionDescription[] };
+  describe(as: 'fennecql'): { format: 1; fennecql: string };
+
+  /**
+   * `FennecHttp.batch` in the page: the same statements and answers, one
+   * block, each statement with its own parameters. A refusal is a
+   * `FennecError` naming the statement (`at`) and how many stayed applied
+   * (`completed`): none, but for a batch holding a `compact`.
+   */
+  batch(statements: readonly BatchStatement[]): Promise<BatchResult>;
+
+  /**
+   * Live query: `cb` is handed the rows now, and again after every write
+   * to a collection the query reads (a `load`, `restore` or `openFile`:
+   * every live query). The writes of one task run it once, in a microtask
+   * after it. Returns the function that stops it.
+   */
+  live<F extends Fields, P, L extends readonly string[], R2 extends Relations, A extends string, Fa extends Facets>(
+    query: Query<F, P, L, R2, A, Fa>,
+    cb: (rows: Rows<P, Fa>) => void,
+    opts?: LiveOptions,
+  ): () => void;
+  live(query: string | [sql: string, params: unknown[]], cb: (rows: any[]) => void, opts?: LiveOptions): () => void;
+
+  /**
+   * Raw FennecQL -- synchronous. A statement that compares text in a
+   * collation whose data for its script the module has not been handed is
+   * refused (`FennecError.collation`); `query` fetches it and runs it again.
+   */
+  run(sql: string, params?: unknown[]): any;
+  rows(sql: string, params?: unknown[]): any[];
+  /** `run`, fetching the collation data a statement is refused for. */
+  query(sql: string, params?: unknown[]): Promise<any>;
+  /**
+   * Hands the module the collation data `names` names -- `'all'` for every
+   * script's -- before a statement needs it. The module carries `latin`.
+   * True when it fetched any.
+   */
+  collation(...names: string[]): Promise<boolean>;
+
+  schemas(): SchemaInfo[];
+  stats(): unknown;
+  snapshot(): Uint8Array;
+  /**
+   * The image a mebibyte at a time, each let go of in the module as it is
+   * taken: never twice in the module, nor whole in the page.
+   */
+  snapshotChunks(): Generator<Uint8Array>;
+  /**
+   * Starts keeping the writes for `drain()`, or with `false` stops;
+   * `persist` and `openFile` start it themselves.
+   */
+  journal(on?: boolean): void;
+  /**
+   * The writes since the last drain: frames to append to a stored image, or
+   * with `replace` an image to store instead (after a `compact`).
+   */
+  drain(): { replace: boolean; bytes: Uint8Array };
+  /**
+   * Restores from a byte image, and returns how many of its bytes that took:
+   * all, or those before a last record a crash cut short. Refused like `run`
+   * for collation data.
+   */
+  load(bytes: Uint8Array): number;
+  /** `load`, fetching the collation data the image needs. */
+  loadAsync(bytes: Uint8Array): Promise<number>;
+  /**
+   * `loadAsync` over an image kept in parts, `length` bytes in all: each
+   * part `parts()` hands over is copied where it goes in the module's
+   * memory and let go of, the image never whole outside it. `parts` is
+   * called again when the image needs collation data.
+   */
+  loadParts(
+    length: number,
+    parts: () => Iterable<Uint8Array | ArrayBuffer> | AsyncIterable<Uint8Array | ArrayBuffer>,
+  ): Promise<number>;
+  close(): void;
+
+  /**
+   * What changed since `since`. When `collections === null` the cursor has
+   * fallen behind the change ring: treat everything as stale.
+   */
+  changes(since?: number): { seq: number; horizon: number; collections: string[] | null };
+  /** Current value of the change counter. */
+  readonly changeSeq: number;
+  /** Entry count of the change ring. */
+  setChangeCapacity(n: number): void;
+}
+
+export interface LiveOptions {
+  /** Where an error goes; else the database's `onError`, else thrown. */
+  onError?: (e: unknown) => void;
+  /** A text's parameters, given as a text alone. */
+  params?: unknown[];
+  /**
+   * The collections a text reads: without them, every write runs it again.
+   * Given for a builder query, they stand in for those it names.
+   */
+  collections?: string[];
+  /**
+   * `FennecHttp.live` alone: ask the query every this many milliseconds
+   * (100 at least) instead of holding a stream, the server answering 304,
+   * the query not run, while nothing it reads was written. For a public
+   * page: a stream is a server thread a viewer. Asked of the tenant's
+   * home on a client reading near too: a read replica behind it would
+   * answer 304 to a change home holds.
+   */
+  poll?: number;
+}
+
+export interface PersistOptions {
+  /**
+   * An AES-GCM key (`crypto.subtle.generateKey` or `deriveKey`): each
+   * record is sealed with it, and a restore needs it.
+   */
+  cryptoKey?: CryptoKey | null;
+}
+/**
+ * Writes the database into IndexedDB under `key`: the image the first time,
+ * then only the writes since the last call. Returns the bytes written.
+ */
+export function persist(fennec: Fennec<any, any>, key?: string, opts?: PersistOptions): Promise<number>;
+/** Restores from IndexedDB, image and chunks; `false` when there is no record. */
+export function restore(fennec: Fennec<any, any>, key?: string, opts?: PersistOptions): Promise<boolean>;
+/** Free-form state (cursors) -- next to the image, under a separate key. */
+export function putState(key: string, value: unknown): Promise<void>;
+export function getState(key: string): Promise<unknown>;
+
+/** A database kept in a file of the origin private file system (`openFile`). */
+export interface FennecFile {
+  /** The file's name in its directory. */
+  readonly name: string;
+  /** Bytes in the file. */
+  readonly size: number;
+  /**
+   * Writes what the database wrote since the last call into the file and
+   * flushes it; `run` calls it after every statement. Returns the bytes
+   * written. Once the file has refused a write, every later one is refused.
+   */
+  flush(): number;
+  /** The file's bytes, which `fennec` and a server open. */
+  bytes(): Uint8Array;
+  /** Flushes and lets the file go: the database is kept in it no longer. */
+  close(): void;
+}
+
+/**
+ * Keeps the database in a file of the origin private file system, the bytes
+ * fennec-server keeps on disk: a file holding some is loaded into the database
+ * (which must hold nothing yet), an empty one takes its image, and from then
+ * on `run` appends every statement's writes to it and flushes before it
+ * answers. Only in a dedicated worker, one at a time a file.
+ */
+export function openFile(
+  fennec: Fennec<any, any>,
+  name?: string,
+  opts?: { dir?: DirectoryHandle } & (Partial<SchemaOptions> | Partial<SchemaText>),
+): Promise<FennecFile>;
+
+/**
+ * The DOM's `FileSystemDirectoryHandle`, where the program has the DOM's
+ * types. A Worker's have none, and naming it outright failed every Worker
+ * project that checks its libraries: there it is `never`, as there is no
+ * file system to open a file of.
+ */
+type DirectoryHandle = typeof globalThis extends {
+  FileSystemDirectoryHandle: { prototype: infer H };
+}
+  ? H
+  : never;
+
+// -------------------------------------------------------------------- sync
+
+/**
+ * A shape: the tracked subset of a collection.
+ *
+ * `where` is deliberately narrow: it is translated into the
+ * `?field=op.value` form, so there are no `or` groups and no function
+ * calls. A shape is a subset definition; once it gets complicated, a
+ * separate collection on the server is the right answer.
+ */
+export interface Shape<F extends Fields = Fields> {
+  /** A collection's name, or its table declared in code. */
+  collection: string | TableRef;
+  /** Filter applied server side. */
+  where?: Where<F>;
+  /** Fields to ship; `id` is always added. */
+  select?: (keyof Row<F> & string)[];
+  /**
+   * The business key field (`text @hash` recommended). Reconciling an
+   * optimistic insert with the server id depends on it: **without a key an
+   * insert is not applied optimistically**, the row arrives over the
+   * subscription.
+   */
+  key?: keyof F & string;
+}
+
+export interface SyncOptions<S extends AnySchema<S> = Schema> {
+  /** Server root (`fennec-server --http`). */
+  url: string;
+  shapes: Shape<any>[];
+  /** An existing local database; otherwise opened from `wasm`. */
+  local?: Fennec<S>;
+  /** The module the replica is opened with: `./fennec.wasm` unless given. */
+  wasm?: string | BufferSource | WebAssembly.Module;
+  /** Where the local module's collation data comes from (`Fennec.open`). */
+  collation?: CollationSource;
+  token?: string;
+  /** Asked for a new token when the server answers 401; until then nothing is sent. */
+  tokenProvider?: () => string | Promise<string>;
+  fetch?: typeof globalThis.fetch;
+  /**
+   * IndexedDB key: the replica is stored there with its cursors and the
+   * writes the server has not answered, which a page opened again sends.
+   * A `local` kept in a file (`openFile`) keeps them in the file instead.
+   */
+  persist?: string;
+  /** Seals the stored image and its chunks with AES-GCM (`persist`). */
+  cryptoKey?: CryptoKey | null;
+  /** `false` turns off multi-tab leader election. */
+  leader?: 'auto' | false;
+  /** Lock manager (defaults to `navigator.locks`). */
+  locks?: { request(name: string, opts: unknown, fn: () => unknown): Promise<unknown> };
+  onError?: (e: unknown) => void;
+  /**
+   * Told of each write the server refused -- any 4xx but 401, 408 and 429,
+   * and a 507 naming a tenant's quota of `bytes` or `rows` (`e.quota`),
+   * which waiting would not make room for -- once it was put back, a write
+   * left from a page before among them; the writes behind it go on. A
+   * network failure or a 5xx is no refusal: the write waits and goes
+   * again, after the `Retry-After` a quota's 429 or a move's 503 names
+   * where it is longer.
+   */
+  onRefused?: (e: FennecError & { status: number; query: string }) => void;
+}
+
+export interface ShapeStatus {
+  collection: string;
+  cursor: number;
+  seeded: boolean;
+  connected: boolean;
+  /** Writes the server has not answered yet. */
+  pending: number;
+  error: string | null;
+  /**
+   * The tenant's quota the error names: a stream refused by the quota of
+   * `streams` is not `connected`, as one the network dropped is not.
+   */
+  quota: NonNullable<FennecError['quota']> | null;
+  leader: boolean;
+}
+
+/** Batch context: the same surface as `db`, but writes are accumulated. */
+export interface Batch<S extends AnySchema<S> = Schema, Rel extends Relations = {}> {
+  from<T extends TableRef>(table: T): Query<T['$fields'], Row<T['$fields']>, [], Rel, T['$name']>;
+  from<K extends keyof S & string>(name: K): Query<S[K], Row<S[K]>, [], Rel, K>;
+}
+
+/**
+ * Local replica + server connection. Reads are local (no network), writes
+ * go local first and then to the server, feedback arrives over the subscription.
+ */
+export declare class FennecSync<S extends AnySchema<S> = Schema, Rel extends Relations = {}> {
+  /** The local database; for raw FennecQL. */
+  readonly local: Fennec<S, Rel>;
+  /** The remote endpoint; for queries outside the shapes. */
+  readonly remote: FennecHttp<S, Rel>;
+
+  /** Resolves once the first seed of every shape has landed. */
+  ready(): Promise<void>;
+  /** Resolves once the server has answered every write made so far. */
+  pushed(): Promise<void>;
+  status(): ShapeStatus[];
+  /** A new token: requests carry it from here on, and what a 401 stopped goes on. */
+  setToken(token: string): void;
+  /**
+   * The network gone (`false`: the streams end, writes wait) or back
+   * (`true`: what waited goes at once). A page has it from `online` and
+   * `offline` on its own.
+   */
+  setOnline(online: boolean): void;
+
+  /** Reads local, writes optimistic. A collection without a shape is rejected. */
+  from<T extends TableRef>(table: T): Query<T['$fields'], Row<T['$fields']>, [], Rel, T['$name']>;
+  from<K extends keyof S & string>(name: K): Query<S[K], Row<S[K]>, [], Rel, K>;
+
+  /**
+   * Live query: re-run after every local change, at the next frame.
+   * `Fennec.live`'s contract. Returns: the function that ends the subscription.
+   */
+  live<F extends Fields, P, L extends readonly string[], R2 extends Relations, A extends string, Fa extends Facets>(
+    query: Query<F, P, L, R2, A, Fa>,
+    cb: (rows: Rows<P, Fa>) => void,
+    opts?: LiveOptions,
+  ): () => void;
+  live(query: string | [sql: string, params: unknown[]], cb: (rows: any[]) => void, opts?: LiveOptions): () => void;
+
+  /**
+   * Several writes as **one**: applied together, sent as one `/batch` under
+   * one key, landed by the server as one block or refused and put back
+   * whole. Resolves with the number of statements once the server has them.
+   */
+  batch(fn: (t: Batch<S, Rel>) => Promise<void>): Promise<number>;
+
+  /** Finishes any pending live-query runs (for tests). */
+  flush(): Promise<void>;
+  /** Closes the subscriptions and gives up the lead; the local database stays open. */
+  close(): void;
+}
+
+/**
+ * Opens the local replica and starts the subscriptions. With `schema`, the
+ * code's schema is checked against the server's first and never applied:
+ * the server owns it, and a replica takes its collections as the server
+ * declares them.
+ */
+export function sync<T extends Tables, R extends Relations = {}>(
+  opts: SyncOptions<any> & SchemaOptions<T, R>,
+): Promise<FennecSync<SchemaOf<T>, R>>;
+export function sync<S extends AnySchema<S> = Schema>(
+  opts: SyncOptions<S> & Partial<SchemaText>,
+): Promise<FennecSync<S>>;

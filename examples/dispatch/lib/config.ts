@@ -5,9 +5,9 @@ import { fileURLToPath } from 'node:url';
 const env = process.env;
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
-/** fenec-shard, as this server reaches it. */
+/** fennec-shard, as this server reaches it. */
 export const ROUTER_URL = (env.PLOVER_ROUTER ?? 'http://127.0.0.1:8090').replace(/\/$/, '');
-/** fenec-shard, as a browser reaches it: the live map and tracking talk to it directly. */
+/** fennec-shard, as a browser reaches it: the live map and tracking talk to it directly. */
 export const PUBLIC_ROUTER_URL = (env.PLOVER_PUBLIC_ROUTER ?? ROUTER_URL).replace(/\/$/, '');
 /** The router's own token: places tenants and sets their quotas. setup.ts alone uses it. */
 export const SHARD_TOKEN = env.PLOVER_SHARD_TOKEN ?? 'plover-dev-shard';
@@ -27,7 +27,7 @@ export const tenantOf = (slug: string) => `co-${slug}`;
 
 /** How long a claim holds an order before another courier may take it, unless extended. */
 export const LEASE_MS = Number(env.PLOVER_LEASE_MS ?? 45_000);
-/** How long a claim waits at the server for an order when none is near (Fenec-Wait, 30 s at most). */
+/** How long a claim waits at the server for an order when none is near (Fennec-Wait, 30 s at most). */
 export const CLAIM_WAIT_MS = Number(env.PLOVER_CLAIM_WAIT_MS ?? 25_000);
 /** How far a courier will ride to a pickup, metres. */
 export const CLAIM_RADIUS_M = Number(env.PLOVER_CLAIM_RADIUS ?? 3_000);

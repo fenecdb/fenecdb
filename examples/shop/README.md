@@ -1,4 +1,4 @@
-# Sandgrouse: a shop on fenecdb
+# Sandgrouse: a shop on fennecdb
 
 A real-world e-commerce example. Sandgrouse is an invented desert and travel
 gear shop with 10 000 generated products in 30 categories. It has:
@@ -15,8 +15,8 @@ tests hold its correctness, security and SEO.
 The stack:
 
 - Next.js 16 App Router and TypeScript;
-- `fenec-server` as the only database;
-- server components that read through `@fenecdb/web/client` (`connect`),
+- `fennec-server` as the only database;
+- server components that read through `@fennecdb/web/client` (`connect`),
   typed by the schema declared in code (`lib/schema.ts`).
 
 Every product, maker and review is generated. No card is charged.
@@ -24,7 +24,7 @@ Every product, maker and review is generated. No card is charged.
 ## Architecture
 
 ```
- browser                       Next.js server (app/, lib/)                    fenec-server
+ browser                       Next.js server (app/, lib/)                    fennec-server
  ───────                       ───────────────────────────                    ────────────
  HTML pages, no JS needed  ◀── server components: home, /c/<category>,        products, categories,
  (forms post, links GET)       /p/<slug> (ISR, 5 min), /search               inventory  (catalog)
@@ -36,8 +36,8 @@ Every product, maker and review is generated. No card is charged.
  POST /api/checkout ─────────▶  │  /batch + Idempotency-Key, shop's token ──▶ set inventory ... require 1
  POST /api/pay      ─────────▶  │  mock provider capture, then /batch      ──▶ insert orders, order_lines
                                                                               del carts  (one block)
- live stock island  ──── GET /api/stock-token (role: stock, 10 min) ───────▶ FenecHttp.live: a
-   (after the first touch)      then straight to fenec-server, CORS          poll, 304 while unchanged
+ live stock island  ──── GET /api/stock-token (role: stock, 10 min) ───────▶ FennecHttp.live: a
+   (after the first touch)      then straight to fennec-server, CORS         poll, 304 while unchanged
 ```
 
 The site's server holds two kinds of token:
@@ -55,10 +55,10 @@ The site's server holds two kinds of token:
 ## Run it
 
 ```sh
-cargo build --release -p fenec-server        # from the repository's root
+cargo build --release -p fennec-server        # from the repository's root
 cd examples/shop
 npm install
-npm run db                                    # fenec-server on :8080, data/shop.fenec, policy.txt
+npm run db                                    # fennec-server on :8080, data/shop.fennec, policy.txt
 npm run seed                                  # 30 categories, 10 000 products, their stock: about 1 s
 npm run build && npm start                    # http://localhost:3000
 ```
@@ -68,10 +68,10 @@ so it needs the server running and seeded.
 
 | Variable | Default | For |
 | --- | --- | --- |
-| `FENEC_URL` | `http://127.0.0.1:8080` | where the site's server reaches fenec-server |
-| `FENEC_PUBLIC_URL` | `FENEC_URL` | where a browser reaches it, for the live stock |
-| `FENEC_TOKEN` | `shop-dev-token` | the server's own token |
-| `FENEC_JWT_SECRET` | a dev value | the HS256 secret fenec-server checks shoppers' tokens with |
+| `FENNEC_URL` | `http://127.0.0.1:8080` | where the site's server reaches fennec-server |
+| `FENNEC_PUBLIC_URL` | `FENNEC_URL` | where a browser reaches it, for the live stock |
+| `FENNEC_TOKEN` | `shop-dev-token` | the server's own token |
+| `FENNEC_JWT_SECRET` | a dev value | the HS256 secret fennec-server checks shoppers' tokens with |
 | `SHOP_SECRET` | a dev value | signs the session cookie |
 | `SHOP_ADMIN_TOKEN` | `shop-dev-admin` | for `POST /api/reap` from a cron job |
 | `SITE_URL` | `http://localhost:3000` | canonical URLs, sitemaps, CORS |
@@ -99,14 +99,14 @@ this checkout's packages. CI's `examples (shop)` job runs it with
 
 ## What each part uses
 
-| Part | fenecdb |
+| Part | fennecdb |
 | --- | --- |
-| Schema | Declared in code with `fenecTable` (`lib/schema.ts`); `connect(url, { schema, migrate: true })` makes what is missing when seeding, and the pages connect with `schema` alone, which only checks |
+| Schema | Declared in code with `fennecTable` (`lib/schema.ts`); `connect(url, { schema, migrate: true })` makes what is missing when seeding, and the pages connect with `schema` alone, which only checks |
 | Catalog | `@unique` on `sku` and `slug`, `@hash` on `category`, `brand` and `colour`, `@sorted` on `price`, `rating` and `added`; prices in integer cents |
 | Category page | `facet brand, price ranges [...], colour, material` beside the page, in its statement; a facet with a filter on is `disjunctive`, counted without its own filter; `order` over a `@sorted` field walks the index; `offset`/`limit` pages |
 | Search | `match description $1` over `@text(prefix=5)`, so a part of a word or a late typo finds it ("titanum" finds titanium); `highlight(name)` and `snippet(description, 26)` as UTF-16 offsets, drawn as `<mark>` nodes so no text is read as HTML; `facet category, brand, ...` |
 | Related products | `near features $v` within the category, over an `@hnsw` vector of the product's attributes (`lib/features.ts`) |
-| Product page | Incremental static regeneration (5 minutes); stock from `inventory`, then `FenecHttp.live` polled in the browser |
+| Product page | Incremental static regeneration (5 minutes); stock from `inventory`, then `FennecHttp.live` polled in the browser |
 | Cart | Under the shopper's JWT: `put carts {...} if absent`, then `set carts {qty: qty + $1} where line = $2 and qty + $1 <= 20 require 1`, one `/batch`; `@ttl(7d)` on `touched` expires an abandoned line; `lookup products on sku = sku` prices the lines in the same query |
 | Checkout | One `/batch` with an `Idempotency-Key`: `set inventory {available: available - $1, reserved: reserved + $1} where sku = $2 and available >= $1 require 1` for each line, `insert orders`, `insert order_lines`, `del carts` |
 | Payment | A mock provider's idempotent capture, then one `/batch`: `insert payments` (`@unique` on the order, so a second capture is a clash), `set orders {status: "paid"} where number = $1 and status = "reserved" require 1`, the units moved from reserved to sold |
@@ -149,7 +149,7 @@ and makes no second order.
 
 Every number below was measured on an Apple M1 laptop with 8 cores, which
 other agents were using at the same time (load average 3 to 6). The server
-was this checkout's `fenec-server`, in release mode, with `--sync 250`, and
+was this checkout's `fennec-server`, in release mode, with `--sync 250`, and
 the site ran on `next start`, so the absolute figures are indicative. The
 data was the generated catalog of 10 000 products.
 
@@ -294,7 +294,7 @@ Components payload, which repeats the page for the client's router.
 ### Load test
 
 16 concurrent clients, 10 s a route, every request answered by the Next
-server with its data in fenec-server (`npm run load`):
+server with its data in fennec-server (`npm run load`):
 
 | route | rate | p50 | p99 | failed |
 | --- | --- | --- | --- | --- |
@@ -318,7 +318,7 @@ server).
 | File | What it holds |
 | --- | --- |
 | `test/checkout.test.ts` | 24 shoppers checking out the last 5 units: exactly 5 orders, the rest refused naming the product, and inventory `{0, 5, 0}`. Mixed quantities from 16 shoppers over 11 units: never more than 11 sold, and stock equals what was stocked less every order line. One checkout key sent twice at once and once more after: one order, one line, stock taken once. Cart totals equal catalog prices summed, the shipping threshold applies, and the cap of 20 holds. Payment moves units once, a second capture is the same reference, and a decline puts the units back and cancels the order. A lapsed hold is released once and cannot then be paid for |
-| `test/security.test.ts` | Bob reaching Alice's order (page, JSON, payment) or her cart lines through any route: 404, and her cart unchanged. A forged session cookie is no session. A shopper's JWT sent straight to fenec-server reads only its own rows (lookups and counts included), changes none of another's (`affected: 0`), and is refused a row written for another (403) and the collections no rule names (404). The stock token reads stock and writes nothing. Guessed guest cookies find nothing; the database holds only a hash of the cookie; cookies are `HttpOnly` and `SameSite=Lax`. A price, total or discount in a request is ignored. Bad quantities and unknown skus are refused. Seven injection strings in search and in a filter change nothing and widen nothing. A write sent from another origin is refused |
+| `test/security.test.ts` | Bob reaching Alice's order (page, JSON, payment) or her cart lines through any route: 404, and her cart unchanged. A forged session cookie is no session. A shopper's JWT sent straight to fennec-server reads only its own rows (lookups and counts included), changes none of another's (`affected: 0`), and is refused a row written for another (403) and the collections no rule names (404). The stock token reads stock and writes nothing. Guessed guest cookies find nothing; the database holds only a hash of the cookie; cookies are `HttpOnly` and `SameSite=Lax`. A price, total or discount in a request is ignored. Bad quantities and unknown skus are refused. Seven injection strings in search and in a filter change nothing and widen nothing. A write sent from another origin is refused |
 | `test/seo.test.ts` | A product's title, description, canonical, Open Graph, and JSON-LD `Product` with `Offer` (price as a decimal string, `USD`, availability) and `AggregateRating` (left out with no reviews). `BreadcrumbList`. A category's `ItemList` and positions, its canonical by page, `noindex` on filtered views, and `rel="next"`. The sitemap index and its files list every product and category. robots.txt. The content is in the HTML |
 
 ## Semantic search
@@ -344,7 +344,7 @@ are closed now, and the shop uses what closed them:
 
 1. **`/batch` and `Idempotency-Key` in the client.** Checkout and the cart
    go through `db.batch([...], { idempotencyKey })`, which answers each
-   statement's result and throws a `FenecError` naming the statement that
+   statement's result and throws a `FennecError` naming the statement that
    stopped it (`at`) and why (`status`, 412 for a `require` not met).
    `lib/db.ts`'s `batch` is a few lines over it, where it posted `/batch`
    with a `fetch` of its own.
@@ -360,10 +360,10 @@ are closed now, and the shop uses what closed them:
    2500, 5000, 10000, 25000, ...]` over the `@sorted` price, counted from
    its index; the `priceBand` field written at seed time is gone.
 5. **A live query per viewer was a server thread.** The live stock polls
-   (`FenecHttp.live(..., { poll: 5000 })`): the server answers 304 without
+   (`FennecHttp.live(..., { poll: 5000 })`): the server answers 304 without
    running the query while the stock has not moved, and holds no stream,
    no thread, between rounds.
-6. **The first search after a start was slow.** `fenec-server` builds the
+6. **The first search after a start was slow.** `fennec-server` builds the
    derived indexes after the open, beside the first requests (`--warm`,
    on by default for a file; `scripts/db.sh` writes it out), so the first
    search does not build its text index: 2.68 s of LCP for that first

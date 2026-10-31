@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The playground's highlighter (`highlight.js`, as `build.py` writes it)
-against the docs' (`build.highlight`), over every FenecQL block the site shows
+against the docs' (`build.highlight`), over every FennecQL block the site shows
 and a few statements written to reach the edges: the same HTML, byte for byte.
 
     python3 site/test_highlight.py      # needs node on PATH
@@ -35,12 +35,12 @@ SAMPLES = [
 
 
 def site_blocks():
-    """The body of every `data-lang="fenecql"` block, as build.py reads it."""
+    """The body of every `data-lang="fennecql"` block, as build.py reads it."""
     out = []
     for path in glob.glob(os.path.join(ROOT, "content", "**", "*.html"), recursive=True):
         text = open(path, encoding="utf-8").read()
         for m in build.PRE_RE.finditer(text):
-            if 'data-lang="fenecql"' in m.group("attrs"):
+            if 'data-lang="fennecql"' in m.group("attrs"):
                 out.append(html.unescape(m.group("body")).strip("\n"))
     return out
 
@@ -55,26 +55,26 @@ def main():
              f"import {{ highlight }} from {json.dumps('file://' + mod)};"
              "let s = ''; process.stdin.on('data', (d) => s += d);"
              "process.stdin.on('end', () => process.stdout.write(JSON.stringify("
-             "JSON.parse(s).map((c) => highlight(c, 'fenecql')))));"],
+             "JSON.parse(s).map((c) => highlight(c, 'fennecql')))));"],
             input=json.dumps(samples), capture_output=True, text=True)
     if run.returncode != 0:
         raise SystemExit(run.stderr)
     got = json.loads(run.stdout)
-    bad = [(s, g, build.highlight(s, "fenecql"))
-           for s, g in zip(samples, got) if g != build.highlight(s, "fenecql")]
+    bad = [(s, g, build.highlight(s, "fennecql"))
+           for s, g in zip(samples, got) if g != build.highlight(s, "fennecql")]
     for s, g, want in bad[:5]:
         print(f"differs on {s!r}:\n  js: {g}\n  py: {want}")
     if bad:
         raise SystemExit(f"{len(bad)} of {len(samples)} statements highlight differently")
-    # The editor colours a line at a time: no FenecQL token may span one.
+    # The editor colours a line at a time: no FennecQL token may span one.
     for s in samples:
-        whole = build.highlight(s, "fenecql")
-        by_line = "\n".join(build.highlight(ln, "fenecql") for ln in s.split("\n"))
+        whole = build.highlight(s, "fennecql")
+        by_line = "\n".join(build.highlight(ln, "fennecql") for ln in s.split("\n"))
         if whole != by_line:
             raise SystemExit(f"a token spans a line in {s!r}: the editor would colour it apart")
     # The rules are written in, not copied: a keyword the docs know is one here.
     assert re.search(r'"fuse"', build.highlight_js())
-    # fenec studio serves the file as the repository holds it: the one
+    # fennec studio serves the file as the repository holds it: the one
     # build.py writes, or the studio's editor would colour by other rules.
     # The Grafana data source's editor is held to the same file.
     for path in (build.STUDIO_HIGHLIGHT, build.GRAFANA_HIGHLIGHT):

@@ -20,7 +20,7 @@ const LOG = 200;
 
 export function mount(host, ctx) {
   const title = h('h1', { class: 'view-title' });
-  const where = h('input', { id: 'live-where', class: 'where', placeholder: 'status = "open"', spellcheck: 'false', autocomplete: 'off', 'aria-label': 'Where clause of the rows to follow, FenecQL' });
+  const where = h('input', { id: 'live-where', class: 'where', placeholder: 'status = "open"', spellcheck: 'false', autocomplete: 'off', 'aria-label': 'Where clause of the rows to follow, FennecQL' });
   const follow = h('button', { type: 'submit', class: 'btn' }, 'Follow');
   const pause = h('button', { type: 'button', class: 'btn', 'aria-pressed': 'false', onclick: () => toggle() }, 'Pause');
   const status = h('p', { class: 'lv-status', 'aria-live': 'polite' });

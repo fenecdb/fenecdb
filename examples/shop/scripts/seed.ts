@@ -1,4 +1,4 @@
-// Seeds fenec-server with the generated catalog: 30 categories, 10 000
+// Seeds fennec-server with the generated catalog: 30 categories, 10 000
 // products and their stock. The schema is the code's (lib/schema.ts),
 // applied with `migrate: true` -- which takes the server's token -- before
 // anything is written. Seeding a database that holds the catalog already
@@ -6,12 +6,12 @@
 //
 //   npm run seed                 10 000 products
 //   SHOP_PRODUCTS=2000 npm run seed
-import { connect } from '@fenecdb/web/client';
+import { connect } from '@fennecdb/web/client';
 import { schema, products, categories, inventory } from '../lib/schema';
 import { generate } from '../lib/generate';
 
-const url = process.env.FENEC_URL ?? 'http://127.0.0.1:8080';
-const token = process.env.FENEC_TOKEN ?? 'shop-dev-token';
+const url = process.env.FENNEC_URL ?? 'http://127.0.0.1:8080';
+const token = process.env.FENNEC_TOKEN ?? 'shop-dev-token';
 const count = Number(process.env.SHOP_PRODUCTS ?? 10_000);
 
 const t0 = performance.now();

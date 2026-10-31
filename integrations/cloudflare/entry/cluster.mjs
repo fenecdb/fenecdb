@@ -1,6 +1,6 @@
-// Real fenec-server nodes and fenec-shard routers for the entry's tests and
+// Real fennec-server nodes and fennec-shard routers for the entry's tests and
 // its bench: two regions keeping their own directory behind a global
-// router, as crates/fenec-shard/tests/region_leases.rs sets them up, each
+// router, as crates/fennec-shard/tests/region_leases.rs sets them up, each
 // process on port 0 and found by the address it says it took.
 
 import { spawn } from 'node:child_process';
@@ -11,12 +11,12 @@ import { join, resolve } from 'node:path';
 
 const root = resolve(new URL('.', import.meta.url).pathname, '../../..');
 
-/** The binaries: FENEC_SERVER and FENEC_SHARD, else the debug build's (BUILD=release the release one's). */
+/** The binaries: FENNEC_SERVER and FENNEC_SHARD, else the debug build's (BUILD=release the release one's). */
 export function binaries() {
   const build = process.env.BUILD === 'release' ? 'release' : 'debug';
   return {
-    server: process.env.FENEC_SERVER ?? join(root, 'target', build, 'fenec-server'),
-    shard: process.env.FENEC_SHARD ?? join(root, 'target', build, 'fenec-shard'),
+    server: process.env.FENNEC_SERVER ?? join(root, 'target', build, 'fennec-server'),
+    shard: process.env.FENNEC_SHARD ?? join(root, 'target', build, 'fennec-shard'),
   };
 }
 
@@ -137,18 +137,18 @@ export async function until(ok, what, ms = 60_000) {
  */
 export async function world({ tenants = [], schema = 'create collection notes (title text)', node = [], entryToken, audit = false } = {}) {
   const { server, shard: router } = binaries();
-  const dir = await mkdtemp(join(tmpdir(), 'fenecdb-entry-'));
+  const dir = await mkdtemp(join(tmpdir(), 'fennecdb-entry-'));
   const on = (name) => join(dir, name);
   const routerArgs = (file, more) => [
     '--listen', '127.0.0.1:0', '--directory', on(file), '--token', ROOT, '--replication-token', DIRS,
     '--http-cors', ORIGIN, ...(entryToken ? ['--entry-token', entryToken] : []),
     ...(audit ? ['--audit', on(`${file}.audit`)] : []), ...more,
   ];
-  const global = await start(router, routerArgs('global.fenec', []));
+  const global = await start(router, routerArgs('global.fennec', []));
   const regional = (region, file, more = []) => start(router, routerArgs(file, ['--region', region, '--global', global.url, ...more]));
-  const us = await regional('us', 'us.fenec');
-  const usStandby = await regional('us', 'us-standby.fenec', ['--replica-of', us.url]);
-  const eu = await regional('eu', 'eu.fenec');
+  const us = await regional('us', 'us.fennec');
+  const usStandby = await regional('us', 'us-standby.fennec', ['--replica-of', us.url]);
+  const eu = await regional('eu', 'eu.fennec');
   const nodes = {};
   for (const region of ['us', 'eu']) {
     nodes[region] = await start(server, [
@@ -157,7 +157,7 @@ export async function world({ tenants = [], schema = 'create collection notes (t
     ]);
   }
   const w = { dir, global, us, usStandby, eu, nodes };
-  const files = new Map([[global, 'global.fenec'], [us, 'us.fenec'], [usStandby, 'us-standby.fenec'], [eu, 'eu.fenec']]);
+  const files = new Map([[global, 'global.fennec'], [us, 'us.fennec'], [usStandby, 'us-standby.fennec'], [eu, 'eu.fennec']]);
   w.audit = async (r) => (await readFile(on(`${files.get(r)}.audit`), 'utf8').catch(() => '')).split('\n').filter(Boolean).map((l) => JSON.parse(l));
   try {
     for (const [region, routers] of [['us', [us.url, usStandby.url]], ['eu', [eu.url]]]) {

@@ -1,9 +1,9 @@
 // Security: a shopper reaches only its own cart and orders, through the
-// shop or straight at fenec-server with its token; a guest's cart cannot be
+// shop or straight at fennec-server with its token; a guest's cart cannot be
 // had by guessing; prices are the server's; search text is a parameter.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FENEC, SHOP, Shopper, fenec, key, rows, someProduct, stock, tokenAs } from './helpers';
+import { FENNEC, SHOP, Shopper, fennec, key, rows, someProduct, stock, tokenAs } from './helpers';
 
 test('one shopper cannot read or change another shopper’s cart or orders through the shop', async () => {
   const p = await someProduct(10);
@@ -41,7 +41,7 @@ test('one shopper cannot read or change another shopper’s cart or orders throu
   assert.equal((await forged.get(`/api/orders/${order.body.number}`)).status, 404);
 });
 
-test('a shopper’s own token, sent straight to fenec-server, reaches only its own rows', async () => {
+test('a shopper’s own token, sent straight to fennec-server, reaches only its own rows', async () => {
   const p = await someProduct(12);
   await stock(p.sku, 50);
   const alice = new Shopper();
@@ -51,29 +51,29 @@ test('a shopper’s own token, sent straight to fenec-server, reaches only its o
   const mallory = tokenAs('g:mallory');
 
   // Reads: the policy's filter is in every read, lookups and counts too.
-  assert.deepEqual(await fenec('get orders where owner = $1', [mine.owner], mallory), { status: 200, body: [] });
-  assert.deepEqual(await fenec('get orders where number = $1', [o.body.number], mallory), { status: 200, body: [] });
-  assert.deepEqual(await fenec('get order_lines where orderNumber = $1', [o.body.number], mallory), { status: 200, body: [] });
-  assert.deepEqual((await fenec('get carts count', [], mallory)).body, [{ count: 0 }]);
+  assert.deepEqual(await fennec('get orders where owner = $1', [mine.owner], mallory), { status: 200, body: [] });
+  assert.deepEqual(await fennec('get orders where number = $1', [o.body.number], mallory), { status: 200, body: [] });
+  assert.deepEqual(await fennec('get order_lines where orderNumber = $1', [o.body.number], mallory), { status: 200, body: [] });
+  assert.deepEqual((await fennec('get carts count', [], mallory)).body, [{ count: 0 }]);
   // Writes: a set or a del touches only Mallory's rows, and a row written
   // for someone else is refused.
-  assert.deepEqual((await fenec('set carts {qty: 99} where owner = $1', [mine.owner], mallory)).body, { affected: 0 });
-  assert.deepEqual((await fenec('del carts', [], mallory)).body, { affected: 0 });
-  assert.equal((await fenec('put carts {owner: $1, line: "x", sku: "y", qty: 1}', [mine.owner], mallory)).status, 403);
-  assert.equal((await fenec('set orders {status: "paid"} where number = $1', [o.body.number], mallory)).status, 403);
-  assert.equal((await fenec('set inventory {available: 1000}', [], mallory)).status, 404);
+  assert.deepEqual((await fennec('set carts {qty: 99} where owner = $1', [mine.owner], mallory)).body, { affected: 0 });
+  assert.deepEqual((await fennec('del carts', [], mallory)).body, { affected: 0 });
+  assert.equal((await fennec('put carts {owner: $1, line: "x", sku: "y", qty: 1}', [mine.owner], mallory)).status, 403);
+  assert.equal((await fennec('set orders {status: "paid"} where number = $1', [o.body.number], mallory)).status, 403);
+  assert.equal((await fennec('set inventory {available: 1000}', [], mallory)).status, 404);
   // Collections no rule lets it read do not exist for it.
-  assert.equal((await fenec('get users', [], mallory)).status, 404);
-  assert.equal((await fenec('get payments', [], mallory)).status, 404);
+  assert.equal((await fennec('get users', [], mallory)).status, 404);
+  assert.equal((await fennec('get payments', [], mallory)).status, 404);
   // The browser's stock token reads stock and nothing else.
   const viewer = tokenAs('stock-viewer', 'stock');
-  assert.equal((await fenec('get inventory where sku = $1', [p.sku], viewer)).status, 200);
-  assert.equal((await fenec('set inventory {available: 0} where sku = $1', [p.sku], viewer)).status, 403);
-  assert.deepEqual((await fenec('get carts', [], viewer)).body, []);
-  assert.deepEqual((await fenec('get orders count', [], viewer)).body, [{ count: 0 }]);
+  assert.equal((await fennec('get inventory where sku = $1', [p.sku], viewer)).status, 200);
+  assert.equal((await fennec('set inventory {available: 0} where sku = $1', [p.sku], viewer)).status, 403);
+  assert.deepEqual((await fennec('get carts', [], viewer)).body, []);
+  assert.deepEqual((await fennec('get orders count', [], viewer)).body, [{ count: 0 }]);
   // A token with no exp, or signed with another secret, is refused.
-  assert.equal((await fenec('get products limit 1', [], 'not.a.token')).status, 401);
-  const res = await fetch(`${FENEC}/query`, { method: 'POST', headers: { authorization: 'Bearer ' }, body: '{"query":"get users"}' });
+  assert.equal((await fennec('get products limit 1', [], 'not.a.token')).status, 401);
+  const res = await fetch(`${FENNEC}/query`, { method: 'POST', headers: { authorization: 'Bearer ' }, body: '{"query":"get users"}' });
   assert.equal(res.status, 401);
 });
 

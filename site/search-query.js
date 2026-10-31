@@ -31,7 +31,7 @@ const FIELDS =
 export const SCHEMA = `create collection docs (${FIELDS})`;
 export const SCHEMA_VECTORS = `create collection docs (${FIELDS}, embed vector<${EMBED_DIM}, f16> @hnsw(cosine))`;
 
-/* FenecQL has no weight for a field, and `match` searches one. So the
+/* FennecQL has no weight for a field, and `match` searches one. So the
    heading is searched apart and its score counts this many times over the
    text's: a section named for a word outranks one that only mentions it,
    which is what a reader who types the word is after. */

@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""A FenecQL example on the reference pages, in tabs: the statement, then the
+"""A FennecQL example on the reference pages, in tabs: the statement, then the
 same query written with each SDK's builder.
 
     {{builder "docs: the nearest articles" "docs: the nearest articles exactly"}}
-    <pre data-lang="fenecql">get articles near embed $1 limit 10
+    <pre data-lang="fennecql">get articles near embed $1 limit 10
     get articles near embed $1 exact limit 10</pre>
 
 The placeholder names cases of integrations/builder-golden.json, one for each
 statement of the block under it, in order. The build (`expand`, from
 build.py's `filled`) holds each case to its statement -- the text the
-builders make, each parameter written in as FenecQL writes the value, or a
+builders make, each parameter written in as FennecQL writes the value, or a
 `$n` of the page's where the case binds one -- and writes the box: the
-block as it was under FenecQL, the box's first tab, then a tab for each
+block as it was under FennecQL, the box's first tab, then a tab for each
 language with the case's chain written in that language's builder, and the
-statement it sends. FenecQL's tab keeps nothing (`data-keep="false"`), so
+statement it sends. FennecQL's tab keeps nothing (`data-keep="false"`), so
 the reader's language, where one was chosen, is what a box opens on.
 
-A placeholder over no FenecQL block makes its FenecQL tab of the cases --
+A placeholder over no FennecQL block makes its FennecQL tab of the cases --
 each statement with its parameters written in, broken before its clauses
 where it is long (`written`) -- for a page whose prose has no statement of
 its own to hold them to, as languages.html's tour of the builder:
@@ -143,7 +143,7 @@ def statements(code):
 
 
 def literal(v):
-    """A value as FenecQL writes it in a statement."""
+    """A value as FennecQL writes it in a statement."""
     if v is None:
         return "null"
     if v is True:
@@ -160,14 +160,14 @@ def literal(v):
 
 
 def _text(s):
-    """A text as FenecQL writes it: between double quotes, a backslash and a
-    quote escaped, and FENECQL_ESCAPES's four as their escapes."""
-    return '"' + "".join("\\" + ch if ch in '\\"' else FENECQL_ESCAPES.get(ch, ch) for ch in s) + '"'
+    """A text as FennecQL writes it: between double quotes, a backslash and a
+    quote escaped, and FENNECQL_ESCAPES's four as their escapes."""
+    return '"' + "".join("\\" + ch if ch in '\\"' else FENNECQL_ESCAPES.get(ch, ch) for ch in s) + '"'
 
 
 def _key(k):
-    """An object's key as FenecQL writes it: a name bare, anything else --
-    `a-b`, `1x`, a word FenecQL reads as a value -- quoted."""
+    """An object's key as FennecQL writes it: a name bare, anything else --
+    `a-b`, `1x`, a word FennecQL reads as a value -- quoted."""
     bare = k.isidentifier() and k.lower() not in ("true", "false", "null")
     return k if bare else _text(k)
 
@@ -221,12 +221,12 @@ class Call:
 # lexers take for a line's end -- C# refuses U+2028 in a string literal.
 ESCAPED = frozenset(range(0x20)) | {0x85, 0x2028, 0x2029}
 
-# FenecQL's own escapes in a string (fenec-ql's lexer): after a backslash a
+# FennecQL's own escapes in a string (fennec-ql's lexer): after a backslash a
 # character is itself, but for these four. It has no `\u`, so the rest of
 # ESCAPED has no spelling a page could show, and `written` refuses a value
 # holding one.
-FENECQL_ESCAPES = {"\n": "\\n", "\t": "\\t", "\r": "\\r", "\0": "\\0"}
-UNWRITABLE = ESCAPED - {ord(ch) for ch in FENECQL_ESCAPES}
+FENNECQL_ESCAPES = {"\n": "\\n", "\t": "\\t", "\r": "\\r", "\0": "\\0"}
+UNWRITABLE = ESCAPED - {ord(ch) for ch in FENNECQL_ESCAPES}
 
 
 def quoted(s, q, also="", u="\\u%04x"):
@@ -340,7 +340,7 @@ class Lang:
 
 class JS(Lang):
     name, code = "JavaScript", "js"
-    IMPORT = "import {{ connect{} }} from '@fenecdb/web/client'"
+    IMPORT = "import {{ connect{} }} from '@fennecdb/web/client'"
     HELPERS = ("or", "and", "not", "raw", "inc", "expr", "bucket", "countDistinct", "distance", "first", "last")
     indent = "  "
 
@@ -454,7 +454,7 @@ class JS(Lang):
 
 class Python(Lang):
     name, code = "Python", "python"
-    IMPORT = "from fenecdb import Client{}"
+    IMPORT = "from fennecdb import Client{}"
     HELPERS = ("or_", "and_", "not_", "raw", "inc", "expr", "bucket", "count_distinct", "distance", "first", "last")
     SNAKE = {"parentKey": "parent_key", "ifAbsent": "if_absent"}
 
@@ -566,7 +566,7 @@ class Python(Lang):
 
 class Go(Lang):
     name, code = "Go", "go"
-    IMPORT = 'import fenecdb "github.com/fenecdb/fenecdb/integrations/go"'
+    IMPORT = 'import fennecdb "github.com/fennec-db/fennecdb/integrations/go"'
     indent = "\t"
 
     def s(self, v):
@@ -575,9 +575,9 @@ class Go(Lang):
     def v(self, x, vector=False):
         k, w = _special(x)
         if k == "$inc":
-            return f"fenecdb.Inc({_num(w)})"
+            return f"fennecdb.Inc({_num(w)})"
         if k == "$expr":
-            return "fenecdb.Expr(" + ", ".join([self.s(w[0])] + [self.v(p) for p in w[1:]]) + ")"
+            return "fennecdb.Expr(" + ", ".join([self.s(w[0])] + [self.v(p) for p in w[1:]]) + ")"
         if k is not None:
             raise SystemExit(f"builder tabs: Go has no value {k}")
         if x is None:
@@ -596,7 +596,7 @@ class Go(Lang):
 
     def doc(self, x):
         # A document is a D: a map has no order, and the order is the text's.
-        return "fenecdb.D(" + ", ".join(f"{self.s(k)}, {self.v(e)}" for k, e in x.items()) + ")"
+        return "fennecdb.D(" + ", ".join(f"{self.s(k)}, {self.v(e)}" for k, e in x.items()) + ")"
 
     def col(self, x):
         k, w = _special(x)
@@ -607,93 +607,93 @@ class Go(Lang):
         if k == "$expr":
             return self.v(x)
         if k == "$bucket":
-            return "fenecdb.Bucket(" + ", ".join(self.s(p) for p in w) + ")"
+            return "fennecdb.Bucket(" + ", ".join(self.s(p) for p in w) + ")"
         if k == "$countDistinct":
-            return f"fenecdb.CountDistinct({self.s(w)})"
+            return f"fennecdb.CountDistinct({self.s(w)})"
         if k in ("$first", "$last"):
-            return f"fenecdb.{k[1:].title()}(" + ", ".join(self.s(p) for p in w) + ")"
+            return f"fennecdb.{k[1:].title()}(" + ", ".join(self.s(p) for p in w) + ")"
         if k == "$distance":
-            return f"fenecdb.Distance({self.s(w[0])}, {self.v(w[1], vector=True)})"
+            return f"fennecdb.Distance({self.s(w[0])}, {self.v(w[1], vector=True)})"
         raise SystemExit(f"builder tabs: Go has no column {k}")
 
     def cond(self, x):
         k, w = _special(x)
         if k in ("$or", "$and"):
-            return f"fenecdb.{k[1:].title()}(" + ", ".join(self.cond(e) for e in w) + ")"
+            return f"fennecdb.{k[1:].title()}(" + ", ".join(self.cond(e) for e in w) + ")"
         if k == "$not":
-            return f"fenecdb.Not({self.cond(w)})"
+            return f"fennecdb.Not({self.cond(w)})"
         if k == "$raw":
-            return "fenecdb.Raw(" + ", ".join([self.s(w[0])] + [self.v(p) for p in w[1:]]) + ")"
+            return "fennecdb.Raw(" + ", ".join([self.s(w[0])] + [self.v(p) for p in w[1:]]) + ")"
         # One field held to one operator is a comparison; else its fields.
         if len(x) == 1:
             (f, spec), = x.items()
             if isinstance(spec, dict) and len(spec) == 1 and _special(spec)[0] is None:
                 (op, val), = spec.items()
                 if op not in ("not", "distance", "within"):
-                    return f"fenecdb.Cmp({self.s(f)}, {self.s(op)}, {self.v(val)})"
-        return "fenecdb.Fields(" + ", ".join(f"{self.s(f)}, {self.spec(spec)}" for f, spec in x.items()) + ")"
+                    return f"fennecdb.Cmp({self.s(f)}, {self.s(op)}, {self.v(val)})"
+        return "fennecdb.Fields(" + ", ".join(f"{self.s(f)}, {self.spec(spec)}" for f, spec in x.items()) + ")"
 
     def spec(self, x):
         """What a field is held to: a value, or its operators as Ops, a
         `not`'s and a distance's comparisons Ops of their own."""
         if not isinstance(x, dict) or _special(x)[0] is not None:
             return self.v(x)
-        return "fenecdb.Ops(" + ", ".join(
+        return "fennecdb.Ops(" + ", ".join(
             f"{self.s(o)}, {self.spec(e) if o in ('not', 'distance') else self.v(e)}" for o, e in x.items()) + ")"
 
     def opts(self, o):
         out = []
         for k, x in o.items():
             if k == "ef":
-                out.append(f"fenecdb.Ef({x})")
+                out.append(f"fennecdb.Ef({x})")
             elif k == "exact":
-                out += ["fenecdb.Exact()"] if x else []
+                out += ["fennecdb.Exact()"] if x else []
             elif k == "fuzzy":
-                out += [f"fenecdb.Fuzzy({2 if x is True else x})"] if x is not False else []
+                out += [f"fennecdb.Fuzzy({2 if x is True else x})"] if x is not False else []
             elif k == "prefix":
-                out += ["fenecdb.Prefix()"] if x else []
+                out += ["fennecdb.Prefix()"] if x else []
             elif k in ("k", "candidates", "top", "limit", "offset"):
-                out.append(f"fenecdb.{k.title()}({x})")
+                out.append(f"fennecdb.{k.title()}({x})")
             elif k == "collate":
-                out.append(f"fenecdb.Collate({self.s(x)})")
+                out.append(f"fennecdb.Collate({self.s(x)})")
             elif k == "ranges":
-                out.append("fenecdb.Ranges(" + ", ".join(_num(e) for e in x) + ")")
+                out.append("fennecdb.Ranges(" + ", ".join(_num(e) for e in x) + ")")
             elif k == "disjunctive":
-                out += ["fenecdb.Disjunctive()"] if x else []
+                out += ["fennecdb.Disjunctive()"] if x else []
             elif k == "required":
-                out += ["fenecdb.Required()"] if x else []
+                out += ["fennecdb.Required()"] if x else []
             elif k == "all":
-                out += ["fenecdb.All()"] if x else []
+                out += ["fennecdb.All()"] if x else []
             elif k == "require":
-                out.append(f"fenecdb.Require({x})")
+                out.append(f"fennecdb.Require({x})")
             elif k == "reason":
-                out.append(f"fenecdb.Reason({self.s(x)})")
+                out.append(f"fennecdb.Reason({self.s(x)})")
             elif k == "returning":
                 # JavaScript's true is every field, "*" here.
                 names = ["*"] if x is True else [] if x is False else x
-                out += ["fenecdb.Returning(" + ", ".join(self.s(n) for n in names) + ")"] if names else []
+                out += ["fennecdb.Returning(" + ", ".join(self.s(n) for n in names) + ")"] if names else []
             elif k in ("on", "parentKey"):
                 names = [x] if isinstance(x, str) else x
-                out.append(f"fenecdb.{'On' if k == 'on' else 'ParentKey'}(" + ", ".join(self.s(n) for n in names) + ")")
+                out.append(f"fennecdb.{'On' if k == 'on' else 'ParentKey'}(" + ", ".join(self.s(n) for n in names) + ")")
             elif k == "where":
-                out.append(f"fenecdb.Where({self.cond(x)})")
+                out.append(f"fennecdb.Where({self.cond(x)})")
             elif k in ("select", "group"):
                 cols = [x] if isinstance(x, str) else x
-                out.append(f"fenecdb.{k.title()}(" + ", ".join(self.col(e) for e in cols) + ")")
+                out.append(f"fennecdb.{k.title()}(" + ", ".join(self.col(e) for e in cols) + ")")
             elif k == "order":
                 for key in [x] if isinstance(x, str) else x:
                     key = [key] if isinstance(key, str) else key
                     more = self.opts(key[2]) if len(key) > 2 else []
-                    out.append("fenecdb.Sort(" + ", ".join(
+                    out.append("fennecdb.Sort(" + ", ".join(
                         [self.s(key[0]), self.s(key[1] if len(key) > 1 else "asc")] + more) + ")")
             elif k in ("pre", "post", "ellipsis"):
                 continue
             else:
                 raise SystemExit(f"builder tabs: Go has no option {k}")
         if "pre" in o or "post" in o:
-            out.append(f"fenecdb.Tags({self.s(o['pre'])}, {self.s(o['post'])})")
+            out.append(f"fennecdb.Tags({self.s(o['pre'])}, {self.s(o['post'])})")
         if "ellipsis" in o:
-            out.insert(0, f"fenecdb.Ellipsis({self.s(o['ellipsis'])})")
+            out.insert(0, f"fennecdb.Ellipsis({self.s(o['ellipsis'])})")
         return out
 
     def start(self, collection):
@@ -735,7 +735,7 @@ class Go(Lang):
         if op == "insert":
             docs = a[0] if isinstance(a[0], list) else [a[0]]
             o = _opt(a, 1)
-            more = (["fenecdb.IfAbsent()"] if o.get("ifAbsent") else []) + self.opts(
+            more = (["fennecdb.IfAbsent()"] if o.get("ifAbsent") else []) + self.opts(
                 {k: x for k, x in o.items() if k != "ifAbsent"})
             return Call("Insert", ["ctx"] + [self.doc(d) for d in docs] + more)
         if op == "upsert":
@@ -762,7 +762,7 @@ class Go(Lang):
 
 class CSharp(Lang):
     name, code = ".NET", "csharp"
-    IMPORT = "using FenecDb;"
+    IMPORT = "using FennecDb;"
     ASYNC = {"rows": "RowsAsync", "first": "FirstAsync", "count": "CountAsync", "explain": "ExplainAsync",
              "insert": "InsertAsync", "update": "UpdateAsync", "upsert": "UpsertAsync", "delete": "DeleteAsync"}
 
@@ -922,13 +922,13 @@ class CSharp(Lang):
 
 class Swift(Lang):
     name, code = "Swift", "swift"
-    IMPORT = "import FenecDB"
+    IMPORT = "import FennecDB"
 
     def s(self, v):
         return quoted(v, '"', u="\\u{%x}")
 
     def v(self, x, top=True):
-        """A value: `top`, an argument standing alone (`any FenecValue`),
+        """A value: `top`, an argument standing alone (`any FennecValue`),
         else inside a `Value` literal, whose elements are Values."""
         k, w = _special(x)
         if k == "$inc":
@@ -1073,7 +1073,7 @@ class Swift(Lang):
 
 class Kotlin(Lang):
     name, code = "Kotlin", "kotlin"
-    IMPORT = "import com.fenecdb.*"
+    IMPORT = "import com.fennecdb.*"
 
     def s(self, v):
         return quoted(v, '"', also="$")
@@ -1199,7 +1199,7 @@ class Kotlin(Lang):
 
 class Dart(Lang):
     name, code = "Dart", "dart"
-    IMPORT = "import 'package:fenecdb/fenecdb.dart';"
+    IMPORT = "import 'package:fennecdb/fennecdb.dart';"
 
     def s(self, v):
         return quoted(v, "'", also="$")
@@ -1339,11 +1339,11 @@ def render(lang, name):
 
 # -------------------------------------------------------------------- the box
 
-# The block under the placeholder is the box's FenecQL tab; with none, the
+# The block under the placeholder is the box's FennecQL tab; with none, the
 # tab is written from the cases (`written`).
 PLACEHOLDER = re.compile(
     r'\{\{builder(?P<names>(?:\s+"[^"]+")+)\s*\}\}'
-    r'(?:\s*\n(?P<pre><pre data-lang="fenecql"[^>]*>(?P<code>[\s\S]*?)</pre>))?')
+    r'(?:\s*\n(?P<pre><pre data-lang="fennecql"[^>]*>(?P<code>[\s\S]*?)</pre>))?')
 NAME = re.compile(r'"([^"]+)"')
 
 # Where a statement too long for its line is broken: before a clause, outside
@@ -1367,7 +1367,7 @@ def _texts(v):
 
 def written(c):
     """A case's statement as a page writes it: each parameter written in as
-    FenecQL writes the value, and one longer than WIDTH broken before its
+    FennecQL writes the value, and one longer than WIDTH broken before its
     clauses, a line going on indented -- before each `lookup` level, whose
     clauses are its children's."""
     out = []
@@ -1377,9 +1377,9 @@ def written(c):
             continue
         v = c["params"][int(p[1:]) - 1]
         if any(ord(ch) in UNWRITABLE for s in _texts(v) for ch in s):
-            # FenecQL's strings take no `\u` escape: such a value is a page's
+            # FennecQL's strings take no `\u` escape: such a value is a page's
             # own block to write.
-            raise SystemExit(f"builder tabs: case {c['name']!r} binds a text FenecQL cannot write in "
+            raise SystemExit(f"builder tabs: case {c['name']!r} binds a text FennecQL cannot write in "
                              "(a C0 control but \\n, \\t, \\r and \\0, U+0085, U+2028 or U+2029)")
         out.append(literal(v))
     text = "".join(out)
@@ -1430,7 +1430,7 @@ def box(names, pre, code, where):
         # No block of the page's: the statements as the cases make them, a
         # blank line between two as between the tabs' chains.
         code = html.escape("\n\n".join(written(case(n)) for n in names), quote=False)
-        pre = f'<pre data-lang="fenecql">{code}</pre>'
+        pre = f'<pre data-lang="fennecql">{code}</pre>'
     found = statements(html.unescape(code))
     if len(found) != len(names):
         raise SystemExit(
@@ -1442,7 +1442,7 @@ def box(names, pre, code, where):
                 f"{where}: the case {n!r} makes\n  {c['text']}  {json.dumps(c['params'])}\n"
                 f"which is not the page's\n  {stmt}")
     out = ['<div class="langs builder" data-langs>',
-           f'<div class="lang" data-name="FenecQL" data-keep="false">\n{pre}\n</div>']
+           f'<div class="lang" data-name="FennecQL" data-keep="false">\n{pre}\n</div>']
     for lang in LANGS:
         snippet = "\n\n".join(render(lang, n) for n in names)
         out.append(f'<div class="lang" data-name="{lang.name}">\n'
@@ -1451,7 +1451,7 @@ def box(names, pre, code, where):
     # Once for every tab, which the widget leaves showing beside the
     # panels: the same statements under seven tabs were seven copies in the
     # page's text, its search sections and llms-full.txt.
-    out.append(f'<div class="builder-sends">\n<pre data-lang="fenecql" data-label="sends">'
+    out.append(f'<div class="builder-sends">\n<pre data-lang="fennecql" data-label="sends">'
                f'{html.escape(sends(names), quote=False)}</pre>\n</div>')
     out.append("</div>")
     return "\n".join(out)
@@ -1465,7 +1465,7 @@ def expand(raw, where="a page"):
 
     def sub(m):
         if m.group("pre") is None and raw[m.end():].lstrip().startswith("<pre"):
-            raise SystemExit(f'{where}: a {{{{builder "case"}}}} over a block that is not <pre data-lang="fenecql">')
+            raise SystemExit(f'{where}: a {{{{builder "case"}}}} over a block that is not <pre data-lang="fennecql">')
         return box(NAME.findall(m.group("names")), m.group("pre"), m.group("code"), where)
 
     out = PLACEHOLDER.sub(sub, raw)
@@ -1538,7 +1538,7 @@ def go_test(names):
             "\t})\n")
     return f"""// Code generated by site/builder_tabs.py (make docs-builder); DO NOT EDIT.
 
-package fenecdb_test
+package fennecdb_test
 
 {_lines(HEADER, lead="// ")}
 
@@ -1548,7 +1548,7 @@ import (
 \t"net/http/httptest"
 \t"testing"
 
-\tfenecdb "github.com/fenecdb/fenecdb/integrations/go"
+\tfennecdb "github.com/fennec-db/fennecdb/integrations/go"
 )
 
 func TestDocsBuilderTabs(t *testing.T) {{
@@ -1556,7 +1556,7 @@ func TestDocsBuilderTabs(t *testing.T) {{
 \tsrv := httptest.NewServer(rec)
 \tdefer srv.Close()
 \t// What the tabs call db and ctx.
-\tdb := fenecdb.New(srv.URL)
+\tdb := fennecdb.New(srv.URL)
 \tctx := context.Background()
 \tsent := func(t *testing.T, err error, text, params string) {{
 \t\tt.Helper()
@@ -1605,11 +1605,11 @@ using System.Text;
 using System.Text.Json;
 using Xunit;
 
-namespace FenecDb.Tests;
+namespace FennecDb.Tests;
 
 public sealed class DocsBuilderTests
 {{
-    /// <summary>A server that answers as fenec-server would and keeps the last body it was sent.</summary>
+    /// <summary>A server that answers as fennec-server would and keeps the last body it was sent.</summary>
     sealed class Recorder : HttpMessageHandler
     {{
         public string? Body;
@@ -1626,10 +1626,10 @@ public sealed class DocsBuilderTests
     }}
 
     /// <summary>What the tabs call db: a client of a server that records.</summary>
-    static FenecClient Db(out Recorder sent)
+    static FennecClient Db(out Recorder sent)
     {{
         sent = new Recorder();
-        return new FenecClient("http://docs.invalid", new() {{ HttpClient = new HttpClient(sent) }});
+        return new FennecClient("http://docs.invalid", new() {{ HttpClient = new HttpClient(sent) }});
     }}
 
     static void Sends(Recorder sent, string text, string parameters)
@@ -1674,7 +1674,7 @@ def swift_test(names):
 
 import Testing
 
-@testable import FenecDB
+@testable import FennecDB
 
 @Suite struct DocsBuilder {{
     /// What the tabs call `db`: queries bound to a recorder, as a database's are to its engine.
@@ -1723,7 +1723,7 @@ def kotlin_test(names):
 
 {_lines(HEADER, lead="// ")}
 
-package com.fenecdb
+package com.fennecdb
 
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
@@ -1772,7 +1772,7 @@ def dart_test(names):
 
 import 'dart:convert';
 
-import 'package:fenecdb/fenecdb.dart';
+import 'package:fennecdb/fennecdb.dart';
 import 'package:test/test.dart';
 
 /// What the tabs call `db`: queries bound to a recorder, as a database's are to its engine.
@@ -1824,11 +1824,11 @@ void main() {{
 # comparison below allows for.
 TESTS = {
     "integrations/go/docs_builder_test.go": (go_test, None),
-    "integrations/dotnet/FenecDb.Tests/DocsBuilderTests.cs": (cs_test, None),
-    "integrations/swift/Tests/FenecDBTests/DocsBuilderTests.swift": (swift_test, None),
-    "integrations/kotlin/fenecdb/src/test/kotlin/com/fenecdb/DocsBuilderTest.kt": (kotlin_test, None),
-    "integrations/dart/fenecdb/test/docs_builder_test.dart": (
-        dart_test, ("integrations/dart/fenecdb", [["dart", "pub", "get"], ["dart", "format", "test/docs_builder_test.dart"]])),
+    "integrations/dotnet/FennecDb.Tests/DocsBuilderTests.cs": (cs_test, None),
+    "integrations/swift/Tests/FennecDBTests/DocsBuilderTests.swift": (swift_test, None),
+    "integrations/kotlin/fennecdb/src/test/kotlin/com/fennecdb/DocsBuilderTest.kt": (kotlin_test, None),
+    "integrations/dart/fennecdb/test/docs_builder_test.dart": (
+        dart_test, ("integrations/dart/fennecdb", [["dart", "pub", "get"], ["dart", "format", "test/docs_builder_test.dart"]])),
 }
 
 
@@ -1880,7 +1880,7 @@ def tokens(text, ext):
 
 
 def _written_selftest():
-    """`written` held to what it is for: values in as FenecQL writes them, a
+    """`written` held to what it is for: values in as FennecQL writes them, a
     long statement's lines, and a text it cannot write refused."""
     def w(text, *params):
         return written({"name": "selftest", "text": text, "params": list(params)})
@@ -1888,13 +1888,13 @@ def _written_selftest():
     assert w("put d {a: $1}", {"a-b": 1, "ok": 2, "null": 3, "año": 4}) \
         == 'put d {a: {"a-b": 1, ok: 2, "null": 3, año: 4}}', "a key that is no name is quoted"
     assert w("get d where t = $1", 'q"b\\s\n\t\r\0') == 'get d where t = "q\\"b\\\\s\\n\\t\\r\\0"', \
-        "FenecQL's own escapes"
+        "FennecQL's own escapes"
     for ch in ("\x01", "\x1f", "\x85", " ", " "):
         try:
             w("get d where t = $1", "a" + ch)
         except SystemExit:
             continue
-        raise AssertionError(f"written wrote U+{ord(ch):04X}, which FenecQL's strings cannot")
+        raise AssertionError(f"written wrote U+{ord(ch):04X}, which FennecQL's strings cannot")
     one = ("get docs where year >= $1 and (lang = $2 or tags has $3) order title collate tr asc limit $4 "
            "lookup comments on doc_id limit $5")
     lines = w(one, 2024, "x order y", "rust", 20, 3)
@@ -1967,7 +1967,7 @@ def _same(a, b):
 
 
 def _answer(text):
-    """What fenec-server answers a statement, as far as the clients read it."""
+    """What fennec-server answers a statement, as far as the clients read it."""
     if re.match(r"(put|set|del) ", text):
         return {"affected": 0}
     rows = [{"count": 0}] if text.endswith(" count") or " count lookup " in text else []
@@ -2018,18 +2018,18 @@ def run_js(names):
 def run_python(names):
     """Each Python tab as the page shows it: what it sent."""
     sys.path.insert(0, os.path.join(REPO, "integrations", "python"))
-    import fenecdb
+    import fennecdb
 
-    class Recording(fenecdb.Client):
+    class Recording(fennecdb.Client):
         def __init__(self):
             super().__init__("http://docs.invalid")
             self.sent = []
 
-        def query(self, fenecql, params=None, **kw):
-            self.sent.append({"text": fenecql, "params": json.loads(json.dumps(params or []))})
-            return _answer(fenecql)
+        def query(self, fennecql, params=None, **kw):
+            self.sent.append({"text": fennecql, "params": json.loads(json.dumps(params or []))})
+            return _answer(fennecql)
 
-    helpers = {k: getattr(fenecdb, k) for k in
+    helpers = {k: getattr(fennecdb, k) for k in
                ("or_", "and_", "not_", "raw", "inc", "expr", "bucket", "count_distinct", "distance", "first", "last")}
     out = {}
     for n in names:

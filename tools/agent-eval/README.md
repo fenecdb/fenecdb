@@ -1,8 +1,8 @@
-# Agents writing FenecQL, against agents writing SQL
+# Agents writing FennecQL, against agents writing SQL
 
-How well does an LLM agent query fenecdb when it writes FenecQL, and how
+How well does an LLM agent query fennecdb when it writes FennecQL, and how
 well when it writes the SQL it knows by habit? The answer decides which SQL
-spellings fenecdb's parser should take: the ones agents reach for and fail
+spellings fennecdb's parser should take: the ones agents reach for and fail
 on.
 
 **Every run spends tokens.** A run is one `claude -p` session. The 240 runs
@@ -15,7 +15,7 @@ once it has spent that much, and `--budget` caps each run
 
 ## What a run is
 
-One task, fresh: the fixture file copied, a debug `fenec-server` started over
+One task, fresh: the fixture file copied, a debug `fennec-server` started over
 the copy on a port the system picks, and `claude -p` handed the task. Its
 one tool is `fq`, which POSTs a statement to that server's `/query` and
 prints the status and the JSON answer:
@@ -32,13 +32,13 @@ how it is graded, then one of:
 
 | condition | what the agent is told |
 |---|---|
-| **A** FenecQL | "The database is fenecdb. Its query language is FenecQL, which is not SQL: write FenecQL." The brief `/llms.txt` opens with (`LLMS_BRIEF` in `site/build.py`, read from there), then the schema. |
-| **B** SQL on main | "The database is fenecdb. Write SQL as you normally would." The schema, no brief. |
-| **C** SQL on the SQL-spellings branch | B's prompt word for word, against that branch's `fenec-server` (`--server`). |
+| **A** FennecQL | "The database is fennecdb. Its query language is FennecQL, which is not SQL: write FennecQL." The brief `/llms.txt` opens with (`LLMS_BRIEF` in `site/build.py`, read from there), then the schema. |
+| **B** SQL on main | "The database is fennecdb. Write SQL as you normally would." The schema, no brief. |
+| **C** SQL on the SQL-spellings branch | B's prompt word for word, against that branch's `fennec-server` (`--server`). |
 
-The schema is what `GET /_schema?as=fenecql` answers -- `create collection`
+The schema is what `GET /_schema?as=fennecql` answers -- `create collection`
 statements, the text the MCP `schema` tool gives an agent too. B is the
-agent that meets fenecdb through a tool without having read its docs; it
+agent that meets fennecdb through a tool without having read its docs; it
 gets the server's error messages, which is how it can correct itself.
 
 ## The fixture and the tasks
@@ -59,7 +59,7 @@ over seed.py's rows -- never by asking the server:
 | order | T08-T10 | `ORDER BY`, `LIMIT`/`OFFSET`, a join or subquery for "the customer whose email is" |
 | aggregate | T11-T18 | `GROUP BY`, `HAVING`, `COUNT(DISTINCT)`, `SELECT DISTINCT` |
 | related | T19-T23 | `JOIN`, `IN (SELECT ...)`, `NOT IN`/`NOT EXISTS` (an anti-join) |
-| text | T24-T25 | `LIKE '%word%'` (FenecQL: `match` or `~`) |
+| text | T24-T25 | `LIKE '%word%'` (FennecQL: `match` or `~`) |
 | null | T26-T30 | `IS NULL`, `<>` beside nulls, `AVG` over nulls, `COALESCE`, a json field (`->>`) |
 | insert | T31-T32 | `INSERT ... VALUES`, several rows |
 | update | T33-T34 | `UPDATE ... SET col = col + 10` |
@@ -67,10 +67,10 @@ over seed.py's rows -- never by asking the server:
 | upsert | T36-T37 | `INSERT ... ON CONFLICT DO UPDATE`, the row there and not |
 | returning | T38-T40 | `UPDATE/INSERT/DELETE ... RETURNING` |
 
-T27 is a trap of fenecdb's own: in FenecQL `tier != "gold"` holds for a row
+T27 is a trap of fennecdb's own: in FennecQL `tier != "gold"` holds for a row
 whose tier is null, where SQL's three-valued logic leaves the row out.
 
-Each task also has a reference FenecQL answer (`ref`), and `eval.py check`
+Each task also has a reference FennecQL answer (`ref`), and `eval.py check`
 runs every one through the scoring an agent meets: what each task asks can
 be said in one statement, and the answers above are the engine's.
 
@@ -101,7 +101,7 @@ A run that ran but answered wrong is a `wrong result` or `wrong state`.
 
 ## Running it
 
-    cargo build -p fenec-server
+    cargo build -p fennec-server
     W=$(mktemp -d)
     python3 tools/agent-eval/eval.py fixture --work $W
     python3 tools/agent-eval/eval.py check --work $W
@@ -117,10 +117,10 @@ shown), and name the build, which each run records and `report` groups by;
 `--brief` takes the `site/build.py` A's brief comes from:
 
     git worktree add --detach /tmp/sql-branch <commit>
-    CARGO_TARGET_DIR=/tmp/sql-target cargo build -p fenec-server --manifest-path /tmp/sql-branch/Cargo.toml
-    python3 tools/agent-eval/eval.py fixture --server /tmp/sql-target/debug/fenec-server --work $W2
+    CARGO_TARGET_DIR=/tmp/sql-target cargo build -p fennec-server --manifest-path /tmp/sql-branch/Cargo.toml
+    python3 tools/agent-eval/eval.py fixture --server /tmp/sql-target/debug/fennec-server --work $W2
     python3 tools/agent-eval/eval.py run --condition C --reps 2 --build sql-spellings \
-        --server /tmp/sql-target/debug/fenec-server --brief /tmp/sql-branch/site/build.py \
+        --server /tmp/sql-target/debug/fennec-server --brief /tmp/sql-branch/site/build.py \
         --work $W2 --out $W2/runs.jsonl
     python3 tools/agent-eval/eval.py report tools/agent-eval/results/2026-10-18.tsv $W2/runs.jsonl
 
@@ -139,14 +139,14 @@ day it was written).
 `results/2026-10-18.tsv` is every run: its statements with their statuses
 and errors, what each refusal was put down to, the SQL constructs it reached
 for, the agent's last reply, its turns, tokens and cost. Models:
-`claude-haiku-4-5-20251001` and `claude-sonnet-5-5`; fenec-server at
+`claude-haiku-4-5-20251001` and `claude-sonnet-5-5`; fennec-server at
 96a84c07 (main). A ran once a task and model, B twice. C and A over the
 SQL-spellings branch are [below](#the-sql-spellings-branch-356).
 
 | condition | model | runs | first try | within 3 | mean statements | cost |
 |---|---|---:|---:|---:|---:|---:|
-| A FenecQL | haiku | 40 | 26 (65%) | 33 (82%) | 1.48 | $0.55 |
-| A FenecQL | sonnet | 40 | 26 (65%) | 37 (92%) | 1.43 | $0.39 |
+| A FennecQL | haiku | 40 | 26 (65%) | 33 (82%) | 1.48 | $0.55 |
+| A FennecQL | sonnet | 40 | 26 (65%) | 37 (92%) | 1.43 | $0.39 |
 | B SQL on main | haiku | 80 | 28 (35%) | 49 (61%) | 2.06 | $1.37 |
 | B SQL on main | sonnet | 80 | 24 (30%) | 59 (74%) | 2.15 | $0.80 |
 
@@ -207,7 +207,7 @@ comparisons -- but each cost the first try every time, and the `or`s it
 wrote for every `IN (list)` reach no index (only an `and` chain does).
 
 Not a refusal: **`~` given a regex.** In PostgreSQL `~` is a regex match;
-in FenecQL it is a case-insensitive substring. Five B runs wrote
+in FennecQL it is a case-insensitive substring. Five B runs wrote
 `email ~ '@example\.org$'` or `name ~ '(?i)lamp'`, which ran and matched
 nothing: all five wrong, and in three the agent told the user there were no
 such rows.
@@ -221,7 +221,7 @@ such rows.
   Where it says ``unknown command `x` ``, it does not: that is its word for
   anything it did not expect mid-statement -- `like`, `not` (of `NOT IN`),
   `between`, `join`, a table alias `o` -- and none of those is a command.
-- **The schema shows no `id`.** `GET /_schema?as=fenecql` (and the MCP
+- **The schema shows no `id`.** `GET /_schema?as=fennecql` (and the MCP
   `schema` tool) lists the declared fields, and every SQL agent that needed
   a key guessed SQLite's `rowid` or `_id` (24 refused statements, 9 runs,
   all failed).
@@ -229,13 +229,13 @@ such rows.
   ending (T04 "lamp" in any case, T06 emails at example.org) failed in all
   four A runs: the brief never names `~`, and the agents tried `like`,
   `match` over a field with no `@text`, `contains()` and `ends_with()`.
-  `not in` is refused in FenecQL too, and the brief does not say how to
+  `not in` is refused in FennecQL too, and the brief does not say how to
   negate a list (`not (id in (get ...))`). `lookup` from a child to its
   parent (`lookup products on id = product_id`) is not in the brief's
   examples, and the haiku run that needed it spent its three statements on
   the key named on the wrong side and on fields of the other level.
   `count(col)` is refused (`count(*)`, `count(distinct f)` are the forms).
-- **`!=` passes a null.** In FenecQL `tier != "gold"` holds for a row with
+- **`!=` passes a null.** In FennecQL `tier != "gold"` holds for a row with
   no tier, where SQL's three-valued logic leaves it out (T27); one A run
   answered with it. B's agents all wrote `tier IS NOT NULL AND tier <>
   'gold'`, which the task's wording asked for.
@@ -252,7 +252,7 @@ such rows.
 
 ### The SQL-spellings branch (#356)
 
-C is B's prompt word for word against fenec-server at bfbb0e80
+C is B's prompt word for word against fennec-server at bfbb0e80
 (`sql-spellings`, on main 354074f5), twice a task and model; A ran over it
 once more, its brief that commit's `LLMS_BRIEF`. Its fixture was made by
 that server, so the schema both were shown opens with the line naming the
@@ -344,7 +344,7 @@ at a statement's cost.
 
 Joins, `distinct`, `exists`, scalar subqueries, `create table` and `create
 index`, pgvector's distance. B on main (dc60e41d, part 1 in) and C against
-the branch's fenec-server, the same day, twice a task and model; C again
+the branch's fennec-server, the same day, twice a task and model; C again
 after the refinements below (`sql-spellings-2b`). Each fixture was made by
 its server. `results/2026-10-24-sql-spellings-2.tsv` holds the 480 runs,
 $1.56.

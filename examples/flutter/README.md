@@ -1,14 +1,14 @@
 # Notes -- Flutter
 
 A notes app for iOS, Android and macOS with the database in a file on the
-device: `fenecdb_flutter`, no server, no network. The plugin's own
-[`example/`](../../integrations/dart/fenecdb_flutter/example) is the minimal
+device: `fennecdb_flutter`, no server, no network. The plugin's own
+[`example/`](../../integrations/dart/fennecdb_flutter/example) is the minimal
 todo list; this is the fuller app every language's example is
 ([examples/README.md](../README.md)).
 
 ## What it shows
 
-- the schema in [`schema.fenecql`](schema.fenecql), applied with
+- the schema in [`schema.fennecql`](schema.fennecql), applied with
   `db.schema(...)` at every open: made the first time, checked after;
 - notes created from a dialog, tapped to mark done;
 - full-text search with `match` over `body @text`, fused with a vector
@@ -28,21 +28,21 @@ Flutter 3.22 or newer, and Xcode or the Android SDK for the platform you run.
 
 ```sh
 cd examples/flutter
-flutter create --platforms=android,ios,macos --project-name fenecdb_notes .
+flutter create --platforms=android,ios,macos --project-name fennecdb_notes .
 flutter run
 ```
 
 `flutter create .` makes the platform projects, which are not kept here, and
 a `test/widget_test.dart` this app does not use: delete it. The app's data
-is `notes.fenec` in `getApplicationSupportDirectory()`; uninstall the app to
+is `notes.fennec` in `getApplicationSupportDirectory()`; uninstall the app to
 start over.
 
 ## The core
 
 ```dart
 final dir = await getApplicationSupportDirectory();
-final db = await Fenec.open('${dir.path}/notes.fenec');
-await db.schema(await rootBundle.loadString('schema.fenecql'));
+final db = await Fennec.open('${dir.path}/notes.fennec');
+await db.schema(await rootBundle.loadString('schema.fennecql'));
 
 await db.from('notes').insert({'title': title, 'body': body, 'tags': tags,
     'done': false, 'at': DateTime.now().toUtc(), 'embed': embed('$title $body')});
@@ -55,7 +55,7 @@ final hits = await db.from('notes').match('body', words).near('embed', embed(wor
 ```
 
 All of it is in [`lib/notes.dart`](lib/notes.dart), which imports only
-`package:fenecdb`; [`lib/main.dart`](lib/main.dart) is the screen.
+`package:fennecdb`; [`lib/main.dart`](lib/main.dart) is the screen.
 
 ## The toy embedding
 
@@ -64,7 +64,7 @@ into 64 dimensions. It finds notes that share spellings with the query, not
 meaning, and needs no download, so `near` and `fuse` run here as they would
 with a real one. To use a real model, compute the vector in `embed()` --
 TFLite or ONNX Runtime on the device, or an embeddings API -- and declare
-`embed vector<N>` with the model's N in `schema.fenecql`.
+`embed vector<N>` with the model's N in `schema.fennecql`.
 
 ## Against this repository's build
 
@@ -73,8 +73,8 @@ examples/flutter/run-tests.sh        # flutter test, or the data layer under pla
 examples/flutter/run-tests.sh apk    # and the app built for Android
 ```
 
-It writes a `pubspec_overrides.yaml` (ignored by git) pointing `fenecdb`
-and `fenecdb_flutter` at `integrations/dart`, builds the native library for
+It writes a `pubspec_overrides.yaml` (ignored by git) pointing `fennecdb`
+and `fennecdb_flutter` at `integrations/dart`, builds the native library for
 this machine and runs [`test/notes_test.dart`](test/notes_test.dart): the
 seeds, the searches, the filters, a live query and a reopen. CI runs it and
 builds the Android app. A copy of this folder outside the repository takes

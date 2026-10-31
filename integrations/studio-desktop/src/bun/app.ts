@@ -1,4 +1,4 @@
-// What the app does: open a file (a fenec-server of its own and a window on
+// What the app does: open a file (a fennec-server of its own and a window on
 // it), serve a file to the apps on this Mac or the network, open a saved
 // server (a window on its own studio), make a new database, take and restore
 // backups, keep the lists. The windows' pages and the menu call these; none of
@@ -9,7 +9,7 @@
 // or a compaction alone; whatever starts or stops one does it in the file's
 // lane (`inLane`), one after another, and a window on a served database is a
 // window on that server, not a second one. A server of another program's is
-// found by `fenec-server` itself, which takes `<file>.lock` and refuses to
+// found by `fennec-server` itself, which takes `<file>.lock` and refuses to
 // open a file whose lock is taken: the app says so and starts nothing.
 //
 // A window per open thing, keyed `file:<real path>` or `remote:<id>`.
@@ -234,7 +234,7 @@ async function startFile(path: string, key: string): Promise<Result> {
 		const partition = `file-${crypto.randomUUID()}`;
 		const studio = await openStudioWindow({
 			key,
-			title: `${name} — fenec studio`,
+			title: `${name} — fennec studio`,
 			session: { origin: server.local, token: server.token, tenant: null },
 			partition,
 		});
@@ -258,7 +258,7 @@ async function openOnServed(s: Served): Promise<Result> {
 		const partition = `file-${crypto.randomUUID()}`;
 		const studio = await openStudioWindow({
 			key,
-			title: `${s.name} — fenec studio`,
+			title: `${s.name} — fennec studio`,
 			session: { origin: s.server.local, token: s.server.token, tenant: null },
 			partition,
 		});
@@ -863,7 +863,7 @@ export async function restoreBackup(path: string, change: number | null, folder:
 	return { ...opened, path: made.path, message: made.message };
 }
 
-/** A new key file, `name` in `folder`, readable by its owner alone (`fenec key`). */
+/** A new key file, `name` in `folder`, readable by its owner alone (`fennec key`). */
 export async function makeKey(folder: string, name: string): Promise<Result & { path?: string }> {
 	const dir = writableFolder(folder);
 	if (!dir) return { ok: false, message: "That folder does not exist or cannot be written to. Choose another." };
@@ -942,7 +942,7 @@ async function startRemote(c: StoredConnection, key: string): Promise<Result> {
 	try {
 		const studio = await openStudioWindow({
 			key,
-			title: `${c.name} — fenec studio`,
+			title: `${c.name} — fennec studio`,
 			session: { origin, token, tenant: c.tenant },
 			partition: remotePartition(c.id),
 		});
@@ -1078,14 +1078,14 @@ export async function forgetDatabase(path: string): Promise<Result> {
 }
 
 let bundled = "";
-/** `fenec-server <version>`, asked of the bundled server once. */
+/** `fennec-server <version>`, asked of the bundled server once. */
 async function bundledVersion(): Promise<string> {
 	if (bundled) return bundled;
 	try {
 		const p = Bun.spawn([serverBinary(), "--version"], { stdin: "ignore", stdout: "pipe", stderr: "ignore", env: {} });
 		bundled = (await new Response(p.stdout).text()).trim();
 	} catch {
-		bundled = "fenec-server";
+		bundled = "fennec-server";
 	}
 	return bundled;
 }

@@ -1,6 +1,6 @@
 <!--
-title: YCSB benchmarks — fenecdb
-description: fenecdb as a general database on YCSB's six core workloads over a million records, in process against SQLite and fenec-server over HTTP against PostgreSQL, MongoDB and Redis, with every cell and the method behind them.
+title: YCSB benchmarks — fennecdb
+description: fennecdb as a general database on YCSB's six core workloads over a million records, in process against SQLite and fennec-server over HTTP against PostgreSQL, MongoDB and Redis, with every cell and the method behind them.
 -->
 
 <h1>YCSB benchmarks</h1>
@@ -9,21 +9,21 @@ SQLite, PostgreSQL, MongoDB and Redis, every cell, and how it was measured.</p>
 
 <h2 id="ycsb">Everyday reads and writes (YCSB)</h2>
 
-<p>fenecdb as a general database: the six core workloads of YCSB, the
+<p>fennecdb as a general database: the six core workloads of YCSB, the
 Yahoo! Cloud
 Serving Benchmark, over a million records of ten 100-character fields —
 reads of a whole record, updates of one field, inserts, short scans — in
-process against SQLite, and <code>fenec-server</code> over HTTP against
+process against SQLite, and <code>fennec-server</code> over HTTP against
 PostgreSQL and MongoDB<!-- ycsb redis: begin -->, and beside Redis<!-- ycsb redis: end -->. Each figure is the median of three runs:
 operations a second, and under it the p99 of the workload's slowest
-operation. fenecdb compacts its file on its own, in process and in the
-server, as it ships. Every cell is below, the ones fenecdb
+operation. fennecdb compacts its file on its own, in process and in the
+server, as it ships. Every cell is below, the ones fennecdb
 loses too.</p>
 
-<p><b>In process: fenecdb against SQLite.</b> Durable, an fsync a write:</p>
+<p><b>In process: fennecdb against SQLite.</b> Durable, an fsync a write:</p>
 <div class="tbl">
 <table>
-<thead><tr><th>durable</th><th class="n">fenecdb, 1 thread</th><th class="n">SQLite, 1 thread</th><th class="n">fenecdb, 16 threads</th><th class="n">SQLite, 16 threads</th></tr></thead>
+<thead><tr><th>durable</th><th class="n">fennecdb, 1 thread</th><th class="n">SQLite, 1 thread</th><th class="n">fennecdb, 16 threads</th><th class="n">SQLite, 16 threads</th></tr></thead>
 <tbody>
 <tr><td>A: 50% read, 50% update</td><td class="n"><b>0.50 k</b><br><small>p99 4.9 ms</small></td><td class="n">0.47 k<br><small>p99 8.1 ms</small></td><td class="n"><b>3.22 k</b><br><small>p99 25.0 ms</small></td><td class="n">0.45 k<br><small>p99 2 533 ms</small></td></tr>
 <tr><td>B: 95% read, 5% update</td><td class="n"><b>4.90 k</b><br><small>p99 4.8 ms</small></td><td class="n">3.68 k<br><small>p99 8.1 ms</small></td><td class="n"><b>39.4 k</b><br><small>p99 14.7 ms</small></td><td class="n">3.80 k<br><small>p99 1 669 ms</small></td></tr>
@@ -36,7 +36,7 @@ loses too.</p>
 <p>Buffered, each engine's default:</p>
 <div class="tbl">
 <table>
-<thead><tr><th>buffered</th><th class="n">fenecdb, 1 thread</th><th class="n">SQLite, 1 thread</th><th class="n">fenecdb, 16 threads</th><th class="n">SQLite, 16 threads</th></tr></thead>
+<thead><tr><th>buffered</th><th class="n">fennecdb, 1 thread</th><th class="n">SQLite, 1 thread</th><th class="n">fennecdb, 16 threads</th><th class="n">SQLite, 16 threads</th></tr></thead>
 <tbody>
 <tr><td>A: 50% read, 50% update</td><td class="n"><b>212 k</b><br><small>p99 0.01 ms</small></td><td class="n">32.1 k<br><small>p99 0.16 ms</small></td><td class="n"><b>151 k</b><br><small>p99 0.71 ms</small></td><td class="n">29.4 k<br><small>p99 9.9 ms</small></td></tr>
 <tr><td>B: 95% read, 5% update</td><td class="n"><b>410 k</b><br><small>p99 0.01 ms</small></td><td class="n">78.8 k<br><small>p99 0.18 ms</small></td><td class="n"><b>545 k</b><br><small>p99 0.61 ms</small></td><td class="n">47.9 k<br><small>p99 38.0 ms</small></td></tr>
@@ -47,10 +47,10 @@ loses too.</p>
 </tbody>
 </table>
 </div>
-<p><b>Over the wire: fenec-server against PostgreSQL and MongoDB.</b> Durable, all three in Docker's virtual machine, which syncs a write in a tenth of a millisecond where the Mac's <code>F_FULLFSYNC</code> takes four; fenec-server on the Mac beside them:</p>
+<p><b>Over the wire: fennec-server against PostgreSQL and MongoDB.</b> Durable, all three in Docker's virtual machine, which syncs a write in a tenth of a millisecond where the Mac's <code>F_FULLFSYNC</code> takes four; fennec-server on the Mac beside them:</p>
 <div class="tbl">
 <table>
-<thead><tr><th>durable, one client</th><th class="n">fenec-server, Docker</th><th class="n">PostgreSQL, Docker</th><th class="n">MongoDB, Docker</th><th class="n">fenec-server on the Mac</th></tr></thead>
+<thead><tr><th>durable, one client</th><th class="n">fennec-server, Docker</th><th class="n">PostgreSQL, Docker</th><th class="n">MongoDB, Docker</th><th class="n">fennec-server on the Mac</th></tr></thead>
 <tbody>
 <tr><td>A: 50% read, 50% update</td><td class="n"><b>3.34 k</b><br><small>p99 1.1 ms</small></td><td class="n">2.52 k<br><small>p99 1.4 ms</small></td><td class="n">1.97 k<br><small>p99 1.7 ms</small></td><td class="n">0.53 k<br><small>p99 7.0 ms</small></td></tr>
 <tr><td>B: 95% read, 5% update</td><td class="n"><b>4.50 k</b><br><small>p99 1.2 ms</small></td><td class="n">3.09 k<br><small>p99 5.5 ms</small></td><td class="n">2.48 k<br><small>p99 1.8 ms</small></td><td class="n">3.26 k<br><small>p99 6.1 ms</small></td></tr>
@@ -62,7 +62,7 @@ loses too.</p>
 </div>
 <div class="tbl">
 <table>
-<thead><tr><th>durable, 16 clients</th><th class="n">fenec-server, Docker</th><th class="n">PostgreSQL, Docker</th><th class="n">MongoDB, Docker</th><th class="n">fenec-server on the Mac</th></tr></thead>
+<thead><tr><th>durable, 16 clients</th><th class="n">fennec-server, Docker</th><th class="n">PostgreSQL, Docker</th><th class="n">MongoDB, Docker</th><th class="n">fennec-server on the Mac</th></tr></thead>
 <tbody>
 <tr><td>A: 50% read, 50% update</td><td class="n"><b>13.3 k</b><br><small>p99 5.7 ms</small></td><td class="n">10.5 k<br><small>p99 10.7 ms</small></td><td class="n">6.56 k<br><small>p99 15.5 ms</small></td><td class="n">3.94 k<br><small>p99 18.2 ms</small></td></tr>
 <tr><td>B: 95% read, 5% update</td><td class="n"><b>18.2 k</b><br><small>p99 6.0 ms</small></td><td class="n">13.0 k<br><small>p99 17.7 ms</small></td><td class="n">11.1 k<br><small>p99 12.3 ms</small></td><td class="n">42.1 k<br><small>p99 10.4 ms</small></td></tr>
@@ -72,65 +72,65 @@ loses too.</p>
 </tbody>
 </table>
 </div>
-<p>Buffered, fenec-server on the Mac against the two in Docker, its network included:</p>
+<p>Buffered, fennec-server on the Mac against the two in Docker, its network included:</p>
 <div class="tbl">
 <table>
-<thead><tr><th>buffered</th><th class="n">fenec-server, 1 thread</th><th class="n">PostgreSQL, 1 thread</th><th class="n">MongoDB, 1 thread</th><th class="n">fenec-server, 16 threads</th><th class="n">PostgreSQL, 16 threads</th><th class="n">MongoDB, 16 threads</th></tr></thead>
+<thead><tr><th>buffered</th><th class="n">fennec-server, 1 thread</th><th class="n">PostgreSQL, 1 thread</th><th class="n">MongoDB, 1 thread</th><th class="n">fennec-server, 16 threads</th><th class="n">PostgreSQL, 16 threads</th><th class="n">MongoDB, 16 threads</th></tr></thead>
 <tbody>
 <tr><td>A: 50% read, 50% update</td><td class="n"><b>44.2 k</b><br><small>p99 0.04 ms</small></td><td class="n">2.98 k<br><small>p99 1.3 ms</small></td><td class="n">2.20 k<br><small>p99 1.5 ms</small></td><td class="n"><b>110 k</b><br><small>p99 0.70 ms</small></td><td class="n">13.7 k<br><small>p99 4.9 ms</small></td><td class="n">8.90 k<br><small>p99 10.0 ms</small></td></tr>
-<tr><td>A, fenec-server in Docker as well</td><td class="n"><b>3.06 k</b><br><small>p99 1.4 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td><td class="n"><b>16.5 k</b><br><small>p99 3.7 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td></tr>
+<tr><td>A, fennec-server in Docker as well</td><td class="n"><b>3.06 k</b><br><small>p99 1.4 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td><td class="n"><b>16.5 k</b><br><small>p99 3.7 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td></tr>
 <tr><td>B: 95% read, 5% update</td><td class="n"><b>44.0 k</b><br><small>p99 0.04 ms</small></td><td class="n">2.99 k<br><small>p99 1.4 ms</small></td><td class="n">2.22 k<br><small>p99 1.6 ms</small></td><td class="n"><b>154 k</b><br><small>p99 0.37 ms</small></td><td class="n">13.7 k<br><small>p99 4.8 ms</small></td><td class="n">11.8 k<br><small>p99 5.5 ms</small></td></tr>
-<tr><td>B, fenec-server in Docker as well</td><td class="n"><b>3.08 k</b><br><small>p99 1.4 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td><td class="n"><b>17.5 k</b><br><small>p99 3.4 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td></tr>
+<tr><td>B, fennec-server in Docker as well</td><td class="n"><b>3.08 k</b><br><small>p99 1.4 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td><td class="n"><b>17.5 k</b><br><small>p99 3.4 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td></tr>
 <tr><td>C: 100% read</td><td class="n"><b>44.1 k</b><br><small>p99 0.03 ms</small></td><td class="n">3.14 k<br><small>p99 1.3 ms</small></td><td class="n">2.14 k<br><small>p99 1.5 ms</small></td><td class="n"><b>155 k</b><br><small>p99 0.24 ms</small></td><td class="n">14.8 k<br><small>p99 4.1 ms</small></td><td class="n">12.9 k<br><small>p99 4.6 ms</small></td></tr>
-<tr><td>C, fenec-server in Docker as well</td><td class="n">3.07 k<br><small>p99 1.3 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td><td class="n"><b>18.4 k</b><br><small>p99 2.9 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td></tr>
+<tr><td>C, fennec-server in Docker as well</td><td class="n">3.07 k<br><small>p99 1.3 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td><td class="n"><b>18.4 k</b><br><small>p99 2.9 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td></tr>
 <tr><td>D: 95% read the latest, 5% insert</td><td class="n"><b>44.0 k</b><br><small>p99 0.04 ms</small></td><td class="n">2.82 k<br><small>p99 1.4 ms</small></td><td class="n">2.22 k<br><small>p99 1.5 ms</small></td><td class="n"><b>149 k</b><br><small>p99 0.46 ms</small></td><td class="n">14.4 k<br><small>p99 4.6 ms</small></td><td class="n">13.2 k<br><small>p99 4.6 ms</small></td></tr>
-<tr><td>D, fenec-server in Docker as well</td><td class="n"><b>3.10 k</b><br><small>p99 1.4 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td><td class="n"><b>17.7 k</b><br><small>p99 3.5 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td></tr>
+<tr><td>D, fennec-server in Docker as well</td><td class="n"><b>3.10 k</b><br><small>p99 1.4 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td><td class="n"><b>17.7 k</b><br><small>p99 3.5 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td></tr>
 <tr><td>E: 95% scan, 5% insert</td><td class="n"><b>17.8 k</b><br><small>p99 0.10 ms</small></td><td class="n">1.26 k<br><small>p99 3.4 ms</small></td><td class="n">0.85 k<br><small>p99 4.9 ms</small></td><td class="n"><b>55.2 k</b><br><small>p99 2.6 ms</small></td><td class="n">2.07 k<br><small>p99 34.3 ms</small></td><td class="n">2.02 k<br><small>p99 33.8 ms</small></td></tr>
-<tr><td>E, fenec-server in Docker as well</td><td class="n"><b>1.49 k</b><br><small>p99 2.8 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td><td class="n"><b>2.59 k</b><br><small>p99 27.7 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td></tr>
+<tr><td>E, fennec-server in Docker as well</td><td class="n"><b>1.49 k</b><br><small>p99 2.8 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td><td class="n"><b>2.59 k</b><br><small>p99 27.7 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td></tr>
 <tr><td>F: 50% read, 50% read-modify-write</td><td class="n"><b>30.1 k</b><br><small>p99 0.06 ms</small></td><td class="n">2.09 k<br><small>p99 2.0 ms</small></td><td class="n">1.40 k<br><small>p99 2.4 ms</small></td><td class="n"><b>81.3 k</b><br><small>p99 1.1 ms</small></td><td class="n">9.22 k<br><small>p99 8.8 ms</small></td><td class="n">6.60 k<br><small>p99 14.6 ms</small></td></tr>
-<tr><td>F, fenec-server in Docker as well</td><td class="n">2.07 k<br><small>p99 1.9 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td><td class="n"><b>11.2 k</b><br><small>p99 7.3 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td></tr>
+<tr><td>F, fennec-server in Docker as well</td><td class="n">2.07 k<br><small>p99 1.9 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td><td class="n"><b>11.2 k</b><br><small>p99 7.3 ms</small></td><td class="n">&nbsp;</td><td class="n">&nbsp;</td></tr>
 </tbody>
 </table>
 </div>
 
 <ul>
   <li><b>Durable writes from many threads share their fsyncs.</b> At 16
-    threads fenecdb's lock is released before the fsync, so one fsync covers
+    threads fennecdb's lock is released before the fsync, so one fsync covers
     every write that landed meanwhile; SQLite syncs each commit under its
     write lock and stays at one thread's rate.</li>
   <li><b>Durable over the wire is compared inside Docker.</b> On a Mac,
     PostgreSQL and MongoDB run in Docker's Linux virtual machine, whose
     fsync took 0.08 to 0.10 ms where the Mac's <code>F_FULLFSYNC</code>
-    took 3.9 ms, so the durable tables put fenec-server in the same
+    took 3.9 ms, so the durable tables put fennec-server in the same
     machine; the server on the Mac is beside them for what a real flush
     to the disk costs it.</li>
   <li><b>Buffered over the wire is mostly the network.</b> Docker's network
     costs a request about a quarter of a millisecond: the emptiest request
     took 0.334 ms to PostgreSQL and 0.342 ms to MongoDB at the
-    median, 0.281 ms to fenec-server in Docker and 0.019 ms to
-    it on the Mac. The rows <i>fenec-server in Docker as well</i> are the
+    median, 0.281 ms to fennec-server in Docker and 0.019 ms to
+    it on the Mac. The rows <i>fennec-server in Docker as well</i> are the
     like-for-like there: ahead of PostgreSQL at one client in A, B, D and
     E, behind in C and F by 2% and 1%; ahead in every workload at 4 and 16
     clients; and ahead of MongoDB in every cell.</li>
 </ul>
 
-<p><b>Where fenecdb loses, and why.</b></p>
+<p><b>Where fennecdb loses, and why.</b></p>
 <ul>
-  <li><b>Nowhere in process.</b> fenecdb is ahead of SQLite in every cell;
+  <li><b>Nowhere in process.</b> fennecdb is ahead of SQLite in every cell;
     the closest are C at four threads, 1.43 M against 1.33 M, and E durable
     at one, 2.94 k against 2.81 k. It lost the buffered reads after the
     updates until its file compacted on its own (C at one thread 30.1 k
     against 279 k, now 438 k; below).</li>
-  <li><b>fenec-server in Docker against PostgreSQL, at one client:</b>
+  <li><b>fennec-server in Docker against PostgreSQL, at one client:</b>
     buffered C 3.07 k against 3.14 k and F 2.07 k against 2.09 k. A read
     is a round trip of about 0.29 ms, and
     <a href="benchmarks-requests.html#round-trip">taken apart</a> 0.25 ms of it is Docker's port
-    forwarding, the same for both; fenec-server's own part is 0.018 ms,
+    forwarding, the same for both; fennec-server's own part is 0.018 ms,
     PostgreSQL's bind and execute 0.016, and the answer the same size, 1.3
     KB against 1.2 in one packet. The rest moves with the VM rather than
     with either server, by more than the gap from one day to the next:
     PostgreSQL's C at one client did 3.66 k on 2026-10-05, 3.14 k here,
-    fenec-server's 3.19 k and 3.07 k. E was the gap that was fenec-server's: a
+    fennec-server's 3.19 k and 3.07 k. E was the gap that was fennec-server's: a
     scan of 50 rows spent 213-220 µs inside it, half decoding each row into
     values and half writing them out, and took 37 page faults, musl giving
     the answer's memory back to the system and faulting it in again. Written
@@ -142,7 +142,7 @@ loses too.</p>
     commits ext4's journal, 0.36 ms against 0.065 in place, and a durable
     write syncs a log of fixed size beside the file instead (A 2.24 k ->
     3.27 k on 2026-10-04; here 3.34 k against PostgreSQL's 2.52 k).</li>
-  <li><b>fenec-server on the Mac, durable A and F:</b>
+  <li><b>fennec-server on the Mac, durable A and F:</b>
     A 0.53 k at one client and 3.94 k at 16, F 0.49 k and 4.05 k. Half the
     operations are writes,
     and each waits for <code>F_FULLFSYNC</code>, 3.9 ms on this disk; it is
@@ -154,20 +154,20 @@ loses too.</p>
 
 <p>Redis 7.4, the official <code>redis:7</code> image, in a container of its
 own in the systems' turns, asked over redis-rs 1.7.1 by a connection a
-client thread, in the same cells as fenec-server in Docker. It is another
+client thread, in the same cells as fennec-server in Docker. It is another
 kind of system from the rest, and the tables read with that in mind:</p>
 <ul>
   <li><b>Everything is in memory.</b> Redis holds the whole data set in its
     memory and answers from it; nothing is read from disk, and a data set
-    larger than the memory is not an option. fenec-server reads its file
+    larger than the memory is not an option. fennec-server reads its file
     through the operating system's page cache, PostgreSQL and MongoDB through
     their buffers. What each held is the last table below, and what it means
-    for a cache in front of fenec-server is on
+    for a cache in front of fennec-server is on
     <a href="/docs/redis#cache-in-front">Instead of Redis</a>.</li>
   <li><b>One thread runs the commands.</b> Every command runs on Redis's
     main thread, one after another, however many clients there are
     (<code>io-threads</code> is 1 as it comes, and raised it threads the
-    sockets' reading and writing, not the commands). fenec-server reads on
+    sockets' reading and writing, not the commands). fennec-server reads on
     a thread a connection under a shared lock and writes under an exclusive
     one.</li>
   <li><b>Its durability is a setting of its own,</b> and each mode is
@@ -177,7 +177,7 @@ kind of system from the rest, and the tables read with that in mind:</p>
     that landed meanwhile. <i>buffered</i> is <code>appendfsync
     everysec</code>, the policy Redis suggests and its default once the file
     is on: a thread fsyncs once a second, and a crash loses up to a second
-    of answered writes, two if the disk is slow, where fenec-server's
+    of answered writes, two if the disk is slow, where fennec-server's
     <code>--sync 250</code> loses 250 ms. <i>snapshot</i> is the image as it
     comes: no append-only file, a snapshot of the data set after 3 600 s
     and a write, 300 s and 100 writes, or 60 s and 10 000, so a crash loses
@@ -204,41 +204,41 @@ kind of system from the rest, and the tables read with that in mind:</p>
     scan's records come in one pipeline, where the binding asks for them one
     at a time, so a scan of 50 records is two round trips rather than 51.</li>
   <li><b>Both are behind Docker's network,</b> about a quarter of a
-    millisecond a request, most of a read by key: fenec-server in Docker is
+    millisecond a request, most of a read by key: fennec-server in Docker is
     the like-for-like, and the server on the Mac is not set against Redis
     in a container.</li>
 </ul>
 
 <!-- ycsb redis: tables -->
 
-<p><b>Where fenec-server loses to Redis.</b> Every cell in which Redis does
-more operations a second than fenec-server in Docker, the same mode against
+<p><b>Where fennec-server loses to Redis.</b> Every cell in which Redis does
+more operations a second than fennec-server in Docker, the same mode against
 the same mode, at 1, 4 and 16 clients:</p>
 <!-- ycsb redis: lost -->
 
 <p><b>What each holds.</b> On disk and in memory after A, B, C, F and D:
 the memory is the container's own, its processes' anonymous memory and
 shared memory from its cgroup, the page cache of its files apart, and
-Redis's is read with no snapshot or rewrite running. fenec-server's file
+Redis's is read with no snapshot or rewrite running. fennec-server's file
 is in the page cache, not in this column, as PostgreSQL's and MongoDB's
 files beyond their buffers are; Redis's data set is in it whole.</p>
 <!-- ycsb redis: memory -->
 
 <p><code>--verify</code> held every Redis answer to what was written, in the
-three modes (<code>crates/fenec-bench/ycsb/verify.tsv</code>, run
-<code>rv</code>), and the runs are <code>crates/fenec-bench/ycsb/run-redis.sh</code>.</p>
+three modes (<code>crates/fennec-bench/ycsb/verify.tsv</code>, run
+<code>rv</code>), and the runs are <code>crates/fennec-bench/ycsb/run-redis.sh</code>.</p>
 <!-- ycsb redis: end -->
 
 <details class="deep"><summary>Method, and what changed between runs</summary>
 <p>YCSB's core workloads, written in the bench crate
-(<code>crates/fenec-bench/src/bin/ycsb.rs</code>) to YCSB's own
+(<code>crates/fennec-bench/src/bin/ycsb.rs</code>) to YCSB's own
 definitions rather than run through its Java client: a record is a key and
 ten fields of 100 random characters, a read reads the whole record, an
 update writes one field, keys are drawn by YCSB's scrambled zipfian (0.99,
 hashed over ten billion items) or, for D, its skewed-latest, and a scan
 reads 1 to 100 records from a key. The key is an integer from 1
 (<code>insertorder=ordered</code> without the <code>user</code> prefix), so
-each system keys by what it keys best by: fenecdb's <code>id</code>,
+each system keys by what it keys best by: fennecdb's <code>id</code>,
 SQLite's <code>INTEGER PRIMARY KEY</code>, a <code>bigint</code> primary
 key, MongoDB's <code>_id</code>; E's scan is <code>get usertable where id
 &gt;= $1 limit n</code>, which walks the id index from the key. A read never
@@ -247,15 +247,15 @@ a load, then A, B, C, F and D over that data, then a load afresh for E, at
 1, 4 and 16 threads, each cell 30 s after a 5 s warm-up. Latencies go into
 a log-linear histogram of 64 steps an octave.</p>
 
-<p><b>The systems.</b> fenecdb 0.1.9 in process, reads under the
+<p><b>The systems.</b> fennecdb 0.1.9 in process, reads under the
 shared lock and writes under the exclusive one as the server takes them,
 against SQLite 3.53.2 through <code>rusqlite</code>, a connection a
-thread, WAL, the file mapped. <code>fenec-server</code> natively, each
+thread, WAL, the file mapped. <code>fennec-server</code> natively, each
 client thread a kept-alive HTTP connection sending <code>POST /query</code>
 with parameters, against PostgreSQL 17 (<code>shared_buffers</code> 1 GB,
 prepared statements) and MongoDB 8 (the official Rust driver), each in a
 container started for its turn and removed with its volume after, so the
-virtual machine (8 cores, 3.8 GB) holds one at a time. <i>fenec-server in
+virtual machine (8 cores, 3.8 GB) holds one at a time. <i>fennec-server in
 Docker</i> is the same server in a container of its own image.
 <b>Durable</b> is an fsync a write in each engine's own terms: a flush and
 its fsync (<code>F_FULLFSYNC</code> on macOS) and <code>--sync
@@ -269,31 +269,31 @@ Docker's fsync is the Linux VM's, which does not flush the Mac's disk as
 <code>F_FULLFSYNC</code> took 3.9 ms on the Mac and its plain
 <code>fsync</code> 0.023 ms, while in the VM, on a volume as the databases'
 data, <code>pg_test_fsync</code> gave 0.076 ms for <code>fdatasync</code>
-and 0.103 for <code>fsync</code> (<code>crates/fenec-bench/ycsb/fsync.txt</code>).
+and 0.103 for <code>fsync</code> (<code>crates/fennec-bench/ycsb/fsync.txt</code>).
 So the server is measured in Docker as well, at 1, 4 and 16 threads,
 durable and buffered, beside it on the Mac.</p>
 
-<p><b>Why fenecdb's reads slowed down after the updates, and no longer do.</b>
+<p><b>Why fennecdb's reads slowed down after the updates, and no longer do.</b>
 An update writes the whole record again at the file's end, and the version
 it replaces stays dead until a <code>compact</code>. The first three runs
 (<code>r1</code>-<code>r3</code>) were measured before anything compacted on
 its own: after A's and B's updates the buffered file had grown to 4.7 to
 6.5 GB on this 8 GB machine, against SQLite's 2.1 to 2.5 GB updated in
 place, and a profile of C at one thread
-(<code>crates/fenec-bench/ycsb/profile-c1.txt</code>) put 86% of the
+(<code>crates/fennec-bench/ycsb/profile-c1.txt</code>) put 86% of the
 reading thread's time on the first byte of the record in the mapped file,
 waiting for its page: about one read in five went to the disk. C at one
 thread read 30.1 k a second, where the same cell over a file just loaded
-read 443 k. fenecdb now compacts a file beside its queries once half of it
+read 443 k. fennecdb now compacts a file beside its queries once half of it
 is dead (<a href="/docs/server#compaction">Compaction</a>), in an app's
 process as in the server, and the harness runs it as an app would get it:
 the in-process database with the engine's <code>Compactor</code>, the
 server with its default <code>--auto-compact</code>. Runs
-<code>c1</code>-<code>c3</code> measured fenecdb and fenec-server again with
+<code>c1</code>-<code>c3</code> measured fennecdb and fennec-server again with
 it; the buffered file stood at 3.7 to 4.0 GB after D, mid-way between
 compacts of a file A's updates grow by 100 MB a second, and C at one thread
-read 438 k. The earlier runs of fenecdb and fenec-server stay in the results,
-marked superseded (<code>crates/fenec-bench/ycsb/superseded.tsv</code>);
+read 438 k. The earlier runs of fennecdb and fennec-server stay in the results,
+marked superseded (<code>crates/fennec-bench/ycsb/superseded.tsv</code>);
 SQLite was not measured again, and the servers were measured again since,
 all of them on one day (below).</p>
 
@@ -312,7 +312,7 @@ largest 1.2 to 1.5 GB against 1.5 to 2.0, and A at one thread from 29.7 k
 to 24.1 k.</p>
 
 <p><b>The one-client server cells, measured again the same day.</b> On
-2026-10-04 fenec-server natively and in Docker (A to F at one thread,
+2026-10-04 fennec-server natively and in Docker (A to F at one thread,
 durable and buffered, A and C at 16) and PostgreSQL beside them, in turns
 with three idle minutes between, three times, after the sync log and the
 rendering changes of <a href="benchmarks-requests.html#round-trip">the round trip</a>: each cell
@@ -324,13 +324,13 @@ days before had put the servers behind where Docker's network had been
 quicker then: its C at one client was 3.34 k, 3.53 k this time, and 3.00 k
 in a check in between. The <code>--verify</code> pass over all 84 cells
 found no mismatch, and nor did a shorter one after the sync log's fixes
-(<code>crates/fenec-bench/ycsb/verify.tsv</code>, runs <code>c</code> and
+(<code>crates/fennec-bench/ycsb/verify.tsv</code>, runs <code>c</code> and
 <code>fix</code>).</p>
 
 <p><b>Again after the read path's changes.</b> On 2026-10-05, with
-fenec-server writing a plain <code>get</code>'s rows as JSON straight from
+fennec-server writing a plain <code>get</code>'s rows as JSON straight from
 the stored documents (<a href="benchmarks-requests.html#round-trip">the round trip</a>),
-fenec-server natively and in Docker and PostgreSQL beside them measured
+fennec-server natively and in Docker and PostgreSQL beside them measured
 B, C, D and E at 1 and 16 clients, durable and buffered, in turns, three
 times, under the same ids: each cell measured again counts as its run's
 last line, so these replace those cells of the day before, PostgreSQL's
@@ -339,24 +339,24 @@ other work on the machine still held a core, its idle probe taken at a
 load of five (65.0 ms against 62.5 idle), and its cells came in up to a quarter
 under the other two, PostgreSQL's as much as the servers'; it was
 measured again on the quiet machine, and those lines are its cells. A
-<code>--verify</code> pass over fenecdb, fenec-server and fenec-server in
+<code>--verify</code> pass over fennecdb, fennec-server and fennec-server in
 Docker, A to F at 1 and 16 threads, durable and buffered, 8 s a cell,
 checked 42.1 million reads, 1.8 million scans of 89.2 million rows and 6.1
 million writes and found no mismatch (<code>verify.tsv</code>, run
 <code>gap</code>).</p>
 
 <p><b>Every server on one day.</b> On the night of 2026-10-13,
-fenec-server natively and in Docker, PostgreSQL, MongoDB and Redis measured
+fennec-server natively and in Docker, PostgreSQL, MongoDB and Redis measured
 every cell, A to F at 1, 4 and 16 clients, durable and buffered, three
 times, in turns with three idle minutes between (runs
 <code>rx1</code>-<code>rx3</code>, 8.5 hours). They replace the cells of
 the two paragraphs above, the servers' of <code>c1</code>-<code>c3</code>
 and PostgreSQL's and MongoDB's of <code>r1</code>-<code>r3</code>, so every
-cell compared over the wire is of one day; fenecdb's and SQLite's in
+cell compared over the wire is of one day; fennecdb's and SQLite's in
 process stay as they were. A first attempt (<code>rd1</code>-<code>rd3</code>)
 is in the results and in no median: it read the containers' file sizes
 beside the cells, a container started for each look ten times a second,
-and the VM's work took fenec-server in Docker's C at one client over
+and the VM's work took fennec-server in Docker's C at one client over
 100 000 records from 3.14-3.17 k to 2.33-2.38 k, in turns. A size read through a container is read once
 the clients stop now.</p>
 
@@ -385,7 +385,7 @@ The same check holds every system. A pass over all six — 100 000 records,
 10 s a cell, workloads A, E and F at 1 and 16 threads, durable and
 buffered — checked 13.8 million reads, 2.7 million scans of 134.7 million rows and
 9.8 million writes and found no mismatch
-(<code>crates/fenec-bench/ycsb/verify.tsv</code>); its timings are not
+(<code>crates/fennec-bench/ycsb/verify.tsv</code>); its timings are not
 published.</p>
 
 <p><b>Held to YCSB itself.</b> Yahoo's YCSB 0.17.0 — its Java client, the
@@ -419,11 +419,11 @@ p99s agree to a few tenths of a millisecond but for MongoDB's C at 16
 threads, 2.54 ms here against YCSB's 4.18. YCSB keys by strings
 (<code>user…</code>) where the harness keys by integers, and each side
 drives its own client library. The outputs and the script are
-<code>crates/fenec-bench/ycsb/calibration/</code>.</p>
+<code>crates/fennec-bench/ycsb/calibration/</code>.</p>
 
 <p>The full grid, every cell at 1, 4 and 16 threads with each operation's
 p50 and p99, is below; the runs themselves are
-<code>crates/fenec-bench/ycsb/results.tsv</code>.</p>
+<code>crates/fennec-bench/ycsb/results.tsv</code>.</p>
 </details>
 
 <details class="deep"><summary>Every cell</summary>
@@ -431,39 +431,39 @@ p50 and p99, is below; the runs themselves are
 <table>
 <thead><tr><th>system</th><th>setting</th><th>workload</th><th class="n">threads</th><th class="n">ops/s</th><th>p50 / p99 per operation</th></tr></thead>
 <tbody>
-<tr><td>fenecdb</td><td>durable</td><td>A</td><td class="n">1</td><td class="n">0.50 k</td><td>read 0.02 ms / 0.05 ms; update 4.0 ms / 4.9 ms</td></tr>
-<tr><td>fenecdb</td><td>durable</td><td>A</td><td class="n">4</td><td class="n">1.01 k</td><td>read 0.02 ms / 0.10 ms; update 8.0 ms / 11.1 ms</td></tr>
-<tr><td>fenecdb</td><td>durable</td><td>A</td><td class="n">16</td><td class="n">3.22 k</td><td>read 0.05 ms / 0.43 ms; update 8.0 ms / 25.0 ms</td></tr>
-<tr><td>fenecdb</td><td>durable</td><td>B</td><td class="n">1</td><td class="n">4.90 k</td><td>read 0.01 ms / 0.03 ms; update 3.9 ms / 4.8 ms</td></tr>
-<tr><td>fenecdb</td><td>durable</td><td>B</td><td class="n">4</td><td class="n">10.1 k</td><td>read 0.01 ms / 0.06 ms; update 7.7 ms / 10.8 ms</td></tr>
-<tr><td>fenecdb</td><td>durable</td><td>B</td><td class="n">16</td><td class="n">39.4 k</td><td>read 0.01 ms / 0.35 ms; update 7.5 ms / 14.7 ms</td></tr>
-<tr><td>fenecdb</td><td>durable</td><td>D</td><td class="n">1</td><td class="n">4.97 k</td><td>read 0.01 ms / 0.03 ms; insert 3.9 ms / 4.6 ms</td></tr>
-<tr><td>fenecdb</td><td>durable</td><td>D</td><td class="n">4</td><td class="n">10.1 k</td><td>read 0.01 ms / 0.05 ms; insert 7.8 ms / 10.8 ms</td></tr>
-<tr><td>fenecdb</td><td>durable</td><td>D</td><td class="n">16</td><td class="n">44.8 k</td><td>read 0.01 ms / 0.31 ms; insert 6.5 ms / 13.8 ms</td></tr>
-<tr><td>fenecdb</td><td>durable</td><td>E</td><td class="n">1</td><td class="n">2.94 k</td><td>insert 4.0 ms / 4.7 ms; scan 0.14 ms / 0.32 ms</td></tr>
-<tr><td>fenecdb</td><td>durable</td><td>E</td><td class="n">4</td><td class="n">9.75 k</td><td>insert 6.8 ms / 10.8 ms; scan 0.08 ms / 0.17 ms</td></tr>
-<tr><td>fenecdb</td><td>durable</td><td>E</td><td class="n">16</td><td class="n">37.7 k</td><td>insert 6.7 ms / 11.5 ms; scan 0.08 ms / 0.42 ms</td></tr>
-<tr><td>fenecdb</td><td>durable</td><td>F</td><td class="n">1</td><td class="n">0.50 k</td><td>read 0.02 ms / 0.04 ms; rmw 4.0 ms / 4.9 ms</td></tr>
-<tr><td>fenecdb</td><td>durable</td><td>F</td><td class="n">4</td><td class="n">1.01 k</td><td>read 0.02 ms / 0.09 ms; rmw 8.0 ms / 10.9 ms</td></tr>
-<tr><td>fenecdb</td><td>durable</td><td>F</td><td class="n">16</td><td class="n">4.05 k</td><td>read 0.03 ms / 0.38 ms; rmw 7.9 ms / 16.1 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>A</td><td class="n">1</td><td class="n">212 k</td><td>read 0.00 ms / 0.01 ms; update 0.00 ms / 0.01 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>A</td><td class="n">4</td><td class="n">178 k</td><td>read 0.00 ms / 0.17 ms; update 0.01 ms / 0.33 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>A</td><td class="n">16</td><td class="n">151 k</td><td>read 0.04 ms / 0.68 ms; update 0.06 ms / 0.71 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>B</td><td class="n">1</td><td class="n">410 k</td><td>read 0.00 ms / 0.00 ms; update 0.00 ms / 0.01 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>B</td><td class="n">4</td><td class="n">553 k</td><td>read 0.00 ms / 0.06 ms; update 0.01 ms / 0.21 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>B</td><td class="n">16</td><td class="n">545 k</td><td>read 0.00 ms / 0.28 ms; update 0.09 ms / 0.61 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>C</td><td class="n">1</td><td class="n">438 k</td><td>read 0.00 ms / 0.00 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>C</td><td class="n">4</td><td class="n">1433 k</td><td>read 0.00 ms / 0.00 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>C</td><td class="n">16</td><td class="n">1841 k</td><td>read 0.00 ms / 0.01 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>D</td><td class="n">1</td><td class="n">432 k</td><td>read 0.00 ms / 0.00 ms; insert 0.00 ms / 0.01 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>D</td><td class="n">4</td><td class="n">625 k</td><td>read 0.00 ms / 0.05 ms; insert 0.01 ms / 0.18 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>D</td><td class="n">16</td><td class="n">485 k</td><td>read 0.00 ms / 0.35 ms; insert 0.10 ms / 0.84 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>E</td><td class="n">1</td><td class="n">19.1 k</td><td>insert 0.01 ms / 0.01 ms; scan 0.06 ms / 0.10 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>E</td><td class="n">4</td><td class="n">42.3 k</td><td>insert 0.19 ms / 1.3 ms; scan 0.07 ms / 0.51 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>E</td><td class="n">16</td><td class="n">58.9 k</td><td>insert 0.17 ms / 3.7 ms; scan 0.10 ms / 2.0 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>F</td><td class="n">1</td><td class="n">192 k</td><td>read 0.00 ms / 0.01 ms; rmw 0.01 ms / 0.01 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>F</td><td class="n">4</td><td class="n">164 k</td><td>read 0.00 ms / 0.12 ms; rmw 0.01 ms / 0.30 ms</td></tr>
-<tr><td>fenecdb</td><td>buffered</td><td>F</td><td class="n">16</td><td class="n">121 k</td><td>read 0.02 ms / 0.56 ms; rmw 0.13 ms / 0.90 ms</td></tr>
+<tr><td>fennecdb</td><td>durable</td><td>A</td><td class="n">1</td><td class="n">0.50 k</td><td>read 0.02 ms / 0.05 ms; update 4.0 ms / 4.9 ms</td></tr>
+<tr><td>fennecdb</td><td>durable</td><td>A</td><td class="n">4</td><td class="n">1.01 k</td><td>read 0.02 ms / 0.10 ms; update 8.0 ms / 11.1 ms</td></tr>
+<tr><td>fennecdb</td><td>durable</td><td>A</td><td class="n">16</td><td class="n">3.22 k</td><td>read 0.05 ms / 0.43 ms; update 8.0 ms / 25.0 ms</td></tr>
+<tr><td>fennecdb</td><td>durable</td><td>B</td><td class="n">1</td><td class="n">4.90 k</td><td>read 0.01 ms / 0.03 ms; update 3.9 ms / 4.8 ms</td></tr>
+<tr><td>fennecdb</td><td>durable</td><td>B</td><td class="n">4</td><td class="n">10.1 k</td><td>read 0.01 ms / 0.06 ms; update 7.7 ms / 10.8 ms</td></tr>
+<tr><td>fennecdb</td><td>durable</td><td>B</td><td class="n">16</td><td class="n">39.4 k</td><td>read 0.01 ms / 0.35 ms; update 7.5 ms / 14.7 ms</td></tr>
+<tr><td>fennecdb</td><td>durable</td><td>D</td><td class="n">1</td><td class="n">4.97 k</td><td>read 0.01 ms / 0.03 ms; insert 3.9 ms / 4.6 ms</td></tr>
+<tr><td>fennecdb</td><td>durable</td><td>D</td><td class="n">4</td><td class="n">10.1 k</td><td>read 0.01 ms / 0.05 ms; insert 7.8 ms / 10.8 ms</td></tr>
+<tr><td>fennecdb</td><td>durable</td><td>D</td><td class="n">16</td><td class="n">44.8 k</td><td>read 0.01 ms / 0.31 ms; insert 6.5 ms / 13.8 ms</td></tr>
+<tr><td>fennecdb</td><td>durable</td><td>E</td><td class="n">1</td><td class="n">2.94 k</td><td>insert 4.0 ms / 4.7 ms; scan 0.14 ms / 0.32 ms</td></tr>
+<tr><td>fennecdb</td><td>durable</td><td>E</td><td class="n">4</td><td class="n">9.75 k</td><td>insert 6.8 ms / 10.8 ms; scan 0.08 ms / 0.17 ms</td></tr>
+<tr><td>fennecdb</td><td>durable</td><td>E</td><td class="n">16</td><td class="n">37.7 k</td><td>insert 6.7 ms / 11.5 ms; scan 0.08 ms / 0.42 ms</td></tr>
+<tr><td>fennecdb</td><td>durable</td><td>F</td><td class="n">1</td><td class="n">0.50 k</td><td>read 0.02 ms / 0.04 ms; rmw 4.0 ms / 4.9 ms</td></tr>
+<tr><td>fennecdb</td><td>durable</td><td>F</td><td class="n">4</td><td class="n">1.01 k</td><td>read 0.02 ms / 0.09 ms; rmw 8.0 ms / 10.9 ms</td></tr>
+<tr><td>fennecdb</td><td>durable</td><td>F</td><td class="n">16</td><td class="n">4.05 k</td><td>read 0.03 ms / 0.38 ms; rmw 7.9 ms / 16.1 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>A</td><td class="n">1</td><td class="n">212 k</td><td>read 0.00 ms / 0.01 ms; update 0.00 ms / 0.01 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>A</td><td class="n">4</td><td class="n">178 k</td><td>read 0.00 ms / 0.17 ms; update 0.01 ms / 0.33 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>A</td><td class="n">16</td><td class="n">151 k</td><td>read 0.04 ms / 0.68 ms; update 0.06 ms / 0.71 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>B</td><td class="n">1</td><td class="n">410 k</td><td>read 0.00 ms / 0.00 ms; update 0.00 ms / 0.01 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>B</td><td class="n">4</td><td class="n">553 k</td><td>read 0.00 ms / 0.06 ms; update 0.01 ms / 0.21 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>B</td><td class="n">16</td><td class="n">545 k</td><td>read 0.00 ms / 0.28 ms; update 0.09 ms / 0.61 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>C</td><td class="n">1</td><td class="n">438 k</td><td>read 0.00 ms / 0.00 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>C</td><td class="n">4</td><td class="n">1433 k</td><td>read 0.00 ms / 0.00 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>C</td><td class="n">16</td><td class="n">1841 k</td><td>read 0.00 ms / 0.01 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>D</td><td class="n">1</td><td class="n">432 k</td><td>read 0.00 ms / 0.00 ms; insert 0.00 ms / 0.01 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>D</td><td class="n">4</td><td class="n">625 k</td><td>read 0.00 ms / 0.05 ms; insert 0.01 ms / 0.18 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>D</td><td class="n">16</td><td class="n">485 k</td><td>read 0.00 ms / 0.35 ms; insert 0.10 ms / 0.84 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>E</td><td class="n">1</td><td class="n">19.1 k</td><td>insert 0.01 ms / 0.01 ms; scan 0.06 ms / 0.10 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>E</td><td class="n">4</td><td class="n">42.3 k</td><td>insert 0.19 ms / 1.3 ms; scan 0.07 ms / 0.51 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>E</td><td class="n">16</td><td class="n">58.9 k</td><td>insert 0.17 ms / 3.7 ms; scan 0.10 ms / 2.0 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>F</td><td class="n">1</td><td class="n">192 k</td><td>read 0.00 ms / 0.01 ms; rmw 0.01 ms / 0.01 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>F</td><td class="n">4</td><td class="n">164 k</td><td>read 0.00 ms / 0.12 ms; rmw 0.01 ms / 0.30 ms</td></tr>
+<tr><td>fennecdb</td><td>buffered</td><td>F</td><td class="n">16</td><td class="n">121 k</td><td>read 0.02 ms / 0.56 ms; rmw 0.13 ms / 0.90 ms</td></tr>
 <tr><td>SQLite</td><td>durable</td><td>A</td><td class="n">1</td><td class="n">0.47 k</td><td>read 0.19 ms / 0.61 ms; update 4.0 ms / 8.1 ms</td></tr>
 <tr><td>SQLite</td><td>durable</td><td>A</td><td class="n">4</td><td class="n">0.47 k</td><td>read 0.18 ms / 0.63 ms; update 4.0 ms / 20.1 ms</td></tr>
 <tr><td>SQLite</td><td>durable</td><td>A</td><td class="n">16</td><td class="n">0.45 k</td><td>read 0.20 ms / 0.78 ms; update 4.0 ms / 2 533 ms</td></tr>
@@ -497,72 +497,72 @@ p50 and p99, is below; the runs themselves are
 <tr><td>SQLite</td><td>buffered</td><td>F</td><td class="n">1</td><td class="n">34.6 k</td><td>read 0.00 ms / 0.16 ms; rmw 0.01 ms / 0.18 ms</td></tr>
 <tr><td>SQLite</td><td>buffered</td><td>F</td><td class="n">4</td><td class="n">29.0 k</td><td>read 0.01 ms / 1.4 ms; rmw 0.01 ms / 4.1 ms</td></tr>
 <tr><td>SQLite</td><td>buffered</td><td>F</td><td class="n">16</td><td class="n">35.5 k</td><td>read 0.01 ms / 1.2 ms; rmw 0.01 ms / 10.4 ms</td></tr>
-<tr><td>fenec-server</td><td>durable</td><td>A</td><td class="n">1</td><td class="n">0.53 k</td><td>read 0.14 ms / 0.26 ms; update 3.8 ms / 7.0 ms</td></tr>
-<tr><td>fenec-server</td><td>durable</td><td>A</td><td class="n">4</td><td class="n">1.08 k</td><td>read 0.19 ms / 0.81 ms; update 7.0 ms / 11.2 ms</td></tr>
-<tr><td>fenec-server</td><td>durable</td><td>A</td><td class="n">16</td><td class="n">3.94 k</td><td>read 0.33 ms / 1.3 ms; update 7.5 ms / 18.2 ms</td></tr>
-<tr><td>fenec-server</td><td>durable</td><td>B</td><td class="n">1</td><td class="n">3.26 k</td><td>read 0.09 ms / 0.33 ms; update 3.9 ms / 6.1 ms</td></tr>
-<tr><td>fenec-server</td><td>durable</td><td>B</td><td class="n">4</td><td class="n">10.1 k</td><td>read 0.07 ms / 0.22 ms; update 6.5 ms / 9.9 ms</td></tr>
-<tr><td>fenec-server</td><td>durable</td><td>B</td><td class="n">16</td><td class="n">42.1 k</td><td>read 0.06 ms / 0.20 ms; update 6.3 ms / 10.4 ms</td></tr>
-<tr><td>fenec-server</td><td>durable</td><td>D</td><td class="n">1</td><td class="n">3.68 k</td><td>read 0.08 ms / 0.15 ms; insert 3.9 ms / 5.4 ms</td></tr>
-<tr><td>fenec-server</td><td>durable</td><td>D</td><td class="n">4</td><td class="n">10.0 k</td><td>read 0.07 ms / 0.14 ms; insert 6.6 ms / 9.9 ms</td></tr>
-<tr><td>fenec-server</td><td>durable</td><td>D</td><td class="n">16</td><td class="n">41.8 k</td><td>read 0.06 ms / 0.20 ms; insert 6.4 ms / 10.4 ms</td></tr>
-<tr><td>fenec-server</td><td>durable</td><td>E</td><td class="n">1</td><td class="n">3.30 k</td><td>insert 3.5 ms / 4.9 ms; scan 0.13 ms / 0.24 ms</td></tr>
-<tr><td>fenec-server</td><td>durable</td><td>E</td><td class="n">4</td><td class="n">10.9 k</td><td>insert 5.7 ms / 8.7 ms; scan 0.08 ms / 0.18 ms</td></tr>
-<tr><td>fenec-server</td><td>durable</td><td>E</td><td class="n">16</td><td class="n">40.8 k</td><td>insert 5.9 ms / 9.9 ms; scan 0.08 ms / 0.32 ms</td></tr>
-<tr><td>fenec-server</td><td>durable</td><td>F</td><td class="n">1</td><td class="n">0.49 k</td><td>read 0.14 ms / 0.21 ms; rmw 3.9 ms / 6.4 ms</td></tr>
-<tr><td>fenec-server</td><td>durable</td><td>F</td><td class="n">4</td><td class="n">1.04 k</td><td>read 0.16 ms / 0.50 ms; rmw 7.5 ms / 11.9 ms</td></tr>
-<tr><td>fenec-server</td><td>durable</td><td>F</td><td class="n">16</td><td class="n">4.05 k</td><td>read 0.30 ms / 0.75 ms; rmw 7.7 ms / 12.5 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>A</td><td class="n">1</td><td class="n">44.2 k</td><td>read 0.02 ms / 0.03 ms; update 0.02 ms / 0.04 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>A</td><td class="n">4</td><td class="n">107 k</td><td>read 0.03 ms / 0.09 ms; update 0.03 ms / 0.10 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>A</td><td class="n">16</td><td class="n">110 k</td><td>read 0.10 ms / 0.54 ms; update 0.13 ms / 0.70 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>B</td><td class="n">1</td><td class="n">44.0 k</td><td>read 0.02 ms / 0.03 ms; update 0.03 ms / 0.04 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>B</td><td class="n">4</td><td class="n">123 k</td><td>read 0.03 ms / 0.08 ms; update 0.03 ms / 0.09 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>B</td><td class="n">16</td><td class="n">154 k</td><td>read 0.09 ms / 0.26 ms; update 0.11 ms / 0.37 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>C</td><td class="n">1</td><td class="n">44.1 k</td><td>read 0.02 ms / 0.03 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>C</td><td class="n">4</td><td class="n">123 k</td><td>read 0.03 ms / 0.08 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>C</td><td class="n">16</td><td class="n">155 k</td><td>read 0.10 ms / 0.24 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>D</td><td class="n">1</td><td class="n">44.0 k</td><td>read 0.02 ms / 0.03 ms; insert 0.03 ms / 0.04 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>D</td><td class="n">4</td><td class="n">118 k</td><td>read 0.03 ms / 0.08 ms; insert 0.04 ms / 0.10 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>D</td><td class="n">16</td><td class="n">149 k</td><td>read 0.09 ms / 0.35 ms; insert 0.12 ms / 0.46 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>E</td><td class="n">1</td><td class="n">17.8 k</td><td>insert 0.03 ms / 0.07 ms; scan 0.06 ms / 0.10 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>E</td><td class="n">4</td><td class="n">47.0 k</td><td>insert 0.09 ms / 0.19 ms; scan 0.08 ms / 0.18 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>E</td><td class="n">16</td><td class="n">55.2 k</td><td>insert 0.24 ms / 2.6 ms; scan 0.19 ms / 2.1 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>F</td><td class="n">1</td><td class="n">30.1 k</td><td>read 0.02 ms / 0.03 ms; rmw 0.05 ms / 0.06 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>F</td><td class="n">4</td><td class="n">72.8 k</td><td>read 0.03 ms / 0.09 ms; rmw 0.07 ms / 0.15 ms</td></tr>
-<tr><td>fenec-server</td><td>buffered</td><td>F</td><td class="n">16</td><td class="n">81.3 k</td><td>read 0.09 ms / 0.49 ms; rmw 0.23 ms / 1.1 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>durable</td><td>A</td><td class="n">1</td><td class="n">3.34 k</td><td>read 0.24 ms / 0.64 ms; update 0.33 ms / 1.1 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>durable</td><td>A</td><td class="n">4</td><td class="n">7.88 k</td><td>read 0.32 ms / 1.5 ms; update 0.54 ms / 1.9 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>durable</td><td>A</td><td class="n">16</td><td class="n">13.3 k</td><td>read 0.63 ms / 2.4 ms; update 1.4 ms / 5.7 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>durable</td><td>B</td><td class="n">1</td><td class="n">4.50 k</td><td>read 0.20 ms / 0.84 ms; update 0.31 ms / 1.2 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>durable</td><td>B</td><td class="n">4</td><td class="n">8.21 k</td><td>read 0.34 ms / 1.7 ms; update 0.53 ms / 2.0 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>durable</td><td>B</td><td class="n">16</td><td class="n">18.2 k</td><td>read 0.68 ms / 2.9 ms; update 1.1 ms / 6.0 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>durable</td><td>D</td><td class="n">1</td><td class="n">4.86 k</td><td>read 0.18 ms / 0.76 ms; insert 0.29 ms / 1.1 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>durable</td><td>D</td><td class="n">4</td><td class="n">8.06 k</td><td>read 0.34 ms / 1.7 ms; insert 0.55 ms / 2.2 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>durable</td><td>D</td><td class="n">16</td><td class="n">18.0 k</td><td>read 0.69 ms / 3.0 ms; insert 1.2 ms / 6.2 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>durable</td><td>E</td><td class="n">1</td><td class="n">1.69 k</td><td>insert 0.45 ms / 2.5 ms; scan 0.44 ms / 2.6 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>durable</td><td>E</td><td class="n">4</td><td class="n">2.67 k</td><td>insert 1.1 ms / 7.8 ms; scan 1.0 ms / 7.6 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>durable</td><td>E</td><td class="n">16</td><td class="n">2.72 k</td><td>insert 4.0 ms / 21.6 ms; scan 4.2 ms / 25.8 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>durable</td><td>F</td><td class="n">1</td><td class="n">2.36 k</td><td>read 0.23 ms / 0.72 ms; rmw 0.56 ms / 1.7 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>durable</td><td>F</td><td class="n">4</td><td class="n">5.13 k</td><td>read 0.34 ms / 1.6 ms; rmw 0.92 ms / 2.8 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>durable</td><td>F</td><td class="n">16</td><td class="n">9.43 k</td><td>read 0.69 ms / 2.9 ms; rmw 2.2 ms / 9.9 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>A</td><td class="n">1</td><td class="n">3.06 k</td><td>read 0.29 ms / 1.3 ms; update 0.30 ms / 1.4 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>A</td><td class="n">4</td><td class="n">7.78 k</td><td>read 0.38 ms / 1.8 ms; update 0.39 ms / 1.8 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>A</td><td class="n">16</td><td class="n">16.5 k</td><td>read 0.76 ms / 3.5 ms; update 0.82 ms / 3.7 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>B</td><td class="n">1</td><td class="n">3.08 k</td><td>read 0.29 ms / 1.4 ms; update 0.30 ms / 1.3 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>B</td><td class="n">4</td><td class="n">8.10 k</td><td>read 0.37 ms / 1.8 ms; update 0.38 ms / 1.8 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>B</td><td class="n">16</td><td class="n">17.5 k</td><td>read 0.72 ms / 3.2 ms; update 0.79 ms / 3.4 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>C</td><td class="n">1</td><td class="n">3.07 k</td><td>read 0.29 ms / 1.3 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>C</td><td class="n">4</td><td class="n">8.22 k</td><td>read 0.37 ms / 1.7 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>C</td><td class="n">16</td><td class="n">18.4 k</td><td>read 0.69 ms / 2.9 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>D</td><td class="n">1</td><td class="n">3.10 k</td><td>read 0.29 ms / 1.3 ms; insert 0.32 ms / 1.4 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>D</td><td class="n">4</td><td class="n">7.94 k</td><td>read 0.37 ms / 1.8 ms; insert 0.39 ms / 1.8 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>D</td><td class="n">16</td><td class="n">17.7 k</td><td>read 0.71 ms / 3.1 ms; insert 0.79 ms / 3.5 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>E</td><td class="n">1</td><td class="n">1.49 k</td><td>insert 0.35 ms / 1.7 ms; scan 0.53 ms / 2.8 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>E</td><td class="n">4</td><td class="n">2.55 k</td><td>insert 0.87 ms / 6.1 ms; scan 1.1 ms / 8.8 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>E</td><td class="n">16</td><td class="n">2.59 k</td><td>insert 3.7 ms / 22.2 ms; scan 4.3 ms / 27.7 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>F</td><td class="n">1</td><td class="n">2.07 k</td><td>read 0.29 ms / 1.3 ms; rmw 0.59 ms / 1.9 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>F</td><td class="n">4</td><td class="n">5.29 k</td><td>read 0.38 ms / 1.8 ms; rmw 0.78 ms / 2.5 ms</td></tr>
-<tr><td>fenec-server in Docker</td><td>buffered</td><td>F</td><td class="n">16</td><td class="n">11.2 k</td><td>read 0.75 ms / 3.6 ms; rmw 1.6 ms / 7.3 ms</td></tr>
+<tr><td>fennec-server</td><td>durable</td><td>A</td><td class="n">1</td><td class="n">0.53 k</td><td>read 0.14 ms / 0.26 ms; update 3.8 ms / 7.0 ms</td></tr>
+<tr><td>fennec-server</td><td>durable</td><td>A</td><td class="n">4</td><td class="n">1.08 k</td><td>read 0.19 ms / 0.81 ms; update 7.0 ms / 11.2 ms</td></tr>
+<tr><td>fennec-server</td><td>durable</td><td>A</td><td class="n">16</td><td class="n">3.94 k</td><td>read 0.33 ms / 1.3 ms; update 7.5 ms / 18.2 ms</td></tr>
+<tr><td>fennec-server</td><td>durable</td><td>B</td><td class="n">1</td><td class="n">3.26 k</td><td>read 0.09 ms / 0.33 ms; update 3.9 ms / 6.1 ms</td></tr>
+<tr><td>fennec-server</td><td>durable</td><td>B</td><td class="n">4</td><td class="n">10.1 k</td><td>read 0.07 ms / 0.22 ms; update 6.5 ms / 9.9 ms</td></tr>
+<tr><td>fennec-server</td><td>durable</td><td>B</td><td class="n">16</td><td class="n">42.1 k</td><td>read 0.06 ms / 0.20 ms; update 6.3 ms / 10.4 ms</td></tr>
+<tr><td>fennec-server</td><td>durable</td><td>D</td><td class="n">1</td><td class="n">3.68 k</td><td>read 0.08 ms / 0.15 ms; insert 3.9 ms / 5.4 ms</td></tr>
+<tr><td>fennec-server</td><td>durable</td><td>D</td><td class="n">4</td><td class="n">10.0 k</td><td>read 0.07 ms / 0.14 ms; insert 6.6 ms / 9.9 ms</td></tr>
+<tr><td>fennec-server</td><td>durable</td><td>D</td><td class="n">16</td><td class="n">41.8 k</td><td>read 0.06 ms / 0.20 ms; insert 6.4 ms / 10.4 ms</td></tr>
+<tr><td>fennec-server</td><td>durable</td><td>E</td><td class="n">1</td><td class="n">3.30 k</td><td>insert 3.5 ms / 4.9 ms; scan 0.13 ms / 0.24 ms</td></tr>
+<tr><td>fennec-server</td><td>durable</td><td>E</td><td class="n">4</td><td class="n">10.9 k</td><td>insert 5.7 ms / 8.7 ms; scan 0.08 ms / 0.18 ms</td></tr>
+<tr><td>fennec-server</td><td>durable</td><td>E</td><td class="n">16</td><td class="n">40.8 k</td><td>insert 5.9 ms / 9.9 ms; scan 0.08 ms / 0.32 ms</td></tr>
+<tr><td>fennec-server</td><td>durable</td><td>F</td><td class="n">1</td><td class="n">0.49 k</td><td>read 0.14 ms / 0.21 ms; rmw 3.9 ms / 6.4 ms</td></tr>
+<tr><td>fennec-server</td><td>durable</td><td>F</td><td class="n">4</td><td class="n">1.04 k</td><td>read 0.16 ms / 0.50 ms; rmw 7.5 ms / 11.9 ms</td></tr>
+<tr><td>fennec-server</td><td>durable</td><td>F</td><td class="n">16</td><td class="n">4.05 k</td><td>read 0.30 ms / 0.75 ms; rmw 7.7 ms / 12.5 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>A</td><td class="n">1</td><td class="n">44.2 k</td><td>read 0.02 ms / 0.03 ms; update 0.02 ms / 0.04 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>A</td><td class="n">4</td><td class="n">107 k</td><td>read 0.03 ms / 0.09 ms; update 0.03 ms / 0.10 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>A</td><td class="n">16</td><td class="n">110 k</td><td>read 0.10 ms / 0.54 ms; update 0.13 ms / 0.70 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>B</td><td class="n">1</td><td class="n">44.0 k</td><td>read 0.02 ms / 0.03 ms; update 0.03 ms / 0.04 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>B</td><td class="n">4</td><td class="n">123 k</td><td>read 0.03 ms / 0.08 ms; update 0.03 ms / 0.09 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>B</td><td class="n">16</td><td class="n">154 k</td><td>read 0.09 ms / 0.26 ms; update 0.11 ms / 0.37 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>C</td><td class="n">1</td><td class="n">44.1 k</td><td>read 0.02 ms / 0.03 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>C</td><td class="n">4</td><td class="n">123 k</td><td>read 0.03 ms / 0.08 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>C</td><td class="n">16</td><td class="n">155 k</td><td>read 0.10 ms / 0.24 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>D</td><td class="n">1</td><td class="n">44.0 k</td><td>read 0.02 ms / 0.03 ms; insert 0.03 ms / 0.04 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>D</td><td class="n">4</td><td class="n">118 k</td><td>read 0.03 ms / 0.08 ms; insert 0.04 ms / 0.10 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>D</td><td class="n">16</td><td class="n">149 k</td><td>read 0.09 ms / 0.35 ms; insert 0.12 ms / 0.46 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>E</td><td class="n">1</td><td class="n">17.8 k</td><td>insert 0.03 ms / 0.07 ms; scan 0.06 ms / 0.10 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>E</td><td class="n">4</td><td class="n">47.0 k</td><td>insert 0.09 ms / 0.19 ms; scan 0.08 ms / 0.18 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>E</td><td class="n">16</td><td class="n">55.2 k</td><td>insert 0.24 ms / 2.6 ms; scan 0.19 ms / 2.1 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>F</td><td class="n">1</td><td class="n">30.1 k</td><td>read 0.02 ms / 0.03 ms; rmw 0.05 ms / 0.06 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>F</td><td class="n">4</td><td class="n">72.8 k</td><td>read 0.03 ms / 0.09 ms; rmw 0.07 ms / 0.15 ms</td></tr>
+<tr><td>fennec-server</td><td>buffered</td><td>F</td><td class="n">16</td><td class="n">81.3 k</td><td>read 0.09 ms / 0.49 ms; rmw 0.23 ms / 1.1 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>durable</td><td>A</td><td class="n">1</td><td class="n">3.34 k</td><td>read 0.24 ms / 0.64 ms; update 0.33 ms / 1.1 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>durable</td><td>A</td><td class="n">4</td><td class="n">7.88 k</td><td>read 0.32 ms / 1.5 ms; update 0.54 ms / 1.9 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>durable</td><td>A</td><td class="n">16</td><td class="n">13.3 k</td><td>read 0.63 ms / 2.4 ms; update 1.4 ms / 5.7 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>durable</td><td>B</td><td class="n">1</td><td class="n">4.50 k</td><td>read 0.20 ms / 0.84 ms; update 0.31 ms / 1.2 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>durable</td><td>B</td><td class="n">4</td><td class="n">8.21 k</td><td>read 0.34 ms / 1.7 ms; update 0.53 ms / 2.0 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>durable</td><td>B</td><td class="n">16</td><td class="n">18.2 k</td><td>read 0.68 ms / 2.9 ms; update 1.1 ms / 6.0 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>durable</td><td>D</td><td class="n">1</td><td class="n">4.86 k</td><td>read 0.18 ms / 0.76 ms; insert 0.29 ms / 1.1 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>durable</td><td>D</td><td class="n">4</td><td class="n">8.06 k</td><td>read 0.34 ms / 1.7 ms; insert 0.55 ms / 2.2 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>durable</td><td>D</td><td class="n">16</td><td class="n">18.0 k</td><td>read 0.69 ms / 3.0 ms; insert 1.2 ms / 6.2 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>durable</td><td>E</td><td class="n">1</td><td class="n">1.69 k</td><td>insert 0.45 ms / 2.5 ms; scan 0.44 ms / 2.6 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>durable</td><td>E</td><td class="n">4</td><td class="n">2.67 k</td><td>insert 1.1 ms / 7.8 ms; scan 1.0 ms / 7.6 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>durable</td><td>E</td><td class="n">16</td><td class="n">2.72 k</td><td>insert 4.0 ms / 21.6 ms; scan 4.2 ms / 25.8 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>durable</td><td>F</td><td class="n">1</td><td class="n">2.36 k</td><td>read 0.23 ms / 0.72 ms; rmw 0.56 ms / 1.7 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>durable</td><td>F</td><td class="n">4</td><td class="n">5.13 k</td><td>read 0.34 ms / 1.6 ms; rmw 0.92 ms / 2.8 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>durable</td><td>F</td><td class="n">16</td><td class="n">9.43 k</td><td>read 0.69 ms / 2.9 ms; rmw 2.2 ms / 9.9 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>A</td><td class="n">1</td><td class="n">3.06 k</td><td>read 0.29 ms / 1.3 ms; update 0.30 ms / 1.4 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>A</td><td class="n">4</td><td class="n">7.78 k</td><td>read 0.38 ms / 1.8 ms; update 0.39 ms / 1.8 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>A</td><td class="n">16</td><td class="n">16.5 k</td><td>read 0.76 ms / 3.5 ms; update 0.82 ms / 3.7 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>B</td><td class="n">1</td><td class="n">3.08 k</td><td>read 0.29 ms / 1.4 ms; update 0.30 ms / 1.3 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>B</td><td class="n">4</td><td class="n">8.10 k</td><td>read 0.37 ms / 1.8 ms; update 0.38 ms / 1.8 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>B</td><td class="n">16</td><td class="n">17.5 k</td><td>read 0.72 ms / 3.2 ms; update 0.79 ms / 3.4 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>C</td><td class="n">1</td><td class="n">3.07 k</td><td>read 0.29 ms / 1.3 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>C</td><td class="n">4</td><td class="n">8.22 k</td><td>read 0.37 ms / 1.7 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>C</td><td class="n">16</td><td class="n">18.4 k</td><td>read 0.69 ms / 2.9 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>D</td><td class="n">1</td><td class="n">3.10 k</td><td>read 0.29 ms / 1.3 ms; insert 0.32 ms / 1.4 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>D</td><td class="n">4</td><td class="n">7.94 k</td><td>read 0.37 ms / 1.8 ms; insert 0.39 ms / 1.8 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>D</td><td class="n">16</td><td class="n">17.7 k</td><td>read 0.71 ms / 3.1 ms; insert 0.79 ms / 3.5 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>E</td><td class="n">1</td><td class="n">1.49 k</td><td>insert 0.35 ms / 1.7 ms; scan 0.53 ms / 2.8 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>E</td><td class="n">4</td><td class="n">2.55 k</td><td>insert 0.87 ms / 6.1 ms; scan 1.1 ms / 8.8 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>E</td><td class="n">16</td><td class="n">2.59 k</td><td>insert 3.7 ms / 22.2 ms; scan 4.3 ms / 27.7 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>F</td><td class="n">1</td><td class="n">2.07 k</td><td>read 0.29 ms / 1.3 ms; rmw 0.59 ms / 1.9 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>F</td><td class="n">4</td><td class="n">5.29 k</td><td>read 0.38 ms / 1.8 ms; rmw 0.78 ms / 2.5 ms</td></tr>
+<tr><td>fennec-server in Docker</td><td>buffered</td><td>F</td><td class="n">16</td><td class="n">11.2 k</td><td>read 0.75 ms / 3.6 ms; rmw 1.6 ms / 7.3 ms</td></tr>
 <tr><td>PostgreSQL</td><td>durable</td><td>A</td><td class="n">1</td><td class="n">2.52 k</td><td>read 0.30 ms / 1.1 ms; update 0.42 ms / 1.4 ms</td></tr>
 <tr><td>PostgreSQL</td><td>durable</td><td>A</td><td class="n">4</td><td class="n">5.97 k</td><td>read 0.42 ms / 1.7 ms; update 0.72 ms / 3.3 ms</td></tr>
 <tr><td>PostgreSQL</td><td>durable</td><td>A</td><td class="n">16</td><td class="n">10.5 k</td><td>read 0.86 ms / 3.2 ms; update 1.7 ms / 10.7 ms</td></tr>

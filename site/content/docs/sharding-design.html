@@ -1,5 +1,5 @@
 <!--
-title: Sharding: design — fenecdb
+title: Sharding: design — fennecdb
 description: Why each tenant is a file of its own, how the router forwards a request, how a lease keeps a tenant from having two primaries, and what it costs and does not do.
 -->
 
@@ -76,7 +76,7 @@ makes changes at a time. Failover is never guessed.</p>
 
 <h2 id="forwarding">How the router forwards a request</h2>
 
-<p>How <a href="sharding-reference.html#the-router-fenec-shard"><code>fenec-shard</code></a> passes a request on, retries one, and ends what it has out to a node that was failed over.</p>
+<p>How <a href="sharding-reference.html#the-router-fennec-shard"><code>fennec-shard</code></a> passes a request on, retries one, and ends what it has out to a node that was failed over.</p>
 
 <p>The router reads a request's head and body, looks the tenant up, and forwards
 it byte for byte — the original target, not a re-encoding of it. An answer with
@@ -106,7 +106,7 @@ each by the rule above: a request the node cannot have run, a read, or a
 write with an <code>Idempotency-Key</code> goes to the new primary — a keyed
 write the old node made and sent its copy is answered from the key there,
 one it never sent runs there once — and any other write is answered
-<code>502</code>, saying it may have run. A held request (<code>Fenec-Wait</code>) goes by the same rule, with
+<code>502</code>, saying it may have run. A held request (<code>Fennec-Wait</code>) goes by the same rule, with
 what is left of its wait: the router cannot tell one still held from one
 the node had just run as it died, and a claim run twice takes two jobs. A
 subscription ends, for its client to open it again where the tenant is now.
@@ -122,7 +122,7 @@ each node it moved tenants to as it ends; a write sent there before is
 refused unrun, and the router then grants the copy its list at once and
 asks again — twice, since a grant under way for another tenant may have
 read the list before this one was promoted. What is cut and what became of it is counted
-(<code>fenec_router_cut_requests_total</code>,
+(<code>fennec_router_cut_requests_total</code>,
 <a href="monitoring.html#router">Monitoring</a>). A standby router, and a
 region's router forwarding by its copy of the global directory, fail
 nothing over themselves, but end what they have out to the node by the same
@@ -144,7 +144,7 @@ killed) the dead node's writers wrote again as the router failed it over,
 
 <h3 id="lease-failover">The lease and the failover</h3>
 
-<p>With <code>fenec-shard --auto-failover &lt;s&gt;</code> the router fails a
+<p>With <code>fennec-shard --auto-failover &lt;s&gt;</code> the router fails a
 node over on its own. It leases each node the tenants it places there for
 that long, renews the lease as it starts and every third of it after while
 the node answers, and fails over a node that has gone a tenth past its lease
@@ -227,12 +227,12 @@ the node still answers reads, the write among them, and routers send them
 there until they fail the tenant over, a lease and a tenth
 (<code>--auto-failover</code> × 1.1) after the answer, while
 the copy promoted may lack it. After that, and not before, read it back
-through the router, or send a read with <code>Fenec-After</code> and
-<code>Fenec-History</code> set to the <code>seq</code> and
+through the router, or send a read with <code>Fennec-After</code> and
+<code>Fennec-History</code> set to the <code>seq</code> and
 <code>history</code> the answer's body names, which a primary holding the
 write answers and one without it refuses 504 — sent at once, that read is
 answered 200 by the lapsed node, whose history holds the write. The body
-names them, not <code>Fenec-Seq</code>, which a client would take as its
+names them, not <code>Fennec-Seq</code>, which a client would take as its
 own position. Answered as a success, as it was, a failover lost it. A
 <code>/batch</code> holding a <code>compact</code>, whose statements run on
 their own, is answered so too where one of them landed before a later one
@@ -255,11 +255,11 @@ reads the router's first grant after the failover, which names none of them
 — with no late grant needed — and nothing inside the guest tells it soundly
 that it was paused: every signal there is comes once it runs again. Stop
 the node before its machine is paused, saved or migrated (<code>systemctl
-stop fenec-node</code>), on a cloud's notice where it gives one (Azure's
+stop fennec-node</code>), on a cloud's notice where it gives one (Azure's
 Scheduled Events, GCE's <code>maintenance-event</code>), and where a host
 may pause it unannounced, keep the lease short: two primaries last no
 longer than the lease the node had left. The
-<a href="https://github.com/fenecdb/fenecdb/blob/main/deploy/RUNBOOK.md#known-gaps">runbook's
+<a href="https://github.com/fennec-db/fennecdb/blob/main/deploy/RUNBOOK.md#known-gaps">runbook's
 known gaps</a> say which pauses are counted and which are not. An answer that passed the second
 check just before its process stopped still goes out whenever the process
 runs again. A stall of sixteen rounds or more can leave a node without the
@@ -337,9 +337,9 @@ since, which would take back every write after that failover; the tenant
 waits for its node, where its rows are. A copy that has heard from the node
 it follows since it was last told to follow it is promoted whatever
 history it holds, and its node remembers the hello across a restart, so a
-tenant restored in place on its primary's node — <code>fenec restore</code>
+tenant restored in place on its primary's node — <code>fennec restore</code>
 installed with <code>DELETE</code> and <code>PUT .../file</code>, or the
-whole node with <code>fenec restore --tenants</code> — fails over as before
+whole node with <code>fennec restore --tenants</code> — fails over as before
 once its copies have taken the restored file. A tenant not yet written
 fails over as any other. A file of another lineage put in a primary's place
 by hand — another tenant's, or one made again under the name — is not the

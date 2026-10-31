@@ -16,7 +16,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 )
 
-// A stand-in for fenec-server that answers what each test sets and keeps
+// A stand-in for fennec-server that answers what each test sets and keeps
 // every request it was sent, so a test holds the plugin to the bytes it
 // sends: the statement, its parameters, its path and its headers.
 type fake struct {
@@ -130,7 +130,7 @@ func bodyOf(t *testing.T, s seenRequest) body {
 
 // The request a dashboard's query makes: the statement with its names made
 // slots, the values as JSON parameters, the token as a bearer, the tenant
-// as the path's prefix -- and a variable trying to be FenecQL a parameter.
+// as the path's prefix -- and a variable trying to be FennecQL a parameter.
 func TestTheRequestHoldsTheStatementAndItsValuesApart(t *testing.T) {
 	f, srv := newFake(t, func(seenRequest) (int, map[string]string, string) {
 		return 200, nil, `[]`
@@ -179,9 +179,9 @@ func TestRefusalsKeepTheServersStatusAndMessage(t *testing.T) {
 		body   string
 		want   string
 	}{
-		{400, `{"error":"query error: position 23: expected ` + "`[`" + `, found $1"}`, "fenec-server answered 400: query error: position 23: expected `[`, found $1"},
-		{412, `{"error":"unmet: ` + "`get ticks`" + ` answered 0 rows, and requires 1"}`, "fenec-server answered 412: unmet: `get ticks` answered 0 rows, and requires 1"},
-		{401, `{"error":"invalid token"}`, "fenec-server refused the data source's token (401): invalid token"},
+		{400, `{"error":"query error: position 23: expected ` + "`[`" + `, found $1"}`, "fennec-server answered 400: query error: position 23: expected `[`, found $1"},
+		{412, `{"error":"unmet: ` + "`get ticks`" + ` answered 0 rows, and requires 1"}`, "fennec-server answered 412: unmet: `get ticks` answered 0 rows, and requires 1"},
+		{401, `{"error":"invalid token"}`, "fennec-server refused the data source's token (401): invalid token"},
 		{403, `{"error":"the token may not read secrets"}`, "outside what the data source's token may read (403): the token may not read secrets"},
 		{404, `{"error":"no collection ` + "`nope`" + `"}`, "not on the server (404): no collection `nope`"},
 	}
@@ -195,17 +195,17 @@ func TestRefusalsKeepTheServersStatusAndMessage(t *testing.T) {
 	}
 }
 
-// After sends Fenec-After, and the data source's wait beside it alone.
+// After sends Fennec-After, and the data source's wait beside it alone.
 func TestAfterAndItsWait(t *testing.T) {
 	f, srv := newFake(t, func(seenRequest) (int, map[string]string, string) { return 200, nil, `[]` })
 	d := instance(t, srv.URL, `{"waitMs": 1500}`, "tok")
 	ask(t, d, dataQuery("A", Query{QueryText: "get ticks", After: "$seq", Vars: vars("seq", "42")}))
 	ask(t, d, dataQuery("A", Query{QueryText: "get ticks limit 1"}))
 	sent := f.sent("/query")
-	if sent[0].Header.Get("Fenec-After") != "42" || sent[0].Header.Get("Fenec-Wait") != "1500" {
+	if sent[0].Header.Get("Fennec-After") != "42" || sent[0].Header.Get("Fennec-Wait") != "1500" {
 		t.Fatalf("after: %v", sent[0].Header)
 	}
-	if sent[1].Header.Get("Fenec-After") != "" || sent[1].Header.Get("Fenec-Wait") != "" {
+	if sent[1].Header.Get("Fennec-After") != "" || sent[1].Header.Get("Fennec-Wait") != "" {
 		t.Fatalf("no after: %v", sent[1].Header)
 	}
 }
@@ -217,7 +217,7 @@ func TestACanceledQuerySaysSo(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	resp, _ := d.QueryData(ctx, &backend.QueryDataRequest{Queries: []backend.DataQuery{dataQuery("A", Query{QueryText: "get ticks"})}})
-	if e := resp.Responses["A"].Error; e == nil || e.Error() != "the query was canceled before fenec-server answered" {
+	if e := resp.Responses["A"].Error; e == nil || e.Error() != "the query was canceled before fennec-server answered" {
 		t.Fatalf("%v", e)
 	}
 }
@@ -247,7 +247,7 @@ func TestA304IsAnsweredFromTheAnswerKept(t *testing.T) {
 	if second.Error != nil || !framesEqual(first.Frames, second.Frames) {
 		t.Fatalf("the kept answer differs: %v", second.Error)
 	}
-	custom := second.Frames[0].Meta.Custom.(map[string]any)["fenecdb"].(map[string]any)
+	custom := second.Frames[0].Meta.Custom.(map[string]any)["fennecdb"].(map[string]any)
 	if custom["notModified"] != true {
 		t.Fatalf("meta %v", custom)
 	}
@@ -259,7 +259,7 @@ func TestA304IsAnsweredFromTheAnswerKept(t *testing.T) {
 	// After a write the tag no longer matches, and the new answer is kept.
 	writes++
 	third := ask(t, d, q).Responses["A"]
-	if third.Frames[0].Meta.Custom.(map[string]any)["fenecdb"].(map[string]any)["notModified"] != false {
+	if third.Frames[0].Meta.Custom.(map[string]any)["fennecdb"].(map[string]any)["notModified"] != false {
 		t.Fatal("a changed answer was taken for the kept one")
 	}
 	ask(t, d, q)
@@ -296,7 +296,7 @@ func TestSeveralQueriesAreOneBatch(t *testing.T) {
 			if failAt >= 0 {
 				return 412, nil, `{"error":"unmet: ` + "`get ticks`" + ` answered 0 rows, and requires 1","completed":0,"at":1}`
 			}
-			return 200, map[string]string{"Fenec-Seq": "12"}, `{"ok":2,"results":[{"rows":[{"b":1,"a":"x"}]},{"rows":[{"n":2}]}]}`
+			return 200, map[string]string{"Fennec-Seq": "12"}, `{"ok":2,"results":[{"rows":[{"b":1,"a":"x"}]},{"rows":[{"n":2}]}]}`
 		}
 		return 200, nil, `[{"n":5}]`
 	})
@@ -384,9 +384,9 @@ func TestSettings(t *testing.T) {
 			t.Fatalf("%q was taken", u)
 		}
 	}
-	s, err := LoadSettings(backend.DataSourceInstanceSettings{URL: " http://fenecdb:8080/ ", JSONData: json.RawMessage(`{"tenant":" acme ","waitMs":250,"timeoutSeconds":5}`),
+	s, err := LoadSettings(backend.DataSourceInstanceSettings{URL: " http://fennecdb:8080/ ", JSONData: json.RawMessage(`{"tenant":" acme ","waitMs":250,"timeoutSeconds":5}`),
 		DecryptedSecureJSONData: map[string]string{"token": "t"}})
-	if err != nil || s.URL != "http://fenecdb:8080" || s.Tenant != "acme" || s.Wait != 250*time.Millisecond || s.Timeout != 5*time.Second || s.Token != "t" {
+	if err != nil || s.URL != "http://fennecdb:8080" || s.Tenant != "acme" || s.Wait != 250*time.Millisecond || s.Timeout != 5*time.Second || s.Token != "t" {
 		t.Fatalf("%+v %v", s, err)
 	}
 	// A data source with a wrong URL says so on every query.
@@ -401,7 +401,7 @@ func TestHealth(t *testing.T) {
 	_, srv := newFake(t, func(s seenRequest) (int, map[string]string, string) { return 200, nil, `[{"id":1}]` })
 	d := instance(t, srv.URL, `{}`, "tok")
 	h, _ := d.CheckHealth(context.Background(), &backend.CheckHealthRequest{})
-	if h.Status != backend.HealthStatusOk || h.Message != "fenec-server answers, and the token reads 1 collection(s): ticks" {
+	if h.Status != backend.HealthStatusOk || h.Message != "fennec-server answers, and the token reads 1 collection(s): ticks" {
 		t.Fatalf("%+v", h)
 	}
 	refusing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

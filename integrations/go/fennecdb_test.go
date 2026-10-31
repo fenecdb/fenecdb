@@ -1,0 +1,884 @@
+package fennecdb_test
+
+// Against real fennec-server processes, started here from the binary
+// `cargo build -p fennec-server` makes (FENNEC_SERVER names another): a
+// primary with a token, a policy for JSON Web Tokens and the change stream,
+// and as a test needs them a replica of it and a node of tenants.
+
+import (
+	"bufio"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	fennecdb "github.com/fennec-db/fennecdb/integrations/go"
+)
+
+const (
+	rootToken = "go-tests"
+	replToken = "go-repl"
+	jwtSecret = "go-tests-jwt-secret-of-32-bytes-or-more"
+)
+
+var (
+	binary  string
+	scratch string
+	primary string // the primary's URL
+)
+
+func TestMain(m *testing.M) {
+	binary = os.Getenv("FENNEC_SERVER")
+	if binary == "" {
+		binary, _ = filepath.Abs("../../target/debug/fennec-server")
+	}
+	if _, err := os.Stat(binary); err != nil {
+		fmt.Fprintf(os.Stderr, "no fennec-server at %s: cargo build -p fennec-server\n", binary)
+		os.Exit(1)
+	}
+	var err error
+	if scratch, err = os.MkdirTemp("", "fennecdb-go"); err != nil {
+		panic(err)
+	}
+	policy := filepath.Join(scratch, "policy.txt")
+	if err := os.WriteFile(policy, []byte("notes read,write where owner = $jwt.sub\n"), 0o600); err != nil {
+		panic(err)
+	}
+	var stop func()
+	primary, stop = serve("--file", filepath.Join(scratch, "primary.fennec"),
+		"--http-token", rootToken, "--replication-token", replToken,
+		"--jwt-secret", jwtSecret, "--policy", policy, "--sync", "50")
+	code := m.Run()
+	stop()
+	for _, s := range started {
+		s()
+	}
+	os.RemoveAll(scratch)
+	os.Exit(code)
+}
+
+var started []func()
+
+// serve starts a fennec-server on a port of its own and waits for it to say
+// where it listens.
+func serve(args ...string) (string, func()) {
+	cmd := exec.Command(binary, append([]string{"--http", "127.0.0.1:0"}, args...)...)
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		panic(err)
+	}
+	if err := cmd.Start(); err != nil {
+		panic(err)
+	}
+	lines := bufio.NewScanner(stderr)
+	var addr string
+	var log strings.Builder
+	for addr == "" && lines.Scan() {
+		line := lines.Text()
+		log.WriteString(line + "\n")
+		if _, rest, ok := strings.Cut(line, "listening on: http://"); ok {
+			addr = strings.Fields(rest)[0]
+		}
+	}
+	if addr == "" {
+		panic("fennec-server did not start:\n" + log.String())
+	}
+	go func() {
+		for lines.Scan() {
+		}
+	}()
+	stop := func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+	}
+	return "http://" + addr, stop
+}
+
+var names atomic.Int64
+
+// fresh is a collection name no other test uses.
+func fresh(prefix string) string {
+	return fmt.Sprintf("%s_%d_%d", prefix, time.Now().UnixNano()%1e6, names.Add(1))
+}
+
+func root() *fennecdb.Client { return fennecdb.New(primary, fennecdb.WithToken(rootToken)) }
+
+// must(db.Exec(...)).of(t): the value, or the test stops at the error.
+func must[T any](v T, err error) result[T] { return result[T]{v, err} }
+
+type result[T any] struct {
+	v   T
+	err error
+}
+
+func (r result[T]) of(t *testing.T) T {
+	t.Helper()
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	return r.v
+}
+
+func statusOf(t *testing.T, err error) *fennecdb.Error {
+	t.Helper()
+	var e *fennecdb.Error
+	if !errors.As(err, &e) {
+		t.Fatalf("not a *fennecdb.Error: %v", err)
+	}
+	return e
+}
+
+func TestCreatePutGetAndNearWithExactScores(t *testing.T) {
+	ctx := context.Background()
+	db := root()
+	name := fresh("docs")
+	must(db.Exec(ctx, "create collection "+name+" (title text, embed vector<3> @hnsw(dot))")).of(t)
+	r := must(db.Exec(ctx, "put "+name+" {title: $1, embed: $2}", "first", []float32{1, 2, 3})).of(t)
+	if r.Affected != 1 || r.Seq == 0 || db.Seq() < r.Seq {
+		t.Fatalf("a put answered %+v, the client holds seq %d", r, db.Seq())
+	}
+	must(db.Exec(ctx, "put "+name+" {title: $1, embed: $2}", "second", []float32{0.5, 0.25, 0})).of(t)
+
+	rows := must(db.Query(ctx, "get "+name+" where id = $1", 1)).of(t)
+	if len(rows) != 1 || rows[0]["title"] != "first" || !reflect.DeepEqual(rows[0]["embed"], []any{1.0, 2.0, 3.0}) {
+		t.Fatalf("get by id answered %v", rows)
+	}
+
+	type hit struct {
+		Title string  `json:"title"`
+		Score float32 `json:"_score"`
+	}
+	hits := must(fennecdb.QueryAs[hit](ctx, db, "get "+name+" select title near embed $1 limit 5", []float32{1, 0, 0})).of(t)
+	if want := []hit{{"first", 1}, {"second", 0.5}}; !reflect.DeepEqual(hits, want) {
+		t.Fatalf("near answered %v, want %v", hits, want)
+	}
+	// A write's answer through Query is one row holding it.
+	if rows := must(db.Query(ctx, "del "+name+" where id = 2")).of(t); rows[0]["affected"] != 1.0 {
+		t.Fatalf("del through Query answered %v", rows)
+	}
+}
+
+// 7.038531e-26: the f32 whose shortest text an f64 reader rounds away.
+var tie = math.Float32frombits(0x15ae43fd)
+
+func TestParamsOfEveryType(t *testing.T) {
+	ctx := context.Background()
+	db := root()
+	name := fresh("params")
+	must(db.Exec(ctx, "create collection "+name+
+		" (t text, n int, f float, b bool, gone text, tags [text], embed vector<5>, meta json)")).of(t)
+	vec := []float32{tie, 0.1, math.MaxFloat32, -1.5e-7, math.SmallestNonzeroFloat32}
+	must(db.Exec(ctx, "put "+name+" {t: $1, n: $2, f: $3, b: $4, gone: $5, tags: $6, embed: $7, meta: $8}",
+		"çağ \"quoted\"", int64(-1<<53), 2.5, true, nil, []string{"a", "b"}, vec,
+		map[string]any{"lang": "tr", "rank": 2})).of(t)
+
+	type row struct {
+		ID    int64          `json:"id"`
+		T     string         `json:"t"`
+		N     int64          `json:"n"`
+		F     float64        `json:"f"`
+		B     bool           `json:"b"`
+		Gone  *string        `json:"gone"`
+		Tags  []string       `json:"tags"`
+		Embed []float32      `json:"embed"`
+		Meta  map[string]any `json:"meta"`
+	}
+	got := must(fennecdb.QueryAs[row](ctx, db,
+		"get "+name+" where t = $1 and n = $2 and f = $3 and b = $4 and gone is null and tags has $5 and n in [$6, $2]",
+		"çağ \"quoted\"", int64(-1<<53), float32(2.5), true, "b", 7)).of(t)
+	if len(got) != 1 {
+		t.Fatalf("the filter of every type found %d rows", len(got))
+	}
+	g := got[0]
+	if g.T != "çağ \"quoted\"" || g.N != -1<<53 || g.F != 2.5 || !g.B || g.Gone != nil ||
+		!reflect.DeepEqual(g.Tags, []string{"a", "b"}) || g.Meta["lang"] != "tr" || g.Meta["rank"] != 2.0 {
+		t.Fatalf("read back %+v", g)
+	}
+	for i := range vec {
+		if math.Float32bits(g.Embed[i]) != math.Float32bits(vec[i]) {
+			t.Fatalf("component %d: wrote %g (%08x), read %g (%08x)", i, vec[i],
+				math.Float32bits(vec[i]), g.Embed[i], math.Float32bits(g.Embed[i]))
+		}
+	}
+	if _, err := db.Query(ctx, "get "+name+" where f = $1", float32(math.NaN())); err == nil {
+		t.Fatal("a NaN was sent")
+	}
+}
+
+func TestRefusalsAreTypedErrors(t *testing.T) {
+	ctx := context.Background()
+	db := root()
+	_, err := db.Query(ctx, "get no_such_collection_here")
+	if e := statusOf(t, err); e.Status != 404 || e.Code != fennecdb.CodeNotFound || !strings.Contains(e.Message, "no_such_collection_here") {
+		t.Fatalf("a missing collection: %+v", e)
+	}
+	_, err = db.Query(ctx, "get x wher")
+	if e := statusOf(t, err); e.Status != 400 || e.Code != fennecdb.CodeBadRequest {
+		t.Fatalf("a statement that does not parse: %+v", e)
+	}
+	name := fresh("dup")
+	must(db.Exec(ctx, "create collection "+name+" (t text)")).of(t)
+	must(db.Exec(ctx, "insert "+name+" {id: 1, t: $1}", "a")).of(t)
+	_, err = db.Exec(ctx, "insert "+name+" {id: 1, t: $1}", "b")
+	if e := statusOf(t, err); e.Status != 409 || e.Code != fennecdb.CodeConflict {
+		t.Fatalf("an id taken: %+v", e)
+	}
+	_, err = fennecdb.New(primary, fennecdb.WithToken("wrong")).Query(ctx, "collections")
+	if e := statusOf(t, err); e.Status != 401 {
+		t.Fatalf("a wrong token: %+v", e)
+	}
+}
+
+func TestABatchLandsWholeOrNotAtAll(t *testing.T) {
+	ctx := context.Background()
+	db := root()
+	name := fresh("batch")
+	must(db.Exec(ctx, "create collection "+name+" (t text, n int)")).of(t)
+	out := must(db.Batch(ctx,
+		fennecdb.Stmt("put "+name+" {t: $1, n: $2}", "a", 1),
+		fennecdb.Stmt("put "+name+" {t: $1, n: $2}", "b", 2),
+		fennecdb.Stmt("get "+name+" select t where n >= $1 order n", 1))).of(t)
+	if out.OK != 3 || out.Results[0].Affected != 1 || len(out.Results[2].Rows) != 2 || out.Seq == 0 {
+		t.Fatalf("a batch answered %+v", out)
+	}
+	_, err := db.Batch(ctx,
+		fennecdb.Stmt("put "+name+" {t: $1, n: $2}", "c", 3),
+		fennecdb.Stmt("del "+name+" where n = 1"),
+		fennecdb.Stmt("put "+name+" {nofield: 1}"))
+	e := statusOf(t, err)
+	if e.Status != 404 || e.Completed != 0 || e.At != 2 {
+		t.Fatalf("a failing batch: %+v", e)
+	}
+	rows := must(db.Query(ctx, "get "+name+" select t order n")).of(t)
+	if len(rows) != 2 || rows[0]["t"] != "a" || rows[1]["t"] != "b" {
+		t.Fatalf("a failed batch left %v", rows)
+	}
+}
+
+func TestAWriteThatMissesItsCountIsRefusedAndPutBack(t *testing.T) {
+	ctx := context.Background()
+	db := root()
+	name := fresh("require")
+	must(db.Exec(ctx, "create collection "+name+" (name text, balance int)")).of(t)
+	accounts := db.From(name)
+	must(accounts.Insert(ctx, fennecdb.D("name", "a", "balance", 10))).of(t)
+	_, err := accounts.Where("name", "=", "nobody").Update(ctx, fennecdb.D("balance", 0), fennecdb.Require(1))
+	if e := statusOf(t, err); e.Status != 412 || e.Code != fennecdb.CodeUnmet || !strings.Contains(e.Message, "requires 1") || e.At != -1 {
+		t.Fatalf("an unmet update: %+v", e)
+	}
+	if r := must(accounts.Where("name", "=", "a").Update(ctx, fennecdb.D("balance", 5), fennecdb.Require(1))).of(t); r.Affected != 1 {
+		t.Fatalf("a met update wrote %d", r.Affected)
+	}
+	// A batch whose second write is unmet keeps nothing of the first.
+	met, metParams, err := accounts.Where("name", "=", "a").ToUpdate(fennecdb.D("balance", 0), fennecdb.Require(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	unmet, unmetParams, err := accounts.Where("name", "=", "nobody").ToDelete(fennecdb.Require(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Batch(ctx, fennecdb.Stmt(met, metParams...), fennecdb.Stmt(unmet, unmetParams...))
+	// A require that gave no reason says none.
+	if e := statusOf(t, err); e.Status != 412 || e.Code != fennecdb.CodeUnmet || e.Completed != 0 || e.At != 1 || e.Reason != "" {
+		t.Fatalf("an unmet batch: %+v", e)
+	}
+	rows := must(db.Query(ctx, "get "+name+" select balance")).of(t)
+	if len(rows) != 1 || rows[0]["balance"] != 5.0 {
+		t.Fatalf("an unmet batch left %v", rows)
+	}
+	// A reason tells which guard refused, wherever it stands in the batch.
+	debit, debitParams, err := accounts.Where("name", "=", "a").Where("balance", ">=", 50).
+		ToUpdate(fennecdb.D("balance", 0), fennecdb.Require(1), fennecdb.Reason("insufficient funds"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	credit, creditParams, err := accounts.Where("name", "=", "nobody").
+		ToUpdate(fennecdb.D("balance", 50), fennecdb.Require(1), fennecdb.Reason("no account to credit"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Batch(ctx, fennecdb.Stmt(debit, debitParams...), fennecdb.Stmt(credit, creditParams...))
+	if e := statusOf(t, err); e.Status != 412 || e.At != 0 || e.Reason != "insufficient funds" {
+		t.Fatalf("a batch whose debit is unmet: %+v", e)
+	}
+	_, err = db.Batch(ctx, fennecdb.Stmt(credit, creditParams...))
+	if e := statusOf(t, err); e.At != 0 || e.Reason != "no account to credit" {
+		t.Fatalf("a batch whose credit is unmet: %+v", e)
+	}
+	// Written into the text, its quote and backslash come back as given.
+	_, err = accounts.Where("name", "=", "nobody").Delete(ctx, fennecdb.Require(1), fennecdb.Reason(`it's a \ b`))
+	if e := statusOf(t, err); e.Reason != `it's a \ b` {
+		t.Fatalf("an unmet delete: %+v", e)
+	}
+	// A read's guard says its reason too.
+	_, err = accounts.Where("name", "=", "nobody").Require(1, fennecdb.Reason("no such account")).Rows(ctx)
+	if e := statusOf(t, err); e.Status != 412 || e.Reason != "no such account" {
+		t.Fatalf("an unmet read: %+v", e)
+	}
+}
+
+// A job queue's claim: Order and Limit pick the rows Update writes, and
+// Returning hands them back in Result.Rows; an ack by another owner is 412.
+func TestAClaimAnswersTheRowsItTook(t *testing.T) {
+	ctx := context.Background()
+	db := root()
+	name := fresh("jobs")
+	must(db.Exec(ctx, "create collection "+name+" (n int, run_at timestamp @sorted, owner text, attempts int)")).of(t)
+	jobs := db.From(name)
+	for n := 1; n <= 3; n++ {
+		must(jobs.Insert(ctx, fennecdb.D("n", n, "run_at", n, "attempts", 0))).of(t)
+	}
+	claim := func(owner string, limit int) fennecdb.Result {
+		return must(jobs.WhereCond(fennecdb.Raw("run_at <= now()")).Order("run_at", "asc").Limit(limit).Update(ctx,
+			fennecdb.D("owner", owner, "run_at", fennecdb.Expr("now() + ?", 60000), "attempts", fennecdb.Inc(1)),
+			fennecdb.Returning("id", "n", "attempts"))).of(t)
+	}
+	r := claim("w1", 2)
+	if r.Affected != 2 || len(r.Rows) != 2 || r.Rows[0]["n"] != 1.0 || r.Rows[1]["n"] != 2.0 || r.Rows[0]["attempts"] != 1.0 || r.Seq == 0 {
+		t.Fatalf("the first claim: %+v", r)
+	}
+	if r := claim("w2", 2); len(r.Rows) != 1 || r.Rows[0]["n"] != 3.0 {
+		t.Fatalf("the second claim: %+v", r)
+	}
+	if r := claim("w3", 2); r.Rows == nil || len(r.Rows) != 0 || r.Affected != 0 {
+		t.Fatalf("a claim of an empty queue: %+v", r)
+	}
+	_, err := jobs.Where("n", "=", 1).Where("owner", "=", "w2").Delete(ctx, fennecdb.Require(1))
+	if e := statusOf(t, err); e.Status != 412 || e.Code != fennecdb.CodeUnmet {
+		t.Fatalf("an ack by another owner: %+v", e)
+	}
+	popped := must(jobs.Order("n", "desc").Limit(1).Delete(ctx, fennecdb.Returning("*"))).of(t)
+	if len(popped.Rows) != 1 || popped.Rows[0]["owner"] != "w2" {
+		t.Fatalf("a pop: %+v", popped)
+	}
+	if r := must(db.Exec(ctx, "set "+name+" {owner: null} where n = 1 returning n")).of(t); len(r.Rows) != 1 || r.Affected != 1 {
+		t.Fatalf("Exec of a write with returning: %+v", r)
+	}
+}
+
+// A claim held until a job comes (Wait): taken once a job is enqueued,
+// ended on time with no row, and given up by its context.
+func TestAHeldClaimTakesTheJobEnqueuedMeanwhile(t *testing.T) {
+	ctx := context.Background()
+	db := root()
+	name := fresh("held")
+	must(db.Exec(ctx, "create collection "+name+" (kind text, run_at timestamp @sorted, owner text)")).of(t)
+	claim := func(c *fennecdb.Client, ctx context.Context, owner string) (fennecdb.Result, error) {
+		return c.From(name).WhereCond(fennecdb.Raw("run_at <= now()")).Order("run_at", "asc").Limit(1).Update(ctx,
+			fennecdb.D("owner", owner, "run_at", fennecdb.Expr("now() + ?", 60000)), fennecdb.Returning("kind"))
+	}
+	got := make(chan fennecdb.Result, 1)
+	go func() {
+		r, err := claim(db.Wait(10*time.Second), ctx, "w1")
+		if err != nil {
+			t.Error(err)
+		}
+		got <- r
+	}()
+	time.Sleep(200 * time.Millisecond)
+	must(db.From(name).Insert(ctx, fennecdb.D("kind", "mail", "run_at", time.Now().UnixMilli()))).of(t)
+	select {
+	case r := <-got:
+		if len(r.Rows) != 1 || r.Rows[0]["kind"] != "mail" {
+			t.Fatalf("the held claim: %+v", r)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the held claim was not answered")
+	}
+	began := time.Now()
+	r := must(claim(db.Wait(300*time.Millisecond), ctx, "w2")).of(t)
+	if len(r.Rows) != 0 || time.Since(began) < 290*time.Millisecond {
+		t.Fatalf("a wait with nothing to take: %+v after %v", r, time.Since(began))
+	}
+	// Past the client's own timeout: the wait is added to it. The timeout
+	// is what is left for the request around the wait, and at 100 ms it
+	// was the system's to spend: under `taskpolicy -c background` the
+	// held claim's 400 ms timer ran past 500 ms in 16 runs of 16.
+	short := fennecdb.New(primary, fennecdb.WithToken(rootToken), fennecdb.WithTimeout(time.Second))
+	if r := must(claim(short.Wait(1500*time.Millisecond), ctx, "w3")).of(t); len(r.Rows) != 0 {
+		t.Fatalf("a held claim past the client's timeout: %+v", r)
+	}
+	// Its context gives it up.
+	gone, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+	if _, err := claim(db.Wait(10*time.Second), gone, "w4"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a held claim's context ended: %v", err)
+	}
+}
+
+func TestAnIdempotencyKeyIsReplayed(t *testing.T) {
+	ctx := context.Background()
+	db := root()
+	name := fresh("idem")
+	must(db.Exec(ctx, "create collection "+name+" (t text)")).of(t)
+	key := db.IdempotencyKey(name + "-1")
+	first := must(key.Exec(ctx, "put "+name+" {t: $1}", "once")).of(t)
+	again := must(key.Exec(ctx, "put "+name+" {t: $1}", "once")).of(t)
+	if first.Replayed || !again.Replayed || again.Affected != 1 {
+		t.Fatalf("first %+v, again %+v", first, again)
+	}
+	if rows := must(db.Query(ctx, "get "+name+" count")).of(t); rows[0]["count"] != 1.0 {
+		t.Fatalf("a replayed write made %v", rows)
+	}
+	_, err := key.Exec(ctx, "put "+name+" {t: $1}", "another")
+	if e := statusOf(t, err); e.Status != 422 || e.Code != fennecdb.CodeKeyReused {
+		t.Fatalf("a key with another request: %+v", e)
+	}
+	// A batch under a key of its own lands once as well.
+	batch := db.IdempotencyKey(name + "-2")
+	stmts := []fennecdb.Statement{fennecdb.Stmt("put "+name+" {t: $1}", "b1"), fennecdb.Stmt("put "+name+" {t: $1}", "b2")}
+	b1 := must(batch.Batch(ctx, stmts...)).of(t)
+	b2 := must(batch.Batch(ctx, stmts...)).of(t)
+	if b1.Replayed || !b2.Replayed || b2.OK != 2 || b1.Seq == 0 {
+		t.Fatalf("first batch %+v, again %+v", b1, b2)
+	}
+	if rows := must(db.Query(ctx, "get "+name+" count")).of(t); rows[0]["count"] != 3.0 {
+		t.Fatalf("a replayed batch made %v", rows)
+	}
+}
+
+func TestAfterReadsYourWriteOnAReplica(t *testing.T) {
+	ctx := context.Background()
+	replica, stop := serve("--file", filepath.Join(scratch, "replica.fennec"),
+		"--replication-token", replToken, "--replica-of", primary, "--sync", "50")
+	defer stop()
+	db := root()
+	name := fresh("after")
+	must(db.Exec(ctx, "create collection "+name+" (t text)")).of(t)
+	w := must(db.Exec(ctx, "put "+name+" {t: $1}", "written")).of(t)
+	r := fennecdb.New(replica)
+	rows := must(r.After(w.Seq).Query(ctx, "get "+name+" select t")).of(t)
+	if len(rows) != 1 || rows[0]["t"] != "written" {
+		t.Fatalf("the replica answered %v after %d", rows, w.Seq)
+	}
+	_, err := r.Exec(ctx, "put "+name+" {t: $1}", "refused")
+	if e := statusOf(t, err); e.Status != 403 {
+		t.Fatalf("a write to a replica: %+v", e)
+	}
+}
+
+// link is a TCP proxy to target: cut, it closes what it carries and every
+// connection it takes until healed -- a replica's link to its primary, held
+// while a write is made, so the replica cannot hold that write however soon
+// it would have caught up.
+type link struct {
+	ln     net.Listener
+	target string
+	mu     sync.Mutex
+	cut    bool
+	open   []net.Conn
+}
+
+func newLink(t *testing.T, target string) *link {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := &link{ln: ln, target: target}
+	go l.serve()
+	t.Cleanup(func() {
+		ln.Close()
+		l.setCut(true)
+	})
+	return l
+}
+
+func (l *link) serve() {
+	for {
+		c, err := l.ln.Accept()
+		if err != nil {
+			return
+		}
+		l.mu.Lock()
+		u, err := net.Dial("tcp", l.target)
+		if l.cut || err != nil {
+			l.mu.Unlock()
+			c.Close()
+			if u != nil {
+				u.Close()
+			}
+			continue
+		}
+		l.open = append(l.open, c, u)
+		l.mu.Unlock()
+		go func() { io.Copy(u, c); u.Close(); c.Close() }()
+		go func() { io.Copy(c, u); c.Close(); u.Close() }()
+	}
+}
+
+func (l *link) setCut(cut bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.cut = cut
+	if cut {
+		for _, c := range l.open {
+			c.Close()
+		}
+		l.open = nil
+	}
+}
+
+// A stream sent after a write waits for it on a replica as a read does. Its
+// link to the primary cut, the replica cannot hold the write: the stream is
+// answered by the wait, 504, never seeded from before it -- served at once,
+// it was. Healed, the stream is seeded with the write. The client's part,
+// a stream near going home on a 504 with home's position taken (toldBy), is
+// held by reads_test.go against a scripted server.
+func TestAStreamAfterAWriteWaitsForItOnAReplica(t *testing.T) {
+	ctx := context.Background()
+	l := newLink(t, strings.TrimPrefix(primary, "http://"))
+	replica, stop := serve("--file", filepath.Join(scratch, "held.fennec"),
+		"--replication-token", replToken, "--replica-of", "http://"+l.ln.Addr().String(), "--sync", "50")
+	defer stop()
+	db := root()
+	name := fresh("held")
+	must(db.Exec(ctx, "create collection "+name+" (t text)")).of(t)
+	first := must(db.Exec(ctx, "put "+name+" {t: $1}", "before")).of(t)
+	r := fennecdb.New(replica)
+	must(r.Wait(20*time.Second).After(first.Seq).Query(ctx, "get "+name)).of(t)
+	l.setCut(true)
+	w := must(db.Exec(ctx, "put "+name+" {t: $1}", "after")).of(t)
+	_, err := r.Wait(300*time.Millisecond).After(w.Seq).Subscribe(ctx, name, nil)
+	if e := statusOf(t, err); e.Status != 504 {
+		t.Fatalf("a stream after a write the replica cannot hold: %+v", e)
+	}
+	l.setCut(false)
+	sub, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	events := must(r.Wait(20*time.Second).After(w.Seq).Subscribe(sub, name, nil)).of(t)
+	if seed := <-events; seed.Type != "seed" || len(seed.Rows) != 2 || seed.Seq < w.Seq {
+		t.Fatalf("the replica's stream after %d: %+v", w.Seq, seed)
+	}
+	cancel()
+	for range events {
+	}
+}
+
+func TestASubscriptionHearsAChange(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	db := root()
+	name := fresh("sub")
+	must(db.Exec(ctx, "create collection "+name+" (t text, n int)")).of(t)
+	must(db.Exec(ctx, "put "+name+" {t: $1, n: $2}", "old", 10)).of(t)
+	events := must(db.Subscribe(ctx, name, url.Values{"n": {"gte.10"}})).of(t)
+	seed := <-events
+	if seed.Type != "seed" || len(seed.Rows) != 1 || seed.Rows[0]["t"] != "old" {
+		t.Fatalf("the seed: %+v", seed)
+	}
+	must(db.Exec(ctx, "put "+name+" {t: $1, n: $2}", "outside", 1)).of(t)
+	must(db.Exec(ctx, "put "+name+" {t: $1, n: $2}", "new", 11)).of(t)
+	// The row outside the shape comes as the deletion of an id the
+	// subscriber never held: an unscoped shape tells of every id that
+	// changed and does not match.
+	change := <-events
+	for change.Type == "change" && len(change.Puts) == 0 {
+		change = <-events
+	}
+	if change.Type != "change" || len(change.Puts) != 1 || change.Puts[0]["t"] != "new" || change.Seq <= seed.Seq {
+		t.Fatalf("the change: %+v", change)
+	}
+	must(db.Exec(ctx, "del "+name+" where t = $1", "old")).of(t)
+	if del := <-events; !reflect.DeepEqual(del.Dels, []int64{1}) || len(del.Puts) != 0 {
+		t.Fatalf("the deletion: %+v", del)
+	}
+	cancel()
+	for range events {
+	}
+	if _, err := db.Subscribe(context.Background(), fresh("missing"), nil); statusOf(t, err).Status != 404 {
+		t.Fatalf("a subscription to nothing: %v", err)
+	}
+}
+
+func TestChangesHandsOverEveryWrite(t *testing.T) {
+	ctx := context.Background()
+	db := root()
+	name := fresh("cdc")
+	before := must(db.Exec(ctx, "create collection "+name+" (t text)")).of(t)
+	must(db.Exec(ctx, "put "+name+" [{t: $1}, {t: $2}]", "a", "b")).of(t)
+	last := must(db.Exec(ctx, "del "+name+" where t = $1", "a")).of(t)
+
+	var mine []fennecdb.Change
+	since := before.Seq - 1
+	for since < last.Seq {
+		got := must(db.Changes(ctx, since, 5*time.Second)).of(t)
+		for _, c := range got.Changes {
+			if c.Collection == name {
+				mine = append(mine, c)
+			}
+		}
+		since = got.Next
+	}
+	var ops []string
+	for _, c := range mine {
+		ops = append(ops, c.Op+":"+fmt.Sprint(c.Doc["t"]))
+	}
+	if want := []string{"create:<nil>", "put:a", "put:b", "del:<nil>"}; !reflect.DeepEqual(ops, want) {
+		t.Fatalf("the stream held %v", ops)
+	}
+	if mine[3].ID != 1 || mine[3].Seq != last.Seq {
+		t.Fatalf("the deletion: %+v", mine[3])
+	}
+	// Nothing after the last write: the wait runs out with none.
+	start := time.Now()
+	empty := must(db.Changes(ctx, db.Seq(), 300*time.Millisecond)).of(t)
+	// Caught up: the last write the database holds is the last read.
+	if len(empty.Changes) != 0 || empty.Next != db.Seq() || empty.Seq != empty.Next ||
+		time.Since(start) < 250*time.Millisecond {
+		t.Fatalf("past the end: %+v after %v", empty, time.Since(start))
+	}
+	_, err := db.Changes(ctx, db.Seq()+1000, 0)
+	if e := statusOf(t, err); e.Status != 409 {
+		t.Fatalf("a cursor past the last write: %+v", e)
+	}
+}
+
+func TestATenantPath(t *testing.T) {
+	ctx := context.Background()
+	dir := filepath.Join(scratch, "tenants")
+	os.MkdirAll(dir, 0o700)
+	node, stop := serve("--dir", dir, "--admin-token", "go-admin")
+	defer stop()
+	req, _ := http.NewRequest(http.MethodPut, node+"/_admin/tenants/acme", nil)
+	req.Header.Set("Authorization", "Bearer go-admin")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil || res.StatusCode != 201 {
+		t.Fatalf("making the tenant: %v %v", res, err)
+	}
+	res.Body.Close()
+
+	acme := fennecdb.New(node, fennecdb.WithTenant("acme"))
+	must(acme.Exec(ctx, "create collection notes (t text)")).of(t)
+	must(acme.Exec(ctx, "put notes {t: $1}", "acme's")).of(t)
+	if rows := must(acme.Query(ctx, "get notes select t")).of(t); len(rows) != 1 || rows[0]["t"] != "acme's" {
+		t.Fatalf("the tenant holds %v", rows)
+	}
+	if err := acme.Health(ctx); err != nil {
+		t.Fatalf("the tenant's node is not healthy: %v", err)
+	}
+	_, err = fennecdb.New(node, fennecdb.WithTenant("nobody")).Query(ctx, "collections")
+	if e := statusOf(t, err); e.Status != 404 {
+		t.Fatalf("a tenant that is not there: %+v", e)
+	}
+}
+
+// A tenant's quota, as the node's flag sets it and as one set for the
+// tenant over it: the refusal is an *Error naming the quota, and a rate's
+// says how long to wait.
+func TestATenantsQuota(t *testing.T) {
+	ctx := context.Background()
+	dir := filepath.Join(scratch, "quotas")
+	os.MkdirAll(dir, 0o700)
+	node, stop := serve("--dir", dir, "--admin-token", "go-admin", "--tenant-max-rows", "2")
+	defer stop()
+	admin := func(method, path, body string) {
+		req, _ := http.NewRequest(method, node+path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer go-admin")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil || res.StatusCode >= 300 {
+			t.Fatalf("%s %s: %v %v", method, path, res, err)
+		}
+		res.Body.Close()
+	}
+	admin(http.MethodPut, "/_admin/tenants/acme", "")
+	acme := fennecdb.New(node, fennecdb.WithTenant("acme"))
+	must(acme.Exec(ctx, "create collection notes (t text)")).of(t)
+	must(acme.Exec(ctx, "put notes [{t: $1}, {t: $2}]", "a", "b")).of(t)
+	_, err := acme.Exec(ctx, "put notes {t: $1}", "c")
+	if e := statusOf(t, err); e.Status != 507 || e.Code != fennecdb.CodeFull || e.Quota != fennecdb.QuotaRows || e.RetryAfter != 0 {
+		t.Fatalf("past the rows quota: %+v", e)
+	}
+	// One byte a second: the first write lands and is charged, the next
+	// waits out its debt -- longer than the test runs.
+	admin(http.MethodPut, "/_admin/tenants/acme/quota", `{"rows": 0, "write_bytes": 1}`)
+	must(acme.Exec(ctx, "put notes {t: $1}", "c")).of(t)
+	_, err = acme.Exec(ctx, "put notes {t: $1}", "d")
+	if e := statusOf(t, err); e.Status != 429 || e.Code != fennecdb.CodeTooMany || e.Quota != fennecdb.QuotaWriteBytes || e.RetryAfter < time.Second {
+		t.Fatalf("past the bytes a second: %+v", e)
+	}
+}
+
+// A tenant being moved answers its writes 503 with the wait, as a quota's
+// 429 says it: a freeze is what a move does first, and a failover's lapsed
+// lease is refused the same way.
+func TestATenantBeingMovedSaysWhenToComeBack(t *testing.T) {
+	ctx := context.Background()
+	dir := filepath.Join(scratch, "moving")
+	os.MkdirAll(dir, 0o700)
+	node, stop := serve("--dir", dir, "--admin-token", "go-admin")
+	defer stop()
+	admin := func(method, path string) {
+		req, _ := http.NewRequest(method, node+path, nil)
+		req.Header.Set("Authorization", "Bearer go-admin")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil || res.StatusCode >= 300 {
+			t.Fatalf("%s %s: %v %v", method, path, res, err)
+		}
+		res.Body.Close()
+	}
+	admin(http.MethodPut, "/_admin/tenants/acme")
+	acme := fennecdb.New(node, fennecdb.WithTenant("acme"))
+	must(acme.Exec(ctx, "create collection notes (t text)")).of(t)
+	admin(http.MethodPost, "/_admin/tenants/acme/freeze")
+	_, err := acme.Exec(ctx, "put notes {t: $1}", "a")
+	if e := statusOf(t, err); e.Status != 503 || e.Code != fennecdb.CodeUnavailable || e.Quota != "" || e.RetryAfter != time.Second {
+		t.Fatalf("a write to a tenant being moved: %+v", e)
+	}
+	// Reads go on meanwhile, and the write lands once the tenant is let go.
+	must(acme.Query(ctx, "get notes")).of(t)
+	admin(http.MethodPost, "/_admin/tenants/acme/thaw")
+	must(acme.Exec(ctx, "put notes {t: $1}", "a")).of(t)
+}
+
+func TestAScopedToken(t *testing.T) {
+	ctx := context.Background()
+	out, err := exec.Command(binary, "--jwt-secret", jwtSecret, "--mint-token", `{"sub":"alice"}`).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := root()
+	if _, err := db.Exec(ctx, "create collection notes (title text, owner text)"); err != nil {
+		statusOf(t, err) // made by a test before: 409
+	}
+	must(db.Exec(ctx, "put notes {title: $1, owner: $2}", "bob's", "bob")).of(t)
+	alice := fennecdb.New(primary, fennecdb.WithToken(strings.TrimSpace(string(out))))
+	must(alice.Exec(ctx, "put notes {title: $1}", "alice's")).of(t)
+	rows := must(alice.Query(ctx, "get notes select title, owner")).of(t)
+	if len(rows) != 1 || rows[0]["owner"] != "alice" {
+		t.Fatalf("alice reads %v", rows)
+	}
+	_, err = alice.Exec(ctx, "put notes {title: $1, owner: $2}", "forged", "bob")
+	if e := statusOf(t, err); e.Status != 403 || e.Code != fennecdb.CodeForbidden {
+		t.Fatalf("a write outside the policy: %+v", e)
+	}
+}
+
+// The server ends a scoped stream at its token's exp: the last event is an
+// *Error of Status 401, the refusal the token's next request would get.
+func TestAScopedStreamEndsAtItsTokensExp(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	db := root()
+	if _, err := db.Exec(ctx, "create collection notes (title text, owner text)"); err != nil {
+		statusOf(t, err) // made by a test before: 409
+	}
+	claims := fmt.Sprintf(`{"sub":"alice","exp":%d}`, time.Now().Unix()+2)
+	out, err := exec.Command(binary, "--jwt-secret", jwtSecret, "--mint-token", claims).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice := fennecdb.New(primary, fennecdb.WithToken(strings.TrimSpace(string(out))))
+	events := must(alice.Subscribe(ctx, "notes", nil)).of(t)
+	if seed := <-events; seed.Type != "seed" {
+		t.Fatalf("the seed: %+v", seed)
+	}
+	var last fennecdb.Event
+	for e := range events {
+		last = e
+	}
+	var e *fennecdb.Error
+	if last.Type != "error" || !errors.As(last.Err, &e) || e.Status != 401 || e.Code != fennecdb.CodeUnauthorized {
+		t.Fatalf("the stream's end: %+v", last)
+	}
+}
+
+func TestHealth(t *testing.T) {
+	// No token needed.
+	if err := fennecdb.New(primary).Health(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestASchemaIsComparedAndAppliedOnlyWhenAsked(t *testing.T) {
+	ctx := context.Background()
+	db := root()
+	name := fresh("schema")
+	v1 := "create collection " + name + " (title text required, n int @hash)"
+	must(db.Exec(ctx, v1)).of(t)
+	if plan := must(db.Schema(ctx, v1, nil, false)).of(t); len(plan.Refusals) != 0 {
+		t.Fatalf("the same schema refused: %+v", plan)
+	}
+	// A field the server lacks: the server's to add.
+	v2 := "create collection " + name + " (title text required, n int @hash, at timestamp)"
+	_, err := db.Schema(ctx, v2, nil, false)
+	var refused *fennecdb.SchemaError
+	if !errors.As(err, &refused) || refused.Refusals[0].Kind != "field_missing" {
+		t.Fatalf("a missing field answered %v", err)
+	}
+	// Asked, it is added; a rename is a migration, run once.
+	if plan := must(db.Schema(ctx, v2, nil, true)).of(t); !plan.Applied || len(plan.Statements) != 1 {
+		t.Fatalf("migrate answered %+v", plan)
+	}
+	v3 := "create collection " + name + " (name text required, n int @hash, at timestamp)"
+	moved := []any{"alter collection " + name + " rename field title to name"}
+	if _, err := db.Schema(ctx, v3, nil, true); !errors.As(err, &refused) {
+		t.Fatalf("a rename unsaid answered %v", err)
+	}
+	if plan := must(db.Schema(ctx, v3, moved, true)).of(t); !plan.Ran || len(plan.Migrations) != 1 {
+		t.Fatalf("the migration answered %+v", plan)
+	}
+	if plan := must(db.Schema(ctx, v3, moved, true)).of(t); plan.Applied || len(plan.Migrations) != 0 {
+		t.Fatalf("again answered %+v", plan)
+	}
+	must(db.Exec(ctx, "drop collection _migrations")).of(t)
+}
+
+func TestARawAnswerKeepsItsColumnsOrderAndItsTag(t *testing.T) {
+	ctx := context.Background()
+	db := root()
+	name := fresh("raw")
+	must(db.Exec(ctx, "create collection "+name+" (a int, b text)")).of(t)
+	must(db.Exec(ctx, "put "+name+" {a: 1, b: $1}", "x")).of(t)
+	// The select list's order, which a map would lose: b before a.
+	r := must(db.QueryRaw(ctx, "get "+name+" select b, a")).of(t)
+	if string(r.JSON) != `[{"b":"x","a":1}]` || r.ETag == "" || r.NotModified {
+		t.Fatalf("a raw read answered %+v (%s)", r, r.JSON)
+	}
+	// Asked again with its tag while nothing it reads was written: 304.
+	again := must(db.IfNoneMatch(r.ETag).QueryRaw(ctx, "get "+name+" select b, a")).of(t)
+	if !again.NotModified || again.JSON != nil || again.ETag == "" {
+		t.Fatalf("the same read with its tag answered %+v", again)
+	}
+	must(db.Exec(ctx, "put "+name+" {a: 2, b: $1}", "y")).of(t)
+	after := must(db.IfNoneMatch(r.ETag).QueryRaw(ctx, "get "+name+" select b, a order a")).of(t)
+	if after.NotModified || string(after.JSON) != `[{"b":"x","a":1},{"b":"y","a":2}]` {
+		t.Fatalf("a read after a write answered %+v (%s)", after, after.JSON)
+	}
+
+	// A read-only batch keeps each statement's columns in order too.
+	b := must(db.BatchRaw(ctx, fennecdb.Stmt("get "+name+" select a, b order a limit 1"),
+		fennecdb.Stmt("get "+name+" select b where a = $1", 2))).of(t)
+	if string(b.JSON) != `{"ok":2,"results":[{"rows":[{"a":1,"b":"x"}]},{"rows":[{"b":"y"}]}]}` {
+		t.Fatalf("a raw batch answered %s", b.JSON)
+	}
+}
+
+func TestWaitBoundsAReadAfterAChangeNotYetThere(t *testing.T) {
+	ctx := context.Background()
+	db := root()
+	name := fresh("wait")
+	must(db.Exec(ctx, "create collection "+name+" (t text)")).of(t)
+	start := time.Now()
+	_, err := db.Wait(200*time.Millisecond).After(db.Seq()+1000).Query(ctx, "get "+name)
+	if e := statusOf(t, err); e.Status != 504 {
+		t.Fatalf("a read after a change to come: %+v", e)
+	}
+	// The server's own wait is five seconds: Fennec-Wait cut it short.
+	if took := time.Since(start); took > 3*time.Second {
+		t.Fatalf("the read waited %v", took)
+	}
+}

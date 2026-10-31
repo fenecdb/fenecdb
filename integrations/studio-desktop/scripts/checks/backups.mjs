@@ -2,7 +2,7 @@
 // the backup alone when nothing runs on the file, the window's own when one
 // does -- into a folder of the user's; verified; restored into a new file that
 // opens, never over one that is there, the open database's least of all;
-// sealed with a key file the app makes with `fenec key`; a new database
+// sealed with a key file the app makes with `fennec key`; a new database
 // started from a backup; and the refusal for a server that syncs nothing.
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
@@ -22,15 +22,15 @@ async function ask(c, what, ms = 60000) {
   cmd(c);
   return waitFor((l, i) => i >= n && l.what === what, ms, what);
 }
-const serversOn = (path) => procs().filter((p) => /fenec-server /.test(p.command) && p.command.includes(`--file ${path} `));
+const serversOn = (path) => procs().filter((p) => /fennec-server /.test(p.command) && p.command.includes(`--file ${path} `));
 const noScratch = (dir) => assert.deepEqual(readdirSync(dir).filter((f) => f.includes('.restoring-')), [], `no scratch file left in ${dir}`);
 
-const app = startApp('backups', { FENEC_DESKTOP_LAUNCHER: '1' });
+const app = startApp('backups', { FENNEC_DESKTOP_LAUNCHER: '1' });
 await waitFor((l) => l.what === 'ready', 60000, 'ready');
 
 step('where its backups go; a key file beside the backups is refused');
 assert.equal((await ask({ cmd: 'set-archive', path: FILE, dir: ARCHIVE }, 'set-archive-result')).ok, true);
-assert.equal((await ask({ cmd: 'backup', path: `${R}/data/never-set-up.fenec` }, 'backup-result')).ok, false, 'a database with no folder set up is told so');
+assert.equal((await ask({ cmd: 'backup', path: `${R}/data/never-set-up.fennec` }, 'backup-result')).ok, false, 'a database with no folder set up is told so');
 
 step('a backup with nothing running on the file: a server for that alone, stopped after');
 let n = lines().length;
@@ -61,8 +61,8 @@ step('restore into a new file: made, and opened');
 n = lines().length;
 const restored = await ask({ cmd: 'restore', path: FILE, folder: OUT, name: 'bk-copy' }, 'restore-result');
 assert.equal(restored.ok, true, restored.message);
-assert.equal(restored.path, `${OUT}/bk-copy.fenec`);
-const copy = await waitStudio(`file:${OUT}/bk-copy.fenec`, n);
+assert.equal(restored.path, `${OUT}/bk-copy.fennec`);
+const copy = await waitStudio(`file:${OUT}/bk-copy.fennec`, n);
 assert.match(copy.detail.side, /orders 30/, 'what the database held');
 
 step('two restores into one name at once: one file, made whole; the other refused');
@@ -70,15 +70,15 @@ n = lines().length;
 const twice = await ask({ cmd: 'restore-twice', path: FILE, folder: OUT, name: 'bk-twice' }, 'restore-twice-result', 120000);
 assert.equal(twice.results.filter((r) => r.ok).length, 1, JSON.stringify(twice.results));
 assert.match(twice.results.find((r) => !r.ok).message, /exists in that folder already/, 'the second waited for the first, and found its file');
-await waitStudio(`file:${OUT}/bk-twice.fenec`, n);
+await waitStudio(`file:${OUT}/bk-twice.fennec`, n);
 noScratch(OUT);
 
 step('never over a file: the same name again, and the open database\'s own name');
-const before = readFileSync(`${OUT}/bk-copy.fenec`);
+const before = readFileSync(`${OUT}/bk-copy.fennec`);
 const again = await ask({ cmd: 'restore', path: FILE, folder: OUT, name: 'bk-copy' }, 'restore-result');
 assert.equal(again.ok, false);
 assert.match(again.message, /exists in that folder already/);
-assert.deepEqual(readFileSync(`${OUT}/bk-copy.fenec`), before);
+assert.deepEqual(readFileSync(`${OUT}/bk-copy.fennec`), before);
 const liveBefore = statSync(FILE).size;
 const over = await ask({ cmd: 'restore', path: FILE, folder: `${R}/data`, name: 'bk' }, 'restore-result');
 assert.equal(over.ok, false, 'the open, served file is not written over');
@@ -86,7 +86,7 @@ assert.equal(statSync(FILE).size, liveBefore);
 noScratch(OUT);
 noScratch(`${R}/data`);
 
-step('sealed with a new key: made with fenec key, beside nothing of the backups; read only with it');
+step('sealed with a new key: made with fennec key, beside nothing of the backups; read only with it');
 const key = await ask({ cmd: 'make-key', folder: KEYS, name: 'bk.key' }, 'make-key-result');
 assert.equal(key.ok, true, key.message);
 assert.equal(statSync(`${KEYS}/bk.key`).mode & 0o777, 0o600);
@@ -106,13 +106,13 @@ assert.equal((await ask({ cmd: 'verify', path: FILE }, 'verify-result')).ok, tru
 n = lines().length;
 const unsealed = await ask({ cmd: 'restore', path: FILE, folder: OUT, name: 'bk-unsealed' }, 'restore-result');
 assert.equal(unsealed.ok, true, unsealed.message);
-await waitStudio(`file:${OUT}/bk-unsealed.fenec`, n);
+await waitStudio(`file:${OUT}/bk-unsealed.fennec`, n);
 
 step('a new database from a folder of backups');
 n = lines().length;
 const made = await ask({ cmd: 'create', folder: OUT, name: 'from-backup', start: 'archive', archive: { dir: ARCHIVE, keyFile: null } }, 'create-result');
 assert.equal(made.ok, true, made.message);
-const fromBackup = await waitStudio(`file:${OUT}/from-backup.fenec`, n);
+const fromBackup = await waitStudio(`file:${OUT}/from-backup.fennec`, n);
 assert.match(fromBackup.detail.side, /orders 30/);
 noScratch(OUT);
 

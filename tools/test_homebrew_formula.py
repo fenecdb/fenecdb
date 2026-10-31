@@ -14,7 +14,7 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(HERE, "homebrew-formula.py")
-COMMITTED = os.path.join(HERE, "..", "packaging", "homebrew", "Formula", "fenecdb.rb")
+COMMITTED = os.path.join(HERE, "..", "packaging", "homebrew", "Formula", "fennecdb.rb")
 
 spec = importlib.util.spec_from_file_location("formula", SCRIPT)
 formula = importlib.util.module_from_spec(spec)
@@ -29,13 +29,13 @@ def sums(version, skip=None, extra=True):
     lines = []
     for i, target in enumerate(TARGETS):
         if target != skip:
-            lines.append(f"{str(i + 1) * 64}  fenec-v{version}-{target}.tar.gz")
+            lines.append(f"{str(i + 1) * 64}  fennec-v{version}-{target}.tar.gz")
     if extra:
         lines += [
-            f"{'a' * 64}  fenec-web-v{version}.tar.gz",
-            f"{'b' * 64}  fenecdb-android-{version}.aar",
-            f"{'c' * 64}  fenecdb_{version}-1_amd64.deb",
-            f"{'d' * 64}  fenecdb-{version}-1.x86_64.rpm",
+            f"{'a' * 64}  fennec-web-v{version}.tar.gz",
+            f"{'b' * 64}  fennecdb-android-{version}.aar",
+            f"{'c' * 64}  fennecdb_{version}-1_amd64.deb",
+            f"{'d' * 64}  fennecdb-{version}-1.x86_64.rpm",
         ]
     return "\n".join(lines) + "\n"
 
@@ -44,7 +44,7 @@ class Render(unittest.TestCase):
     def test_every_platform_gets_its_own_tarball_and_sum(self):
         text = formula.render("1.2.3", formula.parse_sums(sums("1.2.3")))
         for i, target in enumerate(TARGETS):
-            url = f"https://github.com/fenecdb/fenecdb/releases/download/v1.2.3/fenec-v1.2.3-{target}.tar.gz"
+            url = f"https://github.com/fennec-db/fennecdb/releases/download/v1.2.3/fennec-v1.2.3-{target}.tar.gz"
             self.assertIn(f'url "{url}"\n      sha256 "{str(i + 1) * 64}"', text)
         # The release's other files are not the formula's business.
         self.assertNotIn("android", text)
@@ -55,14 +55,14 @@ class Render(unittest.TestCase):
         self.assertIn("on_macos do\n    on_arm do\n", text)
         self.assertIn("on_linux do\n    on_arm do\n", text)
         self.assertEqual(text.count("    on_intel do\n"), 2)
-        self.assertIn("bin.install \"fenec\", \"fenec-server\"", text)
+        self.assertIn("bin.install \"fennec\", \"fennec-server\"", text)
 
     def test_a_v_in_front_is_the_same_release(self):
         s = formula.parse_sums(sums("1.2.3"))
         self.assertEqual(formula.render("v1.2.3", s), formula.render("1.2.3", s))
 
     def test_binary_mode_sums_are_read(self):
-        text = sums("1.2.3").replace("  fenec-v", " *fenec-v")
+        text = sums("1.2.3").replace("  fennec-v", " *fennec-v")
         formula.render("1.2.3", formula.parse_sums(text))
 
     def test_a_missing_tarball_is_refused(self):
@@ -89,7 +89,7 @@ class TestDo(unittest.TestCase):
     """The formula's `test do`: a release's binaries asked what they have.
     `--version` came with 0.1.13; a formula for a release before it, which
     the tap may hold or the release job may write again, reads the first
-    line of `fenec-server --help`, or `brew test` would fail on a binary
+    line of `fennec-server --help`, or `brew test` would fail on a binary
     that refuses the flag."""
 
     def block_of(self, version):
@@ -101,11 +101,11 @@ class TestDo(unittest.TestCase):
         for version in ("0.1.13", "0.1.20", "0.2.0", "1.0.0", "10.0.0"):
             block = self.block_of(version)
             self.assertIn(
-                'assert_equal "fenec #{version}", shell_output("#{bin}/fenec --version").chomp\n', block
+                'assert_equal "fennec #{version}", shell_output("#{bin}/fennec --version").chomp\n', block
             )
             self.assertIn(
-                'assert_equal "fenec-server #{version}", '
-                'shell_output("#{bin}/fenec-server --version").chomp\n',
+                'assert_equal "fennec-server #{version}", '
+                'shell_output("#{bin}/fennec-server --version").chomp\n',
                 block,
             )
             self.assertNotIn("--help", block, version)
@@ -114,8 +114,8 @@ class TestDo(unittest.TestCase):
         for version in ("0.1.12", "0.1.11", "0.1.9", "0.0.99"):
             block = self.block_of(version)
             self.assertIn(
-                'assert_match "fenec-server #{version}", '
-                'shell_output("#{bin}/fenec-server --help 2>&1")\n',
+                'assert_match "fennec-server #{version}", '
+                'shell_output("#{bin}/fennec-server --help 2>&1")\n',
                 block,
             )
             self.assertNotIn("--version", block, version)
@@ -124,7 +124,7 @@ class TestDo(unittest.TestCase):
         for version in ("0.1.12", "0.1.13"):
             block = self.block_of(version)
             self.assertIn('script = "create collection t (n int)\\nput t {id: 1, n: 7}\\nget t\\n"\n', block)
-            self.assertIn('assert_match(/^1\\s+7$/, pipe_output("#{bin}/fenec", script))\n', block)
+            self.assertIn('assert_match(/^1\\s+7$/, pipe_output("#{bin}/fennec", script))\n', block)
 
     def test_the_versions_compare_as_numbers(self):
         # "0.1.9" sorts after "0.1.13" as text.
@@ -140,11 +140,11 @@ class TestDo(unittest.TestCase):
         self.assertEqual(
             block,
             "  test do\n"
-            "    # Neither binary has a version flag: fenec-server names its version on the\n"
+            "    # Neither binary has a version flag: fennec-server names its version on the\n"
             "    # first line of --help, and the shell is run on a script, in memory.\n"
-            '    assert_match "fenec-server #{version}", shell_output("#{bin}/fenec-server --help 2>&1")\n'
+            '    assert_match "fennec-server #{version}", shell_output("#{bin}/fennec-server --help 2>&1")\n'
             '    script = "create collection t (n int)\\nput t {id: 1, n: 7}\\nget t\\n"\n'
-            '    assert_match(/^1\\s+7$/, pipe_output("#{bin}/fenec", script))\n'
+            '    assert_match(/^1\\s+7$/, pipe_output("#{bin}/fennec", script))\n'
             "  end\n",
         )
 
@@ -180,7 +180,7 @@ class Check(unittest.TestCase):
         text = formula.render("1.2.3", formula.parse_sums(sums("1.2.3")), "evil/fork")
         with self.assertRaises(SystemExit) as e:
             formula.verify(text)
-        self.assertIn("not a release of fenecdb/fenecdb", str(e.exception))
+        self.assertIn("not a release of fennec-db/fennecdb", str(e.exception))
 
     def test_what_it_wrote_passes(self):
         text = formula.render("1.2.3", formula.parse_sums(sums("1.2.3")))

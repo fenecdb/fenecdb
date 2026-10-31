@@ -14,7 +14,7 @@ const tail = (text: string, lines = 8) => text.trim().split("\n").slice(-lines).
 export function heldNotice(name: string, serverSaid: string): Notice {
 	return {
 		title: "This database is open in another program",
-		message: `${name} is open in another program: another fenec studio, a fenec-server, the fenec shell, or an app that uses the file.`,
+		message: `${name} is open in another program: another fennec studio, a fennec-server, the fennec shell, or an app that uses the file.`,
 		hint: "Close it there first. Two programs over one file would corrupt it.",
 		detail: tail(serverSaid),
 		actions: [{ id: "retry", label: "Try again" }],
@@ -51,12 +51,12 @@ export function emptyFile(name: string): Notice {
 	};
 }
 
-/** A file whose first bytes are not a fenecdb signature, found before any server was started on it. */
+/** A file whose first bytes are not a fennecdb signature, found before any server was started on it. */
 export function notADatabase(name: string): Notice {
 	return {
-		title: "That is not a fenecdb database",
-		message: `${name} does not start with a fenecdb signature, so it is some other kind of file.`,
-		hint: "Nothing was changed in it and nothing was written beside it. Pick a .fenec file, or make a new database.",
+		title: "That is not a fennecdb database",
+		message: `${name} does not start with a fennecdb signature, so it is some other kind of file.`,
+		hint: "Nothing was changed in it and nothing was written beside it. Pick a .fennec file, or make a new database.",
 	};
 }
 
@@ -64,17 +64,17 @@ export function notADatabase(name: string): Notice {
 export function startFailedNotice(name: string, serverSaid: string): Notice {
 	// A file picked by mistake: the server reads its signature first and
 	// refuses before it writes anything.
-	if (/invalid fenecdb signature/.test(serverSaid)) {
+	if (/invalid fennecdb signature/.test(serverSaid)) {
 		return {
-			title: "That is not a fenecdb database",
-			message: `${name} does not start with a fenecdb signature, so it is some other kind of file.`,
-			hint: "Nothing was changed in it. Pick a .fenec file, or make a new database.",
+			title: "That is not a fennecdb database",
+			message: `${name} does not start with a fennecdb signature, so it is some other kind of file.`,
+			hint: "Nothing was changed in it. Pick a .fennec file, or make a new database.",
 			detail: tail(serverSaid),
 		};
 	}
 	return {
 		title: "Could not open the database",
-		message: `fenec-server could not open ${name}.`,
+		message: `fennec-server could not open ${name}.`,
 		hint: "The file may be damaged, from a newer version, or on a disk that cannot be read.",
 		detail: tail(serverSaid),
 		actions: [{ id: "retry", label: "Try again" }],
@@ -89,8 +89,8 @@ export function startFailedNotice(name: string, serverSaid: string): Notice {
 export function outOfStepNotice(name: string, serverSaid: string): Notice {
 	return {
 		title: "This app's database server is out of step with it",
-		message: `The fenec-server inside this app refused how the app starts it, so ${name} was not opened.`,
-		hint: "The app and its server were built apart. Build the app again (make studio-desktop), with a fenec-server from this checkout or from release 0.1.12 or later, which have --studio and --exit-on-stdin-close.",
+		message: `The fennec-server inside this app refused how the app starts it, so ${name} was not opened.`,
+		hint: "The app and its server were built apart. Build the app again (make studio-desktop), with a fennec-server from this checkout or from release 0.1.12 or later, which have --studio and --exit-on-stdin-close.",
 		detail: tail(serverSaid, 4),
 	};
 }
@@ -99,7 +99,7 @@ export function outOfStepNotice(name: string, serverSaid: string): Notice {
 export function diedNotice(name: string, exit: number | null, serverSaid: string): Notice {
 	return {
 		title: "The database server stopped",
-		message: `The fenec-server behind ${name} exited (${exit === null ? "killed by a signal" : `code ${exit}`}), so its window was closed.`,
+		message: `The fennec-server behind ${name} exited (${exit === null ? "killed by a signal" : `code ${exit}`}), so its window was closed.`,
 		hint: "Nothing written before it stopped is lost. Open the file again to carry on.",
 		detail: tail(serverSaid),
 		actions: [{ id: "retry", label: "Open again" }],
@@ -126,8 +126,8 @@ export function remoteNotice(name: string, origin: string, probe: Exclude<Probe,
 		case "no-studio":
 			return {
 				title: "This server has no studio",
-				message: `${name} (${origin}) answers (HTTP ${probe.status}) but does not serve fenec studio.`,
-				hint: "Start that fenec-server (or fenec-shard) with --studio, from a build that has it.",
+				message: `${name} (${origin}) answers (HTTP ${probe.status}) but does not serve fennec studio.`,
+				hint: "Start that fennec-server (or fennec-shard) with --studio, from a build that has it.",
 			};
 		case "token-refused":
 			return {
@@ -156,7 +156,7 @@ export function portTakenNotice(name: string, port: number, serverSaid: string):
 export function servedDiedNotice(name: string, exit: number | null, serverSaid: string): Notice {
 	return {
 		title: "A database server stopped",
-		message: `The fenec-server serving ${name} exited (${exit === null ? "killed by a signal" : `code ${exit}`}). Apps connected to it get no answer now.`,
+		message: `The fennec-server serving ${name} exited (${exit === null ? "killed by a signal" : `code ${exit}`}). Apps connected to it get no answer now.`,
 		hint: "Nothing written before it stopped is lost. Start it again with the same settings, or look at its output in Servers.",
 		detail: tail(serverSaid),
 		actions: [{ id: "start", label: "Start again" }],

@@ -8,15 +8,15 @@
 # The node listens on a port the system picks, so two runs -- or this
 # beside any other suite or server -- never meet on one.
 #
-#   FENEC_SERVER     the server binary (scripts/db.sh finds one otherwise)
+#   FENNEC_SERVER    the server binary (scripts/db.sh finds one otherwise)
 #   LEDGER_BENCH=1   npm run bench and npm run recon-bench as well
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 cd "$here"
 dir=$(mktemp -d)
-export FENEC_PORT=0
-export FENEC_DIR="$dir/tenants"
-export FENEC_AUDIT="$dir/audit.log"
+export FENNEC_PORT=0
+export FENNEC_DIR="$dir/tenants"
+export FENNEC_AUDIT="$dir/audit.log"
 db=
 stop() {
     [ -n "$db" ] && kill "$db" 2>/dev/null || true
@@ -34,8 +34,8 @@ until grep -Eq 'listening on: http://[^ ]+ ' "$dir/db.log" 2>/dev/null; do
     if [ $i -gt 600 ] || ! kill -0 "$db" 2>/dev/null; then cat "$dir/db.log"; exit 1; fi
     sleep 0.1
 done
-FENEC_URL=$(sed -n 's/.*listening on: \(http:[^ ]*\) .*/\1/p' "$dir/db.log" | head -1)
-export FENEC_URL
+FENNEC_URL=$(sed -n 's/.*listening on: \(http:[^ ]*\) .*/\1/p' "$dir/db.log" | head -1)
+export FENNEC_URL
 npm run -s setup
 npm run -s lint
 npm test

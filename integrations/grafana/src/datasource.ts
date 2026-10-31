@@ -17,31 +17,31 @@ import { DataSourceWithBackend, getTemplateSrv, TemplateSrv } from '@grafana/run
 import { from, lastValueFrom, map, Observable } from 'rxjs';
 
 import { VariableQueryEditor } from './components/VariableQueryEditor';
-import { DEFAULT_QUERY, Explained, FenecOptions, FenecQuery } from './types';
+import { DEFAULT_QUERY, Explained, FennecOptions, FennecQuery } from './types';
 import { valuesOf, variableValues } from './values';
 
 /**
- * fenecdb's data source. Queries run in the plugin's backend -- a panel's
+ * fennecdb's data source. Queries run in the plugin's backend -- a panel's
  * from the browser, an alert rule's from Grafana's server -- which binds
  * every value as a parameter; the browser only says what the dashboard's
  * variables hold.
  */
-export class DataSource extends DataSourceWithBackend<FenecQuery, FenecOptions> {
+export class DataSource extends DataSourceWithBackend<FennecQuery, FennecOptions> {
   constructor(
-    settings: DataSourceInstanceSettings<FenecOptions>,
+    settings: DataSourceInstanceSettings<FennecOptions>,
     private readonly templateSrv: TemplateSrv = getTemplateSrv()
   ) {
     super(settings);
     // Annotations from a query: its rows' time, title, text and tags.
     this.annotations = {};
-    this.variables = new FenecVariables(this);
+    this.variables = new FennecVariables(this);
   }
 
-  getDefaultQuery(_: CoreApp): Partial<FenecQuery> {
+  getDefaultQuery(_: CoreApp): Partial<FennecQuery> {
     return DEFAULT_QUERY;
   }
 
-  filterQuery(query: FenecQuery): boolean {
+  filterQuery(query: FennecQuery): boolean {
     return !query.hide && !!query.queryText?.trim();
   }
 
@@ -50,26 +50,26 @@ export class DataSource extends DataSourceWithBackend<FenecQuery, FenecOptions> 
    * variables it names. Nothing is written into the text: the backend makes
    * each name a `$n` parameter, so a value is a value whatever it holds.
    */
-  applyTemplateVariables(query: FenecQuery, scopedVars: ScopedVars): FenecQuery {
+  applyTemplateVariables(query: FennecQuery, scopedVars: ScopedVars): FennecQuery {
     return { ...query, vars: this.variableValues(query, scopedVars) };
   }
 
   /** The values of the variables a query names: one, or a list for a multi-value variable. */
-  variableValues(query: FenecQuery, scopedVars: ScopedVars): Record<string, string | string[]> {
+  variableValues(query: FennecQuery, scopedVars: ScopedVars): Record<string, string | string[]> {
     return variableValues(this.templateSrv, query, scopedVars);
   }
 
   /** A variable's query: the values of the answer's first column, or of `__text` and `__value`. */
-  async metricFindQuery(query: FenecQuery | string, options?: LegacyMetricFindQueryOptions): Promise<MetricFindValue[]> {
-    const target: FenecQuery =
+  async metricFindQuery(query: FennecQuery | string, options?: LegacyMetricFindQueryOptions): Promise<MetricFindValue[]> {
+    const target: FennecQuery =
       typeof query === 'string' ? { refId: 'variable', queryText: query } : { ...query, refId: 'variable' };
     if (!target.queryText?.trim()) {
       return [];
     }
     const range = options?.range ?? getDefaultTimeRange();
-    const request: DataQueryRequest<FenecQuery> = {
+    const request: DataQueryRequest<FennecQuery> = {
       app: CoreApp.Dashboard,
-      requestId: `fenecdb-variable-${target.refId}`,
+      requestId: `fennecdb-variable-${target.refId}`,
       interval: '1s',
       intervalMs: 1000,
       maxDataPoints: 1000,
@@ -87,7 +87,7 @@ export class DataSource extends DataSourceWithBackend<FenecQuery, FenecOptions> 
   }
 
   /** The statement as the backend binds it, and the server's plan for it. */
-  explain(query: FenecQuery, range: TimeRange, intervalMs: number, maxDataPoints: number): Promise<Explained> {
+  explain(query: FennecQuery, range: TimeRange, intervalMs: number, maxDataPoints: number): Promise<Explained> {
     const scopedVars: ScopedVars = {};
     return this.postResource<Explained>('explain', {
       query: { ...query, vars: this.variableValues(query, scopedVars) },
@@ -99,15 +99,15 @@ export class DataSource extends DataSourceWithBackend<FenecQuery, FenecOptions> 
   }
 }
 
-/** A query variable: FenecQL whose first column is the variable's values. */
-class FenecVariables extends CustomVariableSupport<DataSource, FenecQuery> {
+/** A query variable: FennecQL whose first column is the variable's values. */
+class FennecVariables extends CustomVariableSupport<DataSource, FennecQuery> {
   editor = VariableQueryEditor;
 
   constructor(private readonly ds: DataSource) {
     super();
   }
 
-  query(request: DataQueryRequest<FenecQuery>): Observable<DataQueryResponse> {
+  query(request: DataQueryRequest<FennecQuery>): Observable<DataQueryResponse> {
     return from(this.ds.metricFindQuery(request.targets[0], { range: request.range, scopedVars: request.scopedVars })).pipe(
       map((values) => ({
         data: [

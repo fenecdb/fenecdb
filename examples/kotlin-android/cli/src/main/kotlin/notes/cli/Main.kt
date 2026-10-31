@@ -1,8 +1,8 @@
 package notes.cli
 
-import com.fenecdb.Fenec
-import com.fenecdb.Row
-import com.fenecdb.live
+import com.fennecdb.Fennec
+import com.fennecdb.Row
+import com.fennecdb.live
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -22,7 +22,7 @@ const val USAGE = """usage: notes                       seeds if empty, then lis
 fun main(args: Array<String>) = runBlocking {
     val cmd = args.firstOrNull() ?: "list"
     if (cmd == "smoke") return@runBlocking smoke()
-    val db = Notes.open(System.getenv("NOTES_FILE") ?: "notes.fenec")
+    val db = Notes.open(System.getenv("NOTES_FILE") ?: "notes.fennec")
     db.use {
         when (cmd) {
             "add" -> {
@@ -78,7 +78,7 @@ fun check(step: String, ok: Boolean, got: Any?) {
 
 /** The tour CI runs: every query of the app on a new file, then the file opened again. */
 suspend fun smoke() = kotlinx.coroutines.coroutineScope {
-    val path = Files.createTempDirectory("notes").resolve("notes.fenec").toString()
+    val path = Files.createTempDirectory("notes").resolve("notes.fennec").toString()
     val db = Notes.open(path)
     check("seeded", db.from("notes").count() == 4L, db.from("notes").count())
 

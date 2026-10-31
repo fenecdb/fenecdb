@@ -1,18 +1,18 @@
-// Backups, through the bundled `fenec` shell and nothing of the app's own:
+// Backups, through the bundled `fennec` shell and nothing of the app's own:
 //
-//   fenec backup <server> <archive-folder> [--key-file k]   an image of the database, taken while it runs
-//   fenec verify <archive-folder> [--key-file k]             what the folder can restore, read as a restore would
-//   fenec restore <archive-folder> <new.fenec> [--to-change n] [--key-file k]
-//   fenec key <key-file>                                     a new key, readable by its owner alone
+//   fennec backup <server> <archive-folder> [--key-file k]  an image of the database, taken while it runs
+//   fennec verify <archive-folder> [--key-file k]            what the folder can restore, read as a restore would
+//   fennec restore <archive-folder> <new.fennec> [--to-change n] [--key-file k]
+//   fennec key <key-file>                                    a new key, readable by its owner alone
 //
 // A backup speaks the server's replication stream, so it is taken from a
 // server: the one serving the file, the one behind its window, or one started
 // for the backup alone (app.ts). Its replication token goes in the
 // environment, as the server's own did (env.ts). The archive folder is
-// `fenec archive`'s layout, so `fenec verify`, `restore` and `prune` read it as
+// `fennec archive`'s layout, so `fennec verify`, `restore` and `prune` read it as
 // they read one that command keeps.
 //
-// **A restore never writes over a file.** `fenec restore` writes its output
+// **A restore never writes over a file.** `fennec restore` writes its output
 // whether or not a file is there -- a database another program serves
 // included -- so it writes into a folder of the app's own, made for that one
 // restore beside the new file (`mkdtemp`), and the result is put in place with
@@ -29,17 +29,17 @@ import { basename, dirname, join } from "node:path";
 import { childEnvironment } from "./env.ts";
 import { kindOfFile } from "./dbfile.ts";
 
-/** What a run of `fenec` said. `code` null: killed. */
+/** What a run of `fennec` said. `code` null: killed. */
 export type Ran = { code: number | null; out: string; err: string };
-/** Runs the bundled `fenec` with `args` in environment `env`. */
+/** Runs the bundled `fennec` with `args` in environment `env`. */
 export type Run = (args: string[], env: Record<string, string>) => Promise<Ran>;
 
 export type Archive = { dir: string; keyFile: string | null };
 
-/** An image a backup put in an archive folder: `image-<change, 20 digits>-<ms>.fenec`. */
+/** An image a backup put in an archive folder: `image-<change, 20 digits>-<ms>.fennec`. */
 export type Image = { change: number; at: number; file: string };
 
-const IMAGE = /^image-(\d{20})-(\d+)\.fenec$/;
+const IMAGE = /^image-(\d{20})-(\d+)\.fennec$/;
 
 /** The images among a folder's names, newest first. */
 export function imagesIn(names: string[]): Image[] {
@@ -60,14 +60,14 @@ export function listImages(dir: string): Image[] {
 }
 
 const keyArgs = (a: Archive) => (a.keyFile ? ["--key-file", a.keyFile] : []);
-/** What `fenec` said last, for a message: its error lines, without the command's name before them. */
-export const said = (r: Ran) => (r.err.trim() || r.out.trim()).split("\n").slice(-4).join("\n").replace(/^fenec \w+: /gm, "");
+/** What `fennec` said last, for a message: its error lines, without the command's name before them. */
+export const said = (r: Ran) => (r.err.trim() || r.out.trim()).split("\n").slice(-4).join("\n").replace(/^fennec \w+: /gm, "");
 
 export type Taken = { ok: true; change: number } | { ok: false; message: string };
 
 /**
  * An image of the database `server` serves, into `archive`. The folder is made
- * if it is not there: given a name that is not a folder, `fenec backup` writes a
+ * if it is not there: given a name that is not a folder, `fennec backup` writes a
  * backup *file* by that name instead.
  */
 export async function takeBackup(run: Run, server: { local: string; replicationToken: string }, archive: Archive, env: Record<string, string | undefined> = process.env): Promise<Taken> {
@@ -76,15 +76,15 @@ export async function takeBackup(run: Run, server: { local: string; replicationT
 	} catch (e) {
 		return { ok: false, message: `The folder ${archive.dir} could not be made: ${(e as Error).message}` };
 	}
-	const r = await run(["backup", server.local, archive.dir, ...keyArgs(archive)], childEnvironment(env, { FENEC_REPLICATION_TOKEN: server.replicationToken }));
+	const r = await run(["backup", server.local, archive.dir, ...keyArgs(archive)], childEnvironment(env, { FENNEC_REPLICATION_TOKEN: server.replicationToken }));
 	const m = /the database at change (\d+)/.exec(r.out);
-	if (r.code !== 0 || !m) return { ok: false, message: said(r) || `fenec backup ended with ${r.code}` };
+	if (r.code !== 0 || !m) return { ok: false, message: said(r) || `fennec backup ended with ${r.code}` };
 	return { ok: true, change: Number(m[1]) };
 }
 
 export type Verified = { ok: boolean; text: string };
 
-/** `fenec verify`: what the folder can restore, or why it cannot. */
+/** `fennec verify`: what the folder can restore, or why it cannot. */
 export async function verifyArchive(run: Run, archive: Archive, env: Record<string, string | undefined> = process.env): Promise<Verified> {
 	const r = await run(["verify", archive.dir, ...keyArgs(archive)], childEnvironment(env, {}));
 	return { ok: r.code === 0, text: r.code === 0 ? r.out.trim() : said(r) };
@@ -111,12 +111,12 @@ export async function restoreArchive(run: Run, archive: Archive, change: number 
 	} catch (e) {
 		return { ok: false, message: (e as Error).message };
 	}
-	const out = join(scratch, "db.fenec");
+	const out = join(scratch, "db.fennec");
 	try {
 		const to = change === null ? [] : ["--to-change", String(change)];
 		const r = await run(["restore", archive.dir, out, ...to, ...keyArgs(archive)], childEnvironment(env, {}));
 		const m = /change (\d+)/.exec(r.out);
-		if (r.code !== 0 || !m) return { ok: false, message: said(r) || `fenec restore ended with ${r.code}` };
+		if (r.code !== 0 || !m) return { ok: false, message: said(r) || `fennec restore ended with ${r.code}` };
 		if (kindOfFile(out) !== "database") return { ok: false, message: "The restore did not make a database file." };
 		try {
 			// Fails with EEXIST if the name was taken meanwhile: never over a file.
@@ -185,12 +185,12 @@ const within = (path: string, folder: string) => path === folder || path.startsW
  * their own are there to be carried off, and the key must not go with them;
  * beside the live database, a key on the same disk shows nothing the database
  * itself does not. A key others may read is a warning, not a refusal: the
- * shell's `fenec key` writes 0600, and one copied in may have lost that.
+ * shell's `fennec key` writes 0600, and one copied in may have lost that.
  */
 export function keyPlacement(dir: string, keyFile: string, database: string, dev: (path: string) => number = deviceOf): { refuse?: string; warn?: string } {
 	const key = resolved(keyFile);
 	const folder = resolved(dir);
-	const stem = basename(database).replace(/\.fenec$/i, "");
+	const stem = basename(database).replace(/\.fennec$/i, "");
 	const picked = basename(folder) === stem ? dirname(folder) : folder;
 	if (within(key, picked)) return { refuse: `The key is inside ${picked}, with the backups: anyone who has that folder could read them. Keep it in another folder.` };
 	const backupsDisk = dev(folder);
@@ -198,11 +198,11 @@ export function keyPlacement(dir: string, keyFile: string, database: string, dev
 		return { refuse: "The key is on the disk the backups go to, which is not the database's: whoever takes that disk has both. Keep the key on another disk." };
 	}
 	const mode = statSync(key, { throwIfNoEntry: false })?.mode ?? 0;
-	if (mode & 0o077) return { warn: `Others on this Mac may read the key (its permissions are ${(mode & 0o777).toString(8)}): chmod 600 it, as fenec key makes one.` };
+	if (mode & 0o077) return { warn: `Others on this Mac may read the key (its permissions are ${(mode & 0o777).toString(8)}): chmod 600 it, as fennec key makes one.` };
 	return {};
 }
 
-/** `fenec key`: a new key at `path`, which must not exist (the shell refuses to write over a key). */
+/** `fennec key`: a new key at `path`, which must not exist (the shell refuses to write over a key). */
 export async function makeKey(run: Run, path: string, env: Record<string, string | undefined> = process.env): Promise<{ ok: boolean; message: string }> {
 	const r = await run(["key", path], childEnvironment(env, {}));
 	return { ok: r.code === 0, message: r.code === 0 ? `A new key is in ${path}. Keep it apart from the backups: without it nothing can be restored.` : said(r) };

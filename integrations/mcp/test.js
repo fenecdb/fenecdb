@@ -1,12 +1,12 @@
-// fenecdb's MCP server held to the official TypeScript client
+// fennecdb's MCP server held to the official TypeScript client
 // (@modelcontextprotocol/client): `npm test` here, after `npm ci`. Every
 // tool called over every way an agent reaches it -- Streamable HTTP of a
-// fenec-server started here, stdio of `fenec mcp` over a file, and stdio
+// fennec-server started here, stdio of `fennec mcp` over a file, and stdio
 // bridged to the server -- in both eras the client speaks: the handshake
 // revision it opens with by default, and 2026-07-28 pinned and probed.
 // Then every configuration site/content/docs/mcp.html gives -- Claude
 // Code's, Cursor's, Claude Desktop's -- loaded as its client loads it.
-// Needs the debug binaries: cargo build -p fenec-server -p fenec-cli.
+// Needs the debug binaries: cargo build -p fennec-server -p fennec-cli.
 
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,13 +18,13 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const root = new URL('../../', import.meta.url);
-const server = new URL('target/debug/fenec-server', root).pathname;
-const shell = new URL('target/debug/fenec', root).pathname;
+const server = new URL('target/debug/fennec-server', root).pathname;
+const shell = new URL('target/debug/fennec', root).pathname;
 const TOKEN = 'mcp-integration-token';
-const dir = await mkdtemp(join(tmpdir(), 'fenecdb-mcp-'));
+const dir = await mkdtemp(join(tmpdir(), 'fennecdb-mcp-'));
 
 /**
- * Where a fenec-server started on port 0 listens, off its `listening on:
+ * Where a fennec-server started on port 0 listens, off its `listening on:
  * http://<address>` line, read to the space after it so a line that came
  * in two pieces is not read short. A port found free and handed over was
  * free only until someone else took it, and a server of someone else's
@@ -38,7 +38,7 @@ const listening = (child) =>
       const at = /listening on: (http:\/\/\S+)\s/.exec(log);
       if (at) res(at[1]);
     });
-    child.on('exit', () => rej(new Error(`fenec-server ended before it listened: ${log}`)));
+    child.on('exit', () => rej(new Error(`fennec-server ended before it listened: ${log}`)));
   });
 
 const SEED = [
@@ -48,12 +48,12 @@ const SEED = [
     '{title: "cat", body: "the cat watches the fox", embed: [0.9, 0.1, 0], year: 2025}]',
 ];
 
-/** fenec-server with every tool on, over a file of its own, seeded. A
+/** fennec-server with every tool on, over a file of its own, seeded. A
  * test's calls come quicker than an agent's: no rate. */
 async function startServer() {
   const child = spawn(
     server,
-    ['--http', '127.0.0.1:0', '--file', join(dir, 'server.fenec'), '--http-token', TOKEN,
+    ['--http', '127.0.0.1:0', '--file', join(dir, 'server.fennec'), '--http-token', TOKEN,
       '--mcp-write', '--mcp-memory', 'memories', '--mcp-calls-per-sec', '0'],
     { stdio: ['ignore', 'ignore', 'pipe'] },
   );
@@ -83,7 +83,7 @@ const ERAS = [
 
 function client(negotiation) {
   return new Client(
-    { name: 'fenecdb-integration', version: '1.0.0' },
+    { name: 'fennecdb-integration', version: '1.0.0' },
     negotiation ? { versionNegotiation: negotiation } : {},
   );
 }
@@ -106,7 +106,7 @@ async function everyTool(c, { memory = 'memories' } = {}) {
 
   let r = await call('schema', {});
   assert.equal(r.isError, false);
-  assert.match(r.structuredContent.fenecql, /create collection docs/);
+  assert.match(r.structuredContent.fennecql, /create collection docs/);
 
   r = await call('search', { collection: 'docs', text: 'fox', vector: [1, 0, 0], limit: 2 });
   assert.equal(r.isError, false, JSON.stringify(r));
@@ -150,7 +150,7 @@ for (const [era, negotiation] of ERAS) {
     });
     await c.connect(transport);
     try {
-      assert.equal(c.getServerVersion().name, 'fenecdb');
+      assert.equal(c.getServerVersion().name, 'fennecdb');
       await everyTool(c);
     } finally {
       await c.close();
@@ -159,11 +159,11 @@ for (const [era, negotiation] of ERAS) {
 
   test(`stdio over a file, ${era}`, async () => {
     // A file of its own, made by the shell first.
-    const file = join(dir, `stdio-${era.replace(/\W/g, '')}.fenec`);
+    const file = join(dir, `stdio-${era.replace(/\W/g, '')}.fennec`);
     for (const q of SEED) {
       await new Promise((res, rej) => {
         const p = spawn(shell, [file, '-c', q], { stdio: 'ignore' });
-        p.on('exit', (code) => (code === 0 ? res() : rej(new Error(`fenec -c exited ${code}`))));
+        p.on('exit', (code) => (code === 0 ? res() : rej(new Error(`fennec -c exited ${code}`))));
       });
     }
     const c = client(negotiation);
@@ -184,7 +184,7 @@ for (const [era, negotiation] of ERAS) {
     await c.connect(new StdioClientTransport({
       command: shell,
       args: ['mcp', '--url', `${srv.url}/_mcp`],
-      env: { ...process.env, FENEC_TOKEN: TOKEN },
+      env: { ...process.env, FENNEC_TOKEN: TOKEN },
       stderr: 'ignore',
     }));
     try {
@@ -221,26 +221,26 @@ test('the docs give a configuration for each client', () => {
 });
 
 // What each client does with an entry: a variable expanded (Claude Code's
-// `${VAR}`, Cursor's `${env:VAR}`), `fenec` found on the PATH, the file
+// `${VAR}`, Cursor's `${env:VAR}`), `fennec` found on the PATH, the file
 // and the server's address this test's own.
-const expand = (v) => v.replace(/\$\{(?:env:)?FENEC_TOKEN\}/g, TOKEN);
+const expand = (v) => v.replace(/\$\{(?:env:)?FENNEC_TOKEN\}/g, TOKEN);
 for (const [label, config] of configs) {
   test(`the configuration ${label} loads`, async () => {
     for (const [name, entry] of Object.entries(config.mcpServers)) {
-      assert.equal(name, 'fenecdb');
+      assert.equal(name, 'fennecdb');
       let transport;
       if (entry.url) {
         const url = new URL(entry.url);
         const headers = Object.fromEntries(Object.entries(entry.headers ?? {}).map(([k, v]) => [k, expand(v)]));
         transport = new StreamableHTTPClientTransport(new URL(url.pathname, srv.url), { requestInit: { headers } });
       } else {
-        assert.equal(entry.command, 'fenec', label);
-        const file = join(dir, `${label.replace(/\W/g, '')}.fenec`);
+        assert.equal(entry.command, 'fennec', label);
+        const file = join(dir, `${label.replace(/\W/g, '')}.fennec`);
         // The server's address this test's own, the path the page's.
         const args = entry.args.map((a) =>
-          a === 'notes.fenec' ? file : a.startsWith('http://') ? `${srv.url}${new URL(a).pathname}` : a,
+          a === 'notes.fennec' ? file : a.startsWith('http://') ? `${srv.url}${new URL(a).pathname}` : a,
         );
-        const env = { ...process.env, ...Object.fromEntries(Object.entries(entry.env ?? {}).map(([k, v]) => [k, k === 'FENEC_TOKEN' ? TOKEN : v])) };
+        const env = { ...process.env, ...Object.fromEntries(Object.entries(entry.env ?? {}).map(([k, v]) => [k, k === 'FENNEC_TOKEN' ? TOKEN : v])) };
         transport = new StdioClientTransport({ command: shell, args, env, stderr: 'ignore' });
       }
       const c = client(undefined);

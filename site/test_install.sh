@@ -13,7 +13,7 @@ set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 script=$here/install.sh
-work=$(mktemp -d "${TMPDIR:-/tmp}/fenecdb-install-test.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/fennecdb-install-test.XXXXXX")
 server_pid=
 cleanup() {
     if [ -n "$server_pid" ]; then
@@ -40,7 +40,7 @@ expect() {
 contains() { grep -F -q -- "$2" "$1"; }
 lacks() { ! grep -F -q -- "$2" "$1"; }
 absent() { [ ! -e "$1" ]; }
-runs() { [ -x "$1" ] && "$1" --help 2>&1 | head -n 1 | grep -F -q "fenec-server $2"; }
+runs() { [ -x "$1" ] && "$1" --help 2>&1 | head -n 1 | grep -F -q "fennec-server $2"; }
 
 sha256() {
     if command -v sha256sum >/dev/null 2>&1; then
@@ -57,13 +57,13 @@ version=9.9.9
 rel=$work/site/download/v$version
 mkdir -p "$rel" "$work/site/latest/download" "$work/stage"
 for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
-    d=$work/stage/fenec-v$version-$target
+    d=$work/stage/fennec-v$version-$target
     mkdir -p "$d"
-    printf '#!/bin/sh\necho "fenec shell"\n' >"$d/fenec"
-    printf '#!/bin/sh\necho "fenec-server %s" >&2\n' "$version" >"$d/fenec-server"
-    chmod 755 "$d/fenec" "$d/fenec-server"
+    printf '#!/bin/sh\necho "fennec shell"\n' >"$d/fennec"
+    printf '#!/bin/sh\necho "fennec-server %s" >&2\n' "$version" >"$d/fennec-server"
+    chmod 755 "$d/fennec" "$d/fennec-server"
     echo "licence" >"$d/LICENSE"
-    tar -czf "$rel/fenec-v$version-$target.tar.gz" -C "$work/stage" "fenec-v$version-$target"
+    tar -czf "$rel/fennec-v$version-$target.tar.gz" -C "$work/stage" "fennec-v$version-$target"
 done
 : >"$rel/SHA256SUMS"
 for f in "$rel"/*.tar.gz; do
@@ -103,7 +103,7 @@ install() {
     shift
     mkdir -p "$work/$name-home"
     set +e
-    env HOME="$work/$name-home" FENEC_BASE_URL="$base" FENEC_INSTALL="$work/$name-inst" "$@" \
+    env HOME="$work/$name-home" FENNEC_BASE_URL="$base" FENNEC_INSTALL="$work/$name-inst" "$@" \
         /bin/sh "$script" >"$work/$name.out" 2>&1
     echo $? >"$work/$name.rc"
     set -e
@@ -114,10 +114,10 @@ failing() { [ "$(cat "$work/$1.rc")" != 0 ]; }
 # The latest release, installed.
 install latest PATH="$PATH"
 expect "latest: exit 0" status latest 0
-expect "latest: found $version" contains "$work/latest.out" "Installed fenecdb $version"
+expect "latest: found $version" contains "$work/latest.out" "Installed fennecdb $version"
 expect "latest: checked the sum" contains "$work/latest.out" "Checksum ok"
-expect "latest: fenec-server runs" runs "$work/latest-inst/bin/fenec-server" "$version"
-expect "latest: fenec is there" test -x "$work/latest-inst/bin/fenec"
+expect "latest: fennec-server runs" runs "$work/latest-inst/bin/fennec-server" "$version"
+expect "latest: fennec is there" test -x "$work/latest-inst/bin/fennec"
 expect "latest: no temp files left in bin" test "$(find "$work/latest-inst/bin" -type f | wc -l | tr -d ' ')" -eq 2
 expect "latest: says how to reach it" contains "$work/latest.out" 'export PATH="'
 expect "latest: touched no startup file" test -z "$(ls -A "$work/latest-home")"
@@ -135,15 +135,15 @@ expect "on PATH: exit 0" status onpath 0
 expect "on PATH: no hint" lacks "$work/onpath.out" "is not on your PATH"
 
 # A version asked for, with and without the v.
-install pinned FENEC_VERSION=v$version
+install pinned FENNEC_VERSION=v$version
 expect "pinned v: exit 0" status pinned 0
-install pinned2 FENEC_VERSION=$version
+install pinned2 FENNEC_VERSION=$version
 expect "pinned: exit 0" status pinned2 0
-install nosuch FENEC_VERSION=1.2.3
+install nosuch FENNEC_VERSION=1.2.3
 expect "no such release: fails" failing nosuch
 expect "no such release: says so" contains "$work/nosuch.out" "is there a release v1.2.3"
 expect "no such release: installs nothing" absent "$work/nosuch-inst"
-install oddversion 'FENEC_VERSION=1.0/../x'
+install oddversion 'FENNEC_VERSION=1.0/../x'
 expect "odd version: fails" failing oddversion
 expect "odd version: installs nothing" absent "$work/oddversion-inst"
 
@@ -203,15 +203,15 @@ for url in \
     ftp://example.invalid/releases \
     file:///etc; do
     n=$((n + 1))
-    install "url$n" "FENEC_BASE_URL=$url"
+    install "url$n" "FENNEC_BASE_URL=$url"
     expect "base URL $url: refused" failing "url$n"
     expect "base URL $url: installs nothing" absent "$work/url$n-inst"
-    expect "base URL $url: says why" contains "$work/url$n.out" FENEC_BASE_URL
+    expect "base URL $url: says why" contains "$work/url$n.out" FENNEC_BASE_URL
 done
 # And these are this machine's, or https.
-install localhost "FENEC_BASE_URL=http://localhost:${base##*:}"
+install localhost "FENNEC_BASE_URL=http://localhost:${base##*:}"
 expect "http://localhost:port: installs" status localhost 0
-install localhostslash "FENEC_BASE_URL=http://127.0.0.1:${base##*:}/"
+install localhostslash "FENNEC_BASE_URL=http://127.0.0.1:${base##*:}/"
 expect "http://127.0.0.1:port/: installs" status localhostslash 0
 
 # The tools it downloads with. Without curl on PATH, from links to what the
@@ -262,21 +262,21 @@ EOF
     chmod 755 "$work/bb-ssl/ssl_client"
     install bbssl PATH="$work/bb-ssl:$work/nocurl"
     expect "BusyBox wget with ssl_client: installs" status bbssl 0
-    expect "BusyBox wget with ssl_client: fenec-server runs" runs "$work/bbssl-inst/bin/fenec-server" "$version"
+    expect "BusyBox wget with ssl_client: fennec-server runs" runs "$work/bbssl-inst/bin/fennec-server" "$version"
 
     wget_shim "$work/bb-note" 'BusyBox v1.36.1 multi-call binary.' 'wget: unrecognized option: version' 'wget: note: TLS certificate validation not implemented'
     cp "$work/bb-ssl/ssl_client" "$work/bb-note/ssl_client"
     install bbnote PATH="$work/bb-note:$work/nocurl"
     expect "wget that checks no certificate: refused" failing bbnote
     expect "wget that checks no certificate: says so" contains "$work/bbnote.out" "does not check TLS certificates"
-    expect "wget that checks no certificate: installs nothing" absent "$work/bbnote-inst/bin/fenec"
+    expect "wget that checks no certificate: installs nothing" absent "$work/bbnote-inst/bin/fennec"
 
     wget_shim "$work/gnu" 'Usage: wget [OPTION]...' 'GNU Wget 1.21.3 built on linux-gnu.'
     install gnuwget PATH="$work/gnu:$work/nocurl"
     expect "GNU wget: installs" status gnuwget 0
     expect "GNU wget over http: no https flags" lacks "$work/gnu/wget.args" "--https-only"
     : >"$work/gnu/wget.args"
-    install gnuhttps PATH="$work/gnu:$work/nocurl" FENEC_BASE_URL=https://example.invalid
+    install gnuhttps PATH="$work/gnu:$work/nocurl" FENNEC_BASE_URL=https://example.invalid
     expect "GNU wget over https: --https-only" contains "$work/gnu/wget.args" "--https-only"
     expect "GNU wget over https: TLS 1.2" contains "$work/gnu/wget.args" "--secure-protocol=TLSv1_2"
 
@@ -289,23 +289,23 @@ install nodownloader PATH="$work/nocurl"
 expect "no curl or wget: refused" failing nodownloader
 expect "no curl or wget: says what it needs" contains "$work/nodownloader.out" "needs curl or wget"
 
-# A relative FENEC_INSTALL is told back as an absolute directory.
+# A relative FENNEC_INSTALL is told back as an absolute directory.
 mkdir -p "$work/relcwd"
 rel_dir=$(cd "$work/relcwd" && pwd)
 set +e
-(cd "$work/relcwd" && env FENEC_BASE_URL="$base" FENEC_INSTALL=rel/dir /bin/sh "$script" >"$work/rel.out" 2>&1)
+(cd "$work/relcwd" && env FENNEC_BASE_URL="$base" FENNEC_INSTALL=rel/dir /bin/sh "$script" >"$work/rel.out" 2>&1)
 rel_rc=$?
 set -e
-expect "relative FENEC_INSTALL: installs" test "$rel_rc" -eq 0
-expect "relative FENEC_INSTALL: tells the absolute directory" contains "$work/rel.out" "$rel_dir/rel/dir/bin"
-expect "relative FENEC_INSTALL: where it said" test -x "$rel_dir/rel/dir/bin/fenec"
+expect "relative FENNEC_INSTALL: installs" test "$rel_rc" -eq 0
+expect "relative FENNEC_INSTALL: tells the absolute directory" contains "$work/rel.out" "$rel_dir/rel/dir/bin"
+expect "relative FENNEC_INSTALL: where it said" test -x "$rel_dir/rel/dir/bin/fennec"
 
 # A copy that fails leaves nothing of its own behind (a directory nobody can
 # write to means nothing as root, which writes anywhere).
 if [ "$(id -u)" != 0 ]; then
     mkdir -p "$work/ro-inst/bin"
     chmod 555 "$work/ro-inst/bin"
-    install ro FENEC_INSTALL="$work/ro-inst"
+    install ro FENNEC_INSTALL="$work/ro-inst"
     expect "unwritable bin: fails" failing ro
     expect "unwritable bin: leaves no staged file" test "$(find "$work/ro-inst/bin" -type f | wc -l | tr -d ' ')" -eq 0
     chmod 755 "$work/ro-inst/bin"
@@ -320,7 +320,7 @@ help_rc=$?
 set -e
 expect "unknown argument: refused" test "$arg_rc" -ne 0
 expect "--help: exit 0" test "$help_rc" -eq 0
-expect "--help: usage" contains "$work/help.out" "FENEC_VERSION"
+expect "--help: usage" contains "$work/help.out" "FENNEC_VERSION"
 
 # The script cut short at any point runs nothing: every line's end, and bytes
 # across the file and in the last line.
@@ -341,7 +341,7 @@ for cut in $cuts; do
     rm -rf "$work/cut-inst"
     if [ "$cut" -eq 0 ]; then : >"$work/cut.sh"; else head -c "$cut" "$script" >"$work/cut.sh"; fi
     set +e
-    env HOME="$work/latest-home" FENEC_BASE_URL="$base" FENEC_INSTALL="$work/cut-inst" sh <"$work/cut.sh" >"$work/cut.out" 2>&1
+    env HOME="$work/latest-home" FENNEC_BASE_URL="$base" FENNEC_INSTALL="$work/cut-inst" sh <"$work/cut.sh" >"$work/cut.out" 2>&1
     set -e
     count=$((count + 1))
     if [ -e "$work/cut-inst" ] || contains "$work/cut.out" "Looking for"; then

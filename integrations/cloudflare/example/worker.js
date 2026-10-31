@@ -1,14 +1,14 @@
 // A Worker that gives each tenant a database of its own, in a Durable
-// Object: `POST /t/<tenant>/query` with `{sql, params}` runs FenecQL there
+// Object: `POST /t/<tenant>/query` with `{sql, params}` runs FennecQL there
 // and answers its rows. `npx wrangler dev` in this directory serves it;
 // worker.test.js starts it twice, to see the databases come back.
 
 import { DurableObject } from 'cloudflare:workers';
-// In an app: `@fenecdb/web`, `@fenecdb/web/fenec.wasm` and
-// `@fenecdb/cloudflare`. Here the files beside them, so the test runs what
+// In an app: `@fennecdb/web`, `@fennecdb/web/fennec.wasm` and
+// `@fennecdb/cloudflare`. Here the files beside them, so the test runs what
 // the repository holds.
-import { Fenec } from '../../../web/fenec.js';
-import wasm from '../../../web/fenec.wasm';
+import { Fennec } from '../../../web/fennec.js';
+import wasm from '../../../web/fennec.wasm';
 import { checkpoint, maintain, persist, release, restore, schedule } from '../index.js';
 
 /**
@@ -43,7 +43,7 @@ export class Tenant extends DurableObject {
   #restored() {
     return this.ctx.blockConcurrencyWhile(async () => {
       // A Worker imports the module compiled, and `open` takes it so.
-      const db = await Fenec.open(wasm);
+      const db = await Fennec.open(wasm);
       await restore(db, this.ctx.storage);
       return db;
     });
@@ -103,7 +103,7 @@ export class Tenant extends DurableObject {
   }
 
   /**
-   * Runs FenecQL, and keeps what it wrote before the answer goes, as a
+   * Runs FennecQL, and keeps what it wrote before the answer goes, as a
    * server's `--sync always` would. A database whose writes were not kept
    * is let go of, and restored from what storage holds: kept in memory, it
    * answered with writes the storage never had.
@@ -134,7 +134,7 @@ export class Tenant extends DurableObject {
         // and an error here answered for a stored write would have its
         // client send it again.
         await schedule(db, this.ctx.storage, { quiet, ...this.#options() }).catch((e) =>
-          console.error(`fenecdb: no alarm set: ${e.message}`),
+          console.error(`fennecdb: no alarm set: ${e.message}`),
         );
       }
       if (failed) return { status: 400, body: { error: failed.message } };

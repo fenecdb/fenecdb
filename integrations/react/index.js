@@ -1,12 +1,12 @@
-// useLiveQuery for fenecdb: a query's rows, rendered again every time they
+// useLiveQuery for fennecdb: a query's rows, rendered again every time they
 // change -- over a database in the page alone, or a replica synced from a
 // server.
 //
-//   const db = await Fenec.open(wasm);            // or: await sync({ url, shapes })
-//   <FenecProvider db={db}><Tasks /></FenecProvider>
+//   const db = await Fennec.open(wasm);            // or: await sync({ url, shapes })
+//   <FennecProvider db={db}><Tasks /></FennecProvider>
 //
 //   function Tasks() {
-//     const rows = useLiveQuery(useFenec().from('tasks').where('done', false).order('at'));
+//     const rows = useLiveQuery(useFennec().from('tasks').where('done', false).order('at'));
 //     if (rows === undefined) return <Spinner />;
 //     return rows.map((t) => <Task key={t.id} {...t} />);
 //   }
@@ -18,17 +18,17 @@
 
 import { createContext, createElement, useContext, useEffect, useState } from 'react';
 
-const FenecContext = createContext(null);
+const FennecContext = createContext(null);
 
-/** Makes `db`, a `Fenec` or a `FenecSync`, the one `useFenec` and `useLiveQuery` use below. */
-export function FenecProvider({ db, children }) {
-  return createElement(FenecContext.Provider, { value: db }, children);
+/** Makes `db`, a `Fennec` or a `FennecSync`, the one `useFennec` and `useLiveQuery` use below. */
+export function FennecProvider({ db, children }) {
+  return createElement(FennecContext.Provider, { value: db }, children);
 }
 
-/** The database of the nearest `FenecProvider`. */
-export function useFenec() {
-  const db = useContext(FenecContext);
-  if (!db) throw new Error('useFenec: no FenecProvider above this component');
+/** The database of the nearest `FennecProvider`. */
+export function useFennec() {
+  const db = useContext(FennecContext);
+  if (!db) throw new Error('useFennec: no FennecProvider above this component');
   return db;
 }
 
@@ -36,7 +36,7 @@ export function useFenec() {
  * The rows of `query`, answered by the database in the page and given again
  * every time they change; `undefined` until the first answer. A query built
  * from `db.from(...)` brings its database along; one that does not -- or a
- * FenecQL text, or `[text, params]` -- is run on the provider's. A text's
+ * FennecQL text, or `[text, params]` -- is run on the provider's. A text's
  * `{collections}` name what it reads, as `live` takes them.
  *
  * The subscription is keyed by the query's text and parameters, so a query
@@ -47,18 +47,18 @@ export function useFenec() {
  * error boundary.
  */
 export function useLiveQuery(query, opts = {}) {
-  const provided = useContext(FenecContext);
+  const provided = useContext(FennecContext);
   const db = query?.context?.live ? query.context : provided;
   const reads = opts.collections ?? null;
   const key = query
-    ? JSON.stringify([typeof query === 'string' ? [query, []] : Array.isArray(query) ? query : query.toFenecQL(), reads])
+    ? JSON.stringify([typeof query === 'string' ? [query, []] : Array.isArray(query) ? query : query.toFennecQL(), reads])
     : null;
   const [state, setState] = useState({ key: null, rows: undefined, error: null });
 
   useEffect(() => {
     if (!query) return undefined;
     if (!db?.live) {
-      setState({ key, rows: undefined, error: new Error('useLiveQuery: no database for this query (a FenecProvider, or db.from(...))') });
+      setState({ key, rows: undefined, error: new Error('useLiveQuery: no database for this query (a FennecProvider, or db.from(...))') });
       return undefined;
     }
     // A run already under way when the component goes answers into nothing.

@@ -1,10 +1,10 @@
 <!--
-title: Studio — fenecdb
-description: fenec studio, the admin pages fenec-server serves with --studio: collections, rows, edits, a query editor, the schema, live rows and the server's numbers in a browser, with the token you paste and no authority of its own. The site's playground is the same studio over a database in your tab, and a Mac app (beta) opens a database file in it.
+title: Studio — fennecdb
+description: fennec studio, the admin pages fennec-server serves with --studio: collections, rows, edits, a query editor, the schema, live rows and the server's numbers in a browser, with the token you paste and no authority of its own. The site's playground is the same studio over a database in your tab, and a Mac app (beta) opens a database file in it.
 -->
 
 <h1>Studio</h1>
-<p class="kicker">fenec studio is the server's own admin page: its collections,
+<p class="kicker">fennec studio is the server's own admin page: its collections,
 their rows and their schema in a browser, the edits you make there, a
 query editor, the rows as they change and the server's own numbers. Start
 the server with <code>--studio</code> and open <code>/_studio/</code>, or
@@ -14,17 +14,17 @@ over a database in your own tab. On a Mac there is an app too
 
 <h2>Turn it on</h2>
 
-<p>Add <code>--studio</code> to <code>fenec-server</code>, open
+<p>Add <code>--studio</code> to <code>fennec-server</code>, open
 <code>/_studio/</code> on the same address, and paste a token.</p>
 
-<pre data-lang="bash">fenec-server --file data.fenec --http 127.0.0.1:8080 \
+<pre data-lang="bash">fennec-server --file data.fennec --http 127.0.0.1:8080 \
          --http-token "$TOKEN" --studio
 
 open http://127.0.0.1:8080/_studio/
 </pre>
 
 <figure class="shot">
-<img src="../images/studio-grid-dark.webp" width="1280" height="800" alt="fenec studio: the collections on the left with their row counts and a collection's fields and indexes, 100 000 orders in a grid with counts by status and owner above it, and one row unfolded on the right, its json field as a tree and its vector summarised">
+<img src="../images/studio-grid-dark.webp" width="1280" height="800" alt="fennec studio: the collections on the left with their row counts and a collection's fields and indexes, 100 000 orders in a grid with counts by status and owner above it, and one row unfolded on the right, its json field as a tree and its vector summarised">
 <figcaption>100 000 orders, counted by their <code>@hash</code> fields, one row unfolded.</figcaption>
 </figure>
 
@@ -40,13 +40,13 @@ open http://127.0.0.1:8080/_studio/
 <details class="deep"><summary>How the studio is served, and its size</summary>
 <p>The studio is plain ES modules and CSS from the repository's
 <code>studio/</code> folder, with the HTTP client and query builder of
-<code>@fenecdb/web/client</code> beside them — no framework and no build
+<code>@fennecdb/web/client</code> beside them — no framework and no build
 step. The server embeds the files, so the binary is all you deploy. Its
 first load is 68 KB of JavaScript and CSS, gzipped, its modules preloaded
 together from the page; the query editor, the schema, the live rows and the
 admin view are fetched the first time each is opened, 7 to 19 KB more. The server sends the
 files as they are, uncompressed; a proxy in front may compress them.</p>
-<p>A router serves it too: <code>fenec-shard --studio</code> puts the
+<p>A router serves it too: <code>fennec-shard --studio</code> puts the
 same pages on the router's address, where each tenant is reached through
 the router (<a href="#tenants">Tenants</a>).</p>
 </details>
@@ -98,7 +98,7 @@ as it holds, read a page at a time as you scroll.</p>
 <ul>
   <li><b>Sort</b> by <code>id</code>, or by a field an index orders:
     <code>@sorted</code> or <code>@ttl</code>.</li>
-  <li><b>Filter</b> with a <code>where</code> clause in FenecQL and its
+  <li><b>Filter</b> with a <code>where</code> clause in FennecQL and its
     parameters, or a box under each column: <code>abc</code>,
     <code>=v</code>, <code>&gt;=v</code>, <code>a..b</code>,
     <code>null</code>.</li>
@@ -129,13 +129,13 @@ out whole: 768 numbers in a cell are noise.</p>
 <p>Enter writes a cell, N opens a form for a new row, and Delete removes one
 after you confirm the statement it will send.</p>
 
-<pre data-lang="fenecql">set orders {note: $1} where id = $2 require 1
+<pre data-lang="fennecql">set orders {note: $1} where id = $2 require 1
 insert orders {customer: $1, total: $2}
 del orders where id = $1 require 1
 </pre>
 
 <ul>
-  <li><b>Every value is a parameter.</b> A text shaped as FenecQL is stored
+  <li><b>Every value is a parameter.</b> A text shaped as FennecQL is stored
     as it reads.</li>
   <li><b>Every write is a <code>/batch</code></b> with an
     <code>Idempotency-Key</code>, so a retry cannot write it twice.</li>
@@ -149,18 +149,18 @@ del orders where id = $1 require 1
 rather than a quiet <code>affected 0</code>, so an edit of a row someone
 deleted meanwhile is told so. The form is built from the schema: a box a
 field, typed as the field is, the statement written out below it as you
-fill it. A name FenecQL cannot write is refused rather than spliced into the
+fill it. A name FennecQL cannot write is refused rather than spliced into the
 text, and the <code>where</code> clause you type is held inside parentheses
 it cannot close, so it stays one condition among the page's.</p>
 </details>
 
 <h2 id="query">Query</h2>
 
-<p>The Query tab is an editor for FenecQL. It runs exactly what you type,
+<p>The Query tab is an editor for FennecQL. It runs exactly what you type,
 with your token: it can do what the token may, and nothing more.</p>
 
 <figure class="shot">
-<img src="../images/studio-query-dark.webp" width="1280" height="800" alt="fenec studio's query editor, dark: a get over orders with two parameters, coloured as the docs colour FenecQL, its 200 rows in the grid under it with counts by owner, the status, the time, the rows and the request id beside the tabs, and the saved and past queries on the right">
+<img src="../images/studio-query-dark.webp" width="1280" height="800" alt="fennec studio's query editor, dark: a get over orders with two parameters, coloured as the docs colour FennecQL, its 200 rows in the grid under it with counts by owner, the status, the time, the rows and the request id beside the tabs, and the saved and past queries on the right">
 <figcaption>A query with its parameters, its rows, and the request id to find it in the logs.</figcaption>
 </figure>
 
@@ -173,7 +173,7 @@ with your token: it can do what the token may, and nothing more.</p>
     <code>/batch</code>: they land together or not at all. Give their
     parameters as a list each, <code>[[1], ["a"]]</code>.</li>
   <li><b>The answer</b> as rows or as JSON, with its status, its time, its
-    <code>Fenec-Seq</code> for a write and its <code>X-Request-Id</code>.</li>
+    <code>Fennec-Seq</code> for a write and its <code>X-Request-Id</code>.</li>
   <li><b>The plan</b> of a <code>get</code>: the Plan tab asks the server
     for <code>explain</code> of the same text with the same parameters.</li>
   <li><b>A refusal</b> shows the server's message and status, and for a
@@ -200,7 +200,7 @@ its fields. With the server's token you can add an index or a field, rename
 or drop a field, and drop the collection.</p>
 
 <figure class="shot">
-<img src="../images/studio-schema-light.webp" width="1280" height="800" alt="fenec studio's schema view, light: adding a sorted index on the total field of orders, the dialog showing the create index statement it will run and the same statement from the server's declared-schema plan">
+<img src="../images/studio-schema-light.webp" width="1280" height="800" alt="fennec studio's schema view, light: adding a sorted index on the total field of orders, the dialog showing the create index statement it will run and the same statement from the server's declared-schema plan">
 <figcaption>An index on its way: the statement, and what the server's plan says of it.</figcaption>
 </figure>
 
@@ -214,7 +214,7 @@ or drop a field, and drop the collection.</p>
     and changes nothing.</li>
 </ul>
 
-<pre data-lang="fenecql">create index on orders (total) @sorted
+<pre data-lang="fennecql">create index on orders (total) @sorted
 alter collection orders add field due timestamp @ttl(30d)
 alter collection orders rename field note to memo
 alter collection orders drop field memo
@@ -222,14 +222,14 @@ drop collection scratch
 </pre>
 
 <details class="deep"><summary>How a schema change is planned</summary>
-<p>The statements come from the server: <code>GET /_schema?as=fenecql</code>
-answers the description with its collections as FenecQL, written by the
+<p>The statements come from the server: <code>GET /_schema?as=fennecql</code>
+answers the description with its collections as FennecQL, written by the
 engine. The plan is asked of the collection as it would be after the
 change, and of no other, so it speaks of this change alone. It writes the
 statements an index or a field added would need, and refuses to guess a
 field that is gone: a drop or a rename? The statement says which. A change
 runs as a <code>/batch</code> under an <code>Idempotency-Key</code>, as the
-studio's other writes do. A name FenecQL cannot write is refused, and an
+studio's other writes do. A name FennecQL cannot write is refused, and an
 index's options and a ttl's duration are checked before they reach the
 text.</p>
 </details>
@@ -241,7 +241,7 @@ rewritten rows are marked as they arrive, deleted ones struck through
 before they go.</p>
 
 <figure class="shot">
-<img src="../images/studio-live-light.webp" width="1280" height="800" alt="fenec studio's live view, light: the orders of one customer, a new row and a rewritten one marked at the top, and the changes listed on the right with their change numbers">
+<img src="../images/studio-live-light.webp" width="1280" height="800" alt="fennec studio's live view, light: the orders of one customer, a new row and a rewritten one marked at the top, and the changes listed on the right with their change numbers">
 <figcaption>One customer's orders as they are written, each change listed.</figcaption>
 </figure>
 
@@ -269,7 +269,7 @@ statements by shape, the server's counts and, on a router, its
 tenants.</p>
 
 <figure class="shot">
-<img src="../images/studio-admin-dark.webp" width="1280" height="800" alt="fenec studio's admin view, dark: statement shapes ordered by their mean time with their calls, maximum, rows and errors, and the server's reads, writes, latency, file size and reclaimable bytes beside them">
+<img src="../images/studio-admin-dark.webp" width="1280" height="800" alt="fennec studio's admin view, dark: statement shapes ordered by their mean time with their calls, maximum, rows and errors, and the server's reads, writes, latency, file size and reclaimable bytes beside them">
 <figcaption>The slowest shapes, and the server's numbers.</figcaption>
 </figure>
 
@@ -295,7 +295,7 @@ token reads both.</p>
 
 <p>The site's <a href="../playground.html">Playground</a> is this studio —
 the same files the server embeds — over a database in your browser tab
-rather than a server's: fenecdb compiled to WebAssembly, on a worker of the
+rather than a server's: fennecdb compiled to WebAssembly, on a worker of the
 tab, seeded with products, orders and a week of events. Nothing is sent
 anywhere. Rows, the query editor, the schema and the live rows work there as
 they do here; the query editor lists examples to run.</p>
@@ -316,7 +316,7 @@ they do here; the query editor lists examples to run.</p>
 
 <details class="deep"><summary>How a page in the browser answers like a server</summary>
 <p>Every view reads through one surface: <code>run</code>,
-<code>batch</code> and <code>subscribe</code> as <code>FenecHttp</code>
+<code>batch</code> and <code>subscribe</code> as <code>FennecHttp</code>
 has them, and <code>request</code> for an answer shown whole — the editor's
 status and change, the schema and its plan. Over a server that surface is
 HTTP (<code>studio/connect.js</code>); in the page it is the browser module
@@ -324,9 +324,9 @@ in a dedicated worker (<code>studio/local.js</code>,
 <code>worker.js</code>), which answers each request as a server would:
 the same rows, the status a server refuses a statement with, the change a
 write leaves the database at, the schema as the engine describes it
-(<code>Fenec.describe</code>) and a batch as one block
-(<code>Fenec.batch</code>). <code>studio/test/transport.test.mjs</code>
-sends the same statements to a real <code>fenec-server</code> and to the
+(<code>Fennec.describe</code>) and a batch as one block
+(<code>Fennec.batch</code>). <code>studio/test/transport.test.mjs</code>
+sends the same statements to a real <code>fennec-server</code> and to the
 module and holds every answer equal. A server's first load holds none of
 it: the page's own modules load only where a page asks for them.</p>
 </details>
@@ -357,8 +357,8 @@ it: the page's own modules load only where a page asks for them.</p>
 token's tenant claim names, or the node's or router's list where the token
 may read it. Otherwise type the tenant when you connect.</p>
 
-<pre data-lang="bash">fenec-server --dir tenants --http 127.0.0.1:8081 --admin-token "$ADMIN" --studio
-fenec-shard --listen 127.0.0.1:8090 --directory shard.fenec --studio
+<pre data-lang="bash">fennec-server --dir tenants --http 127.0.0.1:8081 --admin-token "$ADMIN" --studio
+fennec-shard --listen 127.0.0.1:8090 --directory shard.fennec --studio
 </pre>
 
 <details class="deep"><summary>Tenants, tokens and origins</summary>
@@ -372,8 +372,8 @@ content security policy names.</p>
 
 <figure class="shot">
 <div class="shot-row">
-<img src="../images/studio-phone-light.webp" width="390" height="844" alt="fenec studio on a phone, light: the orders grid with its where clause above">
-<img src="../images/studio-phone-dark.webp" width="390" height="844" alt="fenec studio on a phone, dark: the same grid">
+<img src="../images/studio-phone-light.webp" width="390" height="844" alt="fennec studio on a phone, light: the orders grid with its where clause above">
+<img src="../images/studio-phone-dark.webp" width="390" height="844" alt="fennec studio on a phone, dark: the same grid">
 </div>
 <figcaption>On a phone, light and dark: the collections slide in from the side.</figcaption>
 </figure>
@@ -383,7 +383,7 @@ content security policy names.</p>
 <p>An app that shows the studio in a window of its own — a desktop app over
 the server it started for a file — hands the page its session rather than
 having a token pasted. Before the page's modules run, from a preload script,
-it defines <code>window.fenecHost</code> — on the server's origin alone:</p>
+it defines <code>window.fennecHost</code> — on the server's origin alone:</p>
 
 <pre data-lang="js">// The origin of the server the app started, or the one it connected to.
 const ORIGIN = 'http://127.0.0.1:54321';
@@ -391,7 +391,7 @@ const ORIGIN = 'http://127.0.0.1:54321';
 // A preload runs in every page the window loads: a redirect's, a sign-in
 // page's. Any other origin gets nothing.
 if (location.origin === ORIGIN) {
-  Object.defineProperty(window, 'fenecHost', {
+  Object.defineProperty(window, 'fennecHost', {
     value: Object.freeze({
       session: Object.freeze({ server: ORIGIN, token, tenant: null }),
     }),
@@ -400,12 +400,12 @@ if (location.origin === ORIGIN) {
 </pre>
 
 <p><b>Keeping the token from other origins is the app's job.</b> A page of
-another origin that finds <code>window.fenecHost</code> reads the token; the
+another origin that finds <code>window.fennecHost</code> reads the token; the
 studio cannot hide it from one. Compare the origin as above, and keep the
 window on the server's origin.</p>
 
 <p><b>The page's own world.</b> A preload that runs in an isolated world
-defines <code>fenecHost</code> where the page never sees it. Under
+defines <code>fennecHost</code> where the page never sees it. Under
 Electron's default context isolation, expose it through the bridge, and check
 in the page that what arrives passes <code>Object.isFrozen</code>, which the
 studio asks of the session:</p>
@@ -413,7 +413,7 @@ studio asks of the session:</p>
 <pre data-lang="js">const { contextBridge } = require('electron');
 
 if (location.origin === ORIGIN) {
-  contextBridge.exposeInMainWorld('fenecHost', {
+  contextBridge.exposeInMainWorld('fennecHost', {
     session: { server: ORIGIN, token, tenant: null },
   });
 }
@@ -444,17 +444,17 @@ from source.</p>
 
 <pre data-lang="bash">make studio-desktop
 
-open "integrations/studio-desktop/build/stable-macos-arm64/fenec studio.app"
+open "integrations/studio-desktop/build/stable-macos-arm64/fennec studio.app"
 </pre>
 
 <figure class="shot">
-<img src="../images/studio-desktop-databases-dark.webp" width="1280" height="800" alt="fenec studio's desktop app, dark: the Databases list with three files, their size, collections, when each was opened and the port two of them are served on, and orders.fenec picked below it, with its rows, collections and dead space, the buttons to open it in the studio, back it up, compact it and reveal it in Finder, and its server's address and settings beside them">
+<img src="../images/studio-desktop-databases-dark.webp" width="1280" height="800" alt="fennec studio's desktop app, dark: the Databases list with three files, their size, collections, when each was opened and the port two of them are served on, and orders.fennec picked below it, with its rows, collections and dead space, the buttons to open it in the studio, back it up, compact it and reveal it in Finder, and its server's address and settings beside them">
 <figcaption>The databases on this Mac: what each holds, and which are served.</figcaption>
 </figure>
 
 <ul>
   <li><b>A file.</b> File, Open… (or a double-click in Finder). The app
-    starts a <code>fenec-server</code> it carries, on the file, and opens a
+    starts a <code>fennec-server</code> it carries, on the file, and opens a
     window on that server's own <code>/_studio/</code>, so the window does
     what the studio does in a browser. Closing the window stops the server
     once it has written its checkpoint.</li>
@@ -480,12 +480,12 @@ open "integrations/studio-desktop/build/stable-macos-arm64/fenec studio.app"
     with the settings it ran with, and starts again with one click. Nothing
     starts at login, and no server outlives the app.</li>
   <li><b>Backups.</b> A folder for each database's backups: Back up now takes
-    an image of it while it runs (<code>fenec backup</code>), sealed with a key
-    file if you choose one (<code>fenec key</code> makes it), which must be
+    an image of it while it runs (<code>fennec backup</code>), sealed with a key
+    file if you choose one (<code>fennec key</code> makes it), which must be
     kept outside that folder; Verify reads the folder as a restore would;
     Restore… makes a new file from any image in it and opens it, and never
     writes over a file, a served one least of all. The folder is
-    <code>fenec archive</code>'s layout, so the shell's <code>verify</code>,
+    <code>fennec archive</code>'s layout, so the shell's <code>verify</code>,
     <code>restore</code> and <code>prune</code> read it too. Only a database
     whose backups are set up gets a replication token, which a backup reads its
     image with and which turns on <a href="/docs/http-reference#changes"><code>/_changes</code></a>.</li>
@@ -502,11 +502,11 @@ open "integrations/studio-desktop/build/stable-macos-arm64/fenec studio.app"
     of the app's own, with the way forward.</li>
   <li><b>macOS only for now,</b> Apple silicon, and not yet signed. An app
     you build opens as it is; an unsigned one you downloaded needs
-    <code>xattr -cr "fenec studio.app"</code> first.</li>
+    <code>xattr -cr "fennec studio.app"</code> first.</li>
 </ul>
 
 <figure class="shot">
-<img src="../images/studio-desktop-servers-dark.webp" width="1280" height="800" alt="fenec studio's desktop app, dark: the Servers list with two served databases, and orders.fenec picked: running, its statements a second, median answer, connections and file size, its settings, a curl command to connect with the token left out, and the server's own output">
+<img src="../images/studio-desktop-servers-dark.webp" width="1280" height="800" alt="fennec studio's desktop app, dark: the Servers list with two served databases, and orders.fennec picked: running, its statements a second, median answer, connections and file size, its settings, a curl command to connect with the token left out, and the server's own output">
 <figcaption>A served database: its numbers, how to connect, and what the server says.</figcaption>
 </figure>
 
@@ -514,7 +514,7 @@ open "integrations/studio-desktop/build/stable-macos-arm64/fenec studio.app"
 <p>A token is never in a URL or on a command line: a file's server is given
 a random one in its environment, a served database's server the one the
 Keychain keeps for that file, and the window hands it to the studio as
-<a href="#host"><code>window.fenecHost</code></a>, frozen and never stored,
+<a href="#host"><code>window.fennecHost</code></a>, frozen and never stored,
 only on that server's origin, before any of the page's code runs. A server the
 app started does not outlive it: its stdin is a pipe the app holds, and the
 server stops when it ends, <code>kill -9</code> of the app included. A backup
@@ -527,7 +527,7 @@ token from other users and from the pages, not from another program of yours:
 that runs as you, as the app does.</p>
 <p>The build needs Node, npm and Rust, and fetches its build tool into the
 project's own directory: nothing is installed globally. The directory's
-<a href="https://github.com/fenecdb/fenecdb/tree/main/integrations/studio-desktop">README</a>
+<a href="https://github.com/fennec-db/fennecdb/tree/main/integrations/studio-desktop">README</a>
 has the build, the checks, the failures and what each says, the secrets that
 sign it and what a first signed build still has to be checked for.</p>
 </details>

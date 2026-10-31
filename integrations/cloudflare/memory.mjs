@@ -18,7 +18,7 @@
 // request, `maintain` run whenever it comes due, as an alarm would, until
 // it asks for a reload, and a new module restored -- the module's memory
 // after each step, and the most the JavaScript heap and the array buffers
-// held at any storage call of it. Needs web/fenec.wasm (make wasm).
+// held at any storage call of it. Needs web/fennec.wasm (make wasm).
 
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -34,7 +34,7 @@ const ROWS = Number(process.env.ROWS ?? 50_000);
 const DIM = 128;
 const MB = 1e6;
 
-// The module's memory, which `Fenec` keeps to itself: the last one made.
+// The module's memory, which `Fennec` keeps to itself: the last one made.
 let memory = null;
 const instantiate = WebAssembly.instantiate;
 WebAssembly.instantiate = async (...a) => {
@@ -42,8 +42,8 @@ WebAssembly.instantiate = async (...a) => {
   memory = (out instanceof WebAssembly.Instance ? out : out.instance).exports.memory;
   return out;
 };
-const { Fenec } = await import(new URL('fenec.js', web));
-const wasm = readFileSync(new URL('fenec.wasm', web));
+const { Fennec } = await import(new URL('fennec.js', web));
+const wasm = readFileSync(new URL('fennec.wasm', web));
 
 const [, , phase, kind, dir] = process.argv;
 
@@ -74,7 +74,7 @@ if (phase === 'maintain') {
   const rand = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31) - 0.5;
   console.log('step                                module    JS peak  done');
   {
-    const db = await Fenec.open(wasm);
+    const db = await Fennec.open(wasm);
     db.now = () => clock.now;
     db.run(`create collection docs (n int, at timestamp @ttl(1h), title text, e vector<${DIM}> @hnsw(cosine))`);
     for (let i = 0; i < ROWS; i += 1000) {
@@ -91,7 +91,7 @@ if (phase === 'maintain') {
   }
   /** A new module, restored from what storage holds: what a reload is. */
   const opened = async () => {
-    const db = await Fenec.open(wasm);
+    const db = await Fennec.open(wasm);
     db.now = () => clock.now;
     await kept.restore(db, storage);
     return db;
@@ -137,7 +137,7 @@ if (phase === 'maintain') {
     kind === 'sql'
       ? new Rows(DatabaseSync, join(dir, 'rows.sqlite'))
       : Object.assign(new Values(), { map: new Map([...deserialize(readFileSync(join(dir, 'values.bin')))].map(([k, v]) => [k, own(v)])) });
-  const db = await Fenec.open(wasm);
+  const db = await Fennec.open(wasm);
   globalThis.gc();
   const use = () => {
     const m = process.memoryUsage();
@@ -164,16 +164,16 @@ if (phase === 'maintain') {
   const count = db.rows('get docs count')[0].count;
   console.log(JSON.stringify({ kind, count, wasmBefore, wasmAfter, js: peak - base, rss: maxRss - rssBefore }));
 } else {
-  const dir = mkdtempSync(join(tmpdir(), 'fenecdb-memory-'));
+  const dir = mkdtempSync(join(tmpdir(), 'fennecdb-memory-'));
   try {
     // Kept the way requests keep it, a thousand rows a persist.
     const rows = new Rows(DatabaseSync, join(dir, 'rows.sqlite'));
     const values = new Values();
     let seed = 7;
     const rand = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31) - 0.5;
-    const db = await Fenec.open(wasm);
+    const db = await Fennec.open(wasm);
     db.run(`create collection docs (n int, title text, e vector<${DIM}> @hnsw(cosine))`);
-    const twin = await Fenec.open(wasm);
+    const twin = await Fennec.open(wasm);
     twin.run(`create collection docs (n int, title text, e vector<${DIM}> @hnsw(cosine))`);
     for (let i = 0; i < ROWS; i += 1000) {
       const docs = Array.from({ length: Math.min(1000, ROWS - i) }, (_, j) => ({ n: i + j, title: `doc ${i + j}`, e: Array.from({ length: DIM }, rand) }));

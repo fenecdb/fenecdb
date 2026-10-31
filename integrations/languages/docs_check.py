@@ -8,7 +8,7 @@
 
 Four things, all read from the pages' source (site/content/docs):
 
-* Every FenecQL statement in the first example of each HTTP tab of
+* Every FennecQL statement in the first example of each HTTP tab of
   languages.html -- which http.html shows again, taken from it by
   `{{language_tabs}}` -- is in the program of that language in this
   directory. The pages' programs are cut down from these ones (the asserts

@@ -36,24 +36,24 @@ export function readMetrics(text: string, at: number): Sample {
 		const v = Number(raw);
 		if (!Number.isFinite(v) && raw !== "+Inf") continue;
 		switch (name) {
-			case "fenec_documents":
+			case "fennec_documents":
 				s.collections += 1;
 				s.names.push(COLLECTION.exec(labels)?.[1] ?? "");
 				s.rows += v;
 				break;
-			case "fenec_file_bytes":
+			case "fennec_file_bytes":
 				s.fileBytes = v;
 				break;
-			case "fenec_reclaimable_bytes":
+			case "fennec_reclaimable_bytes":
 				s.reclaimable = v;
 				break;
-			case "fenec_connections":
+			case "fennec_connections":
 				s.connections = v;
 				break;
-			case "fenec_statements_total":
+			case "fennec_statements_total":
 				s.statements += v;
 				break;
-			case "fenec_statement_duration_seconds_bucket": {
+			case "fennec_statement_duration_seconds_bucket": {
 				const le = LE.exec(labels)?.[1];
 				const bound = le === "+Inf" ? Infinity : Number(le);
 				if (!Number.isNaN(bound)) buckets.set(bound, (buckets.get(bound) ?? 0) + v);

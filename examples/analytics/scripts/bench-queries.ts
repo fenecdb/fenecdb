@@ -49,7 +49,7 @@ for (const N of sizes) {
   const foldSecs = (performance.now() - t0) / 1000;
   worker.stop();
   await running;
-  const file = statSync(join(dir, 'tenants', `${name}.fenec`)).size / 1e6;
+  const file = statSync(join(dir, 'tenants', `${name}.fennec`)).size / 1e6;
   out.push(`\n### ${loaded.toLocaleString('en-US')} events over 30 days\n`);
   out.push(`Loaded in ${loadSecs.toFixed(1)} s with the worker beside it, folded ${foldSecs.toFixed(1)} s after the start (${Math.round(loaded / foldSecs).toLocaleString('en-US')} events/s); the file ${file.toFixed(0)} MB, the node ${(await nodeRss()).toFixed(0)} MB resident.\n`);
   out.push('| range | from | dashboard p50 | p99 | slowest questions at p50 |\n| --- | --- | --- | --- | --- |');

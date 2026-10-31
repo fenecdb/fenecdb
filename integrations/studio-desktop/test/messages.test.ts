@@ -13,19 +13,19 @@ const failures: Exclude<Probe, { kind: "ok" }>[] = [
 ];
 
 test("a file another program holds says whose it is and what to do", () => {
-	const n = heldNotice("orders.fenec", "could not open /x/orders.fenec: it is open already, in this process or another");
+	const n = heldNotice("orders.fennec", "could not open /x/orders.fennec: it is open already, in this process or another");
 	assert.match(n.title, /open in another program/);
-	assert.match(n.message, /orders\.fenec/);
+	assert.match(n.message, /orders\.fennec/);
 	assert.match(n.hint ?? "", /corrupt/);
 	assert.match(n.detail ?? "", /it is open already/);
 	assert.deepEqual(n.actions?.map((a) => a.id), ["retry"]);
 });
 
 test("a server that died names its exit and keeps what it said", () => {
-	assert.match(diedNotice("orders.fenec", 137, "boom").message, /code 137/);
-	assert.match(diedNotice("orders.fenec", null, "").message, /signal/);
-	assert.equal(diedNotice("orders.fenec", 1, "a\nb\nc\nd\ne\nf\ng\nh\ni\nj").detail, "c\nd\ne\nf\ng\nh\ni\nj");
-	assert.deepEqual(diedNotice("orders.fenec", 1, "").actions?.map((a) => a.id), ["retry"]);
+	assert.match(diedNotice("orders.fennec", 137, "boom").message, /code 137/);
+	assert.match(diedNotice("orders.fennec", null, "").message, /signal/);
+	assert.equal(diedNotice("orders.fennec", 1, "a\nb\nc\nd\ne\nf\ng\nh\ni\nj").detail, "c\nd\ne\nf\ng\nh\ni\nj");
+	assert.deepEqual(diedNotice("orders.fennec", 1, "").actions?.map((a) => a.id), ["retry"]);
 });
 
 test("each way a saved server can fail has its own words and a way forward", () => {
@@ -49,10 +49,10 @@ test("a redirect names where it points and says the token is not sent there", ()
 });
 
 test("a file picked by mistake is told what it is, before any server is started on it", () => {
-	assert.match(emptyFile("a.fenec").message, /nothing in it/);
-	assert.match(emptyFile("a.fenec").hint ?? "", /New Database/);
+	assert.match(emptyFile("a.fennec").message, /nothing in it/);
+	assert.match(emptyFile("a.fennec").hint ?? "", /New Database/);
 	const other = notADatabase("notes.txt");
-	assert.match(other.title, /not a fenecdb database/);
+	assert.match(other.title, /not a fennecdb database/);
 	assert.match(other.hint ?? "", /nothing was written beside it/i);
 	assert.equal(other.actions, undefined);
 });
@@ -66,14 +66,14 @@ test("a refused token and a missing one are not the same message, and both offer
 });
 
 test("a file that is some other kind of file says so, and that nothing was changed", () => {
-	const n = startFailedNotice("notes.txt", "could not open /x/notes.txt: corrupt: invalid fenecdb signature");
-	assert.match(n.title, /not a fenecdb database/);
+	const n = startFailedNotice("notes.txt", "could not open /x/notes.txt: corrupt: invalid fennecdb signature");
+	assert.match(n.title, /not a fennecdb database/);
 	assert.match(n.hint ?? "", /Nothing was changed/);
 	assert.equal(n.actions, undefined, "trying again would not help");
 });
 
 test("a server that refuses the app's flags says the app and its server are out of step, and what to do", () => {
-	const n = outOfStepNotice("a.fenec", "unknown option: --exit-on-stdin-close\n\nusage: fenec-server ...");
+	const n = outOfStepNotice("a.fennec", "unknown option: --exit-on-stdin-close\n\nusage: fennec-server ...");
 	assert.match(n.title, /out of step/);
 	assert.match(n.hint ?? "", /--exit-on-stdin-close/);
 	assert.match(n.hint ?? "", /0\.1\.12/);
@@ -82,7 +82,7 @@ test("a server that refuses the app's flags says the app and its server are out 
 });
 
 test("the rest", () => {
-	assert.match(startFailedNotice("a.fenec", "bad magic").detail ?? "", /bad magic/);
-	assert.match(missingFile("/gone.fenec").message, /gone\.fenec/);
-	assert.match(alreadyHereMessage("a.fenec"), /already open in a window of this app/);
+	assert.match(startFailedNotice("a.fennec", "bad magic").detail ?? "", /bad magic/);
+	assert.match(missingFile("/gone.fennec").message, /gone\.fennec/);
+	assert.match(alreadyHereMessage("a.fennec"), /already open in a window of this app/);
 });

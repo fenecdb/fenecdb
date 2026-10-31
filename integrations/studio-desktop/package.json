@@ -1,8 +1,8 @@
 {
-	"name": "fenec-studio-desktop",
+	"name": "fennec-studio-desktop",
 	"version": "0.1.0",
 	"private": true,
-	"description": "fenec studio as a desktop app (beta): open a .fenec file through a bundled fenec-server, or connect to a server.",
+	"description": "fennec studio as a desktop app (beta): open a .fennec file through a bundled fennec-server, or connect to a server.",
 	"type": "module",
 	"scripts": {
 		"dev": "node scripts/electrobun.mjs dev",

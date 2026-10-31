@@ -104,7 +104,7 @@ export class Trellis {
   // ------------------------------------------------------------- the tokens
 
   /**
-   * A token this app signed, checked as fenec-server checks it: RS256
+   * A token this app signed, checked as fennec-server checks it: RS256
    * against the public key, `exp` required. `tenant` holds an organisation's
    * token to its organisation; an API token names none.
    */
@@ -261,7 +261,7 @@ export class Trellis {
     };
   }
 
-  /** A token for this app's own API, naming no tenant: fenec-server refuses it everywhere. */
+  /** A token for this app's own API, naming no tenant: fennec-server refuses it everywhere. */
   #apiToken(u: User): { token: string; exp: number } {
     const now = Math.floor(Date.now() / 1000);
     const exp = now + this.cfg.accessTtl;

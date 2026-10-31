@@ -4,7 +4,7 @@
 // Why not Node's own: under Node 26.7, ten loops each sending a /batch every
 // 50 ms through its fetch saw 60 of 150 requests take about 450 ms -- p50
 // 374 ms -- against a plain node:http server as much as against
-// fenec-server, where Node 22's fetch took 1.7 ms p50 and none past 100 ms.
+// fennec-server, where Node 22's fetch took 1.7 ms p50 and none past 100 ms.
 // Over node:http the same loops take 0.55 ms p50 and 10 ms p99, so what the
 // tests and the bench measure is the database and not the client. A page
 // keeps the browser's fetch.

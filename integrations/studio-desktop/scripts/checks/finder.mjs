@@ -1,4 +1,4 @@
-// A .fenec file opened from Finder, with the app not running: LaunchServices
+// A .fennec file opened from Finder, with the app not running: LaunchServices
 // starts it and hands it the file, which arrives as an `open-url` event with a
 // file: URL (src/bun/index.ts). `open -a <app> <file>` is that same path, and
 // `--env` is how the hooks reach an app LaunchServices started. The file
@@ -13,7 +13,7 @@ import { APP, CONTROL, REPORT, R, assertClean, cmd, data, lines, logName, quit, 
 assertClean('before');
 const original = data('finder', 20);
 mkdirSync(`${R}/data/with space`, { recursive: true });
-const FILE = `${R}/data/with space/şirket 1.fenec`;
+const FILE = `${R}/data/with space/şirket 1.fennec`;
 copyFileSync(original, FILE);
 
 /**
@@ -25,7 +25,7 @@ async function launch(hold) {
   logName('finder');
   rmSync(REPORT, { force: true });
   writeFileSync(CONTROL, '');
-  const env = ['--env', `FENEC_DESKTOP_REPORT=${REPORT}`, '--env', `FENEC_DESKTOP_CONTROL=${CONTROL}`, ...(hold ? ['--env', 'FENEC_DESKTOP_HOLD_OPEN_URL=launcher'] : [])];
+  const env = ['--env', `FENNEC_DESKTOP_REPORT=${REPORT}`, '--env', `FENNEC_DESKTOP_CONTROL=${CONTROL}`, ...(hold ? ['--env', 'FENNEC_DESKTOP_HOLD_OPEN_URL=launcher'] : [])];
   const r = spawnSync('open', ['-a', APP, ...env, FILE], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   const url = await waitFor((l) => l.what === 'open-url', 30000, 'the open-url event');

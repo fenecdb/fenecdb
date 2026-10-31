@@ -1,10 +1,10 @@
 // Both ways the app opens its database, headless in Node: in the page
 // (an in-memory IndexedDB standing in for the browser's), and synced with
-// the fenec-server at FENEC_URL, which another client writes to meanwhile.
+// the fennec-server at FENNEC_URL, which another client writes to meanwhile.
 import 'fake-indexeddb/auto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { connect } from '@fenecdb/web';
+import { connect } from '@fennecdb/web';
 import { local, synced } from '../src/open.js';
 import { notes, embed } from '../src/tables.js';
 
@@ -12,9 +12,9 @@ const check = (step: string, ok: boolean) => {
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${step}`);
   if (!ok) process.exit(1);
 };
-const wasm = readFileSync(fileURLToPath(import.meta.resolve('@fenecdb/web/fenec.wasm')));
-const url = process.env.FENEC_URL ?? 'http://127.0.0.1:8080';
-const token = process.env.FENEC_TOKEN ?? 'secret';
+const wasm = readFileSync(fileURLToPath(import.meta.resolve('@fennecdb/web/fennec.wasm')));
+const url = process.env.FENNEC_URL ?? 'http://127.0.0.1:8080';
+const token = process.env.FENNEC_TOKEN ?? 'secret';
 
 /** Resolves once `live` hands over rows `pass` accepts, or fails after 5 s. */
 function until<T>(live: (cb: (rows: T[]) => void) => () => void, pass: (rows: T[]) => boolean) {

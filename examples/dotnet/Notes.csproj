@@ -7,14 +7,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <None Include="schema.fenecql" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="schema.fennecql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-  <!-- The published package; `-p:FenecLocal=<repository root>` builds against
+  <!-- The published package; `-p:FennecLocal=<repository root>` builds against
        this repository's SDK instead, as CI does. -->
-  <ItemGroup Condition="'$(FenecLocal)' == ''">
-    <PackageReference Include="FenecDb" Version="0.1.12" />
+  <ItemGroup Condition="'$(FennecLocal)' == ''">
+    <PackageReference Include="FennecDb" Version="0.1.12" />
   </ItemGroup>
-  <ItemGroup Condition="'$(FenecLocal)' != ''">
-    <ProjectReference Include="$(FenecLocal)/integrations/dotnet/FenecDb/FenecDb.csproj" />
+  <ItemGroup Condition="'$(FennecLocal)' != ''">
+    <ProjectReference Include="$(FennecLocal)/integrations/dotnet/FennecDb/FennecDb.csproj" />
   </ItemGroup>
 </Project>

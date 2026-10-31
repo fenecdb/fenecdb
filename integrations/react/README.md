@@ -1,19 +1,19 @@
-# @fenecdb/react
+# @fennecdb/react
 
-`useLiveQuery` for fenecdb: a query's rows, rendered again every time they
+`useLiveQuery` for fennecdb: a query's rows, rendered again every time they
 change -- over a database in the page alone, as the app's state, or over a
 replica synced from a server.
 
 ```js
-import { Fenec, persist, restore } from '@fenecdb/web';
-import wasm from '@fenecdb/web/fenec.wasm?url';   // Vite; your bundler's asset import otherwise
-import { FenecProvider, useFenec, useLiveQuery } from '@fenecdb/react';
+import { Fennec, persist, restore } from '@fennecdb/web';
+import wasm from '@fennecdb/web/fennec.wasm?url';   // Vite; your bundler's asset import otherwise
+import { FennecProvider, useFennec, useLiveQuery } from '@fennecdb/react';
 
-const db = await Fenec.open(wasm);
+const db = await Fennec.open(wasm);
 if (!(await restore(db, 'todos'))) db.run('create collection todos (title text, done bool @hash)');
 
 function Open() {
-  const db = useFenec();
+  const db = useFennec();
   const rows = useLiveQuery(db.from('todos').where('done', false).order('title'));
   if (rows === undefined) return <Spinner />;
   return rows.map((t) => (
@@ -21,7 +21,7 @@ function Open() {
   ));
 }
 
-<FenecProvider db={db}><Open /></FenecProvider>
+<FennecProvider db={db}><Open /></FennecProvider>
 ```
 
 The rows come from the database in the page, so no render waits on the
@@ -34,21 +34,21 @@ The same components work over a synced replica, which also hears the writes
 other clients make through the server:
 
 ```js
-import { sync } from '@fenecdb/web';
+import { sync } from '@fennecdb/web';
 
 const db = await sync({
-  url: 'http://127.0.0.1:8080',                    // fenec-server --http
+  url: 'http://127.0.0.1:8080',                    // fennec-server --http
   shapes: [{ collection: 'todos' }],
   wasm,
-  collation: '/collate/',                          // @fenecdb/web's collate/, served as static files
+  collation: '/collate/',                          // @fennecdb/web's collate/, served as static files
 });
 
-<FenecProvider db={db}><Open /></FenecProvider>
+<FennecProvider db={db}><Open /></FennecProvider>
 ```
 
 `useLiveQuery` is `undefined` until the first answer, and a query built
 again on every render does not subscribe again unless it asks something
-else. A query built with `db.from(...)` brings its database along; a FenecQL
+else. A query built with `db.from(...)` brings its database along; a FennecQL
 text runs on the provider's, and names what it reads:
 `useLiveQuery('get todos count', { collections: ['todos'] })`. A query that
 fails throws while rendering, to the nearest error boundary. A query that
@@ -60,6 +60,6 @@ const rows = useLiveQuery(db.from('products').match('title', text).facet('brand'
 // rows.facets.brand: [{ value: 'acme', count: 12 }, ...]
 ```
 
-React is the one peer dependency; the database is `@fenecdb/web`'s.
+React is the one peer dependency; the database is `@fennecdb/web`'s.
 Full reference: https://fenecdb.com/docs/javascript#state and
 https://fenecdb.com/docs/integrations

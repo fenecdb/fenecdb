@@ -1,7 +1,7 @@
 package plugin
 
-// Against a real fenec-server, started here from the binary `cargo build
-// -p fenec-server` makes, or FENEC_SERVER: what the server's parser does
+// Against a real fennec-server, started here from the binary `cargo build
+// -p fennec-server` makes, or FENNEC_SERVER: what the server's parser does
 // with what the plugin binds. Skipped when there is no binary.
 
 import (
@@ -22,7 +22,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 
-	fenecdb "github.com/fenecdb/fenecdb/integrations/go"
+	fennecdb "github.com/fennec-db/fennecdb/integrations/go"
 )
 
 const (
@@ -32,12 +32,12 @@ const (
 
 func liveServer(t *testing.T) string {
 	t.Helper()
-	bin := os.Getenv("FENEC_SERVER")
+	bin := os.Getenv("FENNEC_SERVER")
 	if bin == "" {
-		bin, _ = filepath.Abs("../../../../target/debug/fenec-server")
+		bin, _ = filepath.Abs("../../../../target/debug/fennec-server")
 	}
 	if _, err := os.Stat(bin); err != nil {
-		t.Skipf("no fenec-server at %s: cargo build -p fenec-server, or FENEC_SERVER", bin)
+		t.Skipf("no fennec-server at %s: cargo build -p fennec-server, or FENNEC_SERVER", bin)
 	}
 	dir := t.TempDir()
 	policy := filepath.Join(dir, "policy.txt")
@@ -59,7 +59,7 @@ func liveServer(t *testing.T) string {
 			return "http://" + strings.Fields(rest)[0]
 		}
 	}
-	t.Fatal("fenec-server did not start")
+	t.Fatal("fennec-server did not start")
 	return ""
 }
 
@@ -78,7 +78,7 @@ func jwt(claims map[string]any) string {
 func TestLive(t *testing.T) {
 	url := liveServer(t)
 	ctx := context.Background()
-	admin := fenecdb.New(url, fenecdb.WithToken(liveToken))
+	admin := fennecdb.New(url, fennecdb.WithToken(liveToken))
 	if _, err := admin.Exec(ctx, "create collection ticks (sym text @hash, at timestamp @sorted, px float, qty int, loc geo, note text)"); err != nil {
 		t.Fatal(err)
 	}
@@ -154,8 +154,8 @@ func TestLive(t *testing.T) {
 		q    Query
 		want string
 	}{
-		{scoped, Query{QueryText: "get ticks where sym in $1", Params: []Param{{Value: "S01"}}}, "fenec-server answered 400: query error: position 23: expected `[`, found $1"},
-		{scoped, Query{QueryText: `get ticks where sym = "none" limit 1 require 1`}, "fenec-server answered 412: `get ticks` answered 0 rows, and requires 1"},
+		{scoped, Query{QueryText: "get ticks where sym in $1", Params: []Param{{Value: "S01"}}}, "fennec-server answered 400: query error: position 23: expected `[`, found $1"},
+		{scoped, Query{QueryText: `get ticks where sym = "none" limit 1 require 1`}, "fennec-server answered 412: `get ticks` answered 0 rows, and requires 1"},
 		{scoped, Query{QueryText: "get secrets"}, "not on the server (404): collection `secrets`"},
 		{instance(t, url, `{}`, "wrong"), Query{QueryText: "get ticks"}, "refused the data source's token (401)"},
 	}
@@ -172,7 +172,7 @@ func TestLive(t *testing.T) {
 		q := Query{QueryText: "get ticks select sym, count(*) as n group sym order sym"}
 		_, first := count(d, q)
 		_, again := count(d, q)
-		if again.Frames[0].Meta.Custom.(map[string]any)["fenecdb"].(map[string]any)["notModified"] != true || !framesEqual(first.Frames, again.Frames) {
+		if again.Frames[0].Meta.Custom.(map[string]any)["fennecdb"].(map[string]any)["notModified"] != true || !framesEqual(first.Frames, again.Frames) {
 			t.Fatalf("not answered from the kept answer: %v", again.Frames[0].Meta.Custom)
 		}
 	}
@@ -185,7 +185,7 @@ func TestLive(t *testing.T) {
 		}
 	}
 	h, _ := scoped.CheckHealth(ctx, &backend.CheckHealthRequest{})
-	if h.Message != "fenec-server answers, and the token reads 1 collection(s): ticks" {
+	if h.Message != "fennec-server answers, and the token reads 1 collection(s): ticks" {
 		t.Fatalf("a scoped token's health: %s", h.Message)
 	}
 }

@@ -25,8 +25,8 @@ for t in "$@"; do
   feature=""
   case "$t" in *android*|*linux*) feature="--features jni" ;; esac
   # shellcheck disable=SC2086
-  (cd "$ROOT" && env $envs "$CARGO" rustc -q -p fenec-ffi --lib --profile ffi --target "$t" $feature --crate-type cdylib) >&2
-  lib=$(ls "$ROOT/target/$t/ffi/libfenec_ffi.so" "$ROOT/target/$t/ffi/libfenec_ffi.dylib" 2>/dev/null | head -1)
+  (cd "$ROOT" && env $envs "$CARGO" rustc -q -p fennec-ffi --lib --profile ffi --target "$t" $feature --crate-type cdylib) >&2
+  lib=$(ls "$ROOT/target/$t/ffi/libfennec_ffi.so" "$ROOT/target/$t/ffi/libfennec_ffi.dylib" 2>/dev/null | head -1)
   bytes=$(wc -c < "$lib" | tr -d ' ')
   echo "| \`$t\` | $(python3 -c "print(f'{$bytes / 1e6:.2f} MB ($bytes bytes)')") |"
 done

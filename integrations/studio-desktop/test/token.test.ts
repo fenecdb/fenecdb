@@ -45,10 +45,10 @@ test("a served database's token is made once, kept before it is used, and the sa
 	const { items, keys } = keychain();
 	let made = 0;
 	const make = () => `token-${++made}`;
-	const first = await servedToken(keys, "db1", "/Users/me/shop.fenec", make);
+	const first = await servedToken(keys, "db1", "/Users/me/shop.fennec", make);
 	assert.equal(first, "token-1");
-	assert.equal(items.get("serve:db1"), sealToken("file:/Users/me/shop.fenec", "token-1"), "kept for its file, before any server has it");
-	assert.equal(await servedToken(keys, "db1", "/Users/me/shop.fenec", make), "token-1", "the apps that hold it keep working");
+	assert.equal(items.get("serve:db1"), sealToken("file:/Users/me/shop.fennec", "token-1"), "kept for its file, before any server has it");
+	assert.equal(await servedToken(keys, "db1", "/Users/me/shop.fennec", make), "token-1", "the apps that hold it keep working");
 	assert.equal(made, 1);
 });
 
@@ -56,13 +56,13 @@ test("New token replaces it; a file moved is another file, and gets a token of i
 	const { keys } = keychain();
 	let made = 0;
 	const make = () => `token-${++made}`;
-	await servedToken(keys, "db1", "/a/shop.fenec", make);
-	assert.equal(await servedToken(keys, "db1", "/a/shop.fenec", make, true), "token-2");
-	assert.equal(await servedToken(keys, "db1", "/a/shop.fenec", make), "token-2");
-	assert.equal(await servedToken(keys, "db1", "/b/shop.fenec", make), "token-3", "an item for another path is none");
+	await servedToken(keys, "db1", "/a/shop.fennec", make);
+	assert.equal(await servedToken(keys, "db1", "/a/shop.fennec", make, true), "token-2");
+	assert.equal(await servedToken(keys, "db1", "/a/shop.fennec", make), "token-2");
+	assert.equal(await servedToken(keys, "db1", "/b/shop.fennec", make), "token-3", "an item for another path is none");
 });
 
 test("a Keychain that refuses the token: no token comes back, so no server is started with one it does not hold", async () => {
 	const keys: KeyStore = { get: async () => null, set: async () => Promise.reject(new Error("denied")), delete: async () => {} };
-	await assert.rejects(servedToken(keys, "db1", "/a/shop.fenec", () => "t"), /denied/);
+	await assert.rejects(servedToken(keys, "db1", "/a/shop.fennec", () => "t"), /denied/);
 });

@@ -26,8 +26,8 @@ async function ask(c, what, ms = 30000) {
   return waitFor((l, i) => i >= n && l.what === what && (l.path === undefined || c.path === undefined || l.path === c.path), ms, what);
 }
 const status = async (url, token) => (await fetch(url, { headers: token ? { authorization: `Bearer ${token}` } : {} })).status;
-/** The fenec-server processes on `path`: the app's (under its bundle) and any other. */
-const serversOn = (path) => procs().filter((p) => /fenec-server /.test(p.command) && p.command.includes(`--file ${path} `));
+/** The fennec-server processes on `path`: the app's (under its bundle) and any other. */
+const serversOn = (path) => procs().filter((p) => /fennec-server /.test(p.command) && p.command.includes(`--file ${path} `));
 const freePort = () =>
   new Promise((resolve) => {
     const s = createServer().listen(0, '127.0.0.1', () => {
@@ -36,7 +36,7 @@ const freePort = () =>
     });
   });
 
-let app = startApp('serve', { FENEC_DESKTOP_LAUNCHER: '1' });
+let app = startApp('serve', { FENNEC_DESKTOP_LAUNCHER: '1' });
 await waitFor((l) => l.what === 'ready', 60000, 'ready');
 await waitFor((l) => l.what === 'page-text' && l.key === 'launcher' && /Databases/.test(l.text), 20000, 'the main window drawn');
 const sections = async () => (await evalIn('launcher', `return [...document.querySelectorAll('.view')].filter((v) => getComputedStyle(v).display !== 'none').map((v) => v.id)`)).value;
@@ -53,7 +53,7 @@ await until(async () => (await evalIn('launcher', `return document.querySelector
 await evalIn('launcher', `[...document.querySelector('tr[data-path="${FILE}"]').querySelectorAll('button')].find((b) => b.textContent === 'Serve…').click()`);
 const command = await until(async () => (await evalIn('launcher', `return document.getElementById('sheet').open && document.getElementById('command').textContent`)).value, 10000, 'the sheet open, with its command');
 // No backups set up for it: no replication token, which would answer /_changes to the data token too.
-assert.match(command, /^FENEC_HTTP_TOKEN=•••• fenec-server --file /);
+assert.match(command, /^FENNEC_HTTP_TOKEN=•••• fennec-server --file /);
 assert.match(command, /--http 127\.0\.0\.1:0/);
 assert.match(command, /--exit-on-stdin-close$/);
 await evalIn('launcher', `document.getElementById('tok-show').click()`);
@@ -99,7 +99,7 @@ assert.equal((await ask({ cmd: 'serve', path: FILE }, 'serve-result')).ok, false
 
 step('its output, and its figures from its own metrics');
 const out = await ask({ cmd: 'server-log', path: FILE }, 'server-log');
-assert.ok(out.lines.some((l) => /^fenec-http \S+ listening on: http:\/\/127\.0\.0\.1:/.test(l)), out.lines.join('\n'));
+assert.ok(out.lines.some((l) => /^fennec-http \S+ listening on: http:\/\/127\.0\.0\.1:/.test(l)), out.lines.join('\n'));
 assert.ok(!out.lines.join('\n').includes(TOKEN), 'no token in its output');
 const fig = (await ask({ cmd: 'figures', path: FILE }, 'figures')).figures;
 assert.equal(fig.live, true);
@@ -149,7 +149,7 @@ assert.equal(serversOn(OTHER).length, 0, 'nothing left running on it');
 blocker.close();
 
 step('a file another program serves: said so, and no second writer');
-const holder = await startServer(['--file', HELD, '--http', '127.0.0.1:0'], { FENEC_HTTP_TOKEN: 'x' });
+const holder = await startServer(['--file', HELD, '--http', '127.0.0.1:0'], { FENNEC_HTTP_TOKEN: 'x' });
 n = lines().length;
 cmd({ cmd: 'serve', path: HELD });
 await waitNotice('This database is open in another program', 15000, n);
@@ -172,7 +172,7 @@ assert.equal((await ask({ cmd: 'stop-served', path: FILE }, 'stop-served-result'
 const stopped = await waitFor((l, i) => i >= n && l.what === 'served-stopped' && l.path === FILE, 15000, 'stopped');
 assert.equal(stopped.code, 0);
 assert.equal(serversOn(FILE).length, 0);
-const free = await startServer(['--file', FILE, '--http', '127.0.0.1:0'], { FENEC_HTTP_TOKEN: 'x' });
+const free = await startServer(['--file', FILE, '--http', '127.0.0.1:0'], { FENNEC_HTTP_TOKEN: 'x' });
 await free.stop();
 assert.equal(entry(FILE).lastRan.why, 'stopped');
 
@@ -185,7 +185,7 @@ assert.equal(serversOn(FILE).length, 0, 'no server outlives the app');
 assert.equal(entry(FILE).lastRan.why, 'the app quit');
 
 step('a relaunch starts nothing: the server is listed stopped, with the settings it ran with');
-app = startApp('serve-relaunch', { FENEC_DESKTOP_LAUNCHER: '1' });
+app = startApp('serve-relaunch', { FENNEC_DESKTOP_LAUNCHER: '1' });
 await waitFor((l) => l.what === 'ready', 60000, 'ready');
 await waitFor((l) => l.what === 'page-text' && l.key === 'launcher' && /Databases/.test(l.text), 20000, 'the main window drawn');
 await sleep(1500); // nothing is to happen: a server that started itself would be up by now
@@ -194,7 +194,7 @@ assert.equal((await ask({ cmd: 'served', path: FILE }, 'served-state')).running,
 await evalIn('launcher', `[...document.querySelectorAll('.nav')].find((b) => b.dataset.section === 'servers').click()`);
 const listed = await until(async () => {
   const t = (await evalIn('launcher', `return document.getElementById('servers').innerText`)).value;
-  return /served\.fenec/.test(t) && /Stopped/.test(t) && t;
+  return /served\.fennec/.test(t) && /Stopped/.test(t) && t;
 }, 10000, 'the Servers list');
 assert.match(listed, new RegExp(`Port ${PORT} when started`));
 

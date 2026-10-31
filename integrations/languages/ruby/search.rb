@@ -3,10 +3,10 @@
 require "json"
 require "net/http"
 
-URL = URI(ENV.fetch("FENEC_URL", "http://127.0.0.1:8080"))
-TOKEN = ENV["FENEC_TOKEN"]
+URL = URI(ENV.fetch("FENNEC_URL", "http://127.0.0.1:8080"))
+TOKEN = ENV["FENNEC_TOKEN"]
 
-class FenecError < StandardError
+class FennecError < StandardError
   attr_reader :status
 
   def initialize(message, status)
@@ -15,14 +15,14 @@ class FenecError < StandardError
   end
 end
 
-# One FenecQL statement; a refusal raises with the server's message and status.
+# One FennecQL statement; a refusal raises with the server's message and status.
 def query(q, params = [])
   req = Net::HTTP::Post.new(URI.join(URL, "/query"), "Content-Type" => "application/json")
   req["Authorization"] = "Bearer #{TOKEN}" if TOKEN
   req.body = JSON.generate(query: q, params: params)
   res = Net::HTTP.start(URL.host, URL.port) { |http| http.request(req) }
   body = JSON.parse(res.body)
-  raise FenecError.new(body["error"], res.code.to_i) unless res.is_a?(Net::HTTPSuccess)
+  raise FennecError.new(body["error"], res.code.to_i) unless res.is_a?(Net::HTTPSuccess)
   body
 end
 
@@ -40,7 +40,7 @@ abort "match answered #{hits}" unless hits.map { |h| h["title"] } == ["Night at 
 begin
   query("get nowhere")
   abort "a missing collection was answered"
-rescue FenecError => e
+rescue FennecError => e
   raise unless e.status == 404
 end
 

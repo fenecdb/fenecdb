@@ -1,0 +1,14170 @@
+//! Database engine: where the catalog, execution and persistence meet.
+
+use crate::case::CaseFold;
+use crate::changes::{ChangeLog, Since, SCHEMA_MARK};
+use crate::codec::{get_uvarint, put_uvarint};
+use crate::collate::{self, Collation, TextOrder};
+use crate::composite::CompositeIndex;
+use crate::error::{not_built, Error, Result};
+use crate::geo::GeoIndex;
+use crate::history::History;
+use crate::plugin::{Plugin, Registry, WriteOp};
+use crate::query::*;
+use crate::schema::{collatable, Composite, IndexKind, Metric, Schema, SchemaCell};
+use crate::sorted::{Range as SortRange, SortedIndex};
+use crate::sparse::SparseIndex;
+use crate::store::{Store, OP_DEL, OP_PUT};
+use crate::text::{best_first, TextIndex};
+use crate::value::{DataType, DocId, Document, Value, VecPrec};
+use crate::vector::{distance, dot, norm, normalized, score_from_distance, VectorIndex};
+use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::sync::atomic::Ordering::Relaxed;
+use std::sync::{Arc, Mutex};
+
+mod aggregate;
+mod bucket;
+pub use bucket::Bucket;
+#[cfg(not(target_arch = "wasm32"))]
+mod garbage;
+#[cfg(not(target_arch = "wasm32"))]
+mod handover;
+#[cfg(not(target_arch = "wasm32"))]
+mod limit;
+#[cfg(not(target_arch = "wasm32"))]
+pub use limit::{Landing, Limit};
+mod maintenance;
+#[cfg(not(target_arch = "wasm32"))]
+mod pinned;
+#[cfg(not(target_arch = "wasm32"))]
+pub use pinned::{Pinned, PIN_AT, PIN_BUDGET};
+#[cfg(not(target_arch = "wasm32"))]
+mod prepared;
+#[cfg(not(target_arch = "wasm32"))]
+pub use prepared::{Prepared, PREPARE_AT};
+#[cfg(not(target_arch = "wasm32"))]
+mod wake;
+#[cfg(not(target_arch = "wasm32"))]
+pub use wake::{placeable, Moments};
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use garbage::{
+    compact_when_due, compact_when_due_in, memory, CompactPolicy, Compactor, Garbage, Memory,
+    AUTO_COMPACT_EVERY, AUTO_COMPACT_FLOOR, AUTO_COMPACT_RATIO, ROOM_SHARE,
+};
+
+pub const MAGIC: &[u8; 8] = b"FENECDB\x01";
+
+/// The most rows a `near` query may return (`limit + offset`).
+///
+/// The ANN candidate list is held in memory: `limit 1_000_000_000` means an
+/// allocation of exactly that size. Hence the ceiling; when it is exceeded we
+/// raise an error instead of truncating silently, because a truncated
+/// similarity result is a wrong answer that looks right. Without a `limit`
+/// the ceiling is applied as the default top-k.
+pub const MAX_NEAR_ROWS: usize = 10_000;
+
+/// The most rows a `match` query may return (`limit + offset`). Same ceiling
+/// and the same reason as [`MAX_NEAR_ROWS`]: the top-k heap is sized from the
+/// request, and a silently truncated relevance list is a wrong answer that
+/// looks right.
+pub const MAX_MATCH_ROWS: usize = 10_000;
+
+/// How many `match` candidates `rerank` rescores when the query does not say.
+///
+/// Measured on BEIR (`make beir`): on FiQA (57 638 documents) 1 000
+/// candidates come within 0.0003 of a full dense scan and 200 reach 98% of
+/// it; on SciFact 50 already beat the full scan. 200 sits where the curve
+/// has flattened on both, and costs 200 vector reads -- under 0.4% of that
+/// corpus.
+pub const DEFAULT_RERANK_CANDIDATES: usize = 200;
+
+/// How many candidates each side of `fuse` ranks when the query does not
+/// say (and never fewer than the page).
+///
+/// Measured on BEIR (`make beir`), nDCG@10 at 10 / 20 / 100 a side: SciFact
+/// 0.701 / 0.699 / 0.687, FiQA 0.364 / 0.366 / 0.358. Up to 61 a side at
+/// `k = 60`, a document both searches found outranks every document only
+/// one found -- `2 / (60 + 61)` still beats `1 / 61` -- and deeper, agreement
+/// in the middle of both lists starts to outvote the top of one. 20 is at or
+/// within 0.003 of the best on both, and on FiQA answers in 0.78 ms against
+/// 0.98 ms at 100.
+pub const DEFAULT_FUSE_CANDIDATES: usize = 20;
+
+/// The rank offset of `fuse`: 60, the value reciprocal rank fusion was
+/// published with and the one most implementations keep. Measured on BEIR at
+/// 20 a side, anything from 10 to 120 moved nDCG@10 by at most 0.005 on
+/// either dataset, which is noise, so the published value stands.
+pub const DEFAULT_FUSE_K: u32 = 60;
+
+const REC_CREATE: u8 = 1;
+const REC_DROP: u8 = 2;
+const REC_DATA: u8 = 3;
+/// Schema change (an index was added). Field names and types do not change,
+/// only the index definition; stored documents therefore stay valid.
+const REC_ALTER: u8 = 5;
+/// The persisted HNSW graph. Derived data: when it cannot be validated it is
+/// ignored and the index is rebuilt.
+const REC_GRAPH: u8 = 4;
+/// Change counter header -- **at the start of the image**, fixed width:
+/// `[6][u64 LE seq][u64 LE body length]`.
+///
+/// Both decisions are deliberate:
+///
+/// - **At the start**, because at the end a corrupt or half-written tail
+///   would break opening. The end of the file is exactly where the graph
+///   stops, and the graph is *derived* data: if it breaks it is ignored and
+///   rebuilt. A record erroring in that region would undo that tolerance.
+/// - **Fixed width**, because the body length is only known once the body
+///   has been written; the placeholder is filled in place. A uvarint would
+///   change length and the whole image would have to be shifted.
+///
+/// The body length says "where this image's own records end": every record
+/// after it was written *after* the checkpoint and carries the counter
+/// forward (see [`Database::load`]). Older files without the record load
+/// correctly too; there the counter is counted from zero.
+const REC_SEQ: u8 = 6;
+/// `[kind][u64][u64]`
+const REC_SEQ_LEN: usize = 1 + 8 + 8;
+/// The collection's id counter: `[7][collection-id][length][next_id]`.
+///
+/// The counter is normally derived from the records -- a replay takes one
+/// more than the largest `OP_PUT` id it saw. Since `compact` throws away the
+/// tombstones, that derivation is misleading there: the highest deleted id
+/// disappears from the image entirely and **would be handed out again** on
+/// the next open. A returning id silently binds everything holding on to it
+/// (links handed out, a row in a subscriber's hands) to the wrong document;
+/// a silent wrong answer is the most expensive kind of bug in this file.
+///
+/// Only `snapshot` writes it. It has no place on the WAL path: there the
+/// tombstones are still present and carry the counter themselves.
+const REC_NEXTID: u8 = 7;
+
+/// Which history a database's writes belong to: `[8][0][length][following]
+/// [count]{[id: u64 LE][from]}`. Not a write -- it moves no counter -- so a
+/// replica never receives it as one; see [`History`].
+const REC_HISTORY: u8 = crate::history::RECORD;
+
+/// A block of writes to more than one collection, or holding a schema
+/// change among others, which lands whole or not at all
+/// ([`Database::execute_block`]): `[9][0][length]{record}`, each a data
+/// record or a schema change's. A block's writes to one collection go into
+/// one data record of as many frames instead -- the form an image's records
+/// take, which a version before blocks reads -- and a lone schema change is
+/// the record it always was, so only a block across collections, or a
+/// schema change with other writes, needs this kind. A version before
+/// blocks refuses it, and one before 10.4 a block holding a schema change,
+/// as corrupt. Either way the block is one record, appended whole or cut
+/// off whole: a crash leaves none of it.
+const REC_BLOCK: u8 = 9;
+
+/// A part of a block not yet landed, which spilled into the file as the
+/// block outgrew [`SPILL_AT`] (`Database::spill`): `[10][0][length]{record}`,
+/// its body a block record's. It moves no counter, and a load takes it only
+/// where a land names it: a crash, a rollback or a block put back leaves it
+/// dead in the file, and a load cuts off the ones after the last write. A
+/// version before it refuses it as corrupt.
+const REC_SPILL: u8 = 10;
+
+/// A block that spilled, landing: `[11][0][length][count]{[place][length]}
+/// {record}` -- the spills it takes, by where their bodies are in the file,
+/// then the rest of the block's records. A load applies the spills' records
+/// in order and then its own, and the counter moves by all their writes. It
+/// never travels: a primary's feed is sent the block as the one block record
+/// it would have been ([`Sink::land`], [`landed_block`]).
+const REC_LAND: u8 = 11;
+
+/// A collection's fields changed (`alter collection`): `[12][collection]
+/// [length][change][field][new name][schema]` -- which change, the field it
+/// is of, the name a rename gives it (empty otherwise), and the schema
+/// after it. A record of its own rather than an `REC_ALTER` with a change
+/// byte: a version before it reads every kind-5 record as an index added,
+/// and would have taken a field moved for one; this one it refuses. Undone
+/// in a block as an index built is ([`Undo::Altered`]).
+const REC_FIELDS: u8 = 12;
+const FIELD_ADD: u8 = 1;
+const FIELD_DROP: u8 = 2;
+const FIELD_RENAME: u8 = 3;
+/// A field's expiry set or taken off (`alter field f @ttl(..)`): the
+/// schema after it, and nothing of the field's ordered index changes.
+const FIELD_TTL: u8 = 4;
+
+/// `out` held to the statement's `require <n>`: refused as `Error::Unmet`
+/// unless it wrote exactly `n` rows. Refused after the writes, which the
+/// block they are in puts back as it puts back any statement that failed --
+/// a lone one's block of one, a `/batch` whole. Without it a transfer's
+/// debit (`set ... where id = $from and balance >= $amt`) that matched no
+/// row answered `affected 0`, the `/batch` went on to the credit, and money
+/// was made.
+///
+/// A write with `returning` answers the rows it wrote, which it counts the
+/// same: `limit 1 require 1` is "one job claimed, or none and refused".
+fn required(
+    verb: &str,
+    collection: &str,
+    require: &Option<Require>,
+    out: Result<Response>,
+) -> Result<Response> {
+    let n = match (require, &out) {
+        (Some(_), Ok(Response::Affected(n))) => *n,
+        (Some(_), Ok(Response::Rows(rs))) => rs.rows.len(),
+        _ => return out,
+    };
+    match require {
+        Some(r) if n as u64 != r.n => Err(unmet(r, verb, collection, "wrote", n)),
+        _ => out,
+    }
+}
+/// A `get`'s rows held to its `require <n>`, as [`required`] holds a
+/// write's count: the rows it answers, after `offset` and `limit`. Read in
+/// a block -- a `/batch` -- under its write lock, so what it saw is what
+/// the writes around it see, and refused, the block is put back.
+fn read_required(sel: &Select, rows: ResultSet) -> Result<Response> {
+    match &sel.require {
+        Some(r) if rows.rows.len() as u64 != r.n => Err(unmet(
+            r,
+            "get",
+            &sel.collection,
+            "answered",
+            rows.rows.len(),
+        )),
+        _ => Ok(Response::Rows(rows)),
+    }
+}
+
+/// The refusal of a count `r` did not meet, `n`: what the statement did,
+/// led by the reason its `else` gave where it gave one -- "insufficient
+/// funds (`set accounts` wrote 0 rows, and requires 1)" -- which the error
+/// reads back ([`Error::reason`]). One `format!` for a write's and a
+/// `get`'s, and the reason pushed rather than formatted: each `format!` is
+/// code of the browser module's own, and one with the reason's three
+/// arguments more was 0.1 KB more than the pushes.
+#[inline(never)]
+fn unmet(r: &Require, verb: &str, collection: &str, did: &str, n: usize) -> Error {
+    let rows = if n == 1 { "row" } else { "rows" };
+    let count = format!(
+        "`{verb} {collection}` {did} {n} {rows}, and requires {}",
+        r.n
+    );
+    let reason = &*r.reason;
+    if reason.is_empty() {
+        return Error::Unmet(count);
+    }
+    let mut m = String::with_capacity(reason.len() + count.len() + 3);
+    m.push_str(reason);
+    m.push_str(" (");
+    m.push_str(&count);
+    m.push(')');
+    Error::Unmet(m)
+}
+
+/// The expiry a [`FIELD_TTL`] change leaves its field with.
+fn ttl_after(ch: &FieldChange) -> Option<u64> {
+    ch.schema.field(&ch.field).and_then(|f| f.index.ttl())
+}
+
+/// A [`REC_FIELDS`] record's body, read.
+struct FieldChange {
+    op: u8,
+    field: String,
+    to: String,
+    schema: Schema,
+}
+
+impl FieldChange {
+    fn encode(&self) -> Vec<u8> {
+        let mut out = vec![self.op];
+        crate::codec::encode_str(&mut out, &self.field);
+        crate::codec::encode_str(&mut out, &self.to);
+        out.extend_from_slice(&self.schema.encode());
+        out
+    }
+
+    fn decode(body: &[u8]) -> Result<FieldChange> {
+        let op = *body
+            .first()
+            .ok_or_else(|| Error::Corrupt("an alter record cut short".into()))?;
+        if !matches!(op, FIELD_ADD | FIELD_DROP | FIELD_RENAME | FIELD_TTL) {
+            return Err(Error::Corrupt(format!("unknown field change {op}")));
+        }
+        let mut p = 1;
+        let field = crate::codec::decode_str(body, &mut p)?;
+        let to = crate::codec::decode_str(body, &mut p)?;
+        let schema = Schema::decode(body, &mut p)?;
+        Ok(FieldChange {
+            op,
+            field,
+            to,
+            schema,
+        })
+    }
+}
+
+/// The schema a schema change's record holds: a create's or an index's
+/// whole, an alter's after its change.
+#[cfg(not(target_arch = "wasm32"))]
+fn schema_in(kind: u8, body: &[u8]) -> Result<Schema> {
+    match kind {
+        REC_FIELDS => FieldChange::decode(body).map(|c| c.schema),
+        _ => Schema::decode(body, &mut 0),
+    }
+}
+
+/// The spills a land names, by where their bodies are in the file and how
+/// long they are, and the records after them.
+type LandParts<'a> = (Vec<(u64, u64)>, &'a [u8]);
+
+/// A land's body, in its parts.
+fn land_parts(body: &[u8]) -> Result<LandParts<'_>> {
+    let mut p = 0;
+    let n = get_uvarint(body, &mut p)? as usize;
+    let mut named = Vec::with_capacity(n.min(body.len()));
+    for _ in 0..n {
+        let at = get_uvarint(body, &mut p)?;
+        named.push((at, get_uvarint(body, &mut p)?));
+    }
+    let rest = body
+        .get(p..)
+        .ok_or_else(|| Error::Corrupt("a land cut short".into()))?;
+    Ok((named, rest))
+}
+
+/// The block record a block that spilled would have been, from the bodies
+/// of its spills and its land: what a primary's feed sends its replicas,
+/// which apply a block whole.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn landed_block(spilled: &[&[u8]], land: &[u8]) -> Result<Vec<u8>> {
+    let r = record_at(land, &mut 0)?;
+    if r.kind != REC_LAND {
+        return Err(Error::Corrupt("not a land".into()));
+    }
+    let (_, rest) = land_parts(r.body)?;
+    let mut body = Vec::with_capacity(spilled.iter().map(|s| s.len()).sum::<usize>() + rest.len());
+    for s in spilled {
+        body.extend_from_slice(s);
+    }
+    body.extend_from_slice(rest);
+    Ok(framed(REC_BLOCK, 0, &body))
+}
+
+/// The writes a record holds, which is how far it moves the change counter:
+/// a data record's frames, a block's records' writes, one for a schema
+/// change, none for what is not a write. A feed counting records by their
+/// numbers -- a replica's, an archive's -- counts them with this.
+pub fn writes_in(record: &[u8]) -> Result<u64> {
+    if record.is_empty() {
+        return Ok(0);
+    }
+    let r = record_at(record, &mut 0)?;
+    let body = r.body;
+    match record.first() {
+        Some(&REC_DATA) => frames_in(body),
+        Some(&REC_BLOCK) => {
+            let mut n = 0;
+            each_inner(body, &mut |kind, _, inner| {
+                n += match kind {
+                    REC_DATA => frames_in(inner)?,
+                    _ => 1,
+                };
+                Ok(())
+            })?;
+            Ok(n)
+        }
+        Some(&(REC_CREATE | REC_DROP | REC_ALTER | REC_FIELDS)) => Ok(1),
+        // The land's own records; the spills' are counted where it is
+        // loaded, since it never travels.
+        Some(&REC_LAND) => {
+            let (_, rest) = land_parts(body)?;
+            let mut n = 0;
+            each_inner(rest, &mut |kind, _, inner| {
+                n += match kind {
+                    REC_DATA => frames_in(inner)?,
+                    _ => 1,
+                };
+                Ok(())
+            })?;
+            Ok(n)
+        }
+        _ => Ok(0),
+    }
+}
+
+/// The frames in a data record's body.
+fn frames_in(body: &[u8]) -> Result<u64> {
+    let mut n = 0;
+    let mut pos = 0;
+    while pos < body.len() {
+        pos += 1;
+        get_uvarint(body, &mut pos)?;
+        pos += get_uvarint(body, &mut pos)? as usize;
+        n += 1;
+    }
+    if pos > body.len() {
+        return Err(Error::Corrupt("a frame runs past its record".into()));
+    }
+    Ok(n)
+}
+
+/// A write, as [`Database::changes_in`] reads it out of a record.
+#[cfg(not(target_arch = "wasm32"))]
+pub struct Change {
+    /// The change counter's number for it.
+    pub seq: u64,
+    /// Its collection's name; `None` for one this database no longer
+    /// knows.
+    pub collection: Option<String>,
+    pub kind: ChangeKind,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub enum ChangeKind {
+    /// A document written, `None` where its collection is not known.
+    Put(DocId, Option<Document>),
+    Del(DocId),
+    Create(Schema),
+    /// An index made, or a field added, dropped or renamed: the schema
+    /// after it, which the documents after it are read by.
+    Alter(Schema),
+    Drop,
+}
+
+/// [`Database::changes_in`]'s walk: the schemas by collection id, as the
+/// records change them, and the number of the last write handed over.
+#[cfg(not(target_arch = "wasm32"))]
+struct ChangeWalk<'a> {
+    known: HashMap<u32, Schema>,
+    seq: u64,
+    go: bool,
+    each: &'a mut dyn FnMut(Change) -> bool,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl ChangeWalk<'_> {
+    fn record(&mut self, kind: u8, cid: u32, body: &[u8]) -> Result<()> {
+        if kind != REC_DATA {
+            let what = match kind {
+                REC_DROP => ChangeKind::Drop,
+                _ => {
+                    let schema = schema_in(kind, body)?;
+                    self.known.insert(cid, schema.clone());
+                    match kind {
+                        REC_CREATE => ChangeKind::Create(schema),
+                        _ => ChangeKind::Alter(schema),
+                    }
+                }
+            };
+            let collection = match kind {
+                REC_DROP => self.known.remove(&cid).map(|s| s.name),
+                _ => self.known.get(&cid).map(|s| s.name.clone()),
+            };
+            self.hand(collection, what);
+            return Ok(());
+        }
+        let cut = || Error::Corrupt("a write record cut short".into());
+        let mut p = 0;
+        while p < body.len() && self.go {
+            let op = body[p];
+            p += 1;
+            let id = get_uvarint(body, &mut p)?;
+            let plen = get_uvarint(body, &mut p)? as usize;
+            let payload = body.get(p..p + plen).ok_or_else(cut)?;
+            p += plen;
+            let schema = self.known.get(&cid);
+            let what = match (op, schema) {
+                (OP_PUT, Some(schema)) => ChangeKind::Put(id, Some(schema.read_doc(id, payload)?)),
+                (OP_PUT, None) => ChangeKind::Put(id, None),
+                _ => ChangeKind::Del(id),
+            };
+            let collection = schema.map(|s| s.name.clone());
+            self.hand(collection, what);
+        }
+        Ok(())
+    }
+
+    fn hand(&mut self, collection: Option<String>, kind: ChangeKind) {
+        self.seq += 1;
+        let seq = self.seq;
+        self.go = (self.each)(Change {
+            seq,
+            collection,
+            kind,
+        });
+    }
+}
+
+/// What [`each_inner`] hands a block's records to: each one's kind,
+/// collection id and body.
+type Inner<'a> = dyn FnMut(u8, u32, &[u8]) -> Result<()> + 'a;
+
+/// Walks a block's records, each a data record or a schema change's -- a
+/// block holds nothing else -- handing `f` its kind, collection id and
+/// body.
+fn each_inner(body: &[u8], f: &mut Inner<'_>) -> Result<()> {
+    let mut pos = 0;
+    while pos < body.len() {
+        let r = record_at(body, &mut pos)?;
+        if !matches!(
+            r.kind,
+            REC_DATA | REC_CREATE | REC_DROP | REC_ALTER | REC_FIELDS
+        ) {
+            return Err(Error::Corrupt(
+                "a block holds a record that is no write".into(),
+            ));
+        }
+        f(r.kind, r.cid, r.body)?;
+    }
+    Ok(())
+}
+
+/// `[kind][collection id][length][body]`.
+fn framed(kind: u8, cid: u32, body: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(body.len() + HEAD_ROOM);
+    frame_into(&mut out, kind, cid, body);
+    out
+}
+
+fn frame_into(out: &mut Vec<u8>, kind: u8, cid: u32, body: &[u8]) {
+    let (h, n) = head(kind, cid, body.len());
+    out.extend_from_slice(&h[..n]);
+    out.extend_from_slice(body);
+}
+
+/// A record, as a walk over a file or a feed of them finds it.
+struct Rec<'a> {
+    kind: u8,
+    cid: u32,
+    /// Where it starts, and where its body does, in the bytes walked.
+    at: usize,
+    body_at: usize,
+    body: &'a [u8],
+}
+
+/// The record at `*pos` -- `[kind][collection][length][body]`, or the
+/// counter's fixed-width head -- and `*pos` moved past it: the one place a
+/// head is read.
+fn record_at<'a>(bytes: &'a [u8], pos: &mut usize) -> Result<Rec<'a>> {
+    let at = *pos;
+    let kind = bytes[at];
+    if kind == REC_SEQ {
+        let body = bytes
+            .get(at + 1..at + REC_SEQ_LEN)
+            .ok_or_else(|| Error::Corrupt("truncated counter header".into()))?;
+        *pos = at + REC_SEQ_LEN;
+        return Ok(Rec {
+            kind,
+            cid: 0,
+            at,
+            body_at: at + 1,
+            body,
+        });
+    }
+    let mut p = at + 1;
+    let cid = get_uvarint(bytes, &mut p)? as u32;
+    let len = get_uvarint(bytes, &mut p)? as usize;
+    let body = bytes
+        .get(p..p.saturating_add(len))
+        .ok_or_else(|| Error::Corrupt("a record cut short".into()))?;
+    *pos = p + len;
+    Ok(Rec {
+        kind,
+        cid,
+        at,
+        body_at: p,
+        body,
+    })
+}
+
+/// The whole records of a file, from `pos`: what a load, a repoint and the
+/// search for the last graphs each walk. It stops at the end or at a record
+/// cut short -- `torn`, `pos` where it starts -- which is the walker's to
+/// judge: a crash's torn tail, or damage inside an image.
+struct Walk<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+    torn: bool,
+}
+
+impl<'a> Walk<'a> {
+    fn new(bytes: &'a [u8], pos: usize) -> Walk<'a> {
+        Walk {
+            bytes,
+            pos,
+            torn: false,
+        }
+    }
+
+    fn next(&mut self) -> Result<Option<Rec<'a>>> {
+        if self.pos >= self.bytes.len() {
+            return Ok(None);
+        }
+        if !whole_record(self.bytes, self.pos)? {
+            self.torn = true;
+            return Ok(None);
+        }
+        record_at(self.bytes, &mut self.pos).map(Some)
+    }
+}
+
+/// A record's head, `[kind][collection][length]`, and how many of the bytes
+/// it took: the one place a head is written, the counter's fixed-width one
+/// aside ([`image_head`]). Into an array, so that a block's can go into the
+/// room it left before its frames.
+fn head(kind: u8, cid: u32, len: usize) -> ([u8; HEAD_ROOM], usize) {
+    let mut h = [0u8; HEAD_ROOM];
+    h[0] = kind;
+    let mut n = 1;
+    for mut v in [cid as u64, len as u64] {
+        while v >= 0x80 {
+            h[n] = (v as u8) | 0x80;
+            v >>= 7;
+            n += 1;
+        }
+        h[n] = v as u8;
+        n += 1;
+    }
+    (h, n)
+}
+
+/// The room a block leaves before its frames for the header of the data
+/// record they land as -- a kind, then a collection id and a length, at
+/// most 5 and 10 bytes as uvarints -- so the frames are not copied again.
+const HEAD_ROOM: usize = 16;
+
+/// The writes of a block not yet landed ([`Database::execute_block`]).
+#[derive(Default)]
+struct Block {
+    /// `HEAD_ROOM` bytes, then each write's frame, as the store holds it --
+    /// or, for a schema change, its record's body.
+    frames: Vec<u8>,
+    /// Per write: its record's kind, its collection, and where its frame
+    /// ends in `frames`.
+    heads: Vec<(u8, u32, usize)>,
+    /// The writes to note on the change feed once the block lands.
+    notes: Vec<(u32, DocId)>,
+    /// Per collection written: where its store stood before the first.
+    marks: Vec<(u32, crate::store::Mark)>,
+    /// Per write, what puts it back.
+    was: Vec<Undo>,
+    /// Whether [`Database::begin`] opened it -- a `/batch`, the browser
+    /// module's `run` of several -- rather than a lone statement: its statements are a batch
+    /// together, so a `put` in it leaves its vectors waiting, and they are
+    /// linked [`LINK_AT`] at a time on every core and at its end.
+    defers: bool,
+    /// Per collection and vector field, the nodes the block's `put`s left
+    /// waiting since they were last linked: the newest of the field's
+    /// waiting nodes, since nothing else leaves one while a block is open.
+    waiting: Vec<(u32, String, usize)>,
+    /// Where the block's spills' bodies are in the file (`Database::spill`),
+    /// and how many of its writes they hold -- the first of `heads`, whose
+    /// frames `frames` no longer holds.
+    #[cfg(not(target_arch = "wasm32"))]
+    spilled: Vec<(u64, u64)>,
+    #[cfg(not(target_arch = "wasm32"))]
+    spilled_writes: usize,
+    /// The file as mapped when the block last spilled: its land reads the
+    /// spills' bodies from there for a feed.
+    #[cfg(not(target_arch = "wasm32"))]
+    spill_base: Option<crate::store::Base>,
+    /// A spill could not be made: the block spills no more, and lands
+    /// holding its frames as a block that never spilled does.
+    #[cfg(not(target_arch = "wasm32"))]
+    unspillable: bool,
+    /// Whether a spill of it wrote more than it took away, which its land
+    /// is judged with ([`Database::set_limit`]): those frames are in the
+    /// file, not here.
+    #[cfg(not(target_arch = "wasm32"))]
+    grew: bool,
+}
+
+/// The nodes a block's `put`s leave waiting before they are linked, a
+/// field at a time: a batch as wide as the widest the graph links at once
+/// (`MAX_BATCH`), whose candidates are found on every core. Linked as each
+/// statement wrote them, a row at a time as a `/batch` of single puts
+/// sends them, 100 000 128-dim rows went in over HTTP at 5.3k rows/s with
+/// the graph kept; linked together, at 16.0k (`make load-bench`).
+const LINK_AT: usize = 512;
+
+/// Whether a block's `put`s leave their vectors waiting: natively. The
+/// browser links a vector as it is written, on its one thread, and the
+/// waiting was 843 bytes brotli of its module for nothing.
+const DEFERS: bool = !cfg!(target_arch = "wasm32");
+
+/// What a `@unique` value of a document is held in: a field (or a path),
+/// or an index over several fields.
+enum Unique<'a> {
+    Field(&'a crate::schema::Field),
+    Composite(&'a Composite),
+}
+
+/// What puts one of a block's writes back ([`Database::rollback`]).
+enum Undo {
+    /// A document written: its collection, its id, and where its record was
+    /// before.
+    Doc(u32, DocId, Option<crate::store::Loc>),
+    /// A collection made: it goes, and its id is handed out again.
+    Created(u32),
+    /// A collection dropped, with where its name stood among the others: it
+    /// comes back as it was.
+    Dropped(Box<Collection>, usize),
+    /// An index built over a collection's field: it goes.
+    Indexed(u32, usize),
+    /// An index built on a path into a json field, by the path: it goes.
+    PathIndexed(u32, String),
+    /// A collection's fields changed: the schema before, and the indexes
+    /// a dropped field took with it, to put back.
+    Altered(u32, Box<Altered>),
+    /// An index over several fields made, by its name: it goes.
+    Composed(u32, String),
+    /// An index over several fields dropped, with where it stood: it
+    /// comes back as it was.
+    Uncomposed(u32, usize, Box<(Composite, Derived<CompositeIndex>)>),
+}
+
+/// What [`Undo::Altered`] puts back.
+struct Altered {
+    before: SchemaCell,
+    op: u8,
+    field: String,
+    to: String,
+    taken: Taken,
+}
+
+/// The indexes of one field, taken off a collection by a drop or a rename
+/// and put back under the name they go by after it.
+#[derive(Default)]
+struct Taken {
+    vector: Option<VectorIndex>,
+    hash: Option<Derived<HashIndex>>,
+    text: Option<Derived<TextIndex>>,
+    sorted: Option<Derived<SortedIndex>>,
+    sparse: Option<Derived<SparseIndex>>,
+    geo: Option<Derived<GeoIndex>>,
+}
+
+/// Puts `ix` among a collection's ordered or sparse indexes where `field`
+/// stands in the schema -- a field among the fields, a path after them
+/// among the paths: the order they are kept in, which keeps the choice
+/// between two ranges the same as after an open.
+fn in_schema_order<T>(list: &mut Vec<(String, T)>, schema: &Schema, field: &str, ix: T) {
+    let rank = |n: &str| match schema.field_pos(n) {
+        Some(p) => Some(p),
+        None => schema
+            .paths
+            .iter()
+            .position(|p| p.name == n)
+            .map(|i| schema.fields.len() + i),
+    };
+    let pos = rank(field);
+    let at = list
+        .iter()
+        .position(|(n, _)| rank(n) > pos)
+        .unwrap_or(list.len());
+    list.insert(at, (field.to_string(), ix));
+}
+
+impl Block {
+    /// Emptied for the next block, what it allocated kept: every write is a
+    /// block, and allocated anew each time -- five buffers, and the record
+    /// a copy of the frames -- they took a lone `put` from 832 ns to 985.
+    /// Kept, a put takes 841 against the 829 it took before blocks, a `del`
+    /// 648 against 634. A large block's are not kept ([`Database::spare`]).
+    fn cleared(mut self) -> Block {
+        self.frames.clear();
+        self.frames.extend_from_slice(&[0; HEAD_ROOM]);
+        self.heads.clear();
+        self.notes.clear();
+        self.marks.clear();
+        self.was.clear();
+        self.defers = false;
+        self.waiting.clear();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.spilled.clear();
+            self.spilled_writes = 0;
+            self.spill_base = None;
+            self.unspillable = false;
+            self.grew = false;
+        }
+        self
+    }
+
+    /// The records of the writes from `from` on, as a block record's body
+    /// holds them: a data record for each run of one collection's frames --
+    /// its frames one stretch where a store takes them in from the file --
+    /// and each schema change's record. What a spill writes, and a land
+    /// after the spills.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn body_from(&self, from: usize) -> Vec<u8> {
+        let mut body = Vec::with_capacity(self.frames.len());
+        let (mut k, mut start) = (from, HEAD_ROOM);
+        while k < self.heads.len() {
+            let (kind, cid, mut end) = self.heads[k];
+            let mut next = k + 1;
+            while kind == REC_DATA
+                && next < self.heads.len()
+                && self.heads[next].0 == REC_DATA
+                && self.heads[next].1 == cid
+            {
+                end = self.heads[next].2;
+                next += 1;
+            }
+            frame_into(&mut body, kind, cid, &self.frames[start..end]);
+            (start, k) = (end, next);
+        }
+        body
+    }
+
+    /// What an open block's buffers hold: the frames above all, a second
+    /// copy of every document the block wrote until it lands -- uncounted, a
+    /// COPY could write twice `--max-memory` before the ceiling saw it. The
+    /// spare's are not data, and a large block's are let go of as it lands
+    /// ([`Database::spare`]): counted, a small ceiling stayed shut after a
+    /// `del` and a `compact`, by the spare's buffers alone.
+    fn bytes(&self) -> usize {
+        use std::mem::size_of;
+        self.frames.capacity()
+            + self.heads.capacity() * size_of::<(u8, u32, usize)>()
+            + self.notes.capacity() * size_of::<(u32, DocId)>()
+            + self.was.capacity() * size_of::<Undo>()
+    }
+
+    /// The block as the one record it lands as: one data record of every
+    /// frame when they are all one collection's writes -- a lone write's
+    /// record as it always was -- the record of a lone schema change, and a
+    /// block record around each write's record otherwise.
+    fn record(&mut self) -> std::borrow::Cow<'_, [u8]> {
+        let (kind, cid, _) = self.heads[0];
+        if self.heads.len() == 1 || self.heads.iter().all(|h| h.0 == REC_DATA && h.1 == cid) {
+            // The header goes into the room before the frames.
+            let (h, n) = head(kind, cid, self.frames.len() - HEAD_ROOM);
+            self.frames[HEAD_ROOM - n..HEAD_ROOM].copy_from_slice(&h[..n]);
+            return std::borrow::Cow::Borrowed(&self.frames[HEAD_ROOM - n..]);
+        }
+        let mut body = Vec::with_capacity(self.frames.len() + HEAD_ROOM * self.heads.len());
+        let mut start = HEAD_ROOM;
+        for &(kind, cid, end) in &self.heads {
+            frame_into(&mut body, kind, cid, &self.frames[start..end]);
+            start = end;
+        }
+        std::borrow::Cow::Owned(framed(REC_BLOCK, 0, &body))
+    }
+}
+
+/// Whether the record at `at` is all there, rather than cut short where the
+/// bytes end -- in its header or its body -- as a crash in the middle of an
+/// append leaves the last one. Only the kinds written with a length are
+/// judged: a kind this version does not know is the loader's to refuse, and
+/// the counter header is only ever written by a rewrite, whole or not at all.
+fn whole_record(bytes: &[u8], at: usize) -> Result<bool> {
+    if !matches!(
+        bytes[at],
+        REC_CREATE
+            | REC_DROP
+            | REC_DATA
+            | REC_GRAPH
+            | REC_ALTER
+            | REC_FIELDS
+            | REC_NEXTID
+            | REC_HISTORY
+            | REC_BLOCK
+            | REC_SPILL
+            | REC_LAND
+    ) {
+        return Ok(true);
+    }
+    let mut pos = at + 1;
+    let mut len = 0;
+    // The collection's id, then the body's length.
+    for _ in 0..2 {
+        len = match get_uvarint(bytes, &mut pos) {
+            Ok(v) => v,
+            Err(_) if pos >= bytes.len() => return Ok(false),
+            Err(e) => return Err(e),
+        };
+    }
+    Ok(len <= (bytes.len() - pos) as u64)
+}
+
+/// Where the last graph record of each index starts, by collection id and
+/// field: the one a load restores. The walk reads record heads alone and
+/// stops where the load would -- at a record cut short, or of a kind it
+/// refuses -- so the load says what is wrong.
+fn last_graphs(bytes: &[u8]) -> Result<Vec<(u32, String, usize)>> {
+    let mut last: Vec<(u32, String, usize)> = Vec::new();
+    let mut walk = Walk::new(bytes, MAGIC.len());
+    while walk.pos < bytes.len() {
+        if !matches!(
+            bytes[walk.pos],
+            REC_SEQ
+                | REC_CREATE
+                | REC_DROP
+                | REC_DATA
+                | REC_GRAPH
+                | REC_ALTER
+                | REC_FIELDS
+                | REC_NEXTID
+                | REC_HISTORY
+                | REC_BLOCK
+                | REC_SPILL
+                | REC_LAND
+        ) {
+            break;
+        }
+        let Some(r) = walk.next()? else { break };
+        if r.kind == REC_GRAPH {
+            let field = crate::codec::decode_str(r.body, &mut 0)?;
+            match last.iter_mut().find(|(c, f, _)| *c == r.cid && *f == field) {
+                Some(l) => l.2 = r.at,
+                None => last.push((r.cid, field, r.at)),
+            }
+        }
+    }
+    Ok(last)
+}
+
+/// Drops from a load's restored graphs those of collection `name` but the
+/// fields `keep` names. One function rather than a `retain` at each record
+/// kind: each closure was a copy of `retain`, 264 bytes of the browser
+/// module apiece.
+fn forget(restored: &mut Vec<(String, String, usize)>, name: &str, keep: &dyn Fn(&str) -> bool) {
+    restored.retain(|(n, f, _)| n != name || keep(f));
+}
+
+/// Whether `ix` is due a record of its own in a file `appended` bytes long,
+/// by `(changes, growth)` ([`Database::save_graphs`]).
+fn graph_due(ix: &VectorIndex, appended: u64, (changes, growth): (u64, u64)) -> bool {
+    if ix.unlinked() > 0 || ix.is_empty() {
+        return false;
+    }
+    let p = ix.persisted();
+    let node_bytes = match p.node_bytes.load(Relaxed) {
+        0 => GRAPH_NODE_BYTES,
+        b => b,
+    };
+    ix.changes().saturating_sub(p.changes.load(Relaxed)) >= changes
+        && appended.saturating_sub(p.at.load(Relaxed)) >= growth * node_bytes * ix.len() as u64
+}
+
+/// Takes a data record's frames into a collection's store: the record's
+/// offset in the file, its bytes, the index of its frames the image wrote
+/// before it ([`Store::image_index`]), and what to tell of each document's
+/// id.
+type Replay<'a> =
+    dyn FnMut(&mut Store, usize, &[u8], Option<&[u8]>, &mut dyn FnMut(DocId)) -> Result<usize> + 'a;
+
+/// Where an image is written: the file being rewritten, or a buffer. The
+/// counter header's body length is only known once the body is out, so it is
+/// patched where it stands rather than the image being written twice.
+pub trait ImageOut {
+    fn write(&mut self, bytes: &[u8]) -> Result<()>;
+    /// Bytes of a store that stay as they are while `kept` holds them,
+    /// which a writer may hold rather than copy: in the browser an image
+    /// is taken a chunk at a time as the page stores each ([`Kept`]).
+    fn write_kept(&mut self, kept: Kept) -> Result<()> {
+        self.write(kept.bytes())
+    }
+    /// Bytes written so far, which is where the next one lands.
+    fn at(&self) -> u64;
+    /// Overwrites bytes written earlier, in place.
+    fn patch(&mut self, at: u64, bytes: &[u8]) -> Result<()>;
+}
+
+/// A stretch of a store's bytes, held: the image a load kept, which never
+/// changes, or a segment, which a write copies first while it is held
+/// (`Arc::make_mut`). So an image taken a chunk at a time is the database
+/// as it stood when it was begun, whatever is written meanwhile.
+pub struct Kept {
+    pub whole: std::sync::Arc<Vec<u8>>,
+    pub at: usize,
+    pub len: usize,
+}
+
+impl Kept {
+    pub fn bytes(&self) -> &[u8] {
+        &self.whole[self.at..self.at + self.len]
+    }
+}
+
+impl ImageOut for Vec<u8> {
+    fn write(&mut self, bytes: &[u8]) -> Result<()> {
+        self.extend_from_slice(bytes);
+        Ok(())
+    }
+    fn at(&self) -> u64 {
+        self.len() as u64
+    }
+    fn patch(&mut self, at: u64, bytes: &[u8]) -> Result<()> {
+        let at = at as usize;
+        self[at..at + bytes.len()].copy_from_slice(bytes);
+        Ok(())
+    }
+}
+
+/// The persistence layer. The engine only says "append these bytes"; where
+/// they are written (file, IndexedDB, OPFS, S3) is this layer's problem.
+pub trait Sink: Send {
+    fn append(&mut self, bytes: &[u8]) -> Result<()>;
+    /// Appends a write, the `seq`th of the change counter. A sink that
+    /// passes writes on -- a primary's feed to its replicas -- numbers them
+    /// by it; everything else only appends. Records that are not writes
+    /// (the history) come through [`Self::append`] and carry no number.
+    fn record(&mut self, seq: u64, bytes: &[u8]) -> Result<()> {
+        let _ = seq;
+        self.append(bytes)
+    }
+    /// [`Self::append`] for a record whose durability ([`Self::flush`]) its
+    /// caller runs as soon as it lets its lock go -- a graph a server keeps
+    /// ([`Database::save_graphs`]): a file's sink leaves it to that
+    /// durability rather than writing what outgrew its buffer there and
+    /// then, which put megabytes into the file under the read lock.
+    fn append_deferred(&mut self, bytes: &[u8]) -> Result<()> {
+        self.append(bytes)
+    }
+    fn rewrite(&mut self, bytes: &[u8]) -> Result<()>;
+    /// [`Self::rewrite`] with the image written into the file as it is
+    /// produced rather than built in memory first: a checkpoint of a 1 GB
+    /// database held the whole image beside the data before this. A sink
+    /// with nowhere to stream to -- the browser's -- builds it and rewrites.
+    fn rewrite_with(
+        &mut self,
+        image: &mut dyn FnMut(&mut dyn ImageOut) -> Result<()>,
+    ) -> Result<()> {
+        let mut buf: Vec<u8> = Vec::new();
+        image(&mut buf)?;
+        self.rewrite(&buf)
+    }
+    /// The file this sink holds, mapped read-only: what a database whose
+    /// records are in a mapping points at after a rewrite, so that the file
+    /// it just wrote is the one it reads -- and the old one, unlinked by the
+    /// rename, is let go of. `None` for every sink but a file's.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn remapped(&mut self) -> Option<crate::store::Base> {
+        None
+    }
+    /// Writes every record appended so far into the file and hands back the
+    /// file mapped as far as it goes: where a mapped database's stores take
+    /// the records written since the open in from, rather than hold them
+    /// ([`Database::hand_over`]). `Ok(None)` for every sink but a file's.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn written_through(&mut self) -> Result<Option<crate::store::Base>> {
+        Ok(None)
+    }
+    /// Whether a durability is fsyncing the file this moment, so that a
+    /// write into it would wait for the disk: what a handover, which is
+    /// free to come a little later, is put off for ([`Database::hand_over`]).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn syncing(&self) -> bool {
+        false
+    }
+    /// Appends a block that spilled as it lands ([`Database::spill`]):
+    /// `record` is its land, naming the spills the file holds already, and
+    /// `spilled` their bodies, for a sink that passes writes on -- a
+    /// primary's feed -- to send the block as the one block record it
+    /// would have been ([`landed_block`]), which a replica applies whole.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn land(&mut self, seq: u64, spilled: &[&[u8]], record: &[u8]) -> Result<()> {
+        let _ = spilled;
+        self.record(seq, record)
+    }
+    /// Where a rewrite beside the database writes the file that will take
+    /// this one's place ([`Self::adopt`]): a `compact` on a server, written
+    /// with no lock held. `None` for every sink but a file's, and the
+    /// rewrite then holds the write lock ([`Self::rewrite_with`]).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn side(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+    /// Puts the file at `side`, an image of every write so far and fsynced,
+    /// in place of this one, and appends to it from then on.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn adopt(&mut self, side: &std::path::Path) -> Result<()> {
+        Err(Error::Io(format!(
+            "{} has no file to take the place of",
+            side.display()
+        )))
+    }
+    /// Pushes to disk what an earlier process wrote and never synced: a
+    /// primary calls it before it tells a replica those bytes exist.
+    fn sync_existing(&mut self) -> Result<()> {
+        Ok(())
+    }
+    /// Writes what is buffered into the file, with no fsync: it outlives the
+    /// process, not the machine. What an app asks for as it is sent to the
+    /// background (`fennec_flush`), where the system may end the process
+    /// without a word and an fsync is milliseconds it may not be given.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn write_out(&mut self) -> Result<()> {
+        Ok(())
+    }
+    /// What writes the appends it holds into the file, with no fsync, for
+    /// a caller to run once it has let go of the database
+    /// ([`Database::write_behind`]); `None` while it holds too few to be
+    /// worth a write. A sink asked once leaves its appends for it from then
+    /// on, rather than write them as they outgrow its buffer -- under the
+    /// write lock, where every reader waits for the disk.
+    ///
+    /// `all` asks for every append it holds, however few: a handover is
+    /// due, which takes the records in from the file, and finds them there
+    /// rather than write them under the lock ([`Self::written_all`]).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn write_behind(&mut self, _all: bool) -> Option<Durability> {
+        None
+    }
+    /// Whether every append it took is in the file, or on its way there
+    /// in a write under way: a handover then writes nothing.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn written_all(&self) -> bool {
+        true
+    }
+    fn sync(&mut self) -> Result<()> {
+        Ok(())
+    }
+    /// `sync` in two halves: hands the buffered writes to the operating
+    /// system now, and returns what makes them durable, for the caller to
+    /// run once it has let go of the database -- a server's readers then do
+    /// not wait on the disk. `None` when this already made them durable.
+    fn flush(&mut self) -> Result<Option<Durability>> {
+        self.sync()?;
+        Ok(None)
+    }
+}
+
+/// What makes the writes a [`Sink::flush`] handed over durable: an fsync on
+/// the file they went to.
+pub type Durability = Box<dyn FnOnce() -> Result<()> + Send>;
+
+/// Whether a database may take a write now, and why not: a node's lease
+/// from its router, which names the tenants the node may write and lapses
+/// unless renewed ([`Database::set_fence`]). Native only: a page has no
+/// router.
+#[cfg(not(target_arch = "wasm32"))]
+pub type Fence = Arc<dyn Fn() -> std::result::Result<(), String> + Send + Sync>;
+
+/// The party that wants to hear that a write happened.
+///
+/// [`Sink`] receives the raw bytes (where they land is its problem);
+/// `Watcher` only receives "the counter reached this point". They differ
+/// because their purposes do: a sink persists, a watcher *wakes up*.
+///
+/// fennec-core therefore never defines a waiting primitive: choosing between
+/// `Condvar` and polling is the server's call -- the core also compiles to
+/// WASM, where there are no threads. `fennec-http` wires this mark to a Condvar
+/// through `Hub`; in a database with no subscribers the cost is zero.
+pub trait Watcher: Send + Sync {
+    fn notify(&self, seq: u64);
+
+    /// A block of writes landed: [`Watcher::notify`] with the database as
+    /// the block left it, and `before`, the change it was at, so a watcher
+    /// that wakes waiters by what they read asks
+    /// [`Database::changed_collections_since`]`(before)` -- under the write
+    /// lock, before any reader sees the writes. A server's held claims on
+    /// `orders` were woken by every write of `positions` beside them: 150
+    /// of them took a position's put from 0.16 to 0.29 ms p50 and 0.67 to
+    /// 4.3 ms p99 (`fennec_http::waits`). Native only: a page holds no write.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn landed(&self, db: &Database, before: u64) {
+        let _ = before;
+        self.notify(db.change_seq());
+    }
+}
+
+/// `[kind][collection][length]`, the head every record but the counter has.
+pub(crate) fn record_head(kind: u8, cid: u32, len: usize) -> Vec<u8> {
+    let (h, n) = head(kind, cid, len);
+    h[..n].to_vec()
+}
+
+/// The front of an image: the signature, and the change counter's head,
+/// fixed width -- `seq`, and a zero for the body's length, which is
+/// patched in place once the body is written (`head_at + 9`).
+fn image_head(seq: u64) -> Vec<u8> {
+    let mut out = Vec::from(&MAGIC[..]);
+    out.push(REC_SEQ);
+    out.extend_from_slice(&seq.to_le_bytes());
+    out.extend_from_slice(&0u64.to_le_bytes());
+    out
+}
+
+/// A sink that writes nowhere (pure in-memory / browser session).
+pub struct NullSink;
+impl Sink for NullSink {
+    fn append(&mut self, _bytes: &[u8]) -> Result<()> {
+        Ok(())
+    }
+    fn rewrite(&mut self, _bytes: &[u8]) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// A `@hash` index: a value's encoding -> the documents holding it.
+///
+/// It counts the bytes its keys and buckets hold as they change, so
+/// `memory_bytes` -- which `--max-memory` asks before every write that
+/// grows the data -- reads a number rather than walking every bucket. A
+/// bucket its last document leaves goes with it: kept, the keys of values
+/// that come and go (a token, a session id) piled up until the file was
+/// opened again. Its table grows a shard at a time (`maps::Sharded`): a
+/// `@unique` field's grew whole, every key at once under the write lock.
+#[derive(Default)]
+pub struct HashIndex {
+    map: crate::maps::Sharded<Vec<u8>, Bucket>,
+    heap: usize,
+    /// The fold a `nocase` field's text is filed under: its key is the
+    /// fold's encoding, so a bucket holds every spelling of one text.
+    fold: Option<CaseFold>,
+}
+
+// The keys are taken as `&Vec<u8>`, the type the map holds, rather than
+// `&[u8]`: looked up as a slice, the map's search and hash were compiled a
+// second time, 650 bytes of the browser module.
+#[allow(clippy::ptr_arg)]
+impl HashIndex {
+    /// An empty index over a field whose text is filed under `fold`.
+    fn folding(fold: Option<CaseFold>) -> HashIndex {
+        HashIndex {
+            fold,
+            ..HashIndex::default()
+        }
+    }
+
+    /// The documents under `key`, ascending.
+    pub fn get(&self, key: &Vec<u8>) -> Option<&Bucket> {
+        self.map.get(key)
+    }
+
+    /// The key `v` is filed under: [`hash_key`], a `nocase` field's text
+    /// folded first.
+    pub fn key(&self, v: &Value) -> Vec<u8> {
+        folded_key(v, self.fold)
+    }
+
+    /// The distinct values held.
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    /// Each value's encoding and the documents under it.
+    pub fn iter(&self) -> impl Iterator<Item = (&Vec<u8>, &Bucket)> {
+        self.map.iter()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    fn add(&mut self, key: Vec<u8>, id: DocId) {
+        let key_bytes = key.capacity();
+        let bucket = self.map.or_default(key);
+        if bucket.is_empty() {
+            self.heap += key_bytes;
+        }
+        self.heap = self.heap.wrapping_add_signed(bucket.add(id));
+    }
+
+    /// Takes `id` out of the bucket under `key`: a binary search, and a
+    /// run of at most 512 ids moved (`Bucket`).
+    fn remove(&mut self, key: &Vec<u8>, id: DocId) {
+        let Some(bucket) = self.map.get_mut(key) else {
+            return;
+        };
+        self.heap = self.heap.wrapping_add_signed(bucket.remove(id));
+        if bucket.is_empty() {
+            if let Some((k, b)) = self.map.remove_entry(key) {
+                self.heap -= k.capacity() + b.heap_bytes();
+            }
+        }
+    }
+
+    /// The table, the keys and the buckets as they sit in memory.
+    pub fn memory_bytes(&self) -> usize {
+        self.map.table_bytes() + self.heap
+    }
+
+    /// A value two documents or more hold, `null` aside, and two of them:
+    /// what `create index ... @unique` over the documents there is refused
+    /// for, naming it.
+    fn shared(&self) -> Option<(Value, DocId, DocId)> {
+        let null = hash_key(&Value::Null);
+        let (key, ids) = self
+            .map
+            .iter()
+            .find(|(k, ids)| ids.len() > 1 && **k != null)?;
+        let v = crate::codec::decode_value(key, &mut 0).ok()?;
+        let mut two = ids.iter();
+        Some((v, two.next()?, two.next()?))
+    }
+}
+
+/// Collection name -> collection: a `Vec` in the order of the names'
+/// hashes, searched by halving, rather than a map. A database holds a
+/// handful of collections, and the map -- SipHash and hashbrown's code for
+/// one more key and value -- was 3.4 KB of the browser module; searched by
+/// the names themselves, every statement's look-up compared texts, and a
+/// read by id over 41 collections took 450 -> 514 ns. A name's hash is
+/// `maps::Fx`, a word at a time, and only a name of the same hash is
+/// compared.
+pub struct Names<T>(Vec<(u64, String, T)>);
+
+impl<T> Default for Names<T> {
+    fn default() -> Self {
+        Names(Vec::new())
+    }
+}
+
+/// The hash a collection's name is kept under.
+fn name_hash(name: &str) -> u64 {
+    use std::hash::Hasher;
+    let mut h = crate::maps::Fx::default();
+    h.write(name.as_bytes());
+    h.finish()
+}
+
+impl<T> Names<T> {
+    /// Where `name` is, or where it would go.
+    fn at(&self, name: &str) -> std::result::Result<usize, usize> {
+        let h = name_hash(name);
+        let mut i = self.0.partition_point(|(k, _, _)| *k < h);
+        while let Some((k, n, _)) = self.0.get(i) {
+            if *k != h {
+                break;
+            }
+            if n == name {
+                return Ok(i);
+            }
+            i += 1;
+        }
+        Err(i)
+    }
+
+    pub fn get(&self, name: &str) -> Option<&T> {
+        let i = self.at(name).ok()?;
+        self.0.get(i).map(|(_, _, v)| v)
+    }
+
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut T> {
+        let i = self.at(name).ok()?;
+        self.0.get_mut(i).map(|(_, _, v)| v)
+    }
+
+    pub fn contains_key(&self, name: &str) -> bool {
+        self.at(name).is_ok()
+    }
+
+    /// Puts `v` under `name`, handing back what was there.
+    pub fn insert(&mut self, name: String, v: T) -> Option<T> {
+        match self.at(&name) {
+            Ok(i) => Some(std::mem::replace(&mut self.0[i].2, v)),
+            Err(i) => {
+                self.0.insert(i, (name_hash(&name), name, v));
+                None
+            }
+        }
+    }
+
+    pub fn remove(&mut self, name: &str) -> Option<T> {
+        let i = self.at(name).ok()?;
+        Some(self.0.remove(i).2)
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &T> {
+        self.0.iter().map(|(_, _, v)| v)
+    }
+
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.0.iter_mut().map(|(_, _, v)| v)
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&String, &mut T)> {
+        self.0.iter_mut().map(|(_, k, v)| (&*k, v))
+    }
+}
+
+impl<T, Q: AsRef<str> + ?Sized> std::ops::Index<&Q> for Names<T> {
+    type Output = T;
+
+    fn index(&self, name: &Q) -> &T {
+        self.get(name.as_ref()).expect("no collection by that name")
+    }
+}
+
+/// Collection id -> name, as a load meets the records naming them: a `Vec`
+/// searched by id rather than a map, as [`Fields`] is by name. A file holds
+/// a handful of collections, and the map was 2.1 KB of the browser module.
+#[derive(Default)]
+struct ById(Vec<(u32, String)>);
+
+impl ById {
+    fn get(&self, cid: &u32) -> Option<&String> {
+        self.0.iter().find(|(c, _)| c == cid).map(|(_, n)| n)
+    }
+
+    fn insert(&mut self, cid: u32, name: String) {
+        match self.0.iter_mut().find(|(c, _)| *c == cid) {
+            Some(slot) => slot.1 = name,
+            None => self.0.push((cid, name)),
+        }
+    }
+
+    fn remove(&mut self, cid: &u32) -> Option<String> {
+        let at = self.0.iter().position(|(c, _)| c == cid)?;
+        Some(self.0.swap_remove(at).1)
+    }
+}
+
+/// Field name -> index, in the order the fields were indexed: a `Vec`
+/// searched by name rather than a map, as `sorted` and `sparse` are. A
+/// collection indexes a handful of fields, and each map of them was a copy
+/// of hashbrown's code in the browser module.
+pub struct Fields<T>(Vec<(String, T)>);
+
+impl<T> Default for Fields<T> {
+    fn default() -> Self {
+        Fields(Vec::new())
+    }
+}
+
+impl<T> Fields<T> {
+    pub fn get(&self, name: &str) -> Option<&T> {
+        self.0.iter().find(|(n, _)| n == name).map(|(_, v)| v)
+    }
+
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut T> {
+        self.0.iter_mut().find(|(n, _)| n == name).map(|(_, v)| v)
+    }
+
+    pub fn contains_key(&self, name: &str) -> bool {
+        self.get(name).is_some()
+    }
+
+    /// Puts `v` under `name`, handing back what was there.
+    pub fn insert(&mut self, name: String, v: T) -> Option<T> {
+        match self.get_mut(&name) {
+            Some(slot) => Some(std::mem::replace(slot, v)),
+            None => {
+                self.0.push((name, v));
+                None
+            }
+        }
+    }
+
+    pub fn remove(&mut self, name: &str) -> Option<T> {
+        let at = self.0.iter().position(|(n, _)| n == name)?;
+        Some(self.0.remove(at).1)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &T)> {
+        self.into_iter()
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&String, &mut T)> {
+        self.0.iter_mut().map(|(k, v)| (&*k, v))
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.0.iter().map(|(k, _)| k)
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &T> {
+        self.0.iter().map(|(_, v)| v)
+    }
+
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.0.iter_mut().map(|(_, v)| v)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.0.clear()
+    }
+}
+
+fn pair<K, V>(e: &(K, V)) -> (&K, &V) {
+    (&e.0, &e.1)
+}
+
+impl<'a, T> IntoIterator for &'a Fields<T> {
+    type Item = (&'a String, &'a T);
+    type IntoIter =
+        std::iter::Map<std::slice::Iter<'a, (String, T)>, fn(&'a (String, T)) -> Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter().map(pair)
+    }
+}
+
+impl<T> std::ops::Index<&str> for Fields<T> {
+    type Output = T;
+
+    fn index(&self, name: &str) -> &T {
+        self.get(name).expect("no index on that field")
+    }
+}
+
+/// A hash, text, ordered or sparse index as a collection holds it: built,
+/// or left for the documents to fill the first time a statement reads it.
+/// An open leaves them unbuilt -- building them was 9 of a 31 ms open at
+/// 100 000 x 128 for one `@hash` field, and a `@text` field costs 16 us a
+/// document -- and a process that never reads one never pays for it. A
+/// write skips an unbuilt index, since its build reads the documents as
+/// they stand then; a build that fails fails every read after it the same
+/// way, as the documents it could not read are still there.
+pub struct Derived<T>(Once<Result<T>>);
+
+/// What holds a derived index: a lock natively, where a second reader
+/// waits for the first one's build; a cell in the browser, which has one
+/// thread and so nothing to wait for. Through the lock each index type's
+/// build was a copy of `Once`'s state machine, 2.9 KB of the browser module
+/// in seven.
+#[cfg(not(target_arch = "wasm32"))]
+type Once<T> = std::sync::OnceLock<T>;
+#[cfg(target_arch = "wasm32")]
+type Once<T> = std::cell::OnceCell<T>;
+
+impl<T> Derived<T> {
+    /// An index as it stands: a new collection's, or one just built.
+    fn new(ix: T) -> Self {
+        Derived(Once::from(Ok(ix)))
+    }
+
+    fn unbuilt() -> Self {
+        Derived(Once::new())
+    }
+
+    /// An index refused: what every read of it answers.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn refused(e: Error) -> Self {
+        Derived(Once::from(Err(e)))
+    }
+
+    /// The index, if something has built it.
+    pub fn built(&self) -> Option<&T> {
+        self.0.get().and_then(|r| r.as_ref().ok())
+    }
+
+    /// The index, built by `build` if nothing has read it yet: under a
+    /// read lock too, a second reader waiting for the first one's build.
+    fn or_build(&self, build: impl FnOnce() -> Result<T>) -> Result<&T> {
+        match self.0.get_or_init(build) {
+            Ok(ix) => Ok(ix),
+            Err(e) => Err(e.clone()),
+        }
+    }
+
+    /// The index for a write to keep up to date, none while it is unbuilt.
+    fn get_mut(&mut self) -> Option<&mut T> {
+        self.0.get_mut().and_then(|r| r.as_mut().ok())
+    }
+}
+
+/// The documents' vectors in the field `name`, with their ids.
+fn vectors_of(docs: &[Document], name: &str) -> Vec<(DocId, Vec<f32>)> {
+    docs.iter()
+        .filter_map(|d| match d.get(name) {
+            Some(Value::Vector(v)) => Some((d.id, v.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+pub struct Collection {
+    pub id: u32,
+    pub schema: SchemaCell,
+    pub store: Store,
+    /// field name -> HNSW index
+    pub vectors: Fields<VectorIndex>,
+    /// field name -> hash index
+    pub hashes: Fields<Derived<HashIndex>>,
+    /// field name -> inverted index
+    pub texts: Fields<Derived<TextIndex>>,
+    /// field name -> ordered index, in schema order. A `Vec` rather than a
+    /// map: a collection has a handful of ordered fields, the map's code was
+    /// 2.6 KB of the browser module, and a fixed order keeps the choice
+    /// between two ranges the same from one run to the next.
+    pub sorted: Vec<(String, Derived<SortedIndex>)>,
+    /// field name -> inverted index over a sparse vector, in schema order,
+    /// a `Vec` for the reason `sorted` is one.
+    pub sparse: Vec<(String, Derived<SparseIndex>)>,
+    /// field name -> a point's index (`@geo`), a `Vec` for the same reason.
+    /// Apart from `sorted`, whose chunks it keeps its keys in: a range or
+    /// an order over it is no question of a point's. In the order the
+    /// indexes were made: one point index is asked of a field's own
+    /// conditions alone, and kept in the schema's order through
+    /// `in_schema_order` its copy of that was 0.4 KB of the browser module.
+    pub geo: Vec<(String, Derived<GeoIndex>)>,
+    /// The indexes over several fields, each beside the declaration it was
+    /// made from, in the schema's order ([`Self::fit_composites`]).
+    pub composites: Vec<(Composite, Derived<CompositeIndex>)>,
+}
+
+impl Collection {
+    #[cfg_attr(
+        not(all(
+            feature = "vector",
+            feature = "text",
+            feature = "sparse",
+            feature = "sorted",
+            feature = "geo"
+        )),
+        allow(unused_mut)
+    )]
+    fn new(id: u32, schema: Schema) -> Collection {
+        let mut vectors = Fields::default();
+        let mut hashes = Fields::default();
+        let mut texts = Fields::default();
+        let mut sorted = Vec::new();
+        let mut sparse = Vec::new();
+        let mut geo = Vec::new();
+        for f in schema.fields.iter().chain(&schema.paths) {
+            match (&f.index, &f.ty) {
+                #[cfg(feature = "vector")]
+                (IndexKind::Vector(spec), DataType::Vector(dim, prec)) => {
+                    vectors.insert(
+                        f.name.clone(),
+                        VectorIndex::with_precision(*dim, *spec, *prec),
+                    );
+                }
+                (IndexKind::Hash { .. }, _) => {
+                    let ix = HashIndex::folding(f.case_fold());
+                    hashes.insert(f.name.clone(), Derived::new(ix));
+                }
+                #[cfg(feature = "text")]
+                (IndexKind::Text(spec), DataType::Text) => {
+                    texts.insert(f.name.clone(), Derived::new(TextIndex::new(*spec)));
+                }
+                #[cfg(feature = "sorted")]
+                (IndexKind::Sorted { .. }, ty) if SortedIndex::supports(ty) => {
+                    let ix = SortedIndex::new(ty, f.text_order());
+                    sorted.push((f.name.clone(), Derived::new(ix)));
+                }
+                #[cfg(feature = "sparse")]
+                (IndexKind::Inverted, DataType::Sparse(_)) => {
+                    sparse.push((f.name.clone(), Derived::new(SparseIndex::new())));
+                }
+                #[cfg(all(feature = "sorted", feature = "geo"))]
+                (IndexKind::Geo, DataType::Geo) => {
+                    geo.push((f.name.clone(), Derived::new(GeoIndex::new())));
+                }
+                _ => {}
+            }
+        }
+        let mut store = Store::new();
+        store.set_dropped(&schema.dropped);
+        let mut c = Collection {
+            id,
+            schema: SchemaCell::new(schema),
+            store,
+            vectors,
+            hashes,
+            texts,
+            sorted,
+            sparse,
+            geo,
+            composites: Vec::new(),
+        };
+        // A new collection's are empty, and as built as its documents.
+        let Collection {
+            schema, composites, ..
+        } = &mut c;
+        for comp in &schema.composites {
+            let d = match empty_composite(schema, comp) {
+                Some(ix) => Derived::new(ix),
+                None => Derived::unbuilt(),
+            };
+            composites.push((comp.clone(), d));
+        }
+        c
+    }
+
+    /// Rebuilds the index structures from the schema's index definitions:
+    /// the graphs empty, for `rebuild_indexes_with` to fill, and the others
+    /// unbuilt, for the documents to fill when something reads them.
+    ///
+    /// Inlined natively, as the other two functions [`Database::apply`]
+    /// shares with the write path are: with a second caller they were no
+    /// longer inlined into their first -- 1.1 KB of the browser module,
+    /// which links no `apply`, for nothing it runs. The module calls it
+    /// twice itself, an alter's and an index's record in a load, and
+    /// inlined into both it was 0.6 KB more.
+    #[cfg_attr(not(target_arch = "wasm32"), inline(always))]
+    fn reset_index_structures(&mut self) {
+        self.vectors.clear();
+        self.hashes.clear();
+        self.texts.clear();
+        self.sorted.clear();
+        self.sparse.clear();
+        self.geo.clear();
+        for f in self.schema.fields.iter().chain(&self.schema.paths) {
+            match (&f.index, &f.ty) {
+                #[cfg(feature = "vector")]
+                (IndexKind::Vector(spec), DataType::Vector(dim, prec)) => {
+                    self.vectors.insert(
+                        f.name.clone(),
+                        VectorIndex::with_precision(*dim, *spec, *prec),
+                    );
+                }
+                (IndexKind::Hash { .. }, _) => {
+                    self.hashes.insert(f.name.clone(), Derived::unbuilt());
+                }
+                #[cfg(feature = "text")]
+                (IndexKind::Text(_), DataType::Text) => {
+                    self.texts.insert(f.name.clone(), Derived::unbuilt());
+                }
+                #[cfg(feature = "sorted")]
+                (IndexKind::Sorted { .. }, ty) if SortedIndex::supports(ty) => {
+                    self.sorted.push((f.name.clone(), Derived::unbuilt()));
+                }
+                #[cfg(feature = "sparse")]
+                (IndexKind::Inverted, DataType::Sparse(_)) => {
+                    self.sparse.push((f.name.clone(), Derived::unbuilt()));
+                }
+                #[cfg(all(feature = "sorted", feature = "geo"))]
+                (IndexKind::Geo, DataType::Geo) => {
+                    self.geo.push((f.name.clone(), Derived::unbuilt()));
+                }
+                _ => {}
+            }
+        }
+        self.composites.clear();
+        self.fit_composites();
+    }
+
+    /// The indexes over several fields made to match the schema's: one it
+    /// declares as it was kept with what it holds, any other unbuilt, for
+    /// the first read to build from the documents, and one it declares no
+    /// more let go. What an alter, an index made or dropped and a block put
+    /// back leave -- a renamed part's index built again by the first read
+    /// rather than moved, as a path's is.
+    fn fit_composites(&mut self) {
+        let mut had = std::mem::take(&mut self.composites);
+        for c in &self.schema.composites {
+            let d = match had.iter().position(|(o, _)| o == c) {
+                Some(i) => had.swap_remove(i).1,
+                None => Derived::unbuilt(),
+            };
+            self.composites.push((c.clone(), d));
+        }
+    }
+
+    /// The index over several fields at `i` among the schema's, built as
+    /// [`Self::hash`] is; `None` in a build without the `composite` feature,
+    /// whose queries over its fields the scan answers.
+    pub fn composite(&self, i: usize) -> Result<Option<&CompositeIndex>> {
+        let Some((c, d)) = self
+            .composites
+            .get(i)
+            .filter(|_| cfg!(feature = "composite"))
+        else {
+            return Ok(None);
+        };
+        d.or_build(|| composite_of(&self.store, &self.schema, c))
+            .map(Some)
+    }
+
+    /// The hash index on `field`, built from the documents if nothing has
+    /// read it since the open.
+    pub fn hash(&self, field: &str) -> Result<Option<&HashIndex>> {
+        let (Some(d), Some((pos, keys))) = (self.hashes.get(field), source(&self.schema, field))
+        else {
+            return Ok(None);
+        };
+        let fold = self.schema.indexed(field).and_then(|f| f.case_fold());
+        d.or_build(|| hash_of(&self.store, pos, keys, fold))
+            .map(Some)
+    }
+
+    /// Takes `field`'s indexes off the collection, whichever it has.
+    fn take_indexes(&mut self, field: &str) -> Taken {
+        let sorted = self.sorted.iter().position(|(n, _)| n == field);
+        let sparse = self.sparse.iter().position(|(n, _)| n == field);
+        let geo = self.geo.iter().position(|(n, _)| n == field);
+        Taken {
+            vector: self.vectors.remove(field),
+            hash: self.hashes.remove(field),
+            text: self.texts.remove(field),
+            sorted: sorted.map(|i| self.sorted.remove(i).1),
+            sparse: sparse.map(|i| self.sparse.remove(i).1),
+            geo: geo.map(|i| self.geo.remove(i).1),
+        }
+    }
+
+    /// Puts indexes [`Self::take_indexes`] took under `field`, the schema
+    /// already naming it.
+    fn put_indexes(&mut self, field: &str, t: Taken) {
+        if let Some(ix) = t.vector {
+            self.vectors.insert(field.to_string(), ix);
+        }
+        if let Some(ix) = t.hash {
+            self.hashes.insert(field.to_string(), ix);
+        }
+        if let Some(ix) = t.text {
+            self.texts.insert(field.to_string(), ix);
+        }
+        if let Some(ix) = t.sorted {
+            in_schema_order(&mut self.sorted, &self.schema, field, ix);
+        }
+        if let Some(ix) = t.sparse {
+            in_schema_order(&mut self.sparse, &self.schema, field, ix);
+        }
+        if let Some(ix) = t.geo {
+            self.geo.push((field.to_string(), ix));
+        }
+    }
+
+    /// The indexes on paths made to match the schema's paths: one it names
+    /// and the collection lacks made unbuilt, for the first read to build
+    /// from the documents, as an open leaves it; one it names no more let
+    /// go. What an alter of a json field leaves, and a block put back --
+    /// moved by name as a field's are, the moves were 1.4 KB of the browser
+    /// module for what a read builds again.
+    fn fit_paths(&mut self) {
+        let schema = &self.schema;
+        let gone: Vec<String> = (self.hashes.keys())
+            .chain(self.sorted.iter().map(|(n, _)| n))
+            .filter(|n| n.contains('.') && schema.path(n).is_none())
+            .cloned()
+            .collect();
+        for n in gone {
+            drop(self.take_indexes(&n));
+        }
+        for i in 0..self.schema.paths.len() {
+            let p = &self.schema.paths[i];
+            match p.index {
+                IndexKind::Hash { .. } if !self.hashes.contains_key(&p.name) => {
+                    self.hashes.insert(p.name.clone(), Derived::unbuilt());
+                }
+                #[cfg(feature = "sorted")]
+                IndexKind::Sorted { .. } if !self.sorted.iter().any(|(n, _)| *n == p.name) => {
+                    let name = p.name.clone();
+                    in_schema_order(&mut self.sorted, &self.schema, &name, Derived::unbuilt());
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// The fields changed as `ch` says -- the schema after it in place, and
+    /// the store reading by its places -- and the indexes of a field
+    /// dropped taken off, those of one renamed moved to its name: what an
+    /// `alter collection` does, and a replica's apply of one. A field added
+    /// has its index built by the caller, after this, which cannot fail.
+    fn alter_fields(&mut self, ch: &FieldChange) -> Taken {
+        let taken = match ch.op {
+            FIELD_ADD | FIELD_TTL => Taken::default(),
+            _ => self.take_indexes(&ch.field),
+        };
+        self.schema = SchemaCell::new(ch.schema.clone());
+        self.store.set_dropped(&self.schema.dropped);
+        // A json field's indexes on paths go with it, by the paths the
+        // schema after names, and the indexes over several fields with the
+        // parts it names.
+        self.fit_paths();
+        self.fit_composites();
+        if ch.op == FIELD_RENAME {
+            self.put_indexes(&ch.to, taken);
+            return Taken::default();
+        }
+        taken
+    }
+
+    /// The documents written again without the places of dropped fields,
+    /// which `compact` takes out: the bytes of every value kept copied as
+    /// they stand, into a fresh store -- in memory until the rewrite that
+    /// follows points it at the new file.
+    fn strip_dropped(&mut self) -> Result<()> {
+        let mut fresh = Store::new();
+        fresh.raise_next_id(self.store.next_id());
+        fresh.reserve(self.store.len());
+        for id in self.store.iter_ids() {
+            let payload = self.store.raw(id)?.unwrap_or_default();
+            fresh.append(OP_PUT, id, &self.schema.without_dropped(payload)?);
+        }
+        self.store = fresh;
+        SchemaCell::make_mut(&mut self.schema).dropped.clear();
+        Ok(())
+    }
+
+    /// The other documents holding one of `doc`'s `@unique` values, each
+    /// with the field it holds it in -- or the index over several fields
+    /// whose every part it holds them in, after the fields.
+    fn unique_holders(&self, doc: &Document) -> Result<Vec<(Unique<'_>, DocId)>> {
+        let mut out = Vec::new();
+        for f in self.schema.fields.iter().chain(&self.schema.paths) {
+            if !f.index.is_unique() {
+                continue;
+            }
+            let Some(v) = doc.at(&f.name).filter(|v| !matches!(v, Value::Null)) else {
+                continue;
+            };
+            let Some(ix) = self.hash(&f.name)? else {
+                continue;
+            };
+            if let Some(b) = ix.get(&ix.key(v)) {
+                out.extend(
+                    b.iter()
+                        .filter(|&d| d != doc.id)
+                        .map(|d| (Unique::Field(f), d)),
+                );
+            }
+        }
+        for (i, (c, _)) in self.composites.iter().enumerate() {
+            // A `null` in any part is no value, as a `@unique` field's is.
+            if !c.unique
+                || c.keys
+                    .iter()
+                    .any(|(k, _)| doc.at(k).is_none_or(Value::is_null))
+            {
+                continue;
+            }
+            match self.composite(i)? {
+                Some(ix) => {
+                    let k = composite_key(ix, c, doc);
+                    for d in ix.holders(&k.bytes) {
+                        if d != doc.id {
+                            out.push((Unique::Composite(c), d));
+                        }
+                    }
+                }
+                // A build without the index reads the rows, as the scan
+                // answers what the index would.
+                #[cfg(not(feature = "composite"))]
+                None => {
+                    for d in self.store.iter_ids() {
+                        if d != doc.id && self.holds_tuple(d, c, doc)? {
+                            out.push((Unique::Composite(c), d));
+                        }
+                    }
+                }
+                #[cfg(feature = "composite")]
+                None => {}
+            }
+        }
+        Ok(out)
+    }
+
+    /// Whether the stored document `id` holds `doc`'s values in every part
+    /// of `c`, each the same value as a bucket finds it ([`hash_key`]).
+    #[cfg(not(feature = "composite"))]
+    fn holds_tuple(&self, id: DocId, c: &Composite, doc: &Document) -> Result<bool> {
+        for (k, _) in &c.keys {
+            let Some((pos, keys)) = source(&self.schema, k) else {
+                return Ok(false);
+            };
+            let v = read_source(&self.store, id, (pos, keys))?;
+            let fold = self.schema.field(k).and_then(|f| f.case_fold());
+            if folded_key(&v, fold) != folded_key(doc.at(k).unwrap_or(&Value::Null), fold) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// The refusal of `doc` where an `@unique` field of it holds a value
+    /// another document holds: asked by `put`, `insert` and `set` before
+    /// anything is written, against the bucket the value would be filed
+    /// under -- the block's own earlier writes are in it, as a write keeps
+    /// a built index up, and the first ask after an open builds it from
+    /// the documents, so the answer is exact. `null` is no value, and a
+    /// document keeping its own value is not a second one. A field without
+    /// `@unique` costs the look at its index kind.
+    fn unique_clash(&self, doc: &Document) -> Result<()> {
+        let holders = self.unique_holders(doc)?;
+        let Some((_, other)) = holders.first() else {
+            return Ok(());
+        };
+        // The value as the row holding it stores it: under `nocase` the
+        // spelling written is not always the one stored, and the message
+        // named `SAMI.lindqvist@...` where the row held `sami.lindqvist@...`.
+        let held = self.store.read(&self.schema, *other)?;
+        let at = |k: &str| {
+            let v = held.as_ref().and_then(|d| d.at(k)).or_else(|| doc.at(k));
+            crate::json::to_string(v.unwrap_or(&Value::Null))
+        };
+        match holders.first() {
+            Some((Unique::Field(f), other)) => Err(Error::Duplicate(format!(
+                "`{}.{}` is unique, and document {other} holds {} already",
+                self.schema.name,
+                f.name,
+                at(&f.name)
+            ))),
+            // Its fields, then their values as a list: what a scoped token
+            // is told stops before the values ([`Error::Duplicate`]'s
+            // "is unique, and document").
+            Some((Unique::Composite(c), other)) => {
+                let mut vals = String::from("[");
+                for (i, (k, _)) in c.keys.iter().enumerate() {
+                    if i > 0 {
+                        vals.push_str(", ");
+                    }
+                    vals.push_str(&at(k));
+                }
+                vals.push(']');
+                Err(Error::Duplicate(format!(
+                    "`{} ({})` is unique, and document {other} holds {vals} already",
+                    self.schema.name,
+                    c.keys_text()
+                )))
+            }
+            None => Ok(()),
+        }
+    }
+
+    /// The fields whose hash, text, ordered or sparse index nothing has
+    /// built yet, in that order of kinds.
+    pub fn unbuilt(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        for (name, d) in self.hashes.iter() {
+            if d.0.get().is_none() {
+                out.push(name.clone());
+            }
+        }
+        for (name, d) in self.texts.iter() {
+            if d.0.get().is_none() {
+                out.push(name.clone());
+            }
+        }
+        for (name, d) in &self.sorted {
+            if d.0.get().is_none() {
+                out.push(name.clone());
+            }
+        }
+        for (name, d) in &self.sparse {
+            if d.0.get().is_none() {
+                out.push(name.clone());
+            }
+        }
+        for (name, d) in &self.geo {
+            if d.0.get().is_none() {
+                out.push(name.clone());
+            }
+        }
+        // An index over several fields by its fields joined by `+`
+        // (`Composite::name`), and none in a build that cannot make one.
+        for (c, d) in self
+            .composites
+            .iter()
+            .filter(|_| cfg!(feature = "composite"))
+        {
+            if d.0.get().is_none() {
+                out.push(c.name());
+            }
+        }
+        out
+    }
+
+    /// Builds whichever derived index `field` has, as its first read would:
+    /// a field's, or an index over several fields by its name.
+    pub fn warm(&self, field: &str) -> Result<()> {
+        self.hash(field)?;
+        self.text(field)?;
+        self.sorted_index(field)?;
+        self.sparse_index(field)?;
+        self.geo_index(field)?;
+        if let Some(i) = self.composites.iter().position(|(c, _)| c.name() == field) {
+            self.composite(i)?;
+        }
+        Ok(())
+    }
+
+    /// The point index on `field`, built as [`Self::hash`] is.
+    pub fn geo_index(&self, field: &str) -> Result<Option<&GeoIndex>> {
+        let Some((_, d)) = self.geo.iter().find(|(name, _)| name == field) else {
+            return Ok(None);
+        };
+        let Some(pos) = self.schema.field_pos(field) else {
+            return Ok(None);
+        };
+        d.or_build(|| geo_of(&self.store, pos)).map(Some)
+    }
+
+    /// The full-text index on `field`, built as [`Self::hash`] is.
+    pub fn text(&self, field: &str) -> Result<Option<&TextIndex>> {
+        let (Some(d), Some(pos)) = (self.texts.get(field), self.schema.field_pos(field)) else {
+            return Ok(None);
+        };
+        let IndexKind::Text(spec) = self.schema.fields[pos].index else {
+            return Ok(None);
+        };
+        d.or_build(|| text_of(&self.store, pos, spec)).map(Some)
+    }
+
+    /// The inverted index over the sparse vectors of `field`, built as
+    /// [`Self::hash`] is.
+    pub fn sparse_index(&self, field: &str) -> Result<Option<&SparseIndex>> {
+        let Some((_, d)) = self.sparse.iter().find(|(name, _)| name == field) else {
+            return Ok(None);
+        };
+        let Some(pos) = self.schema.field_pos(field) else {
+            return Ok(None);
+        };
+        d.or_build(|| sparse_of(&self.store, pos)).map(Some)
+    }
+
+    /// The ordered index on `field`, built as [`Self::hash`] is.
+    pub fn sorted_index(&self, field: &str) -> Result<Option<&SortedIndex>> {
+        let Some((_, d)) = self.sorted.iter().find(|(name, _)| name == field) else {
+            return Ok(None);
+        };
+        let (Some((pos, keys)), Some(fd)) =
+            (source(&self.schema, field), self.schema.indexed(field))
+        else {
+            return Ok(None);
+        };
+        d.or_build(|| sorted_of(&self.store, fd, pos, keys))
+            .map(Some)
+    }
+
+    /// Puts `doc` into the indexes, `old` the version it replaces. Inlined
+    /// for the reason [`Self::reset_index_structures`] is: a compact beside
+    /// the database calls it too.
+    #[inline(always)]
+    fn index_doc(&mut self, doc: &Document, old: Option<&Document>) {
+        for (name, ix) in self.vectors.iter_mut() {
+            if let Some(Value::Vector(v)) = doc.get(name) {
+                ix.insert(doc.id, v);
+            }
+        }
+        self.index_scalar(doc, old);
+    }
+
+    /// Hash, text, ordered and sparse indexes; vectors are left to the batch
+    /// path. A field `old` held as it is, `unindex_doc` left in place, and
+    /// it is left here too.
+    fn index_scalar(&mut self, doc: &Document, old: Option<&Document>) {
+        let kept = |name: &str| old.is_some_and(|o| same(o.at(name), doc.at(name)));
+        for (name, ix) in self.hashes.iter_mut() {
+            let Some(ix) = ix.get_mut() else { continue };
+            if let Some(v) = doc.at(name).filter(|_| !kept(name)) {
+                ix.add(ix.key(v), doc.id);
+            }
+        }
+        for (name, ix) in self.texts.iter_mut() {
+            let Some(ix) = ix.get_mut() else { continue };
+            if let Some(Value::Text(t)) = doc.get(name).filter(|_| !kept(name)) {
+                ix.insert(doc.id, t);
+            }
+        }
+        for (name, ix) in self.sorted.iter_mut() {
+            let Some(ix) = ix.get_mut() else { continue };
+            if !kept(name) {
+                ix.insert(doc.id, doc.at(name));
+            }
+        }
+        for (name, ix) in self.sparse.iter_mut() {
+            let Some(ix) = ix.get_mut() else { continue };
+            if let Some(Value::Sparse(_, e)) = doc.get(name).filter(|_| !kept(name)) {
+                ix.insert(doc.id, e);
+            }
+        }
+        for (name, ix) in self.geo.iter_mut() {
+            let Some(ix) = ix.get_mut() else { continue };
+            if !kept(name) {
+                ix.insert(doc.id, doc.get(name));
+            }
+        }
+        for (c, ix) in self.composites.iter_mut() {
+            let Some(ix) = ix.get_mut() else { continue };
+            if !c.keys.iter().all(|(k, _)| kept(k)) {
+                ix.insert(doc.id, composite_key(ix, c, doc));
+            }
+        }
+    }
+
+    /// Bulk-inserts every vector in a batch, field by field.
+    ///
+    /// Calling `insert` one at a time missed the chance to parallelise the
+    /// read-only part of the HNSW build; the batch path takes it.
+    #[inline(always)]
+    fn index_vectors_batch(&mut self, docs: &[Document]) {
+        for (name, ix) in self.vectors.iter_mut() {
+            let items = vectors_of(docs, name);
+            if !items.is_empty() {
+                ix.insert_batch(&items);
+            }
+        }
+    }
+
+    /// [`Self::index_vectors_batch`] for a `put` in a block that defers:
+    /// every vector left waiting, and counted into `waiting` for
+    /// [`Database::link_waiting`] to link.
+    fn defer_vectors_batch(&mut self, docs: &[Document], waiting: &mut Vec<(u32, String, usize)>) {
+        for (name, ix) in self.vectors.iter_mut() {
+            let items = vectors_of(docs, name);
+            let n = match items.is_empty() {
+                true => 0,
+                false => ix.defer_batch(&items),
+            };
+            if n == 0 {
+                continue;
+            }
+            match waiting
+                .iter_mut()
+                .find(|(c, f, _)| *c == self.id && f == name)
+            {
+                Some(w) => w.2 += n,
+                None => waiting.push((self.id, name.clone(), n)),
+            }
+        }
+    }
+
+    /// Takes the stored `doc` out of the indexes: out of all of them for a
+    /// deletion, and for a rewrite into `new` out of those whose field
+    /// changes. An update of one field took the document out of every index
+    /// and put it back -- its vector included, 1.89 ms at 20 000 x 768 and a
+    /// tombstone each time. A vector stays while `new` has one in its field:
+    /// `insert` keeps the node that holds it or retires it for the new one.
+    fn unindex_doc(&mut self, doc: &Document, new: Option<&Document>) {
+        let kept = |name: &str| new.is_some_and(|n| same(doc.at(name), n.at(name)));
+        for (name, ix) in self.vectors.iter_mut() {
+            let replaced = new.is_some_and(|n| matches!(n.get(name), Some(Value::Vector(_))));
+            if doc.get(name).is_some() && !replaced {
+                ix.remove(doc.id);
+            }
+        }
+        for (name, ix) in self.hashes.iter_mut() {
+            let Some(ix) = ix.get_mut() else { continue };
+            if let Some(v) = doc.at(name).filter(|_| !kept(name)) {
+                ix.remove(&ix.key(v), doc.id);
+            }
+        }
+        // Every caller reads the *stored* document before unindexing, so the
+        // terms here are the ones that went in.
+        for (name, ix) in self.texts.iter_mut() {
+            let Some(ix) = ix.get_mut() else { continue };
+            if let Some(Value::Text(t)) = doc.get(name).filter(|_| !kept(name)) {
+                ix.remove(doc.id, t);
+            }
+        }
+        for (name, ix) in self.sorted.iter_mut() {
+            let Some(ix) = ix.get_mut() else { continue };
+            if !kept(name) {
+                ix.remove(doc.id, doc.at(name));
+            }
+        }
+        for (name, ix) in self.sparse.iter_mut() {
+            let Some(ix) = ix.get_mut() else { continue };
+            if let Some(Value::Sparse(_, e)) = doc.get(name).filter(|_| !kept(name)) {
+                ix.remove(doc.id, e);
+            }
+        }
+        for (name, ix) in self.geo.iter_mut() {
+            let Some(ix) = ix.get_mut() else { continue };
+            if !kept(name) {
+                ix.remove(doc.id, doc.get(name));
+            }
+        }
+        for (c, ix) in self.composites.iter_mut() {
+            let Some(ix) = ix.get_mut() else { continue };
+            if !c.keys.iter().all(|(k, _)| kept(k)) {
+                ix.remove(doc.id, composite_key(ix, c, doc));
+            }
+        }
+    }
+
+    pub fn stats(&self) -> CollectionStats {
+        CollectionStats {
+            name: self.schema.name.clone(),
+            documents: self.store.len(),
+            bytes: self.store.total_bytes(),
+            dead_bytes: self.store.dead_bytes(),
+            segments: self.store.segment_count(),
+            vector_indexes: self
+                .vectors
+                .iter()
+                .map(|(k, v)| VectorIndexStats {
+                    field: k.clone(),
+                    count: v.len(),
+                    dim: v.dim,
+                    arena_bytes: v.arena_bytes(),
+                    precision: v.precision(),
+                })
+                .collect(),
+            // The ones built: counted by building, every metrics scrape
+            // would build them all.
+            text_indexes: self
+                .texts
+                .iter()
+                .filter_map(|(k, t)| {
+                    let t = t.built()?;
+                    Some(TextIndexStats {
+                        field: k.clone(),
+                        count: t.len(),
+                        terms: t.terms(),
+                        postings: t.postings_count(),
+                        bytes: t.memory_bytes(),
+                    })
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Result of [`Database::changes_since`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum Changes {
+    /// The cursor cannot be caught up incrementally: reseed the subscriber.
+    Reseed,
+    Batch(ChangeBatch),
+}
+
+/// The difference after a cursor, expressed as state.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChangeBatch {
+    /// The end point this answer covers: the subscriber moves its cursor here.
+    pub seq: u64,
+    /// Rows that exist now and match the shape (new, updated, or newly
+    /// *entering* the shape). Applying them is an upsert.
+    pub puts: ResultSet,
+    /// Ids that no longer exist or have left the shape.
+    pub dels: Vec<DocId>,
+    /// The collection's schema changed (an index was added, dropped or
+    /// recreated): the subscriber must re-read the schema.
+    pub schema_changed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CollectionStats {
+    pub name: String,
+    pub documents: usize,
+    pub bytes: usize,
+    pub dead_bytes: usize,
+    pub segments: usize,
+    pub vector_indexes: Vec<VectorIndexStats>,
+    pub text_indexes: Vec<TextIndexStats>,
+}
+
+/// State of a single vector index. The arena size scales directly with the
+/// precision (`f16` halves it), so it has to be measurable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VectorIndexStats {
+    pub field: String,
+    pub count: usize,
+    pub dim: usize,
+    pub arena_bytes: usize,
+    pub precision: VecPrec,
+}
+
+/// State of a single full-text index. `postings` is the number that matters
+/// for both memory and query cost: a `match` walks the lists of its terms.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextIndexStats {
+    pub field: String,
+    pub count: usize,
+    pub terms: usize,
+    pub postings: usize,
+    pub bytes: usize,
+}
+
+/// The candidate set for a filter on `id`, or `None` when the index cannot
+/// answer it.
+///
+/// `id` is not a schema field -- `Schema::new` reserves the name -- so it has
+/// no hash bucket and had no plan at all: `where id = 42` walked every
+/// document in the collection to compare one integer. Measured over 20 000
+/// documents, a `set ... where id = N` took 424 us against 22 us for the
+/// same write through a `@hash` mirror of the id, which is why the docs used
+/// to recommend keeping one. The store's own id index answers it directly.
+///
+/// A value the id space cannot express (`id = "abc"`) returns `None` and
+/// leaves the decision to the eval path, the same rule a hash lookup follows:
+/// the presence of an index is never allowed to change an answer. A numeric
+/// value out of range simply matches nothing, which is what comparing it to
+/// `row.id()` would have concluded anyway.
+fn id_candidates(store: &Store, vals: &[&Value]) -> Option<Vec<DocId>> {
+    let mut out = Vec::with_capacity(vals.len());
+    for v in vals {
+        // The same coercion a hash lookup performs: `id = 42.0` has to find
+        // document 42, because `cmp_value` says they are equal.
+        let Ok(Value::Int(i)) = (*v).clone().coerce(&DataType::Int) else {
+            return None;
+        };
+        if let Ok(id) = DocId::try_from(i) {
+            if store.contains(id) {
+                out.push(id);
+            }
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    Some(out)
+}
+
+/// A value's bucket key: its encoding, a float's -0.0 filed as 0.0. The scan
+/// finds the two equal -- PostgreSQL's float hash hashes -0 as 0 for the
+/// same reason -- and under a key of its own a stored -0.0 was missed by
+/// `price = 0.0` through the index alone. The document keeps the value as
+/// it was written. A -0.0 inside a list or a vector keeps its sign: folding
+/// those too was 570 bytes of the browser module, for a hash index on such
+/// a field meeting a -0.0.
+///
+/// A whole float an `f64` holds exactly as an int, up to 2^53, is filed
+/// under the int: a json path holds `3` in one document and `3.0` in
+/// another, which the scan finds equal and a bucket each would have split.
+/// A typed field never meets the two, its values and its literals coerced
+/// to its one type first, so it files and finds as it did.
+fn hash_key(v: &Value) -> Vec<u8> {
+    let mut out = Vec::new();
+    match v {
+        Value::Float(f) if f.fract() == 0.0 && f.abs() <= EXACT_INT => {
+            crate::codec::encode_value(&mut out, &Value::Int(*f as i64))
+        }
+        // Adding +0.0 turns -0.0 into 0.0 and leaves every other float alone.
+        Value::Float(f) => crate::codec::encode_value(&mut out, &Value::Float(f + 0.0)),
+        _ => crate::codec::encode_value(&mut out, v),
+    }
+    out
+}
+
+/// How many `in (get ...)` lists this process refused past
+/// [`MAX_SUBQUERY_VALUES`]: what a test counts a list's walks by.
+static LISTS_PAST_BOUND: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// [`LISTS_PAST_BOUND`], for a test of a binary of its own.
+#[doc(hidden)]
+pub fn lists_past_bound() -> u64 {
+    LISTS_PAST_BOUND.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The rows a scan reads in the time the probe looks one row's match up
+/// by its id and tests it -- 29 ns a row of a filter's scan against 122 for
+/// the probe's, with its flat row, over 100 010 users and 1 000 orders --
+/// doubled, so the probe is read only where it is surely the faster.
+const SCANNED_A_PROBE: usize = 8;
+
+/// Whether an index of `c` may name the rows `f` passes, as the planner
+/// takes one: an equality or an `in` over `id`, a hashed field or an
+/// ordered one, a range over an ordered field, any of them over the first
+/// part of an index over several, a radius or a box over a point, an inner
+/// `get`'s list. Otherwise `f` is answered by reading every row.
+fn index_names(c: &Collection, f: &Expr, params: &[Value]) -> bool {
+    if f.has_subquery() {
+        return true;
+    }
+    let ordered = |n: &str| {
+        c.sorted.iter().any(|(s, _)| s == n) || c.composites.iter().any(|(k, _)| k.keys[0].0 == n)
+    };
+    let keyed = |n: &str| n == "id" || c.hashes.contains_key(n) || ordered(n);
+    let mut eqs = Vec::new();
+    f.conjunct_equalities(params, &mut eqs);
+    let mut ins = Vec::new();
+    f.conjunct_in_sets(params, &mut ins);
+    let mut ranges = Vec::new();
+    f.conjunct_ranges(params, &mut ranges);
+    let mut shapes = Vec::new();
+    crate::geo::conjunct_shapes(f, params, &mut shapes);
+    eqs.iter().any(|e| keyed(e.0))
+        || ins.iter().any(|i| keyed(i.0))
+        || ranges.iter().any(|r| ordered(r.0))
+        || shapes.iter().any(|s| c.geo.iter().any(|(n, _)| n == s.0))
+}
+
+/// 2^53: the ints an `f64` holds every one of.
+const EXACT_INT: f64 = 9_007_199_254_740_992.0;
+
+/// [`hash_key`] under a `nocase` field's fold: a text's key is its fold's
+/// encoding, so `Alice` and `alice` are one bucket and one `@unique` value.
+/// Encoded as a text value is, so a key reads back as the fold.
+fn folded_key(v: &Value, fold: Option<CaseFold>) -> Vec<u8> {
+    match (v, fold) {
+        (Value::Text(_), Some(_)) => {
+            let mut out = Vec::new();
+            encode_folded(&mut out, v, fold);
+            out
+        }
+        _ => hash_key(v),
+    }
+}
+
+/// `v`'s encoding as a group, a facet, a distinct value or a sketch tells
+/// values apart by: a `nocase` field's text as its fold's -- encoded as a
+/// text is, so the key reads back as the fold.
+fn encode_folded(out: &mut Vec<u8>, v: &Value, fold: Option<CaseFold>) {
+    match (v, fold) {
+        // An ASCII text's fold is as long as it is: written lowercased as
+        // it is copied, with no text made in between -- a put of a row
+        // whose `@unique` email is written in mixed case went 1 348 ->
+        // 1 210 ns, a plain field's 1 230.
+        #[cfg(feature = "nocase")]
+        (Value::Text(t), Some(CaseFold::Unicode)) if t.is_ascii() => {
+            out.push(crate::codec::TAG_TEXT);
+            put_uvarint(out, t.len() as u64);
+            out.extend(t.bytes().map(|b| b.to_ascii_lowercase()));
+        }
+        (Value::Text(t), Some(f)) => {
+            out.push(crate::codec::TAG_TEXT);
+            crate::codec::encode_str(out, &crate::case::fold(t, f));
+        }
+        // `-0.0` one group, one value counted and one facet value with
+        // `0.0`, as SQL makes them.
+        _ => crate::codec::encode_key(out, v),
+    }
+}
+
+/// Ascending runs laid end to end, each ending at its place in `ends`,
+/// merged into one ascending list, two runs at a time: a run of one is left
+/// as it is, and k of them take log2(k) passes.
+fn merge_runs(ids: &mut Vec<DocId>, ends: &mut Vec<usize>) {
+    let mut out: Vec<DocId> = Vec::new();
+    while ends.len() > 1 {
+        out.clear();
+        out.reserve(ids.len());
+        let (mut start, mut kept) = (0, 0);
+        for pair in 0..ends.len().div_ceil(2) {
+            let mid = ends[2 * pair];
+            let end = ends.get(2 * pair + 1).copied().unwrap_or(mid);
+            let (mut a, mut b) = (ids[start..mid].iter(), ids[mid..end].iter());
+            let (mut x, mut y) = (a.next(), b.next());
+            while let (Some(&i), Some(&j)) = (x, y) {
+                if j < i {
+                    out.push(j);
+                    y = b.next();
+                } else {
+                    out.push(i);
+                    x = a.next();
+                }
+            }
+            // What is left of either run, after the one that ran out.
+            for (held, rest) in [(x, a), (y, b)] {
+                if let Some(&i) = held {
+                    out.push(i);
+                }
+                out.extend_from_slice(rest.as_slice());
+            }
+            ends[kept] = end;
+            kept += 1;
+            start = end;
+        }
+        ends.truncate(kept);
+        std::mem::swap(ids, &mut out);
+    }
+}
+
+/// The bucket key `v` finds in the hash index on `field`: the value coerced
+/// to the field's type, as the write path filed it, or -- over a `json`
+/// field or a path, whose values have no type -- the value itself where
+/// the bucket is exactly what `=` finds: null, a boolean, text, and a
+/// number an `f64` holds exactly. `None` sends the comparison to the scan:
+/// an int past 2^53 equals floats near it that no bucket of its own holds,
+/// and a timestamp equals the text it parses from.
+fn lookup_key(schema: &Schema, field: &str, v: &Value) -> Option<Vec<u8>> {
+    let fd = schema.indexed(field)?;
+    match &fd.ty {
+        DataType::Json => match v {
+            Value::Null | Value::Bool(_) | Value::Text(_) => Some(hash_key(v)),
+            Value::Int(i) if i.unsigned_abs() <= 1 << 53 => Some(hash_key(v)),
+            Value::Float(f) if f.abs() <= EXACT_INT => Some(hash_key(v)),
+            _ => None,
+        },
+        ty => v
+            .clone()
+            .coerce(ty)
+            .ok()
+            .map(|k| folded_key(&k, fd.case_fold())),
+    }
+}
+
+/// pgvector's operator, by the distance it orders by.
+fn operator(m: Metric) -> &'static str {
+    match m {
+        Metric::L2 => "<->",
+        Metric::Cosine => "<=>",
+        Metric::Dot => "<#>",
+    }
+}
+
+/// Refuses `order by <field> <op> $1`, read as `near`, where the field's
+/// index measures another distance than the operator: `near` orders by
+/// the index's, and the order would not be the one asked for. A field
+/// with no index is refused by `near` in its own words.
+#[inline(never)]
+fn metric_held(c: &Collection, field: &str, m: Metric) -> Result<()> {
+    let held = c.schema.field(field).and_then(|f| match (&f.ty, &f.index) {
+        (_, IndexKind::Vector(spec)) => Some(spec.metric),
+        (DataType::Sparse(_), IndexKind::Inverted) => Some(Metric::Dot),
+        _ => None,
+    });
+    // PostGIS's `<->` measures a plane, or a spheroid, and a point's
+    // `near` the sphere: read so, the order would be another.
+    if c.schema
+        .field(field)
+        .is_some_and(|f| matches!(f.ty, DataType::Geo))
+    {
+        return Err(Error::Query(format!(
+            "`{field}` holds points: the nearest are `near {field} <point>`"
+        )));
+    }
+    match held {
+        Some(h) if h != m => Err(Error::Query(format!(
+            "`{field} {}` orders by the {} distance, and its index measures {}: `{}` does",
+            operator(m),
+            m.name(),
+            h.name(),
+            operator(h),
+        ))),
+        _ => Ok(()),
+    }
+}
+
+/// A SQL join's flat page as its answer carries it ([`Nested::flat`]): its
+/// numbers worked out, and refused where two of its columns would answer
+/// under one name -- a row holds a name once, and SQL's `select *` over a
+/// join answers each table's `id`. `columns`: the `get`'s own.
+#[inline(never)]
+fn flat_page(f: &Flat, columns: &[String], n: &Nested, params: &[Value]) -> Result<Box<Flat>> {
+    let mut levels: Vec<&[String]> = vec![columns];
+    let mut level = Some(n);
+    while let Some(l) = level {
+        levels.push(&l.columns);
+        level = l.nested.as_deref();
+    }
+    let mut names: Vec<&str> = Vec::new();
+    for c in &f.columns {
+        let all = levels.get(c.level).copied().unwrap_or_default();
+        let one = std::slice::from_ref(&c.name);
+        // A `*`'s columns as the token is shown them ([`Flat::shown`]).
+        let shown = f.shown.iter().find(|(l, _)| *l == c.level).map(|(_, s)| s);
+        for name in if c.column.is_empty() { all } else { one } {
+            let hidden = c.column.is_empty()
+                && name != "id"
+                && shown.is_some_and(|s| !s.iter().any(|f| f == name));
+            if hidden {
+                continue;
+            }
+            if names.contains(&name.as_str()) {
+                return Err(Error::Query(format!(
+                    "the join answers two columns named `{name}`: name one with `as`"
+                )));
+            }
+            names.push(name);
+        }
+    }
+    Ok(Box::new(Flat {
+        columns: f.columns.clone(),
+        offset: Count::N(f.offset.at(params)),
+        limit: f.limit.map(|l| Count::N(l.at(params))),
+        ..Flat::default()
+    }))
+}
+
+/// Where a query reads `name`: the position of its field, and for a path
+/// the keys past it. `None` for a name the schema has no field for, or a
+/// path it cannot read ([`Schema::path_of`] says why).
+fn source<'a>(schema: &Schema, name: &'a str) -> Option<(usize, Option<&'a str>)> {
+    match schema.path_of(name) {
+        Ok(Some((pos, keys))) => Some((pos, Some(keys))),
+        Ok(None) => schema.field_pos(name).map(|p| (p, None)),
+        Err(_) => None,
+    }
+}
+
+/// [`source`], refused naming what is wrong: a field not there, or a path
+/// into one that is not `json`. `owner` goes before the name, as
+/// `reviews.` does for a `lookup`'s.
+fn source_or_err<'a>(
+    schema: &Schema,
+    name: &'a str,
+    owner: &str,
+) -> Result<(usize, Option<&'a str>)> {
+    match schema.path_of(name)? {
+        Some((pos, keys)) => Ok((pos, Some(keys))),
+        None => schema
+            .field_pos(name)
+            .map(|p| (p, None))
+            .ok_or_else(|| crate::schema::no_field(&format!("{owner}{name}"))),
+    }
+}
+
+/// What a column of a select reads: the id, a field or a path into one
+/// ([`source`]), or the `highlight()` or `snippet()` of the list at that
+/// place.
+enum Source<'a> {
+    Id,
+    At((usize, Option<&'a str>)),
+    Mark(usize),
+    /// A computed column of the list, by its place in `Select::computed`.
+    Calc(usize),
+}
+
+/// The places in the payload of a select's fields, when its columns are
+/// the id at most once and fields alone, in the order the payload holds
+/// them -- `select *` and most lists -- so a row is read in one pass over
+/// its document: a field at a time looked the document up again and
+/// skipped every field before it, ten look-ups and 45 skips a row of ten
+/// fields, 0.95 us a 1 KB row against 0.43.
+fn one_pass(schema: &Schema, sources: &[Source]) -> Option<Vec<usize>> {
+    let mut places = Vec::with_capacity(sources.len());
+    let mut ids = 0;
+    for s in sources {
+        match s {
+            Source::Id => ids += 1,
+            Source::At((pos, None)) => places.push(schema.place(*pos)),
+            _ => return None,
+        }
+    }
+    (!places.is_empty() && ids <= 1 && places.windows(2).all(|w| w[0] < w[1])).then_some(places)
+}
+
+/// A `highlight()` or `snippet()` worked out for a query.
+struct MarkPlan {
+    /// The text field it marks.
+    pos: usize,
+    snippet: Option<usize>,
+    tags: Option<(String, String)>,
+    ellipsis: String,
+}
+
+impl MarkPlan {
+    /// Its column for document `id`: the marks of the field's text -- as
+    /// `[start, end]` pairs of UTF-16 offsets, or the text with the tags
+    /// around them -- or a snippet's window, and `null` where the field is.
+    fn value(&self, terms: &crate::highlight::Terms, store: &Store, id: DocId) -> Result<Value> {
+        use crate::highlight::{marked, utf16_len, window};
+        let Some(Value::Text(text)) = store.read_field(id, self.pos)? else {
+            return Ok(Value::Null);
+        };
+        let spans = terms.spans(&text);
+        let Some(words) = self.snippet else {
+            return Ok(match &self.tags {
+                Some((pre, post)) => Value::Text(marked(&text, &spans, pre, post)),
+                None => Value::List(offsets(&text, &spans, 0)),
+            });
+        };
+        let (from, to) = window(&text, &spans, words);
+        let cut = text.get(from..to).unwrap_or("");
+        // The spans the window holds, from where it starts.
+        let inside: Vec<(usize, usize)> = spans
+            .iter()
+            .filter(|s| s.1 > from && s.0 < to)
+            .map(|s| (s.0.max(from) - from, s.1.min(to) - from))
+            .collect();
+        let before = if from > 0 { self.ellipsis.as_str() } else { "" };
+        let after = if to < text.len() {
+            self.ellipsis.as_str()
+        } else {
+            ""
+        };
+        Ok(match &self.tags {
+            Some((pre, post)) => {
+                let mut s = String::from(before);
+                s.push_str(&marked(cut, &inside, pre, post));
+                s.push_str(after);
+                Value::Text(s)
+            }
+            None => {
+                let mut s = String::with_capacity(before.len() + cut.len() + after.len());
+                s.push_str(before);
+                s.push_str(cut);
+                s.push_str(after);
+                let marks = Value::List(offsets(cut, &inside, utf16_len(before)));
+                Value::Object(vec![
+                    ("marks".to_string(), marks),
+                    ("text".to_string(), Value::Text(s)),
+                ])
+            }
+        })
+    }
+}
+
+/// `spans` of `text` as `[start, end]` pairs of UTF-16 offsets, each moved
+/// on by `shift`.
+fn offsets(text: &str, spans: &[(usize, usize)], shift: usize) -> Vec<Value> {
+    let mut at: Vec<usize> = spans.iter().flat_map(|s| [s.0, s.1]).collect();
+    crate::highlight::utf16(text, &mut at);
+    at.chunks(2)
+        .map(|p| {
+            Value::List(vec![
+                Value::Int((p[0] + shift) as i64),
+                Value::Int((p[1] + shift) as i64),
+            ])
+        })
+        .collect()
+}
+
+/// Whether `v` is not in `seen` yet, by its encoding, which it is then:
+/// equal encodings are equal values, and two that compare equal under
+/// others (`1` and `1.0`) both kept in an `in` list change no answer.
+fn first_seen(seen: &mut HashIndex, key: &mut Vec<u8>, v: &Value) -> bool {
+    key.clear();
+    crate::codec::encode_value(key, v);
+    if seen.get(key).is_some() {
+        return false;
+    }
+    seen.add(key.clone(), 0);
+    true
+}
+
+/// The value of document `id` at a [`source`], `null` where it has none.
+fn read_source(store: &Store, id: DocId, (pos, keys): (usize, Option<&str>)) -> Result<Value> {
+    Ok(match keys {
+        None => store.read_field(id, pos)?,
+        Some(keys) => store.read_path(id, pos, keys)?,
+    }
+    .unwrap_or(Value::Null))
+}
+
+/// The feature `kind` needs when this build was made without it
+/// (`Cargo.toml`): a file declaring such an index opens all the same, the
+/// index unbuilt, and what needs it is refused.
+fn missing_feature(kind: &IndexKind) -> Option<&'static str> {
+    match kind {
+        IndexKind::Vector(_) if !cfg!(feature = "vector") => Some("vector"),
+        IndexKind::Text(_) if !cfg!(feature = "text") => Some("text"),
+        IndexKind::Inverted if !cfg!(feature = "sparse") => Some("sparse"),
+        IndexKind::Geo if !cfg!(feature = "geo") => Some("geo"),
+        IndexKind::Sorted { .. } | IndexKind::Geo if !cfg!(feature = "sorted") => Some("sorted"),
+        _ => None,
+    }
+}
+
+/// What `f` declares that this build was made without and that a
+/// statement over its collection cannot be answered without, and the
+/// feature it needs: a `nocase` field, whose text compared as written
+/// would find what its fold does not and miss what it does, and a collated
+/// one, whose order is ICU's tables. A file declaring one opens all the
+/// same and its other collections answer. A statement that needs another
+/// feature -- a point's distance, a facet, an aggregate -- is refused
+/// where it asks, and the collection stays open to the rest.
+fn unbuilt(f: &crate::schema::Field) -> Option<(String, &'static str)> {
+    if f.nocase && !cfg!(feature = "nocase") {
+        return Some(("nocase".into(), "nocase"));
+    }
+    if let (Some(c), false) = (f.collate, cfg!(feature = "collate")) {
+        return Some((format!("collate {}", c.name()), "collate"));
+    }
+    None
+}
+
+/// Whether `sorts` name a collation (`order name collate und`), which a
+/// build without the `collate` feature cannot order in.
+fn sorts_collate(sorts: &[Sort]) -> bool {
+    sorts.iter().any(|s| s.collate.is_some())
+}
+
+/// The refusal of an `order ... collate` in a build without collations.
+fn collate_refused() -> Error {
+    not_built("`order ... collate`", "collate")
+}
+
+/// Whether this build has every index, which is where the checks for one
+/// it lacks fold away.
+const EVERY_INDEX: bool = cfg!(all(
+    feature = "vector",
+    feature = "text",
+    feature = "sparse",
+    feature = "sorted",
+    feature = "geo"
+));
+
+/// The refusal of a `near` or a `match` over `field` when it declares an
+/// index this build was made without, ahead of the one for a field that
+/// declares none -- whose message stays whole at each call site: put
+/// together here from parts passed in, it cost the module with every index
+/// 197 bytes brotli. That module asks nothing, since the lookup of the field
+/// is a loop the compiler cannot prove ends, and it would stay in.
+fn not_built_on(c: &Collection, field: &str, what: &str) -> Option<Error> {
+    if EVERY_INDEX {
+        return None;
+    }
+    let feature = missing_feature(&c.schema.field(field)?.index)?;
+    Some(not_built(&format!("field `{field}`'s {what}"), feature))
+}
+
+/// Whether an index files `a` and `b` as one entry: the same hash key, which
+/// every index's own key follows. `==` would call a NaN changed that files
+/// where it did, and was 570 bytes of the browser module besides.
+fn same(a: Option<&Value>, b: Option<&Value>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => hash_key(a) == hash_key(b),
+        _ => false,
+    }
+}
+
+/// The collation data the text of `doc`'s collated fields needs and the
+/// browser module has not been handed, a bit a chunk (collate.rs).
+fn collation_missing(schema: &Schema, doc: &Document) -> u32 {
+    schema
+        .fields
+        .iter()
+        .filter(|f| f.collate.is_some())
+        .fold(0, |m, f| {
+            m | doc.get(&f.name).map_or(0, collate::missing_in)
+        })
+}
+
+/// One resolved level of a `lookup` chain: the parts that do not depend on
+/// a row, plus the collection the key is read *from*.
+///
+/// `parent` is the level above -- the driving collection at depth 0, the
+/// level's own child collection one step down. That is the only thing a
+/// chained level needs that a single one did not: which store the key comes
+/// out of.
+struct Step<'a> {
+    l: &'a Lookup,
+    parent: &'a Collection,
+    child: &'a Collection,
+    probe: Probe<'a>,
+    /// Position of the key field in `parent`'s schema; `None` for `id`.
+    parent_pos: Option<usize>,
+    /// The level's `where`, bound the first time a row is tested.
+    test: std::cell::OnceCell<Filter<'a>>,
+}
+
+impl Step<'_> {
+    /// The value a row of the level above probes with.
+    fn key(&self, id: DocId) -> Result<Value> {
+        Ok(match self.parent_pos {
+            None => Value::Int(id as i64),
+            Some(p) => self.parent.store.read_field(id, p)?.unwrap_or(Value::Null),
+        })
+    }
+
+    /// Fills `out` with the children of the row `id` of the level above:
+    /// ascending, alive and free of duplicates. A key over several fields
+    /// asks its index apart, so a single key's probe -- `key` and
+    /// [`Probe::ids`] over a value -- is the code it was: through one key
+    /// that was a value or an index's bytes, a page of 20 x 3 x 5 by one
+    /// `@hash` field ran 1 to 2% longer in quiet runs (`make
+    /// lookup-bench`).
+    fn ids(&self, id: DocId, out: &mut Vec<DocId>) -> Result<()> {
+        if let Probe::Tuple(t) = &self.probe {
+            out.clear();
+            if let Some(k) = t.prefix(self.parent, id)? {
+                t.ids(self.child, &k, out);
+            }
+            return Ok(());
+        }
+        self.probe.ids(self.child, &self.key(id)?, out);
+        Ok(())
+    }
+
+    /// Whether any live child of the row `id` of the level above satisfies
+    /// `pred`, as `ids` asks.
+    fn any(&self, id: DocId, mut pred: impl FnMut(DocId) -> Result<bool>) -> Result<bool> {
+        if let Probe::Tuple(t) = &self.probe {
+            return match t.prefix(self.parent, id)? {
+                Some(k) => t.any(self.child, &k, &mut pred),
+                None => Ok(false),
+            };
+        }
+        self.probe.any(self.child, &self.key(id)?, pred)
+    }
+
+    /// Whether `id` passes this level's own `where`.
+    fn passes(&self, id: DocId, ctx: &EvalCtx) -> Result<bool> {
+        let Some(f) = &self.l.filter else {
+            return Ok(true);
+        };
+        let test = self.test.get_or_init(|| Filter::new(self.child, f, ctx));
+        test.matches(id, ctx).map_err(|e| match e {
+            Error::NotFound(m) => Error::NotFound(format!(
+                "{m} in `{}`{}",
+                self.l.collection,
+                crate::schema::AFTER_LOOKUP
+            )),
+            e => e,
+        })
+    }
+
+    /// [`Step::ids`] for a row of a level above that answered groups: its
+    /// key is in its columns, at the places `lookup_plan` found.
+    fn ids_of(&self, row: &[Value], out: &mut Vec<DocId>) {
+        out.clear();
+        match &self.probe {
+            Probe::Tuple(t) => {
+                if let Some(k) = t.prefix_of(row) {
+                    t.ids(self.child, &k, out);
+                }
+            }
+            p => p.ids(self.child, &column(row, self.parent_pos), out),
+        }
+    }
+
+    /// [`Step::any`] for a row of a level above that answered groups. The
+    /// test by reference and out of line: its two callers each held a copy,
+    /// 0.8 KB of the browser module.
+    #[inline(never)]
+    fn any_of(&self, row: &[Value], pred: &mut dyn FnMut(DocId) -> Result<bool>) -> Result<bool> {
+        match &self.probe {
+            Probe::Tuple(t) => match t.prefix_of(row) {
+                Some(k) => t.any(self.child, &k, pred),
+                None => Ok(false),
+            },
+            p => p.any(self.child, &column(row, self.parent_pos), pred),
+        }
+    }
+
+    /// How `explain` says the children were reached.
+    fn probed(&self) -> String {
+        match &self.probe {
+            Probe::Id => "the id probed".to_string(),
+            Probe::Hash(..) => "the hash index probed".to_string(),
+            Probe::Tuple(t) => format!(
+                "the index on ({}) {}",
+                t.comp.keys_text(),
+                match t.walk {
+                    Some((false, _)) => "walked",
+                    Some((true, _)) => "walked backwards",
+                    None => "probed",
+                }
+            ),
+        }
+    }
+}
+
+/// The value at `at` of a group's row, a null where there is none.
+fn column(row: &[Value], at: Option<usize>) -> Value {
+    at.and_then(|i| row.get(i)).cloned().unwrap_or(Value::Null)
+}
+
+/// What a level reads its key from in the level above: a field of its
+/// documents, or -- where that level answered groups, a `get` or a level
+/// whose list aggregates -- a column of its rows.
+#[derive(Clone, Copy)]
+enum Above<'a> {
+    Docs(&'a Collection),
+    Rows(&'a Collection, &'a [Column]),
+}
+
+impl<'a> Above<'a> {
+    fn collection(&self) -> &'a Collection {
+        match self {
+            Above::Docs(c) | Above::Rows(c, _) => c,
+        }
+    }
+
+    /// Where `name` is read -- a field's position (`None` for `id`), or a
+    /// column's place in a group's row -- and the type the child's key is
+    /// held to. A column holds a field's values where it is the field, a
+    /// group key's `bucket` of it, or its `min`, `max`, `first` or `last`;
+    /// any other is refused, since what a sum or a count holds has no type
+    /// before it is worked out, and a key's types are matched before a
+    /// row is read ([`check_key_types`]).
+    fn key(&self, name: &str) -> Result<(Option<usize>, DataType)> {
+        let (c, list) = match self {
+            Above::Docs(c) if name == "id" => return Ok((None, DataType::Int)),
+            Above::Docs(c) => {
+                let p = (c.schema.field_pos(name)).ok_or_else(|| crate::schema::no_field(name))?;
+                return Ok((Some(p), c.schema.fields[p].ty.clone()));
+            }
+            Above::Rows(c, list) => (c, list),
+        };
+        let at = (list.iter().position(|col| col.name == name))
+            .ok_or_else(|| Error::NotFound(format!("column `{name}`")))?;
+        let e = match &list[at].expr {
+            Expr::Call(b, a) if b == "bucket" && !a.is_empty() => &a[0],
+            e => e,
+        };
+        let ty = match carried_field(e) {
+            Some("id") => Some(DataType::Int),
+            Some(f) => c.schema.field(f).map(|f| f.ty.clone()),
+            None => None,
+        };
+        match ty {
+            Some(t) => Ok((Some(at), t)),
+            None => Err(Error::Query(format!(
+                "`lookup` reads its key from `{name}`, a column of the groups above that holds \
+                 no field's values: key it by a group key, or a `min`, `max`, `first` or `last` \
+                 of a field"
+            ))),
+        }
+    }
+}
+
+/// The rows a level hangs its children from: the documents of the level
+/// above, or -- where that level answered groups -- its rows, each key read
+/// from their columns.
+#[derive(Clone, Copy)]
+enum Parents<'r> {
+    Ids(&'r [DocId]),
+    Rows(&'r [Row]),
+}
+
+/// One of [`Parents`].
+#[derive(Clone, Copy)]
+enum Parent<'r> {
+    Doc(DocId),
+    Row(&'r [Value]),
+}
+
+impl<'r> Parents<'r> {
+    fn len(&self) -> usize {
+        match self {
+            Parents::Ids(ids) => ids.len(),
+            Parents::Rows(rows) => rows.len(),
+        }
+    }
+
+    fn at(&self, i: usize) -> Parent<'r> {
+        match self {
+            Parents::Ids(ids) => Parent::Doc(ids[i]),
+            Parents::Rows(rows) => Parent::Row(&rows[i].values),
+        }
+    }
+}
+
+/// Whether a row at `depth` survives -- it passes that level's `where`, and
+/// if the level below is `required`, it has at least one row there that
+/// survives in turn.
+///
+/// `required` is a statement about its own level: it drops rows of the level
+/// *above* it. So a review can be lost to an author that is not there, and a
+/// product then loses that review -- but only if the product's own level
+/// asked for `required` too. Nothing acts at a distance; the recursion is
+/// what makes the local rule compose.
+///
+/// It stops at the first survivor at every level, so a row with a thousand
+/// descendants costs what one with a single descendant costs -- the same
+/// property the single-level check has, carried down.
+fn survives(steps: &[Step], depth: usize, id: DocId, ctx: &EvalCtx) -> Result<bool> {
+    if !steps[depth].passes(id, ctx)? {
+        return Ok(false);
+    }
+    // A level that folds hangs the level below off its groups, which a
+    // `required` there sifts (`fold_level`), not off its children.
+    let Some(next) = (steps.get(depth + 1)).filter(|n| n.l.required && !steps[depth].l.folds())
+    else {
+        return Ok(true);
+    };
+    next.any(id, |g| survives(steps, depth + 1, g, ctx))
+}
+
+/// How `lookup` addresses the child collection.
+///
+/// Every arm is one lookup per parent. There is deliberately no "scan the
+/// child collection" arm: `near` refuses an unindexed field and names
+/// `@hnsw`, `match` refuses one and names `@text`, and the same rule keeps
+/// `lookup` from being an index probe in one query and a full scan in the
+/// next with nothing in the text telling them apart. The gap is not small --
+/// the scan was measured at 12.98 ms against 0.092 ms for the indexed
+/// equality over the same 200 000 rows.
+enum Probe<'a> {
+    /// The key is `id`, so the parent's value is already the address. No
+    /// index exists or could -- `Schema::new` reserves `id` and refuses it
+    /// as a declared field -- and none is needed. This is the foreign key to
+    /// primary key case, which is what makes refusing the unindexed one
+    /// tenable rather than obstructive.
+    Id,
+    /// A `@hash` bucket, borrowed for the whole query.
+    Hash(&'a HashIndex, &'a DataType),
+    /// A key over several fields, or one field leading such an index: a
+    /// run of the index whose leading parts are the child's fields.
+    Tuple(Tuple<'a>),
+}
+
+/// A [`Tuple`]'s mark of a build with the index: nothing, and without the
+/// `composite` feature a type of no value, so that no `Tuple` is made there
+/// and every path through one -- the probe, the walk, the child side of
+/// `required` -- is dead code the compiler drops, not code skipped.
+#[cfg(feature = "composite")]
+type Built = ();
+#[cfg(not(feature = "composite"))]
+type Built = crate::off::Never;
+
+#[cfg(feature = "composite")]
+const BUILT: Option<Built> = Some(());
+#[cfg(not(feature = "composite"))]
+const BUILT: Option<Built> = None;
+
+/// How a key over several fields reaches its children: the child's index
+/// whose leading parts are the fields `on` names, and for each of those
+/// parts, in the index's order, the field of the level above it pairs with.
+/// A parent's values, each made its child field's type as a single key's
+/// is, laid end to end as the index lays a row's, are a prefix of its
+/// children's keys: their entries are one run, found by two searches.
+struct Tuple<'a> {
+    ix: &'a CompositeIndex,
+    comp: &'a Composite,
+    /// Each leading part's parent field (`None` for `id`), and the type its
+    /// value is made first.
+    parts: Vec<(Option<usize>, DataType)>,
+    /// Each leading part's child field, by position: what the child side
+    /// of `required` reads a child's own parts with.
+    child_pos: Vec<usize>,
+    /// Whether the level's `order` is the order of the run's entries --
+    /// backwards or not, and up to which part it reads -- so a parent's
+    /// children are walked in it and only as far as its page, rather than
+    /// gathered and sorted.
+    walk: Option<(bool, usize)>,
+    _built: Built,
+}
+
+impl<'a> Tuple<'a> {
+    /// The index on the child for `l`'s key: one whose leading parts are
+    /// its child fields in any order -- of several, one whose next parts
+    /// the level's `order` walks, then the first; only one that walks it
+    /// where `walk_only`. `None` where none is for one field, which has its
+    /// `@hash` to be probed by; a key over several fields is refused,
+    /// naming the index to declare, as a single field with neither is: a
+    /// scan per parent would be another feature under the same name.
+    fn resolve(
+        child: &'a Collection,
+        above: Above,
+        l: &Lookup,
+        order: &[Sort],
+        walk_only: bool,
+    ) -> Result<Option<Tuple<'a>>> {
+        let n = l.on.len();
+        let leads = |comp: &Composite| {
+            comp.keys.len() >= n && comp.keys[..n].iter().all(|(k, _)| l.on.contains(k))
+        };
+        let Some(built) = BUILT else {
+            // What a full build answers through the index is refused
+            // naming the feature; one field with a `@hash` is probed.
+            let led = !walk_only && child.composites.iter().any(|(c, _)| leads(c));
+            return match (n, led) {
+                (1, false) => Ok(None),
+                _ => Err(not_built(
+                    &format!("`lookup {}` on {}", l.collection, l.side(true)),
+                    "composite",
+                )),
+            };
+        };
+        for c in &l.on {
+            if child.schema.field(c).is_none() {
+                return Err(Error::NotFound(format!("field `{}.{c}`", l.collection)));
+            }
+        }
+        let mut best: Option<(usize, Option<(bool, usize)>)> = None;
+        for (at, (comp, _)) in child.composites.iter().enumerate() {
+            if !leads(comp) {
+                continue;
+            }
+            let walk = walks(comp, n, 0, order, &child.schema);
+            if (!walk_only || walk.is_some())
+                && best.is_none_or(|b| b.1.is_none() && walk.is_some())
+            {
+                best = Some((at, walk));
+            }
+        }
+        let Some((at, walk)) = best else {
+            if n == 1 {
+                return Ok(None);
+            }
+            // Here, where a build without the index never reaches, so it
+            // holds none of the text.
+            let fields = l.side(true);
+            return Err(Error::Query(format!(
+                "`lookup` on `{}` {fields} needs an index whose first fields are those \
+                 (declare it with @sorted{fields})",
+                l.collection
+            )));
+        };
+        let Some(ix) = child.composite(at)? else {
+            return Ok(None);
+        };
+        // A value its order has no place for is in no walk's order.
+        let walk = walk.filter(|_| ix.apart().is_empty());
+        if walk_only && walk.is_none() {
+            return Ok(None);
+        }
+        let comp = &child.composites[at].0;
+        let (mut parts, mut child_pos) = (Vec::with_capacity(n), Vec::with_capacity(n));
+        for (k, _) in &comp.keys[..n] {
+            let Some(p) = l.on.iter().position(|c| c == k).map(|i| &l.parent[i]) else {
+                continue;
+            };
+            let (pos, pty) = above.key(p)?;
+            let ty = child.schema.part_type(k)?;
+            check_key_types(&pty, &ty, p, &l.collection, k)?;
+            parts.push((pos, ty));
+            child_pos.push(child.schema.field_pos(k).unwrap_or(0));
+        }
+        Ok(Some(Tuple {
+            ix,
+            comp,
+            parts,
+            child_pos,
+            walk,
+            _built: built,
+        }))
+    }
+
+    /// The prefix the row `id` of the level above probes with: its fields'
+    /// values, each made its child field's type, or `None` where one is
+    /// null -- a NULL key matches nothing, as a single key's -- or cannot
+    /// be. Out of line: its callers are four.
+    #[inline(never)]
+    fn prefix(&self, parent: &Collection, id: DocId) -> Result<Option<crate::composite::KeyBytes>> {
+        let mut vals = Vec::with_capacity(self.parts.len());
+        for (pos, ty) in &self.parts {
+            let v = match pos {
+                None => Value::Int(id as i64),
+                Some(p) => parent.store.read_field(id, *p)?.unwrap_or(Value::Null),
+            };
+            vals.push(v.coerce(ty).unwrap_or(Value::Null));
+        }
+        Ok(self.laid(&vals))
+    }
+
+    /// [`Tuple::prefix`] for a row of a level above that answered groups:
+    /// its key's values are in its columns.
+    fn prefix_of(&self, row: &[Value]) -> Option<crate::composite::KeyBytes> {
+        let mut vals = Vec::with_capacity(self.parts.len());
+        for (pos, ty) in &self.parts {
+            vals.push(column(row, *pos).coerce(ty).unwrap_or(Value::Null));
+        }
+        self.laid(&vals)
+    }
+
+    /// `vals`, a value a leading part, laid end to end as the index keys
+    /// them; `None` where one is null.
+    fn laid(&self, vals: &[Value]) -> Option<crate::composite::KeyBytes> {
+        const NULL: Value = Value::Null;
+        let mut refs = [&NULL; crate::schema::MAX_COMPOSITE_KEYS];
+        for (r, v) in refs.iter_mut().zip(vals) {
+            if v.is_null() {
+                return None;
+            }
+            *r = v;
+        }
+        Some(self.ix.key(&refs[..vals.len()]).bytes)
+    }
+
+    /// Whether the child `cid`'s own leading parts are what the row `pid`
+    /// of the level above probes with: the child side of `required`, whose
+    /// child names its parent by the part paired with `id` and is held to
+    /// the rest here, as the parent's probe would hold it -- the same
+    /// bytes, since an entry's are the child's parts as `laid` lays them.
+    fn holds(
+        &self,
+        child: &Collection,
+        cid: DocId,
+        parent: &Collection,
+        pid: DocId,
+    ) -> Result<bool> {
+        let mut vals = Vec::with_capacity(self.child_pos.len());
+        for &p in &self.child_pos {
+            vals.push(child.store.read_field(cid, p)?.unwrap_or(Value::Null));
+        }
+        Ok(match (self.laid(&vals), self.prefix(parent, pid)?) {
+            (Some(a), Some(b)) => a == b,
+            _ => false,
+        })
+    }
+
+    /// The run of entries `key` is the prefix of.
+    fn span(&self, key: &[u8]) -> crate::composite::Span {
+        self.ix.span(key, self.parts.len(), None)
+    }
+
+    /// [`Probe::ids`] over the run `key` names: in the index's order, put in
+    /// id order, the order a bucket holds them in and a tie goes by.
+    fn ids(&self, child: &Collection, key: &[u8], out: &mut Vec<DocId>) {
+        let _ = self.ix.run(key, &mut |id| {
+            if child.store.contains(id) {
+                out.push(id);
+            }
+            Ok(true)
+        });
+        out.sort_unstable();
+    }
+
+    /// [`Probe::any`] over the run `key` names, as it lies, as a bucket is
+    /// walked: one witness is the answer, whatever order the rest are in.
+    /// The test by reference, so the walk's callback is one function rather
+    /// than one for each caller's test.
+    fn any(
+        &self,
+        child: &Collection,
+        key: &[u8],
+        pred: &mut dyn FnMut(DocId) -> Result<bool>,
+    ) -> Result<bool> {
+        let mut found = false;
+        self.ix.run(key, &mut |id| {
+            found = child.store.contains(id) && pred(id)?;
+            Ok(!found)
+        })?;
+        Ok(found)
+    }
+}
+
+impl<'a> Probe<'a> {
+    fn resolve(child: &'a Collection, field: &str, name: &str) -> Result<Probe<'a>> {
+        if field == "id" {
+            return Ok(Probe::Id);
+        }
+        let Some(fd) = child.schema.field(field) else {
+            return Err(Error::NotFound(format!("field `{name}.{field}`")));
+        };
+        match child.hash(field)? {
+            Some(map) => Ok(Probe::Hash(map, &fd.ty)),
+            None => Err(Error::Query(format!(
+                "`lookup` on `{name}.{field}` needs a hash index (declare it with @hash)"
+            ))),
+        }
+    }
+
+    /// The type the parent's key is compared against.
+    fn key_type(&self) -> DataType {
+        match self {
+            Probe::Hash(_, ty) => (*ty).clone(),
+            _ => DataType::Int,
+        }
+    }
+
+    /// Whether any live child under `key` satisfies `pred`.
+    ///
+    /// `ids` below materialises the bucket -- filtered, sorted, deduped --
+    /// because the collecting pass needs the children in order. The
+    /// existence pass behind `required` does not: it needs one witness, so
+    /// it walks the bucket as it lies and stops at the first. Order and
+    /// duplicates cannot change the answer to "is there one".
+    ///
+    /// On a parent holding 56 374 children that is the difference between
+    /// sorting all of them and reading a handful.
+    fn any(
+        &self,
+        child: &Collection,
+        key: &Value,
+        mut pred: impl FnMut(DocId) -> Result<bool>,
+    ) -> Result<bool> {
+        if key.is_null() {
+            return Ok(false);
+        }
+        match self {
+            Probe::Id => {
+                if let Ok(Value::Int(i)) = key.clone().coerce(&DataType::Int) {
+                    if let Ok(id) = DocId::try_from(i) {
+                        if child.store.contains(id) {
+                            return pred(id);
+                        }
+                    }
+                }
+                Ok(false)
+            }
+            Probe::Hash(map, ty) => {
+                let Ok(k) = key.clone().coerce(ty) else {
+                    return Ok(false);
+                };
+                // The child's index decides how its key compares: a
+                // `nocase` one finds a parent's value by its fold.
+                let Some(ids) = map.get(&map.key(&k)) else {
+                    return Ok(false);
+                };
+                for id in ids.iter() {
+                    if child.store.contains(id) && pred(id)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            // Asked apart ([`Step::any`]).
+            Probe::Tuple(_) => Ok(false),
+        }
+    }
+
+    /// Fills `out` with the child ids matching `key`: ascending, alive and
+    /// free of duplicates.
+    fn ids(&self, child: &Collection, key: &Value, out: &mut Vec<DocId>) {
+        out.clear();
+        // A NULL key matches nothing, not even a stored NULL. A field left
+        // out of a document is written as NULL and does get a bucket, so
+        // without this guard every document missing the key would attach to
+        // every other one -- a cross product over exactly the rows that
+        // carry no information. It disagrees with `eval`, where `NULL =
+        // NULL` is true; `on` is not `where`, and this is the rule SQL
+        // settled on for the same reason.
+        if key.is_null() {
+            return;
+        }
+        match self {
+            Probe::Id => {
+                if let Ok(Value::Int(i)) = key.clone().coerce(&DataType::Int) {
+                    if i > 0 && child.store.contains(i as DocId) {
+                        out.push(i as DocId);
+                    }
+                }
+            }
+            Probe::Hash(map, ty) => {
+                // The same conversion the write path used to build the
+                // bucket key, for the reason spelled out in `matching_ids`:
+                // an `int` key has to become `10.0` before it can find
+                // `price = 10.0`. Skipping it lets the mere presence of an
+                // index change the answer.
+                let Ok(k) = key.clone().coerce(ty) else {
+                    return;
+                };
+                let Some(ids) = map.get(&map.key(&k)) else {
+                    return;
+                };
+                // A bucket can hold ids whose document is gone. It holds
+                // them ascending and each once, so the children come in id
+                // order whatever order they were written in.
+                out.extend(ids.iter().filter(|id| child.store.contains(*id)));
+            }
+            // Asked apart ([`Step::ids`]).
+            Probe::Tuple(_) => {}
+        }
+    }
+}
+
+/// The two `lookup` key types must be identical, or both numeric.
+///
+/// The probe is a bucket lookup keyed by `encode_value(coerce(key, ty))`,
+/// while the equality it stands for is `cmp_value` -- two different
+/// cross-type rulebooks. They diverge in one reachable place: a `timestamp`
+/// parent key against a `text @hash` child key, where `coerce` renders
+/// ISO-8601 and so only finds text spelled that exact way, while `cmp_value`
+/// parses the text and calls them equal. Refusing the mismatch closes that
+/// by construction instead of special-casing the one pair known to differ
+/// today. The cost is refusing two pairs that would have agreed.
+fn check_key_types(
+    parent: &DataType,
+    child: &DataType,
+    parent_field: &str,
+    collection: &str,
+    child_field: &str,
+) -> Result<()> {
+    let numeric = |t: &DataType| matches!(t, DataType::Int | DataType::Float | DataType::Timestamp);
+    if matches!(parent, DataType::Vector(..)) || matches!(child, DataType::Vector(..)) {
+        return Err(Error::Type(
+            "a vector cannot be a `lookup` key: float equality is a coincidence, not a match"
+                .into(),
+        ));
+    }
+    if parent == child || (numeric(parent) && numeric(child)) {
+        return Ok(());
+    }
+    Err(Error::Type(format!(
+        "`lookup` key types do not match: `{parent_field}` is {}, `{collection}.{child_field}` is {}",
+        parent.name(),
+        child.name()
+    )))
+}
+
+/// Lazy field access over the store: a field is read when the filter asks
+/// for it, and read again when asked again. Each value read was once kept
+/// in a list the row allocated, and handed out as a copy -- a string twice
+/// allocated -- which cost more than reading a field twice: a scan of
+/// 20 000 rows with a comparison and an order took 2.39 ms natively and
+/// 3.51 in the browser module, and takes 1.93 and 2.86 without.
+struct StoreRow<'a> {
+    store: &'a Store,
+    schema: &'a Schema,
+    id: DocId,
+}
+
+impl<'a> RowAccess for StoreRow<'a> {
+    fn id(&self) -> DocId {
+        self.id
+    }
+    fn field(&mut self, name: &str) -> Result<Value> {
+        let at = source_or_err(self.schema, name, "")?;
+        read_source(self.store, self.id, at)
+    }
+    fn text_order(&self, name: &str) -> TextOrder {
+        self.schema
+            .field(name)
+            .map_or(TextOrder::BYTES, |f| f.text_order())
+    }
+}
+
+/// Access that uses the document as its source (on the put/update path).
+struct DocRow<'a>(&'a Document, &'a Schema);
+impl<'a> RowAccess for DocRow<'a> {
+    fn id(&self) -> DocId {
+        self.0.id
+    }
+    fn field(&mut self, name: &str) -> Result<Value> {
+        self.1.path_of(name)?;
+        Ok(self.0.at(name).cloned().unwrap_or(Value::Null))
+    }
+    fn text_order(&self, name: &str) -> TextOrder {
+        self.1
+            .field(name)
+            .map_or(TextOrder::BYTES, |f| f.text_order())
+    }
+}
+
+/// For expressions with no field reference (literal/parameter/function).
+struct NoRow;
+impl RowAccess for NoRow {
+    fn id(&self) -> DocId {
+        0
+    }
+    fn field(&mut self, name: &str) -> Result<Value> {
+        Err(Error::Query(format!(
+            "field `{name}` cannot be accessed in this context"
+        )))
+    }
+}
+
+pub struct Database {
+    collections: Names<Collection>,
+    order: Vec<String>,
+    next_coll_id: u32,
+    registry: Registry,
+    /// `Mutex` not for locking but for `Sync`: `Sink` is only required to be
+    /// `Send` (a sink carrying a JS handle on the browser side cannot be
+    /// `Sync`), but the server expects `Sync` so it can share `Database`
+    /// under an `RwLock`. Access always happens through `get_mut` on
+    /// `&mut self`: there is no locking cost.
+    sink: Mutex<Box<dyn Sink>>,
+    /// Whether writes are still not on disk before `sync` is called. The
+    /// periodic syncer on the server side skips idle passes with this flag.
+    dirty: bool,
+    /// The first storage error, once the sink has refused an append, a sync
+    /// or a rewrite. From then on every write is refused until the file is
+    /// reopened. After a failed `fsync` the kernel may already have dropped
+    /// the dirty pages, so a retry that succeeds proves nothing (PostgreSQL
+    /// learned this in 2018 and panics instead); and after a failed append the
+    /// memory holds a write the file does not. Reads go on: they answer from
+    /// memory, which is what every client was told so far.
+    failed: Option<String>,
+    /// Ring buffer of changed ids. Incremental feeding of replicas goes
+    /// through here; see [`crate::changes`].
+    changes: ChangeLog,
+    /// The party to wake after a write (if any).
+    watcher: Option<Arc<dyn Watcher>>,
+    /// On a node a router's lease lets write, whether the lease still does
+    /// ([`Self::set_fence`]): asked as a block lands, and as a schema change
+    /// or a maintenance starts, so no write lands after the lease lapsed --
+    /// the router promotes the tenant elsewhere once it knows the lease has.
+    #[cfg(not(target_arch = "wasm32"))]
+    fence: Option<Fence>,
+    /// What a block of writes is held to as it lands, on a server holding
+    /// a tenant to a quota ([`Self::set_limit`]).
+    #[cfg(not(target_arch = "wasm32"))]
+    limit: Option<Limit>,
+    /// The block of writes running, if one is: its writes are held back
+    /// from the sink and the feed until it lands, and put back if it does
+    /// not ([`Self::execute_block`]).
+    block: Option<Block>,
+    /// The last block's buffers, for the next one ([`Block::cleared`]).
+    spare: Block,
+    /// Which history the writes belong to, and whether they come from a
+    /// primary; see [`History`].
+    history: History,
+    /// Whether the documents are read from a mapped file rather than held in
+    /// memory (`fs::open`). It outlives the stores it was set for: a
+    /// rewrite, a compaction and an image adopted all end with the stores
+    /// pointed at the file again.
+    #[cfg(not(target_arch = "wasm32"))]
+    mapped: bool,
+    /// The writes a `create index` or `compact` running beside the database
+    /// has to catch up with once it is built (see `maintenance`). A `Mutex`
+    /// for the reason `sink` is one: it is registered under the read lock,
+    /// and the write path reaches it through `get_mut`.
+    tails: Mutex<maintenance::Tails>,
+    /// Whether `tails` holds any: the one thing every write looks at.
+    watched: std::sync::atomic::AtomicBool,
+    /// Images adopted: each replaces the contents wholesale, possibly at
+    /// the change the database already stood at.
+    adoptions: u64,
+    /// Whether the next load leaves the vectors it would link into a graph
+    /// for [`Database::link_pending`] (see [`Database::defer_linking`]).
+    defer_links: bool,
+    /// The bytes of the file as this database has written it: what it
+    /// opened, and every record appended since. An atomic because a graph
+    /// record is appended under the read lock ([`Database::save_graphs`]).
+    appended: std::sync::atomic::AtomicU64,
+    /// When a graph is due a record of its own: [`GRAPH_SAVE_CHANGES`] and
+    /// [`GRAPH_SAVE_GROWTH`] unless [`Database::set_graph_saves`] says.
+    graph_saves: (u64, u64),
+    /// Where the records appended since the file was read or rewritten hold
+    /// each collection's frames, and how many bytes they are: what
+    /// [`Database::hand_over`] points the stores at, once they amount to
+    /// `handover_at`.
+    #[cfg(not(target_arch = "wasm32"))]
+    landed: Vec<handover::Landed>,
+    #[cfg(not(target_arch = "wasm32"))]
+    landed_bytes: u64,
+    /// The writes the noted records hold, for [`handover::HANDOVER_DOCS`].
+    #[cfg(not(target_arch = "wasm32"))]
+    landed_writes: u64,
+    #[cfg(not(target_arch = "wasm32"))]
+    handover_at: u64,
+    /// When an open block spills ([`SPILL_AT`] unless set).
+    #[cfg(not(target_arch = "wasm32"))]
+    spill_at: u64,
+    /// Whether a rewrite beside the database is writing its side file: one
+    /// at a time, since the file has one name. Only where a file is mapped,
+    /// the one place a rewrite writes beside it.
+    #[cfg(all(feature = "std-fs", unix, target_pointer_width = "64"))]
+    beside: std::sync::atomic::AtomicBool,
+    /// The time a read of a collection whose rows expire is answered at
+    /// ([`Self::set_clock`]); the system's clock when `None`. The browser
+    /// module has no clock and sets it before each statement, as it is
+    /// handed every time; a test pins it.
+    clock: Option<i64>,
+    /// What the last compact left in the file besides the documents --
+    /// schemas, counters, graphs -- which the next would write again
+    /// ([`Self::garbage`]).
+    #[cfg(not(target_arch = "wasm32"))]
+    kept: u64,
+    /// The compacts that rewrote the file since the open.
+    #[cfg(not(target_arch = "wasm32"))]
+    compactions: u64,
+    /// How long the last compact held the write lock to put its file in
+    /// place: what every read and write waited out at most.
+    #[cfg(not(target_arch = "wasm32"))]
+    swap_held: std::time::Duration,
+    /// The rows a read reads at least to be pinned ([`Self::pin`]), and
+    /// the bytes this database's pins may hold together, beside what they
+    /// hold now: [`pinned::PIN_AT`] and [`pinned::PIN_BUDGET`] unless set.
+    #[cfg(not(target_arch = "wasm32"))]
+    pin_at: usize,
+    #[cfg(not(target_arch = "wasm32"))]
+    pin_budget: usize,
+    #[cfg(not(target_arch = "wasm32"))]
+    pins: Arc<std::sync::atomic::AtomicUsize>,
+    /// The documents of a block's `put`s, built and encoded before the
+    /// write lock ([`Self::prepare`]), while the block runs; and which of
+    /// its statements is running, for its `put` to take its own.
+    #[cfg(not(target_arch = "wasm32"))]
+    preparation: Prepared,
+    #[cfg(not(target_arch = "wasm32"))]
+    ready_at: Option<usize>,
+    /// Whether [`Self::execute_prepared`] or [`Self::execute_ready`] has
+    /// just handed the preparation over: one found otherwise is one a panic
+    /// left half way, and let go of ([`Self::disarm`]).
+    #[cfg(not(target_arch = "wasm32"))]
+    armed: bool,
+    /// Whether the caller writes the sink's buffer once it has let go of
+    /// the database ([`Self::write_behind`]): a handover then waits for the
+    /// next block's start, where it finds the records in the file.
+    #[cfg(not(target_arch = "wasm32"))]
+    behind: bool,
+}
+
+/// A server appends a graph to its file's tail ([`Database::save_graphs`])
+/// once this many of its nodes changed since it last reached the file --
+/// added, retired or linked, and every one of them linked again at the open
+/// after a crash --
+pub const GRAPH_SAVE_CHANGES: u64 = 10_000;
+
+/// -- and the file has grown by this many times the record since: the
+/// graph a record holds is the whole of it, so a record every few thousand
+/// writes, which a bound on the linking alone would ask of a big graph,
+/// would write the graph over and over for a little of it.
+pub const GRAPH_SAVE_GROWTH: u64 = 3;
+
+/// What a node takes in a graph record, before one was written: measured
+/// at 100 000 x 768, m 16.
+const GRAPH_NODE_BYTES: u64 = 72;
+
+/// A mapped database hands the documents written since its file was opened
+/// over to the file once they amount to this many bytes
+/// ([`Database::hand_over`]): what its segments hold at the most, beside
+/// the block being written. A handover holds the write lock for as long as
+/// its documents take, 1 ms for 16 MB of 768-dim ones and 2 ms of 128-dim
+/// ones, where 64 MB held it 3.9 and 8.5 ms: the same work in shorter
+/// pauses, and a quarter of the memory.
+pub const HANDOVER_AT: u64 = 16 << 20;
+
+/// A mapped database's open block spills the frames it holds into the file
+/// once they amount to this many bytes (`Database::spill`): a block held
+/// every document it wrote twice until it landed, once in its record and
+/// once in the stores, and 250 000 768-dim rows in one COPY peaked 1 569 MB
+/// over what they left.
+pub const SPILL_AT: u64 = 16 << 20;
+
+impl Default for Database {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Database {
+    pub fn new() -> Database {
+        Database {
+            collections: Names::default(),
+            order: Vec::new(),
+            next_coll_id: 1,
+            registry: Registry::with_builtins(),
+            sink: Mutex::new(Box::new(NullSink)),
+            dirty: false,
+            failed: None,
+            changes: ChangeLog::default(),
+            watcher: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            fence: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            limit: None,
+            block: None,
+            spare: Block::default(),
+            history: History::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            mapped: false,
+            tails: Mutex::default(),
+            watched: std::sync::atomic::AtomicBool::new(false),
+            adoptions: 0,
+            defer_links: false,
+            appended: std::sync::atomic::AtomicU64::new(0),
+            graph_saves: (GRAPH_SAVE_CHANGES, GRAPH_SAVE_GROWTH),
+            #[cfg(not(target_arch = "wasm32"))]
+            landed: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            landed_bytes: 0,
+            #[cfg(not(target_arch = "wasm32"))]
+            landed_writes: 0,
+            #[cfg(not(target_arch = "wasm32"))]
+            handover_at: HANDOVER_AT,
+            #[cfg(not(target_arch = "wasm32"))]
+            spill_at: SPILL_AT,
+            #[cfg(all(feature = "std-fs", unix, target_pointer_width = "64"))]
+            beside: std::sync::atomic::AtomicBool::new(false),
+            clock: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            kept: 0,
+            #[cfg(not(target_arch = "wasm32"))]
+            compactions: 0,
+            #[cfg(not(target_arch = "wasm32"))]
+            swap_held: std::time::Duration::ZERO,
+            #[cfg(not(target_arch = "wasm32"))]
+            pin_at: pinned::PIN_AT,
+            #[cfg(not(target_arch = "wasm32"))]
+            pin_budget: pinned::PIN_BUDGET,
+            #[cfg(not(target_arch = "wasm32"))]
+            pins: Arc::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            preparation: Prepared::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            ready_at: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            armed: false,
+            #[cfg(not(target_arch = "wasm32"))]
+            behind: false,
+        }
+    }
+
+    /// Answers a read of a collection whose rows expire (`@ttl`) as at
+    /// `now`, in milliseconds since the epoch; `None` goes back to the
+    /// system's clock. `wasm32-unknown-unknown` has none, so the browser
+    /// module sets it before each statement, from `Date.now()`.
+    pub fn set_clock(&mut self, now: Option<i64>) {
+        self.clock = now;
+    }
+
+    /// The time a read is answered at.
+    fn now(&self) -> Result<i64> {
+        match self.clock {
+            Some(t) => Ok(t),
+            None => crate::time::now_ms(),
+        }
+    }
+
+    pub fn with_sink(sink: Box<dyn Sink>) -> Database {
+        let mut db = Database::new();
+        db.sink = Mutex::new(sink);
+        db
+    }
+
+    /// Sends every later write to `sink`. What was written before is not
+    /// in it: the caller starts it from a [`Self::snapshot`].
+    pub fn set_sink(&mut self, sink: Box<dyn Sink>) {
+        *self.sink_mut() = sink;
+    }
+
+    /// Exclusive access to the sink. No lock is taken, since it is `&mut self`.
+    fn sink_mut(&mut self) -> &mut Box<dyn Sink> {
+        self.sink.get_mut().unwrap_or_else(|e| e.into_inner())
+    }
+
+    // -------------------------------------------------------------- changes
+
+    /// The current value of the change counter. This is a subscriber's cursor.
+    pub fn change_seq(&self) -> u64 {
+        self.changes.seq()
+    }
+
+    /// The smallest cursor that can still be caught up incrementally. A
+    /// subscriber behind this has to be reseeded.
+    pub fn change_horizon(&self) -> u64 {
+        self.changes.horizon()
+    }
+
+    /// Entry count of the ring buffer: it decides how far behind a
+    /// subscriber may fall.
+    pub fn set_change_capacity(&mut self, n: usize) {
+        self.changes.set_capacity(n);
+    }
+
+    pub fn change_capacity(&self) -> usize {
+        self.changes.capacity()
+    }
+
+    /// Sets the party to wake after writes.
+    pub fn set_watcher(&mut self, w: Arc<dyn Watcher>) {
+        self.watcher = Some(w);
+    }
+
+    /// Marks a write on the feed, and for any maintenance running beside
+    /// the database on that collection.
+    fn note(&mut self, cid: u32, id: DocId) {
+        // In a block, once it lands: a subscriber or a maintenance sees the
+        // block whole, and one that does not land moves nothing.
+        if let Some(b) = &mut self.block {
+            b.notes.push((cid, id));
+            return;
+        }
+        self.changes.record(cid, id);
+        if *self.watched.get_mut() {
+            self.note_watched(cid, id);
+        }
+    }
+
+    /// Out of line: a browser never runs a maintenance, and inlined into
+    /// every write this was half a kilobyte of its module.
+    #[cold]
+    #[inline(never)]
+    fn note_watched(&mut self, cid: u32, id: DocId) {
+        self.tails
+            .get_mut()
+            .unwrap_or_else(|e| e.into_inner())
+            .note(cid, id);
+    }
+
+    /// Names of the collections that changed since `since`.
+    ///
+    /// For live queries in the browser: collection granularity is enough to
+    /// pick which query has to be re-run. `None` means the cursor fell
+    /// behind the horizon, or a collection written since has been dropped:
+    /// everything must be re-run.
+    ///
+    /// Exact otherwise, blocks included: a block's writes reach the ring as
+    /// it lands (`note`), so one put back -- a rollback, a failed statement
+    /// in a text of several -- names nothing, and a read inside an open
+    /// block sees none of its writes here yet.
+    pub fn changed_collections_since(&self, since: u64) -> Option<Vec<String>> {
+        let cids = self.changes.changed_collections(since)?;
+        let mut out = Vec::new();
+        for name in &self.order {
+            if cids.contains(&self.collections[name].id) {
+                out.push(name.clone());
+            }
+        }
+        // A dropped collection has no name left to give, and was left out
+        // above: a query of it has to run again and be told it is gone. So
+        // a drop answers "everything", re-running queries that read other
+        // collections for nothing -- harmless, and drops are rare -- where a
+        // name kept for every collection ever dropped would be kept for good.
+        (out.len() == cids.len()).then_some(out)
+    }
+
+    /// Returns the changes after a cursor, **as the rows stand right now**.
+    ///
+    /// `filter` is a *shape* definition: the subscriber follows a subset of
+    /// the collection rather than all of it. For every changed id a single
+    /// question is asked -- "does it exist now and does it match the
+    /// filter?" -- and the answer lands in `puts` or in `dels`. A row that
+    /// *leaves* the shape therefore shows up as a deletion by itself; no
+    /// separate "left" event and no old image have to be kept.
+    ///
+    /// There is a deliberate looseness: if a document that never matched the
+    /// filter changes, the subscriber sees its id as a deletion. Deleting a
+    /// row that is not there locally is harmless, but **the shape is not a
+    /// security boundary**: the information that ids outside the shape
+    /// *changed* leaks. Hiding rows needs a separate endpoint (or
+    /// `--http-read-only` + a token).
+    pub fn changes_since(
+        &self,
+        collection: &str,
+        since: u64,
+        filter: Option<&Expr>,
+        project: Option<&[String]>,
+        params: &[Value],
+    ) -> Result<Changes> {
+        let c = self.collection(collection)?;
+        let ids = match self.changes.since(since, c.id) {
+            Since::Reseed => return Ok(Changes::Reseed),
+            Since::Ids(ids) => ids,
+        };
+
+        let columns = projection_columns(&c.schema, &project.map(|p| p.to_vec()));
+        for col in &columns {
+            if col != "id" {
+                source_or_err(&c.schema, col, "")?;
+            }
+        }
+        let ctx = EvalCtx {
+            params,
+            registry: &self.registry,
+            clock: self.clock,
+        };
+        // A row past its time is gone for the subscriber as for any read:
+        // one that changed and expired is a deletion, and the sweep's
+        // delete of it later is one it was already told of.
+        let alive = self.alive(collection)?;
+        let shape;
+        let filter = match (filter, alive) {
+            (f, None) => f,
+            (Some(f), Some(a)) => {
+                shape = Expr::And(Box::new(f.clone()), Box::new(a));
+                Some(&shape)
+            }
+            (None, Some(a)) => {
+                shape = a;
+                Some(&shape)
+            }
+        };
+
+        let mut rows = Vec::new();
+        let mut dels = Vec::new();
+        let mut schema_changed = false;
+        for id in ids {
+            if id == SCHEMA_MARK {
+                schema_changed = true;
+                continue;
+            }
+            if !c.store.contains(id) {
+                dels.push(id);
+                continue;
+            }
+            if let Some(f) = filter {
+                let mut row = StoreRow {
+                    store: &c.store,
+                    schema: &c.schema,
+                    id,
+                };
+                if !truthy(&eval(f, &mut row, &ctx)?) {
+                    // Does not match the shape: for the subscriber it is gone.
+                    dels.push(id);
+                    continue;
+                }
+            }
+            let mut values = Vec::with_capacity(columns.len());
+            for col in &columns {
+                if col == "id" {
+                    values.push(Value::Int(id as i64));
+                } else {
+                    let at = source_or_err(&c.schema, col, "")?;
+                    values.push(read_source(&c.store, id, at)?);
+                }
+            }
+            rows.push(Row {
+                id,
+                values,
+                score: None,
+            });
+        }
+
+        Ok(Changes::Batch(ChangeBatch {
+            seq: self.changes.seq(),
+            puts: ResultSet {
+                columns,
+                rows,
+                nested: None,
+                facets: Vec::new(),
+            },
+            dels,
+            schema_changed,
+        }))
+    }
+
+    pub fn registry(&self) -> &Registry {
+        &self.registry
+    }
+    pub fn registry_mut(&mut self) -> &mut Registry {
+        &mut self.registry
+    }
+
+    pub fn install_plugin(&mut self, p: &dyn Plugin) -> Result<()> {
+        self.registry.install(p)
+    }
+
+    pub fn collection(&self, name: &str) -> Result<&Collection> {
+        self.collections
+            .get(name)
+            .ok_or_else(|| Error::NotFound(format!("collection `{name}`")))
+    }
+
+    pub fn collection_names(&self) -> Vec<String> {
+        self.order.clone()
+    }
+
+    /// The hash, text, ordered and sparse indexes nothing has built since
+    /// the open, as `(collection, field)` in collection order -- those
+    /// `only` names when it names any: a collection (`products`) or one of
+    /// its fields (`products.description`). What [`Self::warm_index`] builds
+    /// one at a time.
+    pub fn unbuilt_indexes(&self, only: &[String]) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        for name in &self.order {
+            let Some(c) = self.collections.get(name) else {
+                continue;
+            };
+            for field in c.unbuilt() {
+                let named = only.is_empty()
+                    || only.iter().any(|o| match o.split_once('.') {
+                        Some((col, f)) => col == name && f == field,
+                        None => o == name,
+                    });
+                if named {
+                    out.push((name.clone(), field));
+                }
+            }
+        }
+        out
+    }
+
+    /// Builds the derived index on `collection.field`, as the first read of
+    /// it would: under the read lock a server holds, so reads go on beside
+    /// it and a reader that needs it waits for this build rather than
+    /// starting its own. A collection or field gone since it was listed is
+    /// passed over.
+    pub fn warm_index(&self, collection: &str, field: &str) -> Result<()> {
+        match self.collections.get(collection) {
+            Some(c) => c.warm(field),
+            None => Ok(()),
+        }
+    }
+
+    /// Every derived index `only` names ([`Self::unbuilt_indexes`]) built
+    /// now, in turn: what a process that holds the database itself calls
+    /// after the open, on a thread of its own, so the first `match` does
+    /// not pay for its index. Answers how many it built.
+    pub fn warm(&self, only: &[String]) -> Result<usize> {
+        let todo = self.unbuilt_indexes(only);
+        for (c, f) in &todo {
+            self.warm_index(c, f)?;
+        }
+        Ok(todo.len())
+    }
+
+    pub fn stats(&self) -> Vec<CollectionStats> {
+        self.order
+            .iter()
+            .filter_map(|n| self.collections.get(n))
+            .map(|c| c.stats())
+            .collect()
+    }
+
+    /// In-memory data footprint (bytes): segment bytes, offset indexes,
+    /// vector arenas and graph links, and the text, sparse, hash and ordered
+    /// indexes. Read from counters the indexes keep as they change, so the
+    /// cost is proportional to the number of collections -- `--max-memory`
+    /// asks before every write that grows the data.
+    ///
+    /// **This is not RSS.** Left out: the allocator's leftovers, session
+    /// buffers, upper-level neighbour allocations (~3% of l0) and temporary
+    /// peaks -- opening is ~2x the file, `checkpoint`/`compact` ~3x. It is a
+    /// scale, not a ceiling; use it with headroom on top.
+    pub fn memory_bytes(&self) -> usize {
+        self.collections
+            .values()
+            .map(|c| {
+                c.store.heap_bytes()
+                    + c.store.index_bytes()
+                    + c.vectors
+                        .values()
+                        .map(|ix| ix.arena_bytes() + ix.graph_bytes())
+                        .sum::<usize>()
+                    + c.hashes
+                        .values()
+                        .filter_map(Derived::built)
+                        .map(HashIndex::memory_bytes)
+                        .sum::<usize>()
+                    + c.texts
+                        .values()
+                        .filter_map(Derived::built)
+                        .map(|ix| ix.memory_bytes())
+                        .sum::<usize>()
+                    + c.sorted
+                        .iter()
+                        .filter_map(|(_, ix)| ix.built())
+                        .map(|ix| ix.memory_bytes())
+                        .sum::<usize>()
+                    + c.sparse
+                        .iter()
+                        .filter_map(|(_, ix)| ix.built())
+                        .map(|ix| ix.memory_bytes())
+                        .sum::<usize>()
+                    + c.geo
+                        .iter()
+                        .filter_map(|(_, ix)| ix.built())
+                        .map(|ix| ix.memory_bytes())
+                        .sum::<usize>()
+                    + c.composites
+                        .iter()
+                        .filter_map(|(_, ix)| ix.built())
+                        .map(|ix| ix.memory_bytes())
+                        .sum::<usize>()
+            })
+            .sum::<usize>()
+            + self.noted_bytes()
+            + self.block.as_ref().map_or(0, Block::bytes)
+    }
+
+    /// What the notes of where the records since the open went take
+    /// ([`Self::hand_over`]); none in the browser, which keeps none.
+    fn noted_bytes(&self) -> usize {
+        #[cfg(not(target_arch = "wasm32"))]
+        return self.landed_bytes_held();
+        #[cfg(target_arch = "wasm32")]
+        0
+    }
+
+    // ---------------------------------------------------------- persistence
+
+    /// Byte image of the whole database. Used to write to IndexedDB/OPFS in
+    /// the browser and to a file on native.
+    pub fn snapshot(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        // A buffer takes every write, so there is nothing to handle -- and
+        // `expect` here pulled the error's `Debug` into the browser module,
+        // 1.3 KB for a message nobody can reach.
+        let _ = self.snapshot_into(&mut out);
+        out
+    }
+
+    /// [`Self::snapshot`] written into `out` as it is produced: the records
+    /// of a collection go straight through, so the image is never a second
+    /// copy of the data (`Sink::rewrite_with`). The live records alone: the
+    /// image is what a page persists, a replica or a moved tenant is sent
+    /// and an archive keeps, and written with the versions every update
+    /// left behind it grew with them -- a page's image by every write since
+    /// the page was first opened.
+    pub fn snapshot_into(&self, out: &mut dyn ImageOut) -> Result<()> {
+        self.image_into(out, &self.order, &mut Vec::new())
+    }
+
+    /// [`Self::snapshot_into`], leaving out the dead records of the named
+    /// collections: what `compact` writes. Where each collection's data
+    /// record starts is put in `placed`, which is all [`Self::repoint`]
+    /// needs to point the stores at the new file.
+    fn image_into(
+        &self,
+        out: &mut dyn ImageOut,
+        compacting: &[String],
+        #[cfg_attr(target_arch = "wasm32", allow(unused_variables, clippy::ptr_arg))]
+        placed: &mut Vec<(u32, u64)>,
+    ) -> Result<()> {
+        // Counter header: a placeholder now, the body's length once it is
+        // written -- fixed width, so it is patched where it stands.
+        let head_at = MAGIC.len() as u64;
+        out.write(&image_head(self.changes.seq()))?;
+        let body_at = out.at();
+
+        if self.history.following || !self.history.lineage.is_empty() {
+            out.write(&self.history.record())?;
+        }
+
+        for name in &self.order {
+            let c = &self.collections[name];
+            let sc = c.schema.encode();
+            out.write(&record_head(REC_CREATE, c.id, sc.len()))?;
+            out.write(&sc)?;
+
+            let compact = compacting.iter().any(|n| n == name);
+            let bytes = match compact {
+                true => c.store.live_len(),
+                false => c.store.image_len(),
+            };
+            // The counter comes right after the schema: the collection has to
+            // exist, and its data can only carry the counter forward. Behind
+            // it, the index of the data record's frames an open takes rather
+            // than walking them; the browser's module keeps no writer of it.
+            let mut counter = Vec::with_capacity(9);
+            put_uvarint(&mut counter, c.store.next_id());
+            #[cfg(not(target_arch = "wasm32"))]
+            if bytes > 0 {
+                c.store.image_index(compact, &mut counter);
+            }
+            out.write(&record_head(REC_NEXTID, c.id, counter.len()))?;
+            out.write(&counter)?;
+            if bytes > 0 {
+                out.write(&record_head(REC_DATA, c.id, bytes))?;
+                // The browser maps no file, and its module keeps no list.
+                #[cfg(not(target_arch = "wasm32"))]
+                placed.push((c.id, out.at()));
+                match compact {
+                    true => c.store.write_live(out)?,
+                    false => c.store.write_image(out)?,
+                }
+            }
+
+            // The graph comes *after* the data records: to look the vectors
+            // up while loading, the documents must already be there.
+            for (field, ix) in &c.vectors {
+                if ix.is_empty() {
+                    continue;
+                }
+                let mut payload = Vec::new();
+                crate::codec::encode_str(&mut payload, field);
+                ix.serialize_graph_into(false, &mut payload);
+                out.write(&record_head(REC_GRAPH, c.id, payload.len()))?;
+                out.write(&payload)?;
+            }
+        }
+        let body_len = out.at() - body_at;
+        out.patch(head_at + 9, &body_len.to_le_bytes())
+    }
+
+    /// Points the stores at the file the sink has just rewritten: the same
+    /// documents, in their new places. The hash, ordered, text and vector
+    /// indexes stand -- nothing about the documents changed, only where
+    /// their bytes are. An image this database wrote says where each
+    /// collection's data record went, `placed`, and the collections named
+    /// had their live records alone written; the stores then work their new
+    /// places out without reading the file. One handed over from elsewhere
+    /// is walked, record head by record head.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn repoint(&mut self, placed: Option<&[(u32, u64)]>, compacted: &[String]) -> Result<()> {
+        if !self.mapped {
+            return Ok(());
+        }
+        let Some(base) = self.sink_mut().remapped() else {
+            return Ok(());
+        };
+        if let Some(placed) = placed {
+            for (name, c) in self.collections.iter_mut() {
+                match placed.iter().find(|(cid, _)| *cid == c.id) {
+                    Some(&(_, at)) if compacted.contains(name) => c.store.relocate_live(&base, at),
+                    Some(&(_, at)) => c.store.relocate_image(&base, at),
+                    None => c.store.let_go(),
+                }
+            }
+            return Ok(());
+        }
+        let keep = base.clone();
+        let bytes = (*keep).as_ref();
+        if bytes.len() < MAGIC.len() {
+            return Err(Error::Corrupt("the rewritten file is empty".into()));
+        }
+        let mut by_id = ById::default();
+        let mut fresh: HashMap<String, Store> = HashMap::new();
+        let mut walk = Walk::new(bytes, MAGIC.len());
+        while let Some(r) = walk.next()? {
+            match r.kind {
+                REC_CREATE => {
+                    let schema = Schema::decode(r.body, &mut 0)?;
+                    by_id.insert(r.cid, schema.name.clone());
+                    fresh.insert(schema.name, Store::new());
+                }
+                REC_NEXTID => {
+                    let next = get_uvarint(r.body, &mut 0)?;
+                    if let Some(store) = by_id.get(&r.cid).and_then(|n| fresh.get_mut(n)) {
+                        store.raise_next_id(next);
+                    }
+                }
+                REC_DATA => {
+                    if let Some(store) = by_id.get(&r.cid).and_then(|n| fresh.get_mut(n)) {
+                        let (at, len) = (r.body_at as u64, r.body.len() as u64);
+                        store.replay_mapped(&base, at, len, &mut |_| {})?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (name, mut store) in fresh {
+            if let Some(c) = self.collections.get_mut(&name) {
+                store.set_dropped(&c.schema.dropped);
+                c.store = store;
+            }
+        }
+        Ok(())
+    }
+
+    /// Builds the database from a byte image, and returns how much of it
+    /// that took: all of it, or the bytes before a last record cut short --
+    /// what a crash in the middle of an append leaves. A file is cut back
+    /// there before anything is appended to it (`fs::open`): a write
+    /// appended after the torn bytes is read back as the rest of them, and
+    /// the next open lost it.
+    pub fn load(&mut self, bytes: &[u8]) -> Result<usize> {
+        self.load_from(bytes, None)
+    }
+
+    /// The collation data the text this database holds in collated fields
+    /// needs and the browser module has not been handed, a bit a chunk
+    /// (collate.rs). A load with some missing is refused (`fennec_load`):
+    /// its `@sorted` indexes were built comparing without it. Every write
+    /// after keeps it so, checking what it writes before it writes it.
+    pub fn collation_missing(&self) -> u32 {
+        if !collate::PARTIAL {
+            return 0;
+        }
+        let mut mask = 0;
+        for c in self.collections.values() {
+            if c.schema.fields.iter().any(|f| f.collate.is_some()) {
+                for id in c.store.iter_ids() {
+                    if let Ok(Some(doc)) = c.store.read(&c.schema, id) {
+                        mask |= collation_missing(&c.schema, &doc);
+                    }
+                }
+            }
+        }
+        mask
+    }
+
+    /// [`Self::load`] over a mapped file (`fs::open_mapped`): the documents
+    /// stay in the file, read through the pages the operating system maps
+    /// in, and only what is derived from them -- the offset index, the hash,
+    /// ordered and text indexes, the graph -- is built in memory. In the
+    /// browser the image a load was handed, kept rather than copied.
+    pub fn load_mapped(&mut self, file: crate::store::Base) -> Result<usize> {
+        let keep = file.clone();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.mapped = true;
+        }
+        self.load_from((*keep).as_ref(), Some(&file))
+    }
+
+    /// With `base` the documents are read where they lie in it, and
+    /// without it copied into segments.
+    fn load_from(&mut self, bytes: &[u8], base: Option<&crate::store::Base>) -> Result<usize> {
+        #[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
+        self.load_records(bytes, &mut |store, chunk_at, chunk, index, note| {
+            let (at, len) = (chunk_at as u64, chunk.len() as u64);
+            match base {
+                #[cfg(not(target_arch = "wasm32"))]
+                Some(b) if index.is_some_and(|ix| store.adopt_index(b, at, len, ix)) => Ok(0),
+                Some(b) => store.replay_mapped(b, at, len, note),
+                None => store.replay_noting(chunk, note),
+            }
+        })
+    }
+
+    /// Has the next load leave out of the graphs the vectors it would link
+    /// into them -- the writes after the checkpoint, and every vector of a
+    /// graph it could not restore -- for [`Self::link_pending`] to link.
+    /// Until then `near` measures each of them against the query, so an
+    /// answer is what the graph finds and the nearest of them together. A
+    /// server opens its file this way (`fs::open_serving`) and links them
+    /// beside its queries: linked first, they kept its port closed for as
+    /// long as they took, 56.6 s at 100 000 x 768 never checkpointed,
+    /// which opens in 0.96 s this way.
+    pub fn defer_linking(&mut self) {
+        self.defer_links = true;
+    }
+
+    /// Links up to `max` of the vectors a load left out of the graphs
+    /// ([`Self::defer_linking`]) and returns how many are left. The caller
+    /// holds the write lock for as long as `max` of them take.
+    pub fn link_pending(&mut self, max: usize) -> usize {
+        let mut budget = max;
+        let mut left = 0;
+        for name in &self.order {
+            let Some(c) = self.collections.get_mut(name) else {
+                continue;
+            };
+            let Collection {
+                schema,
+                store,
+                vectors,
+                ..
+            } = c;
+            for (field, ix) in vectors.iter_mut() {
+                let before = ix.unlinked();
+                if before > 0 && budget > 0 {
+                    let pos = schema.field_pos(field);
+                    let now = ix.link_pending(budget, &mut |doc, out| {
+                        pos.is_some_and(|p| store.read_vector_into(doc, p, out).unwrap_or(false))
+                    });
+                    budget -= (before - now).min(budget);
+                }
+                left += ix.unlinked();
+            }
+        }
+        left
+    }
+
+    /// Links the vectors the open block's `put`s left waiting, in each field
+    /// where they number `at_least` or more: [`LINK_AT`] after a `put`, and
+    /// all of them as the block lands.
+    fn link_waiting(&mut self, at_least: usize) {
+        let Some(b) = self.block.as_mut() else {
+            return;
+        };
+        for (cid, field, n) in b.waiting.iter_mut() {
+            if *n == 0 || *n < at_least {
+                continue;
+            }
+            let waiting = std::mem::take(n);
+            let Some(c) = self.collections.values_mut().find(|c| c.id == *cid) else {
+                continue;
+            };
+            let Collection {
+                schema,
+                store,
+                vectors,
+                ..
+            } = c;
+            if let Some(ix) = vectors.get_mut(field) {
+                let pos = schema.field_pos(field);
+                ix.link_pending(waiting, &mut |doc, out| {
+                    pos.is_some_and(|p| store.read_vector_into(doc, p, out).unwrap_or(false))
+                });
+            }
+        }
+    }
+
+    /// Drops the nodes a block's `put`s left waiting that its undo made
+    /// tombstones, from the newest back, as far as `waiting` counts them.
+    fn forget_waiting(&mut self, waiting: &mut [(u32, String, usize)]) {
+        for (cid, field, n) in waiting.iter_mut() {
+            if *n == 0 {
+                continue;
+            }
+            let ix = self
+                .collections
+                .values_mut()
+                .find(|c| c.id == *cid)
+                .and_then(|c| c.vectors.get_mut(field));
+            *n -= ix.map_or(*n, |ix| ix.forget_waiting(*n));
+        }
+    }
+
+    /// Whether [`Self::save_graphs`] would append a graph.
+    pub fn graphs_due(&self) -> bool {
+        let appended = self.appended.load(Relaxed);
+        self.collections.values().any(|c| {
+            c.vectors
+                .values()
+                .any(|ix| graph_due(ix, appended, self.graph_saves))
+        })
+    }
+
+    /// When [`Self::save_graphs`] appends a graph: once `changes` of its
+    /// nodes changed since it last reached the file, and the file grew since
+    /// by `growth` times its record.
+    pub fn set_graph_saves(&mut self, changes: u64, growth: u64) {
+        self.graph_saves = (changes, growth);
+    }
+
+    /// Appends to the file, as a record of its own, each graph that changed
+    /// in [`GRAPH_SAVE_CHANGES`] nodes since it last reached it and has none
+    /// waiting to be linked, once the file has grown since by
+    /// [`GRAPH_SAVE_GROWTH`] times the record; returns how many. A load
+    /// restores a graph where its last record is and links only what was
+    /// written after it, where a server that crashed linked every vector
+    /// written since its last checkpoint -- which it writes on its way down
+    /// alone.
+    ///
+    /// It takes `&self`, for a caller holding the read lock: that keeps the
+    /// writes out while a graph is written -- a record of a graph that
+    /// writes changed meanwhile would not match the documents where it lands
+    /// -- and lets queries on. The record is not a write: the change counter
+    /// does not move and no replica is sent it. What comes back with the
+    /// count pushes the records to disk, to run once the lock is let go, as
+    /// a write's [`Durability`] is: left in the sink's buffer until the next
+    /// write, a record was lost to the crash of a server that had nothing
+    /// more to write -- the one that had just linked what the last crash
+    /// left. A sink that refuses either is reported back with
+    /// [`Self::fail`].
+    pub fn save_graphs(&self) -> Result<(usize, Option<Durability>)> {
+        if self.failed.is_some() {
+            return Ok((0, None));
+        }
+        let mut n = 0;
+        for name in &self.order {
+            let c = &self.collections[name];
+            for (field, ix) in &c.vectors {
+                if !graph_due(ix, self.appended.load(Relaxed), self.graph_saves) {
+                    continue;
+                }
+                // Written where it goes out, its head into room left before
+                // it as a block's is: the graph copied into a payload and the
+                // payload into a record were two more copies of it under the
+                // read lock.
+                let mut buf = vec![0; HEAD_ROOM];
+                crate::codec::encode_str(&mut buf, field);
+                ix.serialize_graph_into(true, &mut buf);
+                let body = buf.len() - HEAD_ROOM;
+                let (h, hn) = head(REC_GRAPH, c.id, body);
+                buf[HEAD_ROOM - hn..HEAD_ROOM].copy_from_slice(&h[..hn]);
+                let record = &buf[HEAD_ROOM - hn..];
+                self.sink
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .append_deferred(record)?;
+                let end =
+                    self.appended.fetch_add(record.len() as u64, Relaxed) + record.len() as u64;
+                let p = ix.persisted();
+                p.changes.store(ix.changes(), Relaxed);
+                p.at.store(end, Relaxed);
+                p.node_bytes.store((body / ix.len().max(1)) as u64, Relaxed);
+                n += 1;
+            }
+        }
+        if n == 0 {
+            return Ok((0, None));
+        }
+        let durable = self
+            .sink
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .flush()?;
+        Ok((n, durable))
+    }
+
+    /// The vectors a load left out of the graphs and [`Self::link_pending`]
+    /// has still to link.
+    pub fn unlinked(&self) -> usize {
+        self.collections
+            .values()
+            .flat_map(|c| c.vectors.values())
+            .map(|ix| ix.unlinked())
+            .sum()
+    }
+
+    /// The pass over a file's records; `replay` takes a data record's frames
+    /// into a collection's store.
+    fn load_records(&mut self, bytes: &[u8], replay: &mut Replay<'_>) -> Result<usize> {
+        if bytes.len() < MAGIC.len() || bytes[..MAGIC.len()] != MAGIC[..] {
+            return Err(Error::Corrupt("invalid fennecdb signature".into()));
+        }
+        let pos = MAGIC.len();
+        let mut by_id = ById::default();
+        // Each graph is restored where its last record is, against the
+        // documents as they stood when it was written, and the writes after
+        // it are applied to it one touched document at a time: a
+        // checkpoint's image holds one after each collection's data, and a
+        // server appends one to the tail now and then (`save_graphs`).
+        // Restored after the whole file instead, a single write in the tail
+        // left the node count off and threw the graph away -- a crash cost a
+        // full rebuild -- and an earlier record of the same graph is not
+        // restored at all: it would read every vector again for nothing. A
+        // browser writes one record of a graph, in an image, and restores
+        // each it meets rather than carry the walk.
+        let last = match cfg!(target_arch = "wasm32") {
+            true => None,
+            false => Some(last_graphs(bytes)?),
+        };
+        // The counter is built from two parts: the base written by the
+        // checkpoint, and the records appended **after** the image body
+        // ended. The boundary is a byte offset (`body_end`), not a record
+        // count: a single data record of the image can hold thousands of
+        // frames, while the ones in the tail hold one each. Without the
+        // header (an old file) the base is zero and every record counts.
+        // The graph is derived data and is never counted.
+        let mut seq_base = 0u64;
+        let mut seq_seen = 0u64;
+        let mut body_end = MAGIC.len();
+        // The graphs restored, each with how many of its collection's
+        // touched documents came before it: it takes the ones after.
+        let mut restored: Vec<(String, String, usize)> = Vec::new();
+        // Per collection with a restored graph, the documents written after
+        // one was. A `Vec`, not a map: a file has a handful of collections,
+        // and the map's code was 1.5 KB of the browser module.
+        let mut touched: Vec<(String, Vec<DocId>)> = Vec::new();
+        let mut whole = bytes.len();
+        let mut walk = Walk::new(bytes, pos);
+        // The spills since the last write, by where each record and its
+        // body start and the body's length: a land takes the ones it names.
+        let mut spills: Vec<(usize, usize, usize)> = Vec::new();
+        // Where the spills the file ends with start: nothing lands them, and
+        // the file is cut there as after a torn record. One followed by any
+        // other record -- a graph, the history -- stays, dead.
+        let mut dead_tail: Option<usize> = None;
+        // The index of a data record's frames an image writes after the
+        // collection's id counter, for the record right after it alone.
+        let mut frames: Option<(u32, &[u8])> = None;
+        while let Some(r) = walk.next()? {
+            let tail = r.at >= body_end;
+            if matches!(
+                r.kind,
+                REC_CREATE | REC_DROP | REC_ALTER | REC_FIELDS | REC_DATA | REC_BLOCK
+            ) {
+                spills.clear();
+            }
+            dead_tail = match r.kind {
+                REC_SPILL => dead_tail.or(Some(r.at)),
+                _ => None,
+            };
+            let index = frames
+                .take()
+                .filter(|(cid, _)| r.kind == REC_DATA && *cid == r.cid && !tail)
+                .map(|(_, ix)| ix);
+            match r.kind {
+                REC_CREATE | REC_DROP | REC_ALTER | REC_FIELDS => {
+                    seq_seen += tail as u64;
+                    self.load_schema(r.kind, r.cid, r.body, &mut by_id, &mut restored)?;
+                }
+                REC_DATA => {
+                    let written = self.load_data(
+                        r.cid,
+                        bytes,
+                        r.body_at,
+                        r.body.len(),
+                        &by_id,
+                        &restored,
+                        &mut touched,
+                        index,
+                        replay,
+                    )?;
+                    if tail {
+                        seq_seen += written;
+                    }
+                }
+                REC_BLOCK => {
+                    let frames = self.load_block(
+                        bytes,
+                        r.body,
+                        &mut by_id,
+                        &mut restored,
+                        &mut touched,
+                        replay,
+                    )?;
+                    if tail {
+                        seq_seen += frames;
+                    }
+                }
+                // Held until a land names it; a land never comes for one a
+                // rollback or a crash left.
+                REC_SPILL => spills.push((r.at, r.body_at, r.body.len())),
+                REC_LAND => {
+                    let (named, rest) = land_parts(r.body)?;
+                    let mut frames = 0;
+                    for (at, len) in named {
+                        let Some(&(_, body_at, _)) = spills
+                            .iter()
+                            .find(|s| s.1 as u64 == at && s.2 as u64 == len)
+                        else {
+                            return Err(Error::Corrupt(
+                                "a land names a spill the file does not hold".into(),
+                            ));
+                        };
+                        frames += self.load_block(
+                            bytes,
+                            &bytes[body_at..body_at + len as usize],
+                            &mut by_id,
+                            &mut restored,
+                            &mut touched,
+                            replay,
+                        )?;
+                    }
+                    frames += self.load_block(
+                        bytes,
+                        rest,
+                        &mut by_id,
+                        &mut restored,
+                        &mut touched,
+                        replay,
+                    )?;
+                    if tail {
+                        seq_seen += frames;
+                    }
+                    spills.clear();
+                }
+                REC_NEXTID => {
+                    // Not a write but the counter itself: it does not move `seq`.
+                    let mut p = 0;
+                    let next = get_uvarint(r.body, &mut p)?;
+                    if let Some(name) = by_id.get(&r.cid) {
+                        if let Some(c) = self.collections.get_mut(name) {
+                            c.store.raise_next_id(next);
+                        }
+                    }
+                    if let Some(index) = r.body.get(p..).filter(|ix| !ix.is_empty()) {
+                        frames = Some((r.cid, index));
+                    }
+                }
+                REC_GRAPH => {
+                    let (cid, at, chunk) = (r.cid, r.at, r.body);
+                    let mut cp = 0usize;
+                    let field = crate::codec::decode_str(chunk, &mut cp)?;
+                    let latest = last.as_ref().is_none_or(|last| {
+                        last.iter()
+                            .any(|(c, f, p)| *c == cid && *f == field && *p == at)
+                    });
+                    let name = by_id.get(&cid).cloned();
+                    if let (true, Some(name)) = (latest, name) {
+                        if self.restore_graph(&name, &field, &chunk[cp..])? {
+                            let from = match touched.iter().position(|(n, _)| *n == name) {
+                                Some(i) => touched[i].1.len(),
+                                None => {
+                                    touched.push((name.clone(), Vec::new()));
+                                    0
+                                }
+                            };
+                            // As saved as its record: the writes after it
+                            // are what a crash would take into it again.
+                            #[cfg(not(target_arch = "wasm32"))]
+                            {
+                                let ix = &self.collections[&name].vectors[&field];
+                                let p = ix.persisted();
+                                p.at.store(walk.pos as u64, Relaxed);
+                                p.node_bytes
+                                    .store((chunk.len() / ix.len().max(1)) as u64, Relaxed);
+                            }
+                            forget(&mut restored, &name, &|f| f != field);
+                            restored.push((name, field, from));
+                        }
+                    }
+                }
+                // Not a write: it does not move `seq`.
+                REC_HISTORY => self.history = History::decode(r.body)?,
+                REC_SEQ => {
+                    let mut w = [0u8; 8];
+                    w.copy_from_slice(&r.body[..8]);
+                    seq_base = u64::from_le_bytes(w);
+                    w.copy_from_slice(&r.body[8..16]);
+                    body_end = walk.pos.saturating_add(u64::from_le_bytes(w) as usize);
+                    // An image that says it is longer than the file was cut
+                    // short between two of its records, which no record's own
+                    // length can show.
+                    if body_end > bytes.len() {
+                        return Err(Error::Corrupt(
+                            "the checkpoint image is longer than the file".into(),
+                        ));
+                    }
+                }
+                other => return Err(Error::Corrupt(format!("unknown record kind {other}"))),
+            }
+        }
+        if walk.torn {
+            // A crash in the middle of an append leaves the last record cut
+            // short, and only past the image: an image is written beside the
+            // file and renamed over it whole. One cut short inside it is a
+            // damaged or truncated file, and cutting the file there -- as a
+            // torn tail is cut -- destroyed every record after it, intact
+            // ones included.
+            if walk.pos < body_end {
+                return Err(Error::Corrupt(
+                    "a record of the checkpoint image runs past the end of the file".into(),
+                ));
+            }
+            whole = walk.pos;
+        }
+        if let Some(at) = dead_tail {
+            whole = whole.min(at);
+        }
+        // A database loaded from a file has no *history*, only its current
+        // state: the ring is emptied and the horizon is set to the counter.
+        // A cursor sitting exactly here (a quiet restart) gets an empty
+        // answer; everything else is reseeded.
+        self.changes.reset(seq_base + seq_seen);
+        // Indexes are derived data: a graph restored from the file takes the
+        // writes after its record; everything else is rebuilt from the
+        // documents.
+        self.rebuild_indexes_with(&restored, &touched)?;
+        *self.appended.get_mut() = whole as u64;
+        #[cfg(not(target_arch = "wasm32"))]
+        self.forget_landed();
+        self.defer_links = false;
+        Ok(whole)
+    }
+
+    /// A schema change of the file -- a record of its own, or one of a
+    /// block's -- made again: a collection made or dropped, or an index
+    /// added, which is built with the rest once the file is read.
+    fn load_schema(
+        &mut self,
+        kind: u8,
+        cid: u32,
+        body: &[u8],
+        by_id: &mut ById,
+        restored: &mut Vec<(String, String, usize)>,
+    ) -> Result<()> {
+        if kind == REC_DROP {
+            if let Some(name) = by_id.remove(&cid) {
+                self.collections.remove(&name);
+                self.order.retain(|n| n != &name);
+                forget(restored, &name, &|_| false);
+            }
+            return Ok(());
+        }
+        if kind == REC_FIELDS {
+            let ch = FieldChange::decode(body)?;
+            let Some(name) = by_id.get(&cid) else {
+                return Ok(());
+            };
+            let Some(c) = self.collections.get_mut(name) else {
+                return Ok(());
+            };
+            // The graphs restored before it stay, under the name their
+            // field has after it -- the documents are the same ones -- and
+            // a dropped field's goes with it.
+            let mut kept = Vec::new();
+            for (n, f, _) in restored.iter_mut() {
+                if n != name || (ch.op == FIELD_DROP && *f == ch.field) {
+                    continue;
+                }
+                let after = match ch.op == FIELD_RENAME && *f == ch.field {
+                    true => ch.to.clone(),
+                    false => f.clone(),
+                };
+                if let Some(ix) = c.vectors.remove(f.as_str()) {
+                    kept.push((after.clone(), ix));
+                }
+                *f = after;
+            }
+            c.schema = SchemaCell::new(ch.schema);
+            c.store.set_dropped(&c.schema.dropped);
+            c.reset_index_structures();
+            forget(restored, name, &|f| kept.iter().any(|(k, _)| k == f));
+            for (f, ix) in kept {
+                c.vectors.insert(f, ix);
+            }
+            return Ok(());
+        }
+        let schema = Schema::decode(body, &mut 0)?;
+        if kind == REC_CREATE {
+            // Made again under its name: no graph restored before is this
+            // collection's.
+            forget(restored, &schema.name, &|_| false);
+            by_id.insert(cid, schema.name.clone());
+            self.order.retain(|n| n != &schema.name);
+            self.order.push(schema.name.clone());
+            self.collections
+                .insert(schema.name.clone(), Collection::new(cid, schema));
+            self.next_coll_id = self.next_coll_id.max(cid + 1);
+            return Ok(());
+        }
+        let Some(name) = by_id.get(&cid) else {
+            return Ok(());
+        };
+        let Some(c) = self.collections.get_mut(name) else {
+            return Ok(());
+        };
+        // The field layout must not have changed: stored documents are
+        // encoded positionally.
+        let same_layout = c.schema.fields.len() == schema.fields.len()
+            && c.schema.dropped == schema.dropped
+            && c.schema
+                .fields
+                .iter()
+                .zip(&schema.fields)
+                .all(|(a, b)| a.name == b.name && a.ty == b.ty);
+        if same_layout {
+            // An index added leaves the graphs restored before it, as a
+            // replica leaves them: the documents are the same ones. Not in
+            // the browser, whose schemas are declared with their
+            // collections: 767 bytes of its module for a rebuild it would
+            // rarely save.
+            let mut kept = Vec::new();
+            for (n, f, _) in restored.iter().filter(|_| !cfg!(target_arch = "wasm32")) {
+                let same = schema.field_pos(f).is_some_and(|p| {
+                    c.schema.fields.get(p).map(|x| &x.index) == Some(&schema.fields[p].index)
+                });
+                if n == name && same {
+                    if let Some(ix) = c.vectors.remove(f) {
+                        kept.push((f.clone(), ix));
+                    }
+                }
+            }
+            c.schema = SchemaCell::new(schema);
+            c.reset_index_structures();
+            forget(restored, name, &|f| kept.iter().any(|(k, _)| k == f));
+            for (f, ix) in kept {
+                c.vectors.insert(f, ix);
+            }
+        }
+        Ok(())
+    }
+
+    /// A block record's body loaded -- its data records and its schema
+    /// changes, in order -- as a block, a spill or a land holds them;
+    /// returns its writes.
+    #[allow(clippy::too_many_arguments)]
+    fn load_block(
+        &mut self,
+        bytes: &[u8],
+        body: &[u8],
+        by_id: &mut ById,
+        restored: &mut Vec<(String, String, usize)>,
+        touched: &mut Vec<(String, Vec<DocId>)>,
+        replay: &mut Replay<'_>,
+    ) -> Result<u64> {
+        let mut frames = 0;
+        each_inner(body, &mut |kind, cid, inner| {
+            if kind != REC_DATA {
+                frames += 1;
+                return self.load_schema(kind, cid, inner, by_id, restored);
+            }
+            // Where the record's frames are in the file, which a mapped
+            // store reads them from.
+            let at = inner.as_ptr() as usize - bytes.as_ptr() as usize;
+            frames += self.load_data(
+                cid,
+                bytes,
+                at,
+                inner.len(),
+                by_id,
+                restored,
+                touched,
+                None,
+                replay,
+            )?;
+            Ok(())
+        })?;
+        Ok(frames)
+    }
+
+    /// A data record's frames, `len` bytes at `at` in the file, into their
+    /// collection's store -- noting each id for a graph restored before it,
+    /// which takes the writes after it. How many frames it held.
+    #[allow(clippy::too_many_arguments)]
+    fn load_data(
+        &mut self,
+        cid: u32,
+        bytes: &[u8],
+        at: usize,
+        len: usize,
+        by_id: &ById,
+        restored: &[(String, String, usize)],
+        touched: &mut Vec<(String, Vec<DocId>)>,
+        index: Option<&[u8]>,
+        replay: &mut Replay<'_>,
+    ) -> Result<u64> {
+        let name = by_id
+            .get(&cid)
+            .cloned()
+            .ok_or_else(|| Error::Corrupt(format!("unknown collection {cid}")))?;
+        let chunk = &bytes[at..at + len];
+        let c = self.collections.get_mut(&name).unwrap();
+        let frames = if restored.iter().any(|(n, _, _)| *n == name) {
+            let i = match touched.iter().position(|(n, _)| *n == name) {
+                Some(i) => i,
+                None => {
+                    touched.push((name, Vec::new()));
+                    touched.len() - 1
+                }
+            };
+            let ids = &mut touched[i].1;
+            replay(&mut c.store, at, chunk, None, &mut |id| ids.push(id))?
+        } else {
+            replay(&mut c.store, at, chunk, index, &mut |_| {})?
+        };
+        Ok(frames as u64)
+    }
+
+    /// Restores a persisted graph against the documents as they stand where
+    /// its record is, keeping it only if it describes them exactly: every
+    /// live node's document holds a vector, and no two nodes share one --
+    /// `restore_graph` checks both -- and every document holding one has a
+    /// node. The last used to be a comparison with the number of documents,
+    /// so a single document without a vector threw the graph away on every
+    /// open; it is still the answer when the counts agree, since the nodes
+    /// are then every document, and only a collection holding documents
+    /// without a vector reads each one's field to count them: 5.4 ms of a
+    /// 36 ms open at 100 000 x 128.
+    fn restore_graph(&mut self, name: &str, field: &str, bytes: &[u8]) -> Result<bool> {
+        let Some(c) = self.collections.get_mut(name) else {
+            return Ok(false);
+        };
+        let Some(pos) = c.schema.field_pos(field) else {
+            return Ok(false);
+        };
+        let DataType::Vector(dim, prec) = c.schema.fields[pos].ty else {
+            return Ok(false);
+        };
+        let IndexKind::Vector(spec) = c.schema.fields[pos].index else {
+            return Ok(false);
+        };
+        if !c.vectors.contains_key(field) {
+            return Ok(false);
+        }
+        let store = &c.store;
+        let Some(ix) = VectorIndex::restore_graph(bytes, dim, prec, |doc, out| {
+            store.read_vector_into(doc, pos, out).unwrap_or(false)
+        }) else {
+            return Ok(false);
+        };
+        // Built with other parameters -- another quantization, whose arena
+        // holds other codes -- it is not this index's graph.
+        if ix.spec != spec {
+            return Ok(false);
+        }
+        if ix.len() != store.len() {
+            let mut with_vector = 0;
+            for id in store.iter_ids() {
+                with_vector += store.has_vector(id, pos)? as usize;
+            }
+            if ix.len() != with_vector {
+                return Ok(false);
+            }
+        }
+        c.vectors.insert(field.to_string(), ix);
+        Ok(true)
+    }
+
+    pub fn rebuild_indexes(&mut self) -> Result<()> {
+        self.rebuild_indexes_with(&[], &[])
+    }
+
+    /// Fills the derived indexes from the documents. A vector index named in
+    /// `restored` came back from the file as of its last graph record, and
+    /// takes only the documents written after it: those of its collection's
+    /// `touched` from the count beside it on.
+    fn rebuild_indexes_with(
+        &mut self,
+        restored: &[(String, String, usize)],
+        touched: &[(String, Vec<DocId>)],
+    ) -> Result<()> {
+        let later = crate::vector::UNLINKED && self.defer_links;
+        for name in self.order.clone() {
+            let c = self.collections.get_mut(&name).unwrap();
+            let fields: Vec<String> = c.vectors.keys().cloned().collect();
+            let from = |field: &str| {
+                restored
+                    .iter()
+                    .find(|(n, f, _)| *n == name && f == field)
+                    .map(|(_, _, from)| *from)
+            };
+            let kept = |field: &str| from(field).is_some();
+            let written: &[DocId] = touched
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, ids)| &ids[..])
+                .unwrap_or(&[]);
+
+            // 1) The restored graphs take the writes after their records the
+            // way the write path took them: a touched document keeps its node
+            // while it holds the vector the record had -- `insert` sees to it
+            // -- has it retired for the one it holds now otherwise, and
+            // leaves the graph without one.
+            for field in fields.iter().filter(|f| kept(f)) {
+                let Some(pos) = c.schema.field_pos(field) else {
+                    continue;
+                };
+                let mut tail = written[from(field).unwrap_or(0).min(written.len())..].to_vec();
+                tail.sort_unstable();
+                tail.dedup();
+                let mut items: Vec<(DocId, Vec<f32>)> = Vec::new();
+                let mut gone = Vec::new();
+                let mut buf = Vec::new();
+                for &id in &tail {
+                    if c.store.read_vector_into(id, pos, &mut buf)? {
+                        items.push((id, buf.clone()));
+                    } else {
+                        gone.push(id);
+                    }
+                }
+                let ix = c
+                    .vectors
+                    .get_mut(field)
+                    .expect("a restored field has its index");
+                for id in gone {
+                    ix.remove(id);
+                }
+                if later {
+                    ix.defer_batch(&items);
+                    continue;
+                }
+                ix.insert_batch(&items);
+                // A graph a server wrote before it had linked everything
+                // holds nodes still waiting: linked here, as the tail is.
+                if ix.unlinked() > 0 {
+                    let store = &c.store;
+                    ix.link_pending(usize::MAX, &mut |doc, out| {
+                        store.read_vector_into(doc, pos, out).unwrap_or(false)
+                    });
+                }
+            }
+
+            // 2) Rebuild whatever could not be restored, at the field's own
+            // precision -- `VectorIndex::new` would have made every rebuilt
+            // `vector<N, f16>` index an f32 one.
+            for (field, ix) in c.vectors.iter_mut() {
+                if kept(field) {
+                    continue;
+                }
+                *ix = VectorIndex::with_precision(ix.dim, ix.spec, ix.precision());
+                // The document count is known, so the arena is sized in one go.
+                ix.reserve(c.store.len());
+            }
+            // The hash, text, ordered and sparse indexes are left for the
+            // documents to fill when a statement first reads each
+            // (`Derived`), but an ordered index over a collated field: in the
+            // browser a comparison meeting a script whose chunk it has not
+            // been handed notes it, and the load is refused and run again
+            // with the chunk (`collate::refuse`). Built by a read, the index
+            // would keep the order it had without the chunk.
+            for d in c.hashes.values_mut() {
+                *d = Derived::unbuilt();
+            }
+            for d in c.texts.values_mut() {
+                *d = Derived::unbuilt();
+            }
+            for (_, d) in c.sparse.iter_mut() {
+                *d = Derived::unbuilt();
+            }
+            for (_, d) in c.geo.iter_mut() {
+                *d = Derived::unbuilt();
+            }
+            // Without the `collate` feature none is: a statement over a
+            // collated field's collection is refused, and nothing compares
+            // in the collation.
+            let collated = |f: &str| {
+                cfg!(feature = "collate") && c.schema.field(f).is_some_and(|f| f.collate.is_some())
+            };
+            for (f, d) in c.sorted.iter_mut() {
+                if !collated(f) {
+                    *d = Derived::unbuilt();
+                }
+            }
+            // An index over several fields as well, and one with a collated
+            // part built now, for the reason an ordered index over a
+            // collated field is.
+            for i in 0..c.composites.len() {
+                c.composites[i].1 = Derived::unbuilt();
+                if c.composites[i].0.keys.iter().any(|(k, _)| collated(k)) {
+                    c.composite(i)?;
+                }
+            }
+            if fields.iter().all(|f| kept(f)) && !c.sorted.iter().any(|(f, _)| collated(f)) {
+                continue; // everything restored, no need to read the documents
+            }
+            // Listed only here, where they are read: listed for every
+            // collection, the ids of one with nothing to build were 2.1 ms
+            // of a million rows' open. Ascending, as `ids()` gives them.
+            let ids: Vec<DocId> = c.store.ids();
+            // The documents are read one at a time, and of each only the
+            // fields an index is built from. Decoding every document first
+            // held the collection a second time, bodies, field names and all:
+            // a 1 GB file of 2.3 million rows with a hash and an ordered
+            // index, which want one short field a row each, peaked at 4.2 GB
+            // of heap opening; read this way, at 2.3 GB.
+            let Collection {
+                schema,
+                store,
+                vectors,
+                sorted,
+                ..
+            } = c;
+            // Each index beside its field's position and the rows it is
+            // built from. Pushed in loops: collected, the lists were 2.5 KB
+            // of the browser module.
+            let mut sorted_ix = Vec::new();
+            for (f, ix) in sorted.iter_mut() {
+                if let Some(p) = schema
+                    .field_pos(f)
+                    .filter(|&p| schema.fields[p].collate.is_some())
+                {
+                    sorted_ix.push((p, ix, Vec::new()));
+                }
+            }
+            let mut vector_ix = Vec::new();
+            for (f, ix) in vectors.iter_mut() {
+                if let Some(p) = schema.field_pos(f).filter(|_| !kept(f)) {
+                    vector_ix.push((p, ix, Vec::new()));
+                }
+            }
+            // In field order, as `read_fields` wants them; walked rather than
+            // sorted, since a sort was 2 KB of the browser module.
+            let mut positions = Vec::new();
+            for p in 0..schema.fields.len() {
+                if sorted_ix.iter().any(|(q, ..)| *q == p)
+                    || vector_ix.iter().any(|(q, ..)| *q == p)
+                {
+                    positions.push(p);
+                }
+            }
+            let slot = |p: usize| positions.iter().position(|&q| q == p).unwrap_or(0);
+            // Pushed in a loop: collected, a `map` over the positions was
+            // 0.3 KB of the browser module.
+            let mut places = Vec::with_capacity(positions.len());
+            for &p in &positions {
+                places.push(schema.place(p));
+            }
+            // One field has one index, so each value is taken by one of them.
+            let mut vals = Vec::with_capacity(positions.len());
+            for id in ids {
+                if !store.read_fields(id, &places, &mut vals)? {
+                    continue;
+                }
+                for (p, _, rows) in sorted_ix.iter_mut() {
+                    let v = std::mem::replace(&mut vals[slot(*p)], Value::Null);
+                    rows.push((id, Some(v)));
+                }
+                for (p, _, rows) in vector_ix.iter_mut() {
+                    if let Value::Vector(v) = std::mem::replace(&mut vals[slot(*p)], Value::Null) {
+                        rows.push((id, v));
+                    }
+                }
+            }
+            // Each ordered index is sorted once from its keys rather than
+            // inserted row by row.
+            #[cfg(feature = "sorted")]
+            for (p, ix, rows) in sorted_ix.iter_mut() {
+                **ix = Derived::new(SortedIndex::build(
+                    &schema.fields[*p].ty,
+                    schema.fields[*p].text_order(),
+                    &mut std::mem::take(rows).into_iter(),
+                ));
+            }
+            for (_, ix, rows) in vector_ix.iter_mut() {
+                match later {
+                    true => {
+                        ix.defer_batch(rows);
+                    }
+                    false => ix.insert_batch(rows),
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Rewrites the file image (graph included), so the next open does not
+    /// have to rebuild the indexes.
+    pub fn checkpoint(&mut self) -> Result<()> {
+        self.refuse_if_failed()?;
+        // Its image would hold them: a block's writes land as its record,
+        // or not at all.
+        if self.in_block() {
+            return Err(Error::Query(
+                "a block of writes is open: a checkpoint waits for it to end".into(),
+            ));
+        }
+        // The sink is behind a lock, so the image can be written from `self`
+        // while the sink takes it: both are shared borrows here.
+        let mut placed = Vec::new();
+        let mut len = 0;
+        let r = {
+            let mut sink = self.sink.lock().unwrap_or_else(|e| e.into_inner());
+            sink.rewrite_with(&mut |out| {
+                self.image_into(out, &[], &mut placed)?;
+                len = out.at();
+                Ok(())
+            })
+        };
+        self.storage(r)?;
+        self.rewrote(len);
+        let r = self.sink_mut().sync();
+        self.storage(r)?;
+        #[cfg(not(target_arch = "wasm32"))]
+        self.repoint(Some(&placed), &[])?;
+        self.dirty = false;
+        Ok(())
+    }
+
+    /// The file is an image of the database as it stands, `len` bytes long:
+    /// every graph in it is as saved as it can be.
+    fn rewrote(&mut self, len: u64) {
+        // A browser appends no graph, and its module carries none of this.
+        if cfg!(target_arch = "wasm32") {
+            return;
+        }
+        *self.appended.get_mut() = len;
+        #[cfg(not(target_arch = "wasm32"))]
+        self.forget_landed();
+        for c in self.collections.values() {
+            for ix in c.vectors.values() {
+                let p = ix.persisted();
+                p.changes.store(ix.changes(), Relaxed);
+                p.at.store(len, Relaxed);
+            }
+        }
+    }
+
+    /// Appends a write's record. Every caller notes the write on the change
+    /// counter right after, so the record is numbered as the one after the
+    /// counter's current value.
+    fn wal(&mut self, rec: u8, cid: u32, payload: &[u8]) -> Result<()> {
+        // In a block, held back: the block lands as one record, or none.
+        if let Some(b) = &mut self.block {
+            b.frames.extend_from_slice(payload);
+            b.heads.push((rec, cid, b.frames.len()));
+            return Ok(());
+        }
+        let frame = framed(rec, cid, payload);
+        let seq = self.changes.seq() + 1;
+        let r = self.sink_mut().record(seq, &frame);
+        self.storage(r)?;
+        *self.appended.get_mut() += frame.len() as u64;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Pushes the writes to disk. After a storage error it does not try
+    /// again: it keeps answering with that error (see `failed`).
+    pub fn sync(&mut self) -> Result<()> {
+        self.refuse_if_failed()?;
+        let r = self.sink_mut().sync();
+        self.storage(r)?;
+        self.dirty = false;
+        Ok(())
+    }
+
+    /// The first half of [`Self::sync`], for a caller that will not hold the
+    /// database while the disk works: the writes go to the operating
+    /// system, and what comes back makes them durable. Run it, and if it
+    /// fails, report the failure back with [`Self::fail`] -- the second half
+    /// runs where the engine cannot see it.
+    pub fn flush(&mut self) -> Result<Option<Durability>> {
+        self.refuse_if_failed()?;
+        let r = self.sink_mut().flush();
+        let durable = self.storage(r)?;
+        self.dirty = false;
+        Ok(durable)
+    }
+
+    /// Hands the buffered writes to the operating system with no fsync
+    /// ([`Sink::write_out`]): they survive the process being killed, not
+    /// the machine losing power.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn write_out(&mut self) -> Result<()> {
+        self.refuse_if_failed()?;
+        let r = self.sink_mut().write_out();
+        self.storage(r)
+    }
+
+    /// What writes the buffered writes into the file with no fsync, for
+    /// the caller to run once it has let go of the database, as it runs a
+    /// [`Durability`] -- a failure reported back with [`Self::fail`] --
+    /// and `None` while there are too few to be worth a write
+    /// ([`Sink::write_behind`]). A caller that asks after its writes keeps
+    /// the write, and the disk's waits, out of the lock.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn write_behind(&mut self) -> Option<Durability> {
+        if self.failed.is_some() {
+            return None;
+        }
+        self.behind = true;
+        let due = self.handover_due(1);
+        self.sink_mut().write_behind(due)
+    }
+
+    /// Records a storage failure found outside the engine, a
+    /// [`Durability`] that failed: every later write and sync is refused, as
+    /// after one the engine saw itself.
+    pub fn fail(&mut self, e: &Error) {
+        if self.failed.is_none() {
+            self.failed = Some(e.to_string());
+        }
+    }
+
+    /// Whether a write is still waiting to be pushed to disk.
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// The storage error that stopped writes, if one did.
+    pub fn failure(&self) -> Option<&str> {
+        self.failed.as_deref()
+    }
+
+    /// Passes a sink result through, remembering the first failure.
+    fn storage<T>(&mut self, r: Result<T>) -> Result<T> {
+        if let Err(e) = &r {
+            if self.failed.is_none() {
+                self.failed = Some(e.to_string());
+            }
+        }
+        r
+    }
+
+    fn refuse_if_failed(&self) -> Result<()> {
+        match &self.failed {
+            None => Ok(()),
+            Some(m) => Err(Error::Io(format!(
+                "writes are refused after a storage error ({m}); \
+                 reopen the file to go on with what reached the disk"
+            ))),
+        }
+    }
+
+    // ---------------------------------------------------------- replication
+
+    /// Which history the writes belong to; see [`History`].
+    pub fn history(&self) -> &History {
+        &self.history
+    }
+
+    /// Starts a new history at the current change, under `id`, and takes
+    /// writes from here on: a replica being promoted, or a primary about to
+    /// have its first replica -- the root history is every database's and
+    /// names none. `id` must be one no other database holds; the caller
+    /// draws it at random.
+    pub fn fork(&mut self, id: u64) -> Result<()> {
+        self.set_history(self.history.forked(id, self.changes.seq()))
+    }
+
+    /// Takes a primary's history, and from then on no write of its own:
+    /// the writes arrive through [`Self::apply`].
+    pub fn follow(&mut self, lineage: Vec<(u64, u64)>) -> Result<()> {
+        self.set_history(History {
+            lineage,
+            following: true,
+        })
+    }
+
+    fn set_history(&mut self, h: History) -> Result<()> {
+        self.refuse_if_failed()?;
+        if h == self.history {
+            return Ok(());
+        }
+        // Not a write: it has no number, and no replica is sent it.
+        let record = h.record();
+        let r = self.sink_mut().append(&record);
+        self.storage(r)?;
+        *self.appended.get_mut() += record.len() as u64;
+        self.dirty = true;
+        self.history = h;
+        Ok(())
+    }
+
+    /// Applies writes a primary made. `records` are what its write path
+    /// appended to its file, whole and in order, and each is numbered as
+    /// the change after this database's counter -- the number the primary
+    /// gave it, when the two agree on where they stand
+    /// ([`History::continues`]).
+    ///
+    /// Each record goes through the index upkeep the write path does and on
+    /// to this database's own sink, so a replica's file holds the primary's
+    /// records and reopens at the same change. The one thing that may come
+    /// out different is the HNSW graph: the same vectors go in, in the same
+    /// order, but not in the same batches, and the search is approximate
+    /// either way.
+    pub fn apply(&mut self, records: &[u8]) -> Result<usize> {
+        self.refuse_if_failed()?;
+        let before = self.changes.seq();
+        let mut batch = VectorBatch::default();
+        let applied = self.apply_records(records, &mut batch);
+        // A record that failed leaves the ones before it applied, and their
+        // vectors are indexed all the same.
+        self.index_batch(&mut batch);
+        #[cfg(not(target_arch = "wasm32"))]
+        self.hand_over_when_due();
+        let after = self.changes.seq();
+        if after != before {
+            if let Some(w) = &self.watcher {
+                #[cfg(not(target_arch = "wasm32"))]
+                w.landed(self, before);
+                #[cfg(target_arch = "wasm32")]
+                w.notify(after);
+            }
+        }
+        applied
+    }
+
+    /// The writes `records` hold -- what a primary's feed carries, the
+    /// first of them numbered `first` -- one at a time to `each`, numbered
+    /// as the change counter numbered them, until `each` says to stop.
+    /// Returns the number of the last write handed over, `first - 1` for
+    /// none. A document is read by the schema of its collection as this
+    /// database knows it, or as a create among the records made it; a
+    /// collection known to neither -- made before them and dropped since --
+    /// has its writes handed over without their documents. What a record
+    /// holds that is no write (a graph, the history) is no change: the feed
+    /// sends none of it.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn changes_in(
+        &self,
+        records: &[u8],
+        first: u64,
+        each: &mut dyn FnMut(Change) -> bool,
+    ) -> Result<u64> {
+        let mut d = ChangeWalk {
+            known: self
+                .collections
+                .values()
+                .map(|c| (c.id, Schema::clone(&c.schema)))
+                .collect(),
+            seq: first.saturating_sub(1),
+            go: true,
+            each,
+        };
+        let mut pos = 0;
+        while pos < records.len() && d.go {
+            let r = record_at(records, &mut pos)?;
+            match r.kind {
+                REC_CREATE | REC_DROP | REC_ALTER | REC_FIELDS | REC_DATA => {
+                    d.record(r.kind, r.cid, r.body)?
+                }
+                REC_BLOCK => each_inner(r.body, &mut |kind, cid, inner| match d.go {
+                    true => d.record(kind, cid, inner),
+                    false => Ok(()),
+                })?,
+                _ => {}
+            }
+        }
+        Ok(d.seq)
+    }
+
+    fn apply_records(&mut self, bytes: &[u8], batch: &mut VectorBatch) -> Result<usize> {
+        let mut n = 0;
+        let mut pos = 0;
+        let mut notes: Vec<(u32, DocId)> = Vec::new();
+        while pos < bytes.len() {
+            let Rec {
+                kind: rec,
+                cid,
+                at: start,
+                body,
+                ..
+            } = record_at(bytes, &mut pos)?;
+
+            // The graph takes a batch as the graph stands before it: a
+            // schema change needs it as it stands after, and ends it.
+            if rec != REC_DATA && rec != REC_BLOCK && !batch.docs.is_empty() {
+                self.index_batch(batch);
+            }
+            match rec {
+                REC_CREATE | REC_DROP | REC_ALTER | REC_FIELDS => {
+                    self.apply_schema(rec, cid, body, &mut notes)?
+                }
+                REC_DATA => self.apply_frames(cid, body, batch, &mut notes)?,
+                // A block's records, whole: they came as one, and reach this
+                // database's file as one.
+                REC_BLOCK => each_inner(body, &mut |kind, cid, inner| {
+                    if kind == REC_DATA {
+                        return self.apply_frames(cid, inner, batch, &mut notes);
+                    }
+                    if !batch.docs.is_empty() {
+                        self.index_batch(batch);
+                    }
+                    self.apply_schema(kind, cid, inner, &mut notes)
+                })?,
+                other => {
+                    return Err(Error::Corrupt(format!(
+                        "record kind {other} is not a write"
+                    )))
+                }
+            }
+            // Numbered as its last write, as the primary numbered it.
+            let seq = self.changes.seq() + notes.len() as u64;
+            let r = self.sink_mut().record(seq, &bytes[start..pos]);
+            self.storage(r)?;
+            // The frames went into the stores as the primary wrote them,
+            // and the record into the file as it came.
+            #[cfg(not(target_arch = "wasm32"))]
+            if self.mapped {
+                let at = *self.appended.get_mut();
+                handover::note_record(
+                    &mut self.landed,
+                    &mut self.landed_bytes,
+                    at,
+                    &bytes[start..pos],
+                );
+                self.landed_writes += notes.len() as u64;
+            }
+            *self.appended.get_mut() += (pos - start) as u64;
+            self.dirty = true;
+            for (cid, id) in notes.drain(..) {
+                self.note(cid, id);
+            }
+            n += 1;
+        }
+        Ok(n)
+    }
+
+    /// A schema change from a primary -- a record of its own, or one of a
+    /// block's -- made here as it was there, and noted in `notes`.
+    fn apply_schema(
+        &mut self,
+        kind: u8,
+        cid: u32,
+        body: &[u8],
+        notes: &mut Vec<(u32, DocId)>,
+    ) -> Result<()> {
+        notes.push((cid, SCHEMA_MARK));
+        if kind == REC_DROP {
+            let name = self.named(cid).ok_or_else(|| missing(cid))?;
+            self.collections.remove(&name);
+            self.order.retain(|n| *n != name);
+            return Ok(());
+        }
+        // A field added, dropped or renamed, as the primary did it: the
+        // primary checked the change, and the replica takes it.
+        if kind == REC_FIELDS {
+            let ch = FieldChange::decode(body)?;
+            let name = self.named(cid).ok_or_else(|| missing(cid))?;
+            let c = self.collections.get_mut(&name).unwrap();
+            c.alter_fields(&ch);
+            if let (FIELD_ADD, Some(pos)) = (ch.op, c.schema.field_pos(&ch.field)) {
+                build_index(c, pos)?;
+            }
+            return Ok(());
+        }
+        let schema = Schema::decode(body, &mut 0)?;
+        if kind == REC_CREATE {
+            if self.collections.contains_key(&schema.name) || self.named(cid).is_some() {
+                return Err(Error::Corrupt(format!(
+                    "collection `{}` is already here",
+                    schema.name
+                )));
+            }
+            self.next_coll_id = self.next_coll_id.max(cid + 1);
+            self.order.push(schema.name.clone());
+            self.collections
+                .insert(schema.name.clone(), Collection::new(cid, schema));
+            return Ok(());
+        }
+        let name = self.named(cid).ok_or_else(|| missing(cid))?;
+        let c = self.collections.get_mut(&name).unwrap();
+        let same_layout = c.schema.fields.len() == schema.fields.len()
+            && c.schema.dropped == schema.dropped
+            && c.schema
+                .fields
+                .iter()
+                .zip(&schema.fields)
+                .all(|(a, b)| a.name == b.name && a.ty == b.ty);
+        if !same_layout {
+            return Err(Error::Corrupt(format!(
+                "a schema change moved the fields of `{name}`"
+            )));
+        }
+        // `create index` adds one -- on a field, or on a path -- and
+        // anything else rebuilds them all.
+        let changed: Vec<usize> = (0..schema.fields.len())
+            .filter(|&i| c.schema.fields[i].index != schema.fields[i].index)
+            .collect();
+        let added = changed
+            .iter()
+            .all(|&i| c.schema.fields[i].index == IndexKind::None);
+        c.schema = SchemaCell::new(schema);
+        if added {
+            for i in changed {
+                build_index(c, i)?;
+            }
+            // A path's, and an index over several fields, built by the
+            // first read.
+            c.fit_paths();
+            c.fit_composites();
+        } else {
+            c.reset_index_structures();
+            for i in 0..c.schema.fields.len() {
+                build_index(c, i)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// A data record's frames into collection `cid`, each through the index
+    /// upkeep the write path does -- vectors into `batch`, which each frame
+    /// that needs the graph as it stands after the ones before ends -- and
+    /// each noted in `notes`.
+    fn apply_frames(
+        &mut self,
+        cid: u32,
+        body: &[u8],
+        batch: &mut VectorBatch,
+        notes: &mut Vec<(u32, DocId)>,
+    ) -> Result<()> {
+        let cut = || Error::Corrupt("a write record cut short".into());
+        let name = self.named(cid).ok_or_else(|| missing(cid))?;
+        let mut p = 0;
+        while p < body.len() {
+            let op = body[p];
+            p += 1;
+            let id = get_uvarint(body, &mut p)?;
+            let plen = get_uvarint(body, &mut p)? as usize;
+            let payload = body.get(p..p + plen).ok_or_else(cut)?;
+            p += plen;
+            // Another collection's, or a document the batch holds: the
+            // graph has to take the batch first.
+            if !batch.docs.is_empty() && (cid != batch.cid || batch.ids.contains(&id)) {
+                self.index_batch(batch);
+            }
+            let c = self.collections.get_mut(&name).unwrap();
+            let old = c.store.read(&c.schema, id)?;
+            c.store.append(op, id, payload);
+            let new = match op == OP_PUT {
+                true => Some(c.store.read(&c.schema, id)?.ok_or_else(cut)?),
+                false => None,
+            };
+            if let Some(old) = &old {
+                c.unindex_doc(old, new.as_ref());
+            }
+            if let Some(doc) = new {
+                c.index_scalar(&doc, old.as_ref());
+                if !c.vectors.is_empty() {
+                    batch.cid = cid;
+                    batch.ids.insert(id);
+                    batch.docs.push(doc);
+                }
+            }
+            notes.push((cid, id));
+        }
+        Ok(())
+    }
+
+    /// The name of the collection with id `cid`.
+    fn named(&self, cid: u32) -> Option<String> {
+        self.order
+            .iter()
+            .find(|n| self.collections[*n].id == cid)
+            .cloned()
+    }
+
+    fn index_batch(&mut self, batch: &mut VectorBatch) {
+        if let Some(name) = self.named(batch.cid) {
+            if let Some(c) = self.collections.get_mut(&name) {
+                c.index_vectors_batch(&batch.docs);
+            }
+        }
+        batch.docs.clear();
+        batch.ids.clear();
+    }
+
+    /// Replaces everything with `fresh` -- a database loaded from `image` --
+    /// and rewrites the sink with the image: what a replica does when its
+    /// primary no longer holds the writes it missed. The sink, the watcher,
+    /// the plugins and the change ring's size stay. The ring's marks do not,
+    /// so every subscriber reseeds.
+    /// How many images [`Self::adopt`] took. What was read from the database
+    /// is stale when this moves, whatever the change counter says: an image
+    /// can land on the very change the old contents stood at.
+    pub fn adoptions(&self) -> u64 {
+        self.adoptions
+    }
+
+    pub fn adopt(&mut self, fresh: Database, image: &[u8]) -> Result<()> {
+        self.refuse_if_failed()?;
+        let r = self.sink_mut().rewrite(image);
+        self.storage(r)?;
+        *self.appended.get_mut() = image.len() as u64;
+        #[cfg(not(target_arch = "wasm32"))]
+        self.forget_landed();
+        let cap = self.changes.capacity();
+        self.collections = fresh.collections;
+        self.order = fresh.order;
+        self.next_coll_id = fresh.next_coll_id;
+        self.history = fresh.history;
+        self.changes = fresh.changes;
+        self.changes.set_capacity(cap);
+        self.adoptions += 1;
+        // Every collection is another now, whatever its name and id: a
+        // maintenance running beside it -- a replica's compact -- would put
+        // back what it copied before the image came.
+        self.tails
+            .get_mut()
+            .unwrap_or_else(|e| e.into_inner())
+            .all_changed();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.kept = 0;
+        }
+        // The image is the file now: a mapped database reads the documents
+        // from there rather than holding the copy it was handed. Written
+        // elsewhere, it is walked to find them.
+        #[cfg(not(target_arch = "wasm32"))]
+        self.repoint(None, &[])?;
+        self.dirty = false;
+        if let Some(w) = &self.watcher {
+            w.notify(self.changes.seq());
+        }
+        Ok(())
+    }
+
+    // ---------------------------------------------------------------- blocks
+
+    /// Remembers, for a block that does not land, where `id`'s record was
+    /// before this write -- and where its collection's store stood before
+    /// the block's first write to it.
+    fn remember(
+        &mut self,
+        cid: u32,
+        id: DocId,
+        was: Option<crate::store::Loc>,
+        mark: crate::store::Mark,
+    ) {
+        if let Some(b) = &mut self.block {
+            if !b.marks.iter().any(|(c, _)| *c == cid) {
+                b.marks.push((cid, mark));
+            }
+            b.was.push(Undo::Doc(cid, id, was));
+        }
+    }
+
+    /// What decides whether a write may land: a router's lease the node
+    /// holds, on a node that takes one. `None` takes every write.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn set_fence(&mut self, fence: Option<Fence>) {
+        self.fence = fence;
+    }
+
+    /// The fence's refusal, when it has one ([`Self::set_fence`]).
+    pub(crate) fn fenced(&self) -> Result<()> {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(f) = &self.fence {
+            return f().map_err(Error::ReadOnly);
+        }
+        Ok(())
+    }
+
+    /// Whether a block of writes is open ([`Self::begin`]).
+    pub fn in_block(&self) -> bool {
+        self.block.is_some()
+    }
+
+    /// Opens a block: the writes from here to [`Self::commit`] land whole or
+    /// not at all, and [`Self::rollback`] puts them back. The database is
+    /// the block's alone meanwhile, as it is a statement's -- whoever opens
+    /// one holds the write lock until it ends. Reads in it see its writes.
+    pub fn begin(&mut self) -> Result<()> {
+        if self.block.is_some() {
+            return Err(Error::Query("a block is open already".into()));
+        }
+        self.open_block();
+        if let Some(b) = &mut self.block {
+            b.defers = true;
+        }
+        Ok(())
+    }
+
+    fn open_block(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.behind {
+            self.hand_over_before();
+        }
+        self.block = Some(std::mem::take(&mut self.spare).cleared());
+    }
+
+    /// Lands the open block as one record -- written whole or cut off whole
+    /// by a crash -- numbered as its last write, and notes its writes on the
+    /// change feed, where a subscriber sees them all at once. When the sink
+    /// refuses it, the block is put back, and the database takes no more
+    /// writes (see `failed`).
+    pub fn commit(&mut self) -> Result<()> {
+        // Linked before it lands, so that a block put back after all -- a
+        // lapsed lease, a refused append -- is put back as any other.
+        if DEFERS {
+            self.link_waiting(1);
+        }
+        let Some(mut b) = self.block.take() else {
+            return Ok(());
+        };
+        if b.heads.is_empty() {
+            self.spare(b);
+            return Ok(());
+        }
+        // The lease may have lapsed since the block's first write was let
+        // through: a block that lands after it would be a write the tenant's
+        // next primary never sees.
+        if let Err(e) = self.fenced() {
+            self.undo(b);
+            return Err(e);
+        }
+        let seq = self.changes.seq() + b.heads.len() as u64;
+        #[cfg(not(target_arch = "wasm32"))]
+        let at = *self.appended.get_mut();
+        // A block that spilled lands as the spills it names and the rest.
+        #[cfg(not(target_arch = "wasm32"))]
+        let land = match b.spilled.is_empty() {
+            true => None,
+            false => Some(Self::land_record(&b)),
+        };
+        // A quota is asked with the record's length to the byte, before any
+        // of it reaches the file (`limit.rs`).
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.limit.is_some() {
+            let adds = land.as_ref().map_or_else(|| b.record_len(), Vec::len);
+            let grows = b.grew || self.grows(&b, b.spilled_writes);
+            let writes = self.app_writes(&b, b.spilled_writes);
+            if let Err(e) = self.limited(grows, adds as u64, writes) {
+                self.undo(b);
+                return Err(e);
+            }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        let landed = land.map(|record| {
+            let r = self.land_spilled(&mut b, seq, at, &record);
+            (r, record.len())
+        });
+        #[cfg(target_arch = "wasm32")]
+        let landed = None;
+        let (r, len) = if let Some(landed) = landed {
+            landed
+        } else {
+            #[cfg(not(target_arch = "wasm32"))]
+            let writes = b.notes.len() as u64;
+            let record = b.record();
+            let r = self.sink_mut().record(seq, &record);
+            // Where its frames are in the file, for the handover: the
+            // stores hold them as the record does.
+            #[cfg(not(target_arch = "wasm32"))]
+            if r.is_ok() && self.mapped {
+                handover::note_record(&mut self.landed, &mut self.landed_bytes, at, &record);
+                self.landed_writes += writes;
+            }
+            (r, record.len())
+        };
+        if let Err(e) = self.storage(r) {
+            self.undo(b);
+            return Err(e);
+        }
+        *self.appended.get_mut() += len as u64;
+        self.dirty = true;
+        #[cfg(not(target_arch = "wasm32"))]
+        let before = self.changes.seq();
+        for &(cid, id) in &b.notes {
+            self.note(cid, id);
+        }
+        // Now, not at the next block's start: a collection the block dropped
+        // is held here until then.
+        b.was.clear();
+        self.spare(b);
+        if let Some(w) = &self.watcher {
+            #[cfg(not(target_arch = "wasm32"))]
+            w.landed(self, before);
+            #[cfg(target_arch = "wasm32")]
+            w.notify(self.changes.seq());
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        self.hand_over_when_due();
+        Ok(())
+    }
+
+    /// Puts the open block's writes back: every store as it stood before
+    /// the block's first write to it, and every document it wrote out of
+    /// the indexes, the version before it back in. Nothing reached the sink
+    /// or the feed, so there is nothing else to undo. Ids a block handed out
+    /// are handed out again.
+    pub fn rollback(&mut self) {
+        if let Some(b) = self.block.take() {
+            self.undo(b);
+        }
+    }
+
+    fn undo(&mut self, mut b: Block) {
+        let marks = std::mem::take(&mut b.marks);
+        self.rewind(&marks, &mut b.was);
+        if DEFERS {
+            let mut waiting = std::mem::take(&mut b.waiting);
+            self.forget_waiting(&mut waiting);
+        }
+        self.spare(b);
+    }
+
+    /// Keeps a block's buffers for the next one, a large block's let go of
+    /// now: a node holds one of these for every database it has open, and
+    /// let go of only as the next block began, a COPY of 50 000 768-dim rows
+    /// held its 154 MB of frames for as long as nothing else was written.
+    fn spare(&mut self, b: Block) {
+        self.spare = match b.frames.capacity() > 1 << 16 || b.was.capacity() > 1 << 10 {
+            true => Block::default(),
+            false => b,
+        };
+    }
+
+    /// Puts back the writes `undo` holds, the last first, and takes each
+    /// store `marks` names back to its mark: what a block wrote. Taken off the end one at a time: a
+    /// drain of the log was 0.5 KB of the browser module.
+    fn rewind(&mut self, marks: &[(u32, crate::store::Mark)], undo: &mut Vec<Undo>) {
+        // The collection the last document was of: a block's writes come in
+        // runs of one collection.
+        let mut of: Option<(u32, String)> = None;
+        while let Some(u) = undo.pop() {
+            match u {
+                // Each write on its own, the last first: its document out of
+                // the indexes, and the one it replaced pointed at and put
+                // back in -- 3.0 ms for a block of 50 000 writes. Put back an
+                // id at a time, the first of each id's writes had to be
+                // found: searching the ids so far for each, those writes took
+                // 402 ms under the write lock, and sorted, the sort was 4.6 KB
+                // of the browser module. An id written again in the block is
+                // put back again, its vector re-linked each time.
+                Undo::Doc(cid, id, loc) => {
+                    if of.as_ref().is_none_or(|(c, _)| *c != cid) {
+                        of = self.named(cid).map(|n| (cid, n));
+                    }
+                    let Some((_, name)) = &of else {
+                        continue;
+                    };
+                    let c = self.collections.get_mut(name).unwrap();
+                    let now = c.store.read(&c.schema, id).ok().flatten();
+                    c.store.point(id, loc);
+                    let before = c.store.read(&c.schema, id).ok().flatten();
+                    if let Some(now) = &now {
+                        c.unindex_doc(now, before.as_ref());
+                    }
+                    if let Some(before) = &before {
+                        c.index_doc(before, now.as_ref());
+                    }
+                }
+                // Everything after it was put back before it, so its name is
+                // the last, where it went.
+                Undo::Created(cid) => {
+                    if let Some(name) = self.order.pop() {
+                        debug_assert_eq!(self.collections[&name].id, cid);
+                        self.collections.remove(&name);
+                    }
+                    self.next_coll_id = cid;
+                    of = None;
+                }
+                Undo::Dropped(c, at) => {
+                    let name = c.schema.name.clone();
+                    self.order.insert(at.min(self.order.len()), name.clone());
+                    self.collections.insert(name, *c);
+                    of = None;
+                }
+                Undo::Indexed(cid, pos) => {
+                    if let Some(name) = self.named(cid) {
+                        let c = self.collections.get_mut(&name).unwrap();
+                        let f = c.schema.fields[pos].name.clone();
+                        drop(c.take_indexes(&f));
+                        SchemaCell::make_mut(&mut c.schema).fields[pos].index = IndexKind::None;
+                    }
+                }
+                Undo::PathIndexed(cid, path) => {
+                    if let Some(name) = self.named(cid) {
+                        let c = self.collections.get_mut(&name).unwrap();
+                        if let Some(at) = c.schema.paths.iter().position(|p| p.name == path) {
+                            SchemaCell::make_mut(&mut c.schema).paths.remove(at);
+                        }
+                        c.fit_paths();
+                    }
+                }
+                // The schema as it was, then the indexes: a field added has
+                // its index taken off, a dropped one's put back, and a
+                // renamed one's moved back to the name it had.
+                Undo::Altered(cid, a) => {
+                    if let Some(name) = self.named(cid) {
+                        let c = self.collections.get_mut(&name).unwrap();
+                        let Altered {
+                            before,
+                            op,
+                            field,
+                            to,
+                            taken,
+                        } = *a;
+                        c.store.set_dropped(&before.dropped);
+                        c.schema = before;
+                        match op {
+                            FIELD_ADD => drop(c.take_indexes(&field)),
+                            FIELD_DROP => c.put_indexes(&field, taken),
+                            FIELD_TTL => {}
+                            _ => {
+                                let t = c.take_indexes(&to);
+                                c.put_indexes(&field, t);
+                            }
+                        }
+                        c.fit_paths();
+                        c.fit_composites();
+                    }
+                }
+                Undo::Composed(cid, made) => {
+                    if let Some(name) = self.named(cid) {
+                        let c = self.collections.get_mut(&name).unwrap();
+                        let comps = &mut SchemaCell::make_mut(&mut c.schema).composites;
+                        if let Some(at) = comps.iter().rposition(|o| o.name() == made) {
+                            comps.remove(at);
+                        }
+                        c.fit_composites();
+                    }
+                }
+                Undo::Uncomposed(cid, at, b) => {
+                    if let Some(name) = self.named(cid) {
+                        let c = self.collections.get_mut(&name).unwrap();
+                        let at = at.min(c.composites.len());
+                        SchemaCell::make_mut(&mut c.schema)
+                            .composites
+                            .insert(at, b.0.clone());
+                        c.composites.insert(at, *b);
+                    }
+                }
+            }
+        }
+        for &(cid, mark) in marks {
+            if let Some(name) = self.named(cid) {
+                self.collections.get_mut(&name).unwrap().store.rewind(mark);
+            }
+        }
+    }
+
+    /// Runs `stmts` as one block: every write in it lands, as one record,
+    /// or none does, and a read in it sees the writes before it. What each
+    /// answered; or where it stopped and why, nothing of it applied. A
+    /// schema change or a compact is refused in a block of more than one --
+    /// it runs on its own ([`Statement::fits_block`]). A `put` of many
+    /// documents is a block of its own ([`Self::execute_with`]).
+    pub fn execute_block(
+        &mut self,
+        stmts: &[(&Statement, &[Value])],
+    ) -> std::result::Result<Vec<Response>, (usize, Error)> {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.disarm();
+        // Before anything of the block runs, or a write before a `call`
+        // would have landed beside a refusal.
+        #[cfg(feature = "statements")]
+        if let Some(i) = stmts.iter().position(|(s, _)| s.is_named()) {
+            return Err((i, not_named()));
+        }
+        if let Some(i) = stmts.iter().position(|(s, _)| !s.fits_block()) {
+            return Err((
+                i,
+                Error::Query(
+                    "create, drop, create index and compact run on their own, not in a block"
+                        .into(),
+                ),
+            ));
+        }
+        if let Some(i) = stmts.iter().position(|(s, _)| !s.is_read_only()) {
+            self.may_start().map_err(|e| (i, e))?;
+        }
+        let outer = self.block.is_some();
+        if !outer {
+            self.open_block();
+        }
+        let mut out = Vec::with_capacity(stmts.len());
+        for (i, (stmt, params)) in stmts.iter().enumerate() {
+            #[cfg(not(target_arch = "wasm32"))]
+            self.offer(i);
+            let r = self.run_one(stmt, params);
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                self.ready_at = None;
+            }
+            match r {
+                Ok(r) => out.push(r),
+                Err(e) => {
+                    if !outer {
+                        self.rollback();
+                    }
+                    return Err((i, e));
+                }
+            }
+        }
+        if !outer {
+            self.commit()
+                .map_err(|e| (stmts.len().saturating_sub(1), e))?;
+        }
+        Ok(out)
+    }
+
+    /// One statement as a block runs it: its reads refused for collation
+    /// data the module has not been handed.
+    fn run_one(&mut self, stmt: &Statement, params: &[Value]) -> Result<Response> {
+        let out = self.execute_inner(stmt, params);
+        // A block that outgrew its bound spills what it holds into the file,
+        // a statement's writes at a time: a /batch's statements, a `put` of
+        // many rows.
+        #[cfg(not(target_arch = "wasm32"))]
+        if out.is_ok() && !stmt.is_read_only() {
+            self.spill_when_due()?;
+        }
+        // The browser module compares text only in the collation data it
+        // has been handed. A read that reached for more is refused rather
+        // than answered in the order of what it had, and runs again once
+        // the module has it; a write was checked before it changed anything
+        // (`put`, `update`, `delete`), and one refused leaves its note for
+        // the module to read.
+        if collate::PARTIAL && out.is_ok() {
+            let missing = collate::take_missing();
+            if stmt.is_read_only() {
+                collate::refuse(missing)?;
+            }
+        }
+        out
+    }
+
+    // ------------------------------------------------------------ execution
+
+    pub fn execute(&mut self, stmt: &Statement) -> Result<Response> {
+        self.execute_with(stmt, &[])
+    }
+
+    /// Read-only execution. Because it takes `&self`, several readers can run
+    /// at once under an `RwLock`; statements that need to write are rejected
+    /// (the caller separates them first with [`Statement::is_read_only`]).
+    pub fn query(&self, stmt: &Statement, params: &[Value]) -> Result<Response> {
+        self.refuse_inexact(stmt, params)?;
+        let stmt = self.answered(stmt, params)?;
+        match &*stmt {
+            Statement::Select(sel) => read_required(sel, self.select(sel, params)?),
+            Statement::Explain(sel) => Ok(Response::Rows(self.explain(sel, params)?)),
+            Statement::ListCollections => Ok(Response::Schemas(
+                self.order
+                    .iter()
+                    .map(|n| Schema::clone(&self.collections[n].schema))
+                    .collect(),
+            )),
+            Statement::Describe(name) => Ok(Response::Schemas(vec![Schema::clone(
+                &self.collection(name)?.schema,
+            )])),
+            #[cfg(feature = "statements")]
+            Statement::ListStatements => Ok(no_statements()),
+            #[cfg(feature = "statements")]
+            Statement::DescribeStatement(name) => Err(no_statement(name)),
+            #[cfg(feature = "statements")]
+            s if s.is_named() => Err(not_named()),
+            _ => Err(Error::Query("this statement requires write access".into())),
+        }
+    }
+
+    /// [`Self::query`]'s answer to a plain `get` -- fields alone, in their
+    /// order, with no `match`, `near`, `lookup`, `facet`, aggregate or
+    /// `count` -- written straight onto `out` as the JSON array
+    /// [`crate::json::rows_array_into`] writes of its rows, read off the stored
+    /// documents: no row's values decoded into a `Value` each and dropped
+    /// after. The number of rows, or `None` for any other statement, which
+    /// `query` answers, `out` as it was. A YCSB scan of 50 1 KB records in
+    /// fennec-server took 66 us to decode and 44 to write out in Docker,
+    /// where musl gave the blocks back to the system after each and
+    /// faulted them in again the next time.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn query_json(
+        &self,
+        stmt: &Statement,
+        params: &[Value],
+        out: &mut String,
+    ) -> Result<Option<usize>> {
+        let Statement::Select(sel) = stmt else {
+            return Ok(None);
+        };
+        if !sel.aggregate.is_empty()
+            || sel.count
+            || sel.matcher.is_some()
+            || sel.near.is_some()
+            || sel.fuse.is_some()
+            || sel.lookup.is_some()
+            || !sel.facets.is_empty()
+            || !sel.marks.is_empty()
+            || sel.require.is_some()
+            || !sel.computed.is_empty()
+        {
+            return Ok(None);
+        }
+        self.refuse_inexact(stmt, params)?;
+        let stmt = self.answered(stmt, params)?;
+        let Statement::Select(sel) = &*stmt else {
+            return Ok(None);
+        };
+        // A SQL join's probe, read in its list's place, is a `lookup`'s,
+        // its rows written here as `query` would answer them: left to
+        // `query`, which answers the statement again, a list tried first
+        // and past its bound was walked twice.
+        if sel.lookup.is_some() {
+            let rs = self.select(sel, params)?;
+            let n = rs.answered().rows.len();
+            crate::json::rows_array_into(out, &rs);
+            return Ok(Some(n));
+        }
+        let c = self.collection(&sel.collection)?;
+        sel.check()?;
+        // Each column's name and its field's place in the payload, `ID` for
+        // the id, on the stack: what a request allocates and frees, musl
+        // maps and unmaps whenever the last block of its size goes, and a
+        // read by id had a page mapped, faulted in and unmapped each time
+        // when these were `Vec`s.
+        const ID: usize = usize::MAX;
+        const MOST: usize = 64;
+        let mut cols: [(&str, usize); MOST] = [("", ID); MOST];
+        fn put<'a>(
+            cols: &mut [(&'a str, usize)],
+            width: &mut usize,
+            col: (&'a str, usize),
+        ) -> bool {
+            let Some(slot) = cols.get_mut(*width) else {
+                return false;
+            };
+            *slot = col;
+            *width += 1;
+            true
+        }
+        let mut width = 0;
+        let mut ids_named = 0;
+        let mut fits = true;
+        match &sel.project {
+            None => {
+                fits &= put(&mut cols, &mut width, ("id", ID));
+                for (p, f) in c.schema.fields.iter().enumerate() {
+                    fits &= put(&mut cols, &mut width, (&f.name, c.schema.place(p)));
+                }
+            }
+            Some(list) => {
+                for col in list {
+                    let place = match col == "id" {
+                        true => {
+                            ids_named += 1;
+                            ID
+                        }
+                        false => match source_or_err(&c.schema, col, "")? {
+                            (p, None) => c.schema.place(p),
+                            (_, Some(_)) => return Ok(None),
+                        },
+                    };
+                    fits &= put(&mut cols, &mut width, (col, place));
+                }
+            }
+        }
+        let cols = &cols[..width];
+        let mut last = None;
+        let in_order = cols
+            .iter()
+            .filter(|(_, place)| *place != ID)
+            .all(|&(_, place)| last.replace(place).is_none_or(|l| l < place));
+        if !fits || ids_named > 1 || last.is_none() || !in_order {
+            return Ok(None);
+        }
+        let ctx = EvalCtx {
+            params,
+            registry: &self.registry,
+            clock: self.clock,
+        };
+        let (ids, _) = self.page_ids(c, sel, params, &ctx, false, true, false)?;
+        let limit = sel.limit.map_or(usize::MAX, |l| l.at(params));
+        let mut n = 0;
+        out.push('[');
+        for id in ids.into_iter().skip(sel.offset.at(params)).take(limit) {
+            if n > 0 {
+                out.push(',');
+            }
+            n += 1;
+            out.push('{');
+            let doc = c.store.raw(id)?.unwrap_or_default();
+            let (mut pos, mut at) = (0usize, 0usize);
+            for (j, &(name, want)) in cols.iter().enumerate() {
+                if j > 0 {
+                    out.push(',');
+                }
+                crate::json::escape_into(out, name);
+                out.push(':');
+                if want == ID {
+                    crate::json::int_into(out, id as i64);
+                    continue;
+                }
+                // Past the payload's end nothing is skipped: a field added
+                // after the document was written reads as `null`.
+                while at < want {
+                    crate::codec::skip_field(doc, &mut pos)?;
+                    at += 1;
+                }
+                at += 1;
+                match doc.get(pos) {
+                    None => out.push_str("null"),
+                    Some(&crate::codec::TAG_TEXT) => {
+                        pos += 1;
+                        crate::json::escape_into(out, crate::codec::text_at(doc, &mut pos)?);
+                    }
+                    Some(_) => {
+                        crate::json::value_into(out, &crate::codec::decode_value(doc, &mut pos)?)
+                    }
+                }
+            }
+            out.push('}');
+        }
+        out.push(']');
+        Ok(Some(n))
+    }
+
+    /// Full execution, writes included. The watcher is woken once *after* the
+    /// statement finishes -- not per document: a `put` of 10 000 documents is
+    /// a single wake-up, and the subscriber will read one batch anyway.
+    pub fn execute_with(&mut self, stmt: &Statement, params: &[Value]) -> Result<Response> {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.disarm();
+        // Refused before a block opens: nothing of it may run.
+        #[cfg(feature = "statements")]
+        if stmt.is_named() {
+            return Err(not_named());
+        }
+        // A write is a block of one: a `put` of many documents stopped half
+        // way -- a hook's refusal, a crash -- left the ones before applied.
+        // Its writes land as one record, which for a lone document is the
+        // record it always was.
+        if !stmt.is_read_only() && stmt.fits_block() {
+            self.may_start()?;
+            if self.block.is_some() {
+                return self.run_one(stmt, params);
+            }
+            self.open_block();
+            return match self.run_one(stmt, params) {
+                Ok(r) => self.commit().map(|_| r),
+                Err(e) => {
+                    self.rollback();
+                    Err(e)
+                }
+            };
+        }
+        if !stmt.is_read_only() {
+            if self.block.is_some() {
+                return Err(Error::Query(
+                    "compact runs on its own, not in a block".into(),
+                ));
+            }
+            // `compact` changes no document, only how the file holds them.
+            self.may_write(matches!(stmt, Statement::Compact(_)))?;
+        }
+        let before = self.changes.seq();
+        let out = self.run_one(stmt, params);
+        let after = self.changes.seq();
+        if after != before {
+            if let Some(w) = &self.watcher {
+                w.notify(after);
+            }
+        }
+        out
+    }
+
+    fn execute_inner(&mut self, stmt: &Statement, params: &[Value]) -> Result<Response> {
+        self.refuse_inexact(stmt, params)?;
+        let answered = self.answered(stmt, params)?;
+        match &*answered {
+            Statement::CreateCollection {
+                schema,
+                if_not_exists,
+            } => self.create_collection(schema.clone(), *if_not_exists),
+            Statement::DropCollection { name, if_exists } => self.drop_collection(name, *if_exists),
+            Statement::AlterCollection { collection, change } => {
+                self.alter_collection(collection, change)
+            }
+            Statement::CreateIndex {
+                collection,
+                field,
+                kind,
+                if_not_exists,
+            } => self.create_index(collection, field, kind, *if_not_exists),
+            Statement::CreateComposite {
+                collection,
+                index,
+                if_not_exists,
+            } => self.create_composite(collection, index, *if_not_exists),
+            Statement::DropComposite {
+                collection,
+                keys,
+                if_exists,
+            } => self.drop_composite(collection, keys, *if_exists),
+            Statement::Put {
+                collection,
+                docs,
+                docs_param,
+                insert,
+                if_absent,
+                else_set,
+                require,
+                pick,
+            } => required(
+                if *insert { "insert" } else { "put" },
+                collection,
+                require,
+                self.put(
+                    collection,
+                    docs,
+                    *docs_param,
+                    *insert,
+                    *if_absent,
+                    else_set.as_deref(),
+                    pick.as_deref(),
+                    params,
+                ),
+            ),
+            Statement::Select(sel) => read_required(sel, self.select(sel, params)?),
+            Statement::Explain(sel) => Ok(Response::Rows(self.explain(sel, params)?)),
+            Statement::Update {
+                collection,
+                set,
+                filter,
+                require,
+                pick,
+            } => required(
+                "set",
+                collection,
+                require,
+                self.update(collection, set, filter, pick.as_deref(), params),
+            ),
+            Statement::Delete {
+                collection,
+                filter,
+                require,
+                pick,
+            } => required(
+                "del",
+                collection,
+                require,
+                self.delete(collection, filter, pick.as_deref(), params),
+            ),
+            Statement::ListCollections => Ok(Response::Schemas(
+                self.order
+                    .iter()
+                    .map(|n| Schema::clone(&self.collections[n].schema))
+                    .collect(),
+            )),
+            Statement::Describe(name) => Ok(Response::Schemas(vec![Schema::clone(
+                &self.collection(name)?.schema,
+            )])),
+            Statement::Compact(which) => self.compact(which.as_deref(), true),
+            #[cfg(feature = "statements")]
+            Statement::ListStatements => Ok(no_statements()),
+            #[cfg(feature = "statements")]
+            Statement::DescribeStatement(name) => Err(no_statement(name)),
+            #[cfg(feature = "statements")]
+            Statement::CreateStatement(_)
+            | Statement::DropStatement { .. }
+            | Statement::Call(_) => Err(not_named()),
+        }
+    }
+
+    /// `stmt` as it runs: each `in (get ...)` in a filter answered as the
+    /// list it is, and each filter over a collection whose rows expire
+    /// (`@ttl`) given the test that leaves out those past their time. The
+    /// statement itself where it holds neither, which costs a look at its
+    /// filters and at each collection's fields -- a handful, against a
+    /// query's rows. `explain` answers its own ([`Self::explain`]), so its
+    /// plan holds the inner `get`s.
+    fn answered<'s>(
+        &self,
+        stmt: &'s Statement,
+        params: &[Value],
+    ) -> Result<std::borrow::Cow<'s, Statement>> {
+        use std::borrow::Cow;
+        if !crate::FULL {
+            self.refuse_unbuilt(stmt)?;
+        }
+        let (collection, filter) = match stmt {
+            Statement::Select(sel) => {
+                return Ok(match self.answered_top(sel, params)? {
+                    Cow::Borrowed(s) if std::ptr::eq(s, sel) => Cow::Borrowed(stmt),
+                    // A join's probe, read in its place.
+                    s => Cow::Owned(Statement::Select(s.into_owned())),
+                });
+            }
+            Statement::Update {
+                collection, filter, ..
+            }
+            | Statement::Delete {
+                collection, filter, ..
+            } => (collection, filter),
+            _ => return Ok(Cow::Borrowed(stmt)),
+        };
+        // The walk first: the collection looked up by name for every write
+        // took a `set` by id 1.09 -> 1.14 us.
+        let asks = |f: &Expr| {
+            f.has_subquery() || (f.calls_now() && self.ordered(collection)) || kind_splits(f)
+        };
+        if !filter.as_ref().is_some_and(asks) && self.ttl_of(collection).is_none() {
+            return Ok(Cow::Borrowed(stmt));
+        }
+        let mut filter = filter.clone();
+        self.answer_filter(collection, &mut filter, params, 0)?;
+        let collection = collection.clone();
+        // Made anew rather than the statement cloned whole: `Statement`'s
+        // clone was its every variant's, a schema's among them.
+        Ok(Cow::Owned(match stmt {
+            Statement::Update {
+                set, require, pick, ..
+            } => Statement::Update {
+                collection,
+                set: set.clone(),
+                filter,
+                require: require.clone(),
+                pick: pick.clone(),
+            },
+            Statement::Delete { require, pick, .. } => Statement::Delete {
+                collection,
+                filter,
+                require: require.clone(),
+                pick: pick.clone(),
+            },
+            _ => unreachable!("only a set or a del has a filter to answer"),
+        }))
+    }
+
+    /// A SQL join's names held to its tables' fields ([`JoinNames`]): an
+    /// unknown column refused, as SQL refuses one, and one with no table
+    /// that another table has said to be written with that table's name.
+    #[inline(never)]
+    fn join_names(&self, f: &crate::query::JoinNames) -> Result<()> {
+        // Every table, read or not, as SQL refuses an unknown one: `left
+        // join nothere o on o.id = s.order` was answered, its `on` naming
+        // nothing but `id`.
+        for (_, c) in &f.tables {
+            self.collection(c)?;
+        }
+        let has =
+            |c: &Collection, n: &str| c.schema.field(n.split('.').next().unwrap_or(n)).is_some();
+        for (t, name, bare) in &f.names {
+            let Some((at, coll)) = f.tables.get(*t) else {
+                continue;
+            };
+            if has(self.collection(coll)?, name) {
+                continue;
+            }
+            let other = (f.tables.iter()).find(|(_, c)| {
+                *bare && c != coll && self.collection(c).is_ok_and(|c| has(c, name))
+            });
+            return Err(Error::Query(match other {
+                Some((a, c)) => format!(
+                    "`{name}` is no column of `{coll}`, the join's first table, which a column \
+                     with no table is read as: `{a}.{name}` names `{c}`'s"
+                ),
+                None => format!("`{at}.{name}`: `{coll}` has no column `{name}`"),
+            }));
+        }
+        Ok(())
+    }
+
+    /// [`Self::answered_select`] for a statement's own `get`: a SQL join
+    /// read as `key in (get ...)` whose list passed its bound is answered
+    /// as the same join through the `lookup`'s probe ([`Flat::probe`]) --
+    /// and read so at once where the list is past the bound before a row is
+    /// read, or would read more of the joined table than the probe reads of
+    /// `first`, the table it drives ([`Self::probe_wins`]).
+    fn answered_top<'s>(
+        &self,
+        sel: &'s Select,
+        params: &[Value],
+    ) -> Result<std::borrow::Cow<'s, Select>> {
+        if !sel.flat.as_ref().is_some_and(|f| f.probe) {
+            return self.answered_select(sel, params, 0);
+        }
+        // The probe made where it is read, and only then, and only over a
+        // key its `lookup` takes beside the joined table's `id`
+        // ([`Self::probe_keyed`]).
+        let probe = || sel.probed().filter(|p| self.probe_keyed(p));
+        let probed = |p: Select| {
+            plan(|| "join: its list past the bound, the lookup probed instead".into());
+            Ok(std::borrow::Cow::Owned(
+                self.answered_select(&p, params, 0)?.into_owned(),
+            ))
+        };
+        // Read at once where the list would read more than the probe, or
+        // be refused before a row was read.
+        if (sel.filter.as_ref()).is_some_and(|f| self.probe_wins(f, &sel.collection, params)) {
+            if let Some(p) = probe() {
+                return probed(p);
+            }
+        }
+        OVERFLOWED.with(|o| o.set(false));
+        match self.answered_select(sel, params, 0) {
+            Err(e) if OVERFLOWED.with(|o| o.get()) => match probe() {
+                Some(p) => probed(p),
+                None => Err(e),
+            },
+            answered => answered,
+        }
+    }
+
+    /// Whether the probe's `lookup`, found by the joined table's `id`, takes
+    /// the first table's key as it stands: `id`, or a field of an int, a
+    /// float or a timestamp, which a `lookup`'s key types hold to an `id`
+    /// (`check_key_types`). A json, text or bool key keeps the list, which
+    /// `in` compares as values -- probed, `on b.id = u.jk` over a json `jk`
+    /// was refused as key types that do not match, naming a `lookup` the
+    /// statement never wrote.
+    fn probe_keyed(&self, p: &Select) -> bool {
+        let Some(key) = p.lookup.as_ref().and_then(|l| l.parent.first()) else {
+            return false;
+        };
+        key == "id"
+            || self.collection(&p.collection).is_ok_and(|c| {
+                c.schema.field_pos(key).is_some_and(|i| {
+                    matches!(
+                        c.schema.fields[i].ty,
+                        DataType::Int | DataType::Float | DataType::Timestamp
+                    )
+                })
+            })
+    }
+
+    /// Whether `e`'s `and` chain holds a SQL join's list -- `in (get <c>
+    /// select id ...)`, `c` holding more rows than the list may -- better
+    /// read as its probe, which reads at most a row of `c` for each of the
+    /// `first` table's: asking nothing of `c`, which expires none
+    /// (`@ttl`), its every id is past the bound before a row is read;
+    /// where a hash index names more of `c`'s rows than the bound and than
+    /// the first table holds, the list reads those and the probe fewer;
+    /// and where no index names a set, the list reads every row of `c`,
+    /// against the probe a row of the first table each for no more than
+    /// [`SCANNED_A_PROBE`] of them. Where an ordered index's range names the
+    /// set, the list is tried and the probe read once it passes the bound:
+    /// a range of a few rows would have the probe read every row of the
+    /// first table for them.
+    fn probe_wins(&self, e: &Expr, first: &str, params: &[Value]) -> bool {
+        match e {
+            Expr::And(a, b) => {
+                self.probe_wins(a, first, params) || self.probe_wins(b, first, params)
+            }
+            Expr::InSelect(_, s)
+                if matches!(s.project.as_deref(), Some([c]) if c == "id")
+                    && s.limit.is_none()
+                    && s.lookup.is_none() =>
+            {
+                let Ok(c) = self.collection(&s.collection) else {
+                    return false;
+                };
+                if c.store.len() <= MAX_SUBQUERY_VALUES {
+                    return false;
+                }
+                let first = || self.collection(first).map_or(usize::MAX, |c| c.store.len());
+                match &s.filter {
+                    None => self.ttl_of(&s.collection).is_none(),
+                    Some(f) => match self.indexed_size(c, f, params).ok().flatten() {
+                        Some(n) => n > MAX_SUBQUERY_VALUES && first() <= n,
+                        None => {
+                            !index_names(c, f, params)
+                                && first().saturating_mul(SCANNED_A_PROBE) <= c.store.len()
+                        }
+                    },
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// [`Self::answered`] for a `get`, which an inner one is as well,
+    /// `depth` levels down.
+    fn answered_select<'s>(
+        &self,
+        sel: &'s Select,
+        params: &[Value],
+        depth: usize,
+    ) -> Result<std::borrow::Cow<'s, Select>> {
+        let expiring = self.ttl_of(&sel.collection).is_some()
+            || sel
+                .lookup
+                .as_ref()
+                .is_some_and(|l| l.chain().any(|s| self.ttl_of(&s.collection).is_some()));
+        // A select built in code, not parsed, has its disjunctive facets
+        // split here, before the expiry is ANDed in.
+        let unsplit = cfg!(feature = "facets")
+            && sel.facets.iter().any(|f| f.disjunctive && f.rest.is_none());
+        let timed = || {
+            sel.calls_now()
+                && (self.ordered(&sel.collection)
+                    || (sel.lookup.as_ref())
+                        .is_some_and(|l| l.chain().any(|s| self.ordered(&s.collection))))
+        };
+        // `limit $1`: each count a parameter gives checked here, as the
+        // number written would be -- the one place, the inner `get`s'
+        // included, since each is answered through here too -- and read
+        // where the plan reads it (`Count::at`).
+        sel.check_counts(params)?;
+        if let Some(n) = sel.flat.as_ref().and_then(|f| f.names.as_deref()) {
+            self.join_names(n)?;
+        }
+        // Every collection a read reads passes here, so here is where one
+        // declaring what this build lacks is refused.
+        if !crate::FULL {
+            self.refuse_unbuilt_in(&sel.collection)?;
+            if !cfg!(feature = "collate") && sorts_collate(&sel.order) {
+                return Err(collate_refused());
+            }
+            for s in sel.lookup.iter().flat_map(|l| l.chain()) {
+                self.refuse_unbuilt_in(&s.collection)?;
+                if !cfg!(feature = "collate") && sorts_collate(&s.order) {
+                    return Err(collate_refused());
+                }
+            }
+        }
+        // A kind's edge to fold (`kind_split`), its own or a level's:
+        // natively alone, where a scoped token's rule writes one.
+        let kinded = || {
+            let opt = |f: &Option<Expr>| f.as_ref().is_some_and(kind_splits);
+            cfg!(not(target_arch = "wasm32"))
+                && (opt(&sel.filter)
+                    || (sel.lookup.as_ref()).is_some_and(|l| l.chain().any(|s| opt(&s.filter))))
+        };
+        if !expiring && !sel.has_subquery() && !unsplit && !timed() && !kinded() {
+            return Ok(std::borrow::Cow::Borrowed(sel));
+        }
+        let mut sel = sel.clone();
+        sel.split_facets()?;
+        sel.each_filter_mut(&mut |collection, f| self.answer_filter(collection, f, params, depth))?;
+        Ok(std::borrow::Cow::Owned(sel))
+    }
+
+    /// Refuses a write to a collection that declares what this build was
+    /// made without ([`unbuilt`]), and a `create collection` or an `alter`
+    /// that would declare it; the reads are refused where every `get` is
+    /// answered ([`Self::answered_select`]). A drop, a rename and the
+    /// schema's description stay, so a page can read what a file holds and
+    /// take the field off.
+    fn refuse_unbuilt(&self, stmt: &Statement) -> Result<()> {
+        match stmt {
+            Statement::Update { pick, .. } | Statement::Delete { pick, .. }
+                if !cfg!(feature = "collate")
+                    && pick.as_ref().is_some_and(|p| sorts_collate(&p.order)) =>
+            {
+                Err(collate_refused())
+            }
+            Statement::Put { collection, .. }
+            | Statement::Update { collection, .. }
+            | Statement::Delete { collection, .. } => self.refuse_unbuilt_in(collection),
+            Statement::CreateCollection { schema, .. } => match schema
+                .fields
+                .iter()
+                .find_map(|f| unbuilt(f).map(|u| (u, f)))
+            {
+                Some(((what, feature), f)) => Err(not_built(
+                    &format!("`{what}` on `{}.{}`", schema.name, f.name),
+                    feature,
+                )),
+                None => Ok(()),
+            },
+            Statement::AlterCollection { collection, change } => {
+                let what = match change {
+                    Alter::AddField(f) => unbuilt(f).map(|u| (u, f.name.as_str())),
+                    _ => None,
+                };
+                match what {
+                    Some(((what, feature), field)) => Err(not_built(
+                        &format!("`{what}` on `{collection}.{field}`"),
+                        feature,
+                    )),
+                    None => Ok(()),
+                }
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Refuses a statement over `collection` when its schema declares what
+    /// this build was made without and cannot answer over as written.
+    fn refuse_unbuilt_in(&self, collection: &str) -> Result<()> {
+        let Some(c) = self.collections.get(collection) else {
+            return Ok(());
+        };
+        match c
+            .schema
+            .fields
+            .iter()
+            .find_map(|f| unbuilt(f).map(|u| (u, f)))
+        {
+            Some(((what, feature), f)) => Err(not_built(
+                &format!("`{collection}`, whose `{}` is `{what}`,", f.name),
+                feature,
+            )),
+            None => Ok(()),
+        }
+    }
+
+    /// Whether `collection` has an ordered index: what a time worked out
+    /// before the plan can be a range of.
+    fn ordered(&self, collection: &str) -> bool {
+        self.collections
+            .get(collection)
+            .is_some_and(|c| !c.sorted.is_empty())
+    }
+
+    /// What `now()` answers in a statement run now: the database's clock,
+    /// or the system's -- `None` where there is none, a browser module not
+    /// handed one.
+    #[inline(never)]
+    fn now_value(&self, params: &[Value]) -> Option<Value> {
+        let ctx = EvalCtx {
+            params,
+            registry: &self.registry,
+            clock: self.clock,
+        };
+        eval(&Expr::Call("now".into(), Vec::new()), &mut NoRow, &ctx).ok()
+    }
+
+    /// A filter over `collection` as it runs ([`Self::answered`]).
+    fn answer_filter(
+        &self,
+        collection: &str,
+        filter: &mut Option<Expr>,
+        params: &[Value],
+        depth: usize,
+    ) -> Result<()> {
+        if let Some(f) = filter {
+            f.each_subquery_mut(&mut |e| self.answer_subquery(e, params, depth))?;
+            // Only an ordered index plans by a time; a module with no clock
+            // handed it leaves the call for the row to meet, and refuse, as
+            // it did.
+            let folds = f.calls_now() && self.ordered(collection);
+            if let Some(now) = folds.then(|| self.now_value(params)).flatten() {
+                f.fold_now(&now, params);
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(c) = self.collections.get(collection).filter(|_| kind_splits(f)) {
+                fold_kinds(f, &c.schema);
+            }
+        }
+        if let Some(Expr::Not(past)) = self.alive(collection)? {
+            // `expired()`: the rows past their time, which a reaper reads to
+            // give back what the sweep would delete unseen -- a hold's money,
+            // a reservation's stock. The filter says which rows it reads, so
+            // the test that leaves them out is not added; `field <= cutoff`
+            // is a range of the ordered index, where `alive`'s `not` is not.
+            // One walk that answers and tells: a second to ask first was
+            // 485 bytes of the browser module.
+            if filter.as_mut().is_some_and(|f| f.answer_expired(&past)) {
+                return Ok(());
+            }
+            *filter = Some(match filter.take() {
+                Some(f) => Expr::And(Box::new(f), Box::new(Expr::Not(past))),
+                None => Expr::Not(past),
+            });
+        }
+        Ok(())
+    }
+
+    /// `e`, an `in (get ...)`, made the `in [..]` it answers: the inner
+    /// `get` run once, its one column the list, a null left out -- it
+    /// equals no value a row could be found by, and in the list it would
+    /// find the rows whose field is null. Past [`MAX_SUBQUERY_VALUES`] it
+    /// is refused, never cut short.
+    fn answer_subquery(&self, e: &mut Expr, params: &[Value], depth: usize) -> Result<()> {
+        let Expr::InSelect(lhs, inner) = std::mem::replace(e, Expr::Lit(Value::Null)) else {
+            unreachable!("each_subquery_mut hands an `in (get ...)`")
+        };
+        if depth >= MAX_SUBQUERY_DEPTH {
+            return Err(Error::Query(format!(
+                "`in (get ...)` nested too deep: at most {MAX_SUBQUERY_DEPTH} levels"
+            )));
+        }
+        inner.check_subquery()?;
+        let mut inner = self
+            .answered_select(&inner, params, depth + 1)?
+            .into_owned();
+        let ranked = inner.near.is_some() || inner.matcher.is_some();
+        let plain = !ranked
+            && inner.aggregate.is_empty()
+            && inner.group.is_empty()
+            && inner.computed.is_empty()
+            && inner.limit.is_none()
+            && inner.offset.at(params) == 0;
+        let items = if plain {
+            self.distinct_column(&inner, params)?
+        } else {
+            // One past the bound is all it takes to know the set is past
+            // it: a scan stops there rather than gather a million values to
+            // refuse them. `near` and `match` are bounded by their own
+            // pages, and an aggregate without `group` answers one row.
+            if !ranked && (inner.aggregate.is_empty() || !inner.group.is_empty()) {
+                let bound = MAX_SUBQUERY_VALUES + 1;
+                inner.limit = Some(Count::N(
+                    inner.limit.map_or(bound, |l| l.at(params).min(bound)),
+                ));
+            }
+            let rows = self.select(&inner, params)?.rows;
+            let whole = rows.len() <= MAX_SUBQUERY_VALUES;
+            let mut items = Vec::with_capacity(rows.len());
+            for row in rows {
+                if let Some(v) = row.values.into_iter().next().filter(|v| !v.is_null()) {
+                    items.push(Expr::Lit(v));
+                }
+            }
+            whole.then_some(items)
+        };
+        let Some(items) = items else {
+            OVERFLOWED.with(|o| o.set(true));
+            LISTS_PAST_BOUND.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            return Err(Error::Query(format!(
+                "`in (get {} ...)` found more than {MAX_SUBQUERY_VALUES} values: a set is not cut \
+                 short, so narrow the inner `get` or ask with `lookup ... required`",
+                inner.collection
+            )));
+        };
+        plan(|| {
+            format!(
+                "subquery: {} values from {}, an `in` list",
+                items.len(),
+                inner.collection
+            )
+        });
+        *e = Expr::In(lhs, items);
+        Ok(())
+    }
+
+    /// The distinct values, null aside, of the one column of `sel` -- an
+    /// inner `get` with no `limit`, `offset`, `group` or ranking, whose
+    /// order says nothing an `in` list keeps -- as the list's items, `None`
+    /// once they number more than [`MAX_SUBQUERY_VALUES`]. The bound is on
+    /// what the list holds: cut at that many rows, 125 000 `buy` events of
+    /// 937 users were refused as past it. Every match's id is listed first,
+    /// as `count` lists them, 8 bytes a row, and the column read until its
+    /// values pass the bound.
+    fn distinct_column(&self, sel: &Select, params: &[Value]) -> Result<Option<Vec<Expr>>> {
+        let c = self.collection(&sel.collection)?;
+        let columns = projection_columns(&c.schema, &sel.project);
+        // `None` for the id, distinct already.
+        let at = match columns.first().map(String::as_str) {
+            Some("id") | None => None,
+            Some(col) => Some(source_or_err(&c.schema, col, "")?),
+        };
+        // Gathered as they come until there are more than the bound, and
+        // only then told apart: under it a value twice in the list changes
+        // nothing, and the 1 967 values of a bucket of rare orders went
+        // 0.15 -> 0.36 ms told apart as they came.
+        let mut seen: Option<HashIndex> = None;
+        let mut key = Vec::new();
+        let mut items = Vec::new();
+        // Each id once: one past the bound is all the list need find --
+        // a scan stops there, and a range an index names is read as it
+        // would be with no bound (`want`): a bound there narrows the ranges
+        // an index is read for.
+        let cap = at.is_none().then_some(MAX_SUBQUERY_VALUES + 1);
+        for id in self.matching_ids_to(&sel.collection, &sel.filter, params, cap, usize::MAX)? {
+            let v = match at {
+                Some(at) => read_source(&c.store, id, at)?,
+                None => Value::Int(id as i64),
+            };
+            if v.is_null() {
+                continue;
+            }
+            if let Some(set) = &mut seen {
+                if !first_seen(set, &mut key, &v) {
+                    continue;
+                }
+            }
+            items.push(Expr::Lit(v));
+            if items.len() > MAX_SUBQUERY_VALUES {
+                if seen.is_some() || at.is_none() {
+                    return Ok(None);
+                }
+                let mut set = HashIndex::default();
+                let mut kept = Vec::with_capacity(items.len());
+                for item in items {
+                    if let Expr::Lit(v) = &item {
+                        if first_seen(&mut set, &mut key, v) {
+                            kept.push(item);
+                        }
+                    }
+                }
+                items = kept;
+                if items.len() > MAX_SUBQUERY_VALUES {
+                    return Ok(None);
+                }
+                seen = Some(set);
+            }
+        }
+        Ok(Some(items))
+    }
+
+    /// The field whose value a row of `collection` expires by, and how
+    /// long after it (`@ttl`), in milliseconds.
+    fn ttl_of(&self, collection: &str) -> Option<(&str, u64)> {
+        let c = self.collections.get(collection)?;
+        c.schema
+            .fields
+            .iter()
+            .find_map(|f| f.index.ttl().map(|ttl| (f.name.as_str(), ttl)))
+    }
+
+    /// The test a row of `collection` passes while it lives, at the time a
+    /// read is answered (`@ttl`): `not (field <= now - ttl)`, so a row whose
+    /// field is null -- which has no time to expire from -- lives, and none
+    /// is swept. `None` for a collection whose rows do not expire. A `not`
+    /// rather than `field > now - ttl`, so that the planner never takes it
+    /// for a range to narrow by: it is a test of each row the rest found.
+    fn alive(&self, collection: &str) -> Result<Option<Expr>> {
+        let Some((field, ttl)) = self.ttl_of(collection) else {
+            return Ok(None);
+        };
+        let cutoff = self.now()?.saturating_sub(ttl.min(i64::MAX as u64) as i64);
+        Ok(Some(Expr::Not(Box::new(Expr::Cmp(
+            CmpOp::Le,
+            Box::new(Expr::Field(field.to_string())),
+            Box::new(Expr::Lit(Value::Timestamp(cutoff))),
+        )))))
+    }
+
+    /// The collections whose rows expire, by name: what a server's sweeper
+    /// looks at.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn expiring(&self) -> Vec<String> {
+        self.order
+            .iter()
+            .filter(|n| self.ttl_of(n).is_some())
+            .cloned()
+            .collect()
+    }
+
+    /// Up to `max` of `collection`'s rows past their time at `now`,
+    /// ascending: a range of the field's ordered index where it is narrow,
+    /// and the scan in id order, stopped at `max`, where most rows are past
+    /// their time. Under the read lock; [`Self::sweep`] deletes them.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn expired(&self, collection: &str, now: i64, max: usize) -> Result<Vec<DocId>> {
+        let Some((field, ttl)) = self.ttl_of(collection) else {
+            return Ok(Vec::new());
+        };
+        let cutoff = now.saturating_sub(ttl.min(i64::MAX as u64) as i64);
+        let past = Expr::Cmp(
+            CmpOp::Le,
+            Box::new(Expr::Field(field.to_string())),
+            Box::new(Expr::Lit(Value::Timestamp(cutoff))),
+        );
+        self.matching_ids_capped(collection, &Some(past), &[], Some(max))
+    }
+
+    /// Deletes those of `ids` still past their time at `now` -- a write
+    /// since [`Self::expired`] may have moved one's time on -- as one block
+    /// of ordinary deletes, so a replica, `/_changes`, an archive and a
+    /// subscriber see each as any delete. Not through a statement: a
+    /// `del` leaves out the rows past their time, as every read of the
+    /// collection does, and would find none of them.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn sweep(&mut self, collection: &str, now: i64, ids: &[DocId]) -> Result<usize> {
+        let Some((field, ttl)) = self.ttl_of(collection) else {
+            return Ok(0);
+        };
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let cutoff = now.saturating_sub(ttl.min(i64::MAX as u64) as i64);
+        let filter = Some(Expr::And(
+            Box::new(Expr::In(
+                Box::new(Expr::Field("id".into())),
+                ids.iter()
+                    .map(|&id| Expr::Lit(Value::Int(id as i64)))
+                    .collect(),
+            )),
+            Box::new(Expr::Cmp(
+                CmpOp::Le,
+                Box::new(Expr::Field(field.to_string())),
+                Box::new(Expr::Lit(Value::Timestamp(cutoff))),
+            )),
+        ));
+        self.may_start()?;
+        if self.block.is_some() {
+            return Err(Error::Query(
+                "a block is open: the sweep waits for it".into(),
+            ));
+        }
+        let collection = collection.to_string();
+        self.open_block();
+        match self.delete(&collection, &filter, None, &[]) {
+            Ok(Response::Affected(n)) => self.commit().map(|_| n),
+            Ok(_) => self.commit().map(|_| 0),
+            Err(e) => {
+                self.rollback();
+                Err(e)
+            }
+        }
+    }
+
+    fn create_collection(&mut self, schema: Schema, if_not_exists: bool) -> Result<Response> {
+        if self.collections.contains_key(&schema.name) {
+            if if_not_exists {
+                return Ok(Response::Ok(format!(
+                    "collection `{}` already exists",
+                    schema.name
+                )));
+            }
+            return Err(Error::Exists(format!("collection `{}`", schema.name)));
+        }
+        let cid = self.next_coll_id;
+        self.next_coll_id += 1;
+        let name = schema.name.clone();
+        self.wal(REC_CREATE, cid, &schema.encode())?;
+        self.note(cid, SCHEMA_MARK);
+        self.collections
+            .insert(name.clone(), Collection::new(cid, schema));
+        self.order.push(name.clone());
+        if let Some(b) = &mut self.block {
+            b.was.push(Undo::Created(cid));
+        }
+        Ok(Response::Ok(format!("collection `{name}` created")))
+    }
+
+    fn drop_collection(&mut self, name: &str, if_exists: bool) -> Result<Response> {
+        match self.collections.remove(name) {
+            Some(c) => {
+                let at = self.order.iter().position(|n| n == name);
+                if let Some(at) = at {
+                    self.order.remove(at);
+                }
+                self.wal(REC_DROP, c.id, &[])?;
+                self.note(c.id, SCHEMA_MARK);
+                // Kept until the block lands, for it to come back if the
+                // block does not.
+                if let Some(b) = &mut self.block {
+                    let at = at.unwrap_or(self.order.len());
+                    b.was.push(Undo::Dropped(Box::new(c), at));
+                }
+                Ok(Response::Ok(format!("collection `{name}` dropped")))
+            }
+            None if if_exists => Ok(Response::Ok(format!("no collection `{name}`"))),
+            None => Err(Error::NotFound(format!("collection `{name}`"))),
+        }
+    }
+
+    /// Adds, drops or renames a field, rewriting no document: a field added
+    /// goes last, where a document written before it ends, and reads as
+    /// `null` there; a field dropped leaves its place, skipped on read and
+    /// written as `null`, for `compact` to take out, and its index goes with
+    /// it; a rename is the schema alone. Undone in a block as an index built
+    /// is ([`Undo::Altered`]).
+    fn alter_collection(&mut self, collection: &str, change: &Alter) -> Result<Response> {
+        // The vectors the block's `put`s left waiting are linked first:
+        // they wait under their field's name, which a rename or a drop
+        // takes away.
+        if DEFERS {
+            self.link_waiting(1);
+        }
+        let c = self.collection(collection)?;
+        let mut schema = Schema::clone(&c.schema);
+        let no_field = |f: &str| Error::NotFound(format!("field `{f}` in `{collection}`"));
+        let (op, field, to) = match change {
+            Alter::AddField(f) => {
+                if let Some(feature) = missing_feature(&f.index) {
+                    return Err(not_built("the index", feature));
+                }
+                if f.required {
+                    return Err(Error::Query(format!(
+                        "`{}` cannot be required: the documents `{collection}` holds have no \
+                         value for it",
+                        f.name
+                    )));
+                }
+                // The checks a `create collection` makes of its fields: a
+                // name taken or reserved, a collation or an index the type
+                // cannot have.
+                let mut fields = schema.fields.clone();
+                fields.push(f.clone());
+                // A `String`, as the parser hands it one: a `&str` was a
+                // second copy of `Schema::new`, 0.6 KB of the browser module.
+                schema.fields = Schema::new(collection.to_string(), fields)?.fields;
+                (FIELD_ADD, f.name.clone(), String::new())
+            }
+            Alter::DropField(name) => {
+                let pos = schema.field_pos(name).ok_or_else(|| no_field(name))?;
+                if schema.fields.len() == 1 {
+                    return Err(Error::Query(format!(
+                        "`{name}` is the only field of `{collection}`, which keeps one at least"
+                    )));
+                }
+                let place = schema.place(pos);
+                schema.fields.remove(pos);
+                let at = schema.dropped.partition_point(|&d| d < place);
+                schema.dropped.insert(at, place);
+                // The indexes on paths into it go with it, and those over
+                // several fields it is a part of.
+                let prefix = format!("{name}.");
+                schema.paths.retain(|p| !p.name.starts_with(&prefix));
+                schema.composites.retain(|c| !c.reads(name));
+                (FIELD_DROP, name.clone(), String::new())
+            }
+            Alter::RenameField(from, to) => {
+                let pos = schema.field_pos(from).ok_or_else(|| no_field(from))?;
+                // A name taken or reserved, as `create collection` refuses.
+                let mut fields = schema.fields.clone();
+                fields[pos].name = to.clone();
+                schema.fields = Schema::new(collection.to_string(), fields)?.fields;
+                // The paths into it are under its new name, and so are the
+                // parts of an index over several fields that read it.
+                let prefix = format!("{from}.");
+                for p in schema.paths.iter_mut() {
+                    if let Some(keys) = p.name.strip_prefix(&prefix) {
+                        p.name = format!("{to}.{keys}");
+                    }
+                }
+                for c in schema.composites.iter_mut() {
+                    for (k, _) in c.keys.iter_mut() {
+                        if k == from {
+                            *k = to.clone();
+                        } else if let Some(keys) = k.strip_prefix(&prefix) {
+                            *k = format!("{to}.{keys}");
+                        }
+                    }
+                }
+                (FIELD_RENAME, from.clone(), to.clone())
+            }
+            Alter::Ttl(name, ttl) => {
+                let pos = schema.field_pos(name).ok_or_else(|| no_field(name))?;
+                let f = &mut schema.fields[pos];
+                if !matches!(f.index, IndexKind::Sorted { .. }) {
+                    return Err(Error::Query(format!(
+                        "`{name}` has no ordered index to expire rows by: \
+                         `create index on {collection} ({name}) @ttl(..)` makes one"
+                    )));
+                }
+                let kind = IndexKind::Sorted { ttl: *ttl };
+                kind.check(name, &f.ty)?;
+                f.index = kind;
+                crate::schema::one_expiry(collection, schema.fields.iter())?;
+                (FIELD_TTL, name.clone(), String::new())
+            }
+        };
+        let ch = FieldChange {
+            op,
+            field,
+            to,
+            schema,
+        };
+        let c = self.collections.get_mut(collection).unwrap();
+        let (cid, before) = (c.id, c.schema.clone());
+        let taken = c.alter_fields(&ch);
+        // Before the index of a field added is built, which a block that
+        // does not land -- or a build that fails -- puts back with it.
+        if let Some(b) = &mut self.block {
+            b.was.push(Undo::Altered(
+                cid,
+                Box::new(Altered {
+                    before,
+                    op,
+                    field: ch.field.clone(),
+                    to: ch.to.clone(),
+                    taken,
+                }),
+            ));
+        }
+        let c = self.collections.get_mut(collection).unwrap();
+        if let (FIELD_ADD, Some(pos)) = (op, c.schema.field_pos(&ch.field)) {
+            build_index(c, pos)?;
+        }
+        self.wal(REC_FIELDS, cid, &ch.encode())?;
+        self.note(cid, SCHEMA_MARK);
+        Ok(Response::Ok(match op {
+            FIELD_ADD => format!("field `{}` added to `{collection}`", ch.field),
+            FIELD_DROP => format!("field `{}` dropped from `{collection}`", ch.field),
+            FIELD_TTL => match ttl_after(&ch) {
+                Some(ms) => format!(
+                    "rows of `{collection}` expire {} after `{}`",
+                    crate::schema::ttl_text(ms),
+                    ch.field
+                ),
+                None => format!("rows of `{collection}` no longer expire"),
+            },
+            _ => format!("field `{}` renamed to `{}`", ch.field, ch.to),
+        }))
+    }
+
+    /// Builds an index on an existing field and fills it from the current
+    /// documents, all under the write lock; a server runs it beside the
+    /// database instead ([`Database::maintain`]).
+    fn create_index(
+        &mut self,
+        collection: &str,
+        field: &str,
+        kind: &IndexKind,
+        if_not_exists: bool,
+    ) -> Result<Response> {
+        if let Some(feature) = missing_feature(kind) {
+            return Err(not_built("the index", feature));
+        }
+        if let Some(done) = self.check_index(collection, field, kind, if_not_exists)? {
+            return Ok(done);
+        }
+        let c = self.collections.get_mut(collection).unwrap();
+        let cid = c.id;
+        // A path's index is a field of its own beside the fields, and is
+        // built here under the write lock: a hash or an ordered index reads
+        // a value a row -- 11 ms over 100 000 documents for `@hash` on
+        // `meta.lang`, 21 for `@sorted` on `meta.source.rank` -- not worth a
+        // copy beside the database, as an HNSW build's seconds are.
+        if crate::schema::split_path(field).is_some() {
+            let f = crate::schema::Field::new(field, DataType::Json).indexed(kind.resolved());
+            SchemaCell::make_mut(&mut c.schema).add_path(f);
+            if let Some(b) = &mut self.block {
+                b.was.push(Undo::PathIndexed(cid, field.to_string()));
+            }
+            let c = self.collections.get_mut(collection).unwrap();
+            build_path_index(c, field)?;
+        } else {
+            let pos = c.schema.field_pos(field).unwrap();
+            SchemaCell::make_mut(&mut c.schema).fields[pos].index = kind.resolved();
+            // Before the build, which a block that does not land -- or a
+            // build that fails -- puts back with it.
+            if let Some(b) = &mut self.block {
+                b.was.push(Undo::Indexed(cid, pos));
+            }
+            let c = self.collections.get_mut(collection).unwrap();
+            build_index(c, pos)?;
+        }
+        let c = self.collections.get_mut(collection).unwrap();
+        // Over documents that hold a value twice, a unique index is refused
+        // -- the statement put back, the index with it -- and names one.
+        if kind.is_unique() {
+            refuse_shared(c, field)?;
+        }
+
+        let encoded = c.schema.encode();
+        self.wal(REC_ALTER, cid, &encoded)?;
+        self.note(cid, SCHEMA_MARK);
+        Ok(Response::Ok(format!(
+            "index built on `{collection}.{field}`"
+        )))
+    }
+
+    /// Builds an index over several fields and fills it from the documents
+    /// there, all under the write lock; a server runs it beside the database
+    /// instead ([`Database::maintain`]). A unique one over documents holding
+    /// one key twice is refused, naming two of them.
+    fn create_composite(
+        &mut self,
+        collection: &str,
+        comp: &Composite,
+        if_not_exists: bool,
+    ) -> Result<Response> {
+        if let Some(done) = self.check_composite(collection, comp, if_not_exists)? {
+            return Ok(done);
+        }
+        let c = self.collections.get_mut(collection).unwrap();
+        let cid = c.id;
+        SchemaCell::make_mut(&mut c.schema)
+            .composites
+            .push(comp.clone());
+        c.fit_composites();
+        // Before the build, which a block that does not land -- or a build
+        // that fails -- puts back with it.
+        if let Some(b) = &mut self.block {
+            b.was.push(Undo::Composed(cid, comp.name()));
+        }
+        let c = &self.collections[collection];
+        let at = c.composites.len() - 1;
+        if let (true, Some(ix)) = (comp.unique, c.composite(at)?) {
+            if let Some((a, b)) = ix.shared() {
+                return Err(composite_shared(c, comp, a, b));
+            }
+        }
+        let encoded = c.schema.encode();
+        self.wal(REC_ALTER, cid, &encoded)?;
+        self.note(cid, SCHEMA_MARK);
+        Ok(Response::Ok(format!(
+            "index built on `{collection}` ({})",
+            comp.keys_text()
+        )))
+    }
+
+    /// Checks a `create index` over several fields: `Some` answers it
+    /// without building anything.
+    pub(crate) fn check_composite(
+        &self,
+        collection: &str,
+        comp: &Composite,
+        if_not_exists: bool,
+    ) -> Result<Option<Response>> {
+        if !cfg!(feature = "composite") {
+            return Err(not_built("the index", "composite"));
+        }
+        let c = self.collection(collection)?;
+        match c.schema.check_composite(comp)? {
+            Some(_) if if_not_exists => Ok(Some(Response::Ok(format!(
+                "`{collection}` ({}) is already indexed",
+                comp.keys_text()
+            )))),
+            Some(_) => Err(Error::Exists(format!(
+                "an index on `{collection}` ({})",
+                comp.keys_text()
+            ))),
+            None => Ok(None),
+        }
+    }
+
+    /// Takes an index over several fields off, by its fields: undone in a
+    /// block as a collection dropped is, the index kept whole until the
+    /// block lands.
+    fn drop_composite(
+        &mut self,
+        collection: &str,
+        keys: &[String],
+        if_exists: bool,
+    ) -> Result<Response> {
+        let c = self.collection(collection)?;
+        let named = |o: &Composite| {
+            o.keys.len() == keys.len() && o.keys.iter().zip(keys).all(|(a, b)| a.0 == *b)
+        };
+        let Some(at) = c.schema.composites.iter().position(named) else {
+            let mut what = format!("an index on `{collection}` (");
+            for (i, k) in keys.iter().enumerate() {
+                what.push_str(if i > 0 { ", " } else { "" });
+                what.push_str(k);
+            }
+            what.push(')');
+            return match if_exists {
+                true => Ok(Response::Ok(format!("no {what}"))),
+                false => Err(Error::NotFound(what)),
+            };
+        };
+        let c = self.collections.get_mut(collection).unwrap();
+        let cid = c.id;
+        SchemaCell::make_mut(&mut c.schema).composites.remove(at);
+        let taken = c.composites.remove(at);
+        let encoded = c.schema.encode();
+        let text = taken.0.keys_text();
+        if let Some(b) = &mut self.block {
+            b.was.push(Undo::Uncomposed(cid, at, Box::new(taken)));
+        }
+        self.wal(REC_ALTER, cid, &encoded)?;
+        self.note(cid, SCHEMA_MARK);
+        Ok(Response::Ok(format!(
+            "index on `{collection}` ({text}) dropped"
+        )))
+    }
+
+    /// A document out of an object a parameter holds, each member a field:
+    /// `put <name> $n`. The object was read as a body's document is -- a
+    /// json field's numbers as written, a list of numbers made a vector's
+    /// `f32`s by the field it is given -- and keeps its members sorted,
+    /// which a document does not need.
+    fn document_of(schema: &Schema, members: &[(String, Value)]) -> Result<Document> {
+        let mut doc = Document::default();
+        for (k, v) in members {
+            doc_field(schema, &mut doc, k, v.clone())?;
+        }
+        doc_done(schema, doc)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn put(
+        &mut self,
+        collection: &str,
+        docs: &[Vec<(String, Expr)>],
+        docs_param: Option<usize>,
+        insert: bool,
+        if_absent: bool,
+        else_set: Option<&[(String, Expr)]>,
+        pick: Option<&Pick>,
+        params: &[Value],
+    ) -> Result<Response> {
+        // Taken out for the statement, as `set` takes it: an upsert's
+        // values call its functions while the row is written.
+        if let Some(on) = pick.and_then(|p| p.conflict.as_deref()) {
+            let names_id = docs.iter().flatten().any(|(k, _)| k == "id") || docs_param.is_some();
+            self.collection(collection)?.schema.arbiter(on, names_id)?;
+        }
+        let registry = std::mem::take(&mut self.registry);
+        let list = pick.and_then(|p| p.returning.as_ref());
+        let mut answered = list.map(|_| (Vec::new(), Vec::new()));
+        let out = self.put_with(
+            collection,
+            docs,
+            docs_param,
+            (insert, if_absent),
+            else_set,
+            &registry,
+            params,
+            answered.as_mut(),
+        );
+        self.registry = registry;
+        // `returning`: the rows it wrote, ids and all, each as the
+        // statement left it, and each handed to the hooks as the write it
+        // was -- a scoped token's read rules hold it (`Hook::answering`).
+        match (out, list, answered) {
+            (Ok(_), Some(list), Some((ids, ops))) => {
+                Ok(Response::Rows(self.returned(collection, list, &ids, &ops)?))
+            }
+            (out, ..) => out.map(Response::Affected),
+        }
+    }
+
+    /// The documents of a `put` written, how many rows it wrote, and --
+    /// into `answered`, when `returning` asks -- each row's id in the
+    /// order of the documents, and the write it was: an insert, or an
+    /// update of a row a `put` wrote over or an upsert set.
+    #[allow(clippy::too_many_arguments)]
+    fn put_with(
+        &mut self,
+        collection: &str,
+        docs: &[Vec<(String, Expr)>],
+        docs_param: Option<usize>,
+        (insert, if_absent): (bool, bool),
+        else_set: Option<&[(String, Expr)]>,
+        registry: &Registry,
+        params: &[Value],
+        mut answered: Option<&mut (Vec<DocId>, Vec<WriteOp>)>,
+    ) -> Result<usize> {
+        // The collection looked up once, and its hooks borrowed rather than
+        // copied: a lookup by name is a hash of the name, and the copy an
+        // allocation, every statement.
+        let (schema, cid) = {
+            let c = self.collection(collection)?;
+            (c.schema.clone(), c.id)
+        };
+        let hooks = registry.hooks();
+        let ctx = EvalCtx {
+            params,
+            registry,
+            clock: self.clock,
+        };
+
+        // Built and encoded beside the readers, where the block was
+        // prepared against the schema the collection holds
+        // ([`Self::prepare`]); here otherwise, as they always were.
+        #[cfg(not(target_arch = "wasm32"))]
+        let ready = self.take_ready(cid, &schema);
+        #[cfg(not(target_arch = "wasm32"))]
+        let built = match ready {
+            Some((first, count)) => self.take_built(first, count),
+            None => {
+                let mut built = Vec::with_capacity(docs.len());
+                build_docs(&schema, collection, docs, docs_param, &ctx, &mut built)?;
+                built
+            }
+        };
+        #[cfg(target_arch = "wasm32")]
+        let built = {
+            let mut built = Vec::with_capacity(docs.len());
+            build_docs(&schema, collection, docs, docs_param, &ctx, &mut built)?;
+            built
+        };
+        // The payloads encoded with them are the documents' as written
+        // only where no hook may change one.
+        #[cfg(not(target_arch = "wasm32"))]
+        let encoded = !hooks.iter().any(|h| h.rewrites());
+        // An upsert's pairs, bound once a statement as a `set`'s are, `new.f`
+        // reading the document put.
+        let assigns: Option<Vec<Assign>> = else_set.map(|set| {
+            set.iter()
+                .map(|(key, e)| Assign {
+                    key,
+                    at: schema.field_pos(key),
+                    calc: Calc::bind_upsert(&schema, e, &ctx),
+                })
+                .collect()
+        });
+        if collate::PARTIAL {
+            collate::refuse(
+                built
+                    .iter()
+                    .fold(0, |m, d| m | collation_missing(&schema, d)),
+            )?;
+        }
+        // A row past its time (`@ttl`) is out of every read, and so out of
+        // a write's way: an id it holds is taken as free, a `@unique` value
+        // it holds is let go of with it. Otherwise a lock taken by
+        // `insert` and left to expire stayed held until the sweeper came
+        // by, up to a minute later.
+        let unique = schema.has_unique();
+        // Without a clock -- the browser module handed none -- no row is
+        // past its time for a write, as before.
+        let expiry = match (insert || unique)
+            .then(|| self.ttl_of(collection))
+            .flatten()
+        {
+            Some((f, ttl)) => self.now().ok().map(|now| {
+                let cut = now.saturating_sub(ttl.min(i64::MAX as u64) as i64);
+                (schema.field_pos(f).unwrap_or(0), cut)
+            }),
+            None => None,
+        };
+
+        let mut n = 0usize;
+        let mut written: Vec<Document> = Vec::with_capacity(built.len());
+        for (i, mut doc) in built.into_iter().enumerate() {
+            #[cfg(target_arch = "wasm32")]
+            let _ = i;
+            if let (Some(cut), true) = (expiry, unique) {
+                let c = &self.collections[collection];
+                let mut gone = Vec::new();
+                for (_, other) in c.unique_holders(&doc)? {
+                    if expired(c, other, cut)? {
+                        gone.push(other);
+                    }
+                }
+                for other in gone {
+                    self.erase(collection, &schema, other, hooks)?;
+                }
+            }
+            let c = self.collections.get_mut(collection).unwrap();
+            let mark = c.store.mark();
+            // The row an upsert sets rather than the document written.
+            let mut held = None;
+            let named = doc.id != 0;
+            let op = if doc.id == 0 {
+                doc.id = c.store.allocate_id();
+                WriteOp::Insert
+            } else if c.store.contains(doc.id) {
+                let gone = match expiry {
+                    Some(cut) => expired(c, doc.id, cut)?,
+                    None => false,
+                };
+                if insert && !gone {
+                    if !if_absent {
+                        // The statement is a block: what it wrote before
+                        // this one is put back with it.
+                        return Err(Error::Duplicate(format!(
+                            "`{collection}` holds a document {} already: insert makes new \
+                             ones, put writes over",
+                            doc.id
+                        )));
+                    }
+                    if assigns.is_none() {
+                        continue;
+                    }
+                    held = Some(doc.id);
+                }
+                WriteOp::Update
+            } else {
+                WriteOp::Insert
+            };
+            if held.is_none() {
+                // Before anything is written, as a taken id is refused above
+                // -- and the id handed out above handed out again, as a block
+                // put back hands its ids out again: nothing of this document
+                // is in the store for the block's mark to take back.
+                // The document written over, read before the hooks: a hook
+                // judges a write over one by what it changes.
+                let old = match op {
+                    WriteOp::Update => c.store.read(&schema, doc.id)?,
+                    _ => None,
+                };
+                let checked = hooks
+                    .iter()
+                    .try_for_each(|h| h.before_write(&schema, op, &mut doc))
+                    .and_then(|_| match &old {
+                        Some(old) => hooks
+                            .iter()
+                            .try_for_each(|h| h.before_overwrite(&schema, old, &doc)),
+                        None => Ok(()),
+                    })
+                    // Asked only of a collection holding a unique index,
+                    // known once a statement: asked of each document, the
+                    // look at every field's index and every index over
+                    // several fields took a put in a block of 1 000 from
+                    // 530 ns to 545; asked once, 529.
+                    .and_then(|_| match unique.then(|| c.unique_clash(&doc)) {
+                        None => Ok(true),
+                        // `if absent` passes over a value held as an id held.
+                        Some(Err(Error::Duplicate(_))) if if_absent => Ok(false),
+                        Some(r) => r.map(|_| true),
+                    });
+                match checked {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        c.store.rewind(mark);
+                        if assigns.is_none() {
+                            continue;
+                        }
+                        // The row holding the first `@unique` value it
+                        // holds, in the order the fields are declared.
+                        held = c.unique_holders(&doc)?.first().map(|(_, d)| *d);
+                        if !named {
+                            doc.id = 0;
+                        }
+                    }
+                    Err(e) => {
+                        c.store.rewind(mark);
+                        return Err(e);
+                    }
+                }
+                if held.is_none() {
+                    // Drop the old index entries when overwriting.
+                    if let Some(old) = &old {
+                        c.unindex_doc(old, Some(&doc));
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let made;
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let payload = match ready
+                        .filter(|_| encoded)
+                        .and_then(|(at, _)| self.preparation.payload(at + i))
+                    {
+                        Some(p) => p,
+                        None => {
+                            made = Store::encode_doc(&schema, &doc);
+                            &made[..]
+                        }
+                    };
+                    #[cfg(target_arch = "wasm32")]
+                    let payload = Store::encode_doc(&schema, &doc);
+                    let was = c.store.loc(doc.id);
+                    // In a block, the frame made where the block keeps it.
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let frame = match self.block.as_mut() {
+                        Some(b) => {
+                            c.store.append_onto(OP_PUT, doc.id, payload, &mut b.frames);
+                            b.heads.push((REC_DATA, cid, b.frames.len()));
+                            None
+                        }
+                        None => Some(c.store.append(OP_PUT, doc.id, payload)),
+                    };
+                    #[cfg(target_arch = "wasm32")]
+                    let frame = c.store.append(OP_PUT, doc.id, &payload);
+                    c.index_scalar(&doc, old.as_ref());
+                    self.remember(cid, doc.id, was, mark);
+                    #[cfg(not(target_arch = "wasm32"))]
+                    if let Some(frame) = frame {
+                        self.wal(REC_DATA, cid, &frame)?;
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    self.wal(REC_DATA, cid, &frame)?;
+                    self.note(cid, doc.id);
+                    for h in hooks {
+                        h.after_write(collection, op, &doc)?;
+                    }
+                    if let Some((ids, ops)) = answered.as_deref_mut() {
+                        ids.push(doc.id);
+                        ops.push(op);
+                    }
+                    written.push(doc);
+                    n += 1;
+                    continue;
+                }
+            }
+            // The upsert: the row held is set as `set` sets a row, the
+            // document `new`. The vectors written before it are linked
+            // first, so that a row this statement wrote and now sets is
+            // in the graph as it stood, and its new vector replaces it.
+            let (Some(id), Some(assigns)) = (held, &assigns) else {
+                continue;
+            };
+            if !written.is_empty() {
+                self.index_written(collection, &mut written);
+                #[cfg(not(target_arch = "wasm32"))]
+                match ready {
+                    Some(_) => self.preparation.spend(&mut written),
+                    None => written.clear(),
+                }
+            }
+            if self.set_row(
+                collection,
+                &schema,
+                cid,
+                id,
+                assigns,
+                &ctx,
+                hooks,
+                Some(&doc),
+            )? {
+                if let Some((ids, ops)) = answered.as_deref_mut() {
+                    ids.push(id);
+                    ops.push(WriteOp::Update);
+                }
+                n += 1;
+            }
+        }
+        self.index_written(collection, &mut written);
+        // What it wrote, for the caller to let go of after the lock.
+        #[cfg(not(target_arch = "wasm32"))]
+        if ready.is_some() {
+            self.preparation.spend(&mut written);
+        }
+        Ok(n)
+    }
+
+    /// The vectors of the documents a `put` wrote, indexed in a batch:
+    /// construction can parallelise. In a block that defers, the block's
+    /// statements are one batch. The browser lets the documents go here;
+    /// natively the caller does, or keeps them for after the lock.
+    #[cfg_attr(not(target_arch = "wasm32"), allow(clippy::ptr_arg))]
+    fn index_written(&mut self, collection: &str, written: &mut Vec<Document>) {
+        let c = self.collections.get_mut(collection).unwrap();
+        match self.block.as_mut().filter(|b| DEFERS && b.defers) {
+            Some(b) => {
+                c.defer_vectors_batch(written, &mut b.waiting);
+                self.link_waiting(LINK_AT);
+            }
+            None => c.index_vectors_batch(written),
+        }
+        // Natively the caller lets them go, or a preparation keeps them to
+        // be let go of after the lock.
+        #[cfg(target_arch = "wasm32")]
+        written.clear();
+    }
+
+    /// Finds the ids of the documents matching the filter.
+    fn matching_ids(
+        &self,
+        collection: &str,
+        filter: &Option<Expr>,
+        params: &[Value],
+    ) -> Result<Vec<DocId>> {
+        self.matching_ids_capped(collection, filter, params, None)
+    }
+
+    /// [`Self::matching_ids`], stopping after `cap` matches. The ids come out
+    /// ascending either way, so the capped list is exactly the front of the
+    /// full one. Before the cap a page of twenty evaluated the filter over
+    /// every document: over a million rows `where price >= 0 limit 20` took
+    /// 69.6 ms and now 0.002 ms, and `limit 20` with no filter at all took
+    /// 2.4 ms, spent listing every id first.
+    #[inline(always)]
+    fn matching_ids_capped(
+        &self,
+        collection: &str,
+        filter: &Option<Expr>,
+        params: &[Value],
+        cap: Option<usize>,
+    ) -> Result<Vec<DocId>> {
+        self.matching_ids_to(collection, filter, params, cap, cap.unwrap_or(usize::MAX))
+    }
+
+    /// [`Self::matching_ids_capped`], `want` -- how many matches bound how
+    /// wide a range an index is read for ([`Self::filter_candidates`]) --
+    /// given apart from the cap. One body for both: inlined into each,
+    /// it was 1.0 KB more of the browser module.
+    #[inline(never)]
+    fn matching_ids_to(
+        &self,
+        collection: &str,
+        filter: &Option<Expr>,
+        params: &[Value],
+        cap: Option<usize>,
+        range_want: usize,
+    ) -> Result<Vec<DocId>> {
+        let c = self.collection(collection)?;
+        let ctx = EvalCtx {
+            params,
+            registry: &self.registry,
+            clock: self.clock,
+        };
+        let want = cap.unwrap_or(usize::MAX);
+
+        let Some(f) = filter else {
+            plan(|| "filter: none, rows in id order".into());
+            return Ok(match cap {
+                Some(k) => c.store.iter_ids().take(k).collect(),
+                None => c.store.ids(),
+            });
+        };
+
+        let mut out = Vec::new();
+        let mut tested = 0usize;
+        let test = Filter::new(c, f, &ctx);
+        let scanned = match self.filter_candidates(c, f, params, range_want)? {
+            // The filter is exactly what the index answered: no row needs a
+            // second look.
+            Some((mut b, true)) => {
+                b.truncate(want);
+                return Ok(b);
+            }
+            Some((b, false)) => {
+                for id in b {
+                    if out.len() >= want {
+                        break;
+                    }
+                    tested += 1;
+                    if test.matches(id, &ctx)? {
+                        out.push(id);
+                    }
+                }
+                false
+            }
+            // No index: the full scan, read lazily so a cap stops it early,
+            // from the lowest id the filter lets through.
+            None => {
+                // The browser leaves it out: 0.4 KB brotli of its module,
+                // for collections it holds in memory.
+                #[cfg(not(target_arch = "wasm32"))]
+                let ids = c
+                    .store
+                    .iter_ids_from(f.conjunct_id_floor(params).unwrap_or(0));
+                #[cfg(target_arch = "wasm32")]
+                let ids = c.store.iter_ids();
+                for id in ids {
+                    if out.len() >= want {
+                        break;
+                    }
+                    tested += 1;
+                    if test.matches(id, &ctx)? {
+                        out.push(id);
+                    }
+                }
+                true
+            }
+        };
+        plan(|| {
+            let what = if scanned {
+                format!("a full scan, {tested} of {} rows tested", c.store.len())
+            } else {
+                format!("{tested} candidates tested")
+            };
+            let stop = if out.len() == want {
+                ", stopped at the page"
+            } else {
+                ""
+            };
+            format!("filter: {what}, {} matched{stop}", out.len())
+        });
+        Ok(out)
+    }
+
+    /// The rows an index narrows a filter to, ascending and live, and
+    /// whether they are the answer itself -- `None` when no index narrows
+    /// it and every row has to be tested. `want` is how many matches the
+    /// caller will take, which bounds how wide a range is worth reading.
+    fn filter_candidates(
+        &self,
+        c: &Collection,
+        f: &Expr,
+        params: &[Value],
+        want: usize,
+    ) -> Result<Option<(Vec<DocId>, bool)>> {
+        // Hash index pushdown. The candidate set is picked from the smallest
+        // of the indexable equalities in the `and` chain.
+        let mut eqs = Vec::new();
+        f.conjunct_equalities(params, &mut eqs);
+        let mut candidates: Option<Vec<DocId>> = None;
+        // Which index the candidates came from, for `explain`: a field's, or
+        // one over several fields said whole.
+        let mut source: (&str, &str) = ("", "");
+        let mut composed_said: Option<String> = None;
+        for (field, val) in eqs {
+            if field == "id" {
+                let Some(hit) = id_candidates(&c.store, &[val]) else {
+                    continue;
+                };
+                if candidates
+                    .as_ref()
+                    .map(|c| hit.len() < c.len())
+                    .unwrap_or(true)
+                {
+                    candidates = Some(hit);
+                    source = ("the id index", "id");
+                }
+                continue;
+            }
+            let Some(map) = c.hash(field)? else {
+                continue;
+            };
+            // The bucket key is produced on the write path from the value
+            // coerced to the field's type (`10` -> `10.0`), so the lookup has
+            // to go through the same conversion. Otherwise `price = 10` on
+            // `price float @hash` would find an empty bucket and silently
+            // return 0 rows -- the mere presence of the index would change the
+            // query's answer. A literal that cannot be coerced (`year = "abc"`)
+            // skips the index and leaves the decision to the eval path.
+            let Some(key) = lookup_key(&c.schema, field, val) else {
+                continue;
+            };
+            let bucket = map.get(&key).map_or_else(Vec::new, Bucket::to_vec);
+            if candidates
+                .as_ref()
+                .map(|c| bucket.len() < c.len())
+                .unwrap_or(true)
+            {
+                candidates = Some(bucket);
+                source = ("the hash index on", field);
+            }
+        }
+
+        // `in` over a hash field is the union of one bucket per element. It
+        // is compared against the equalities above under the same
+        // smallest-wins rule, so a query carrying both still picks whichever
+        // candidate set is narrower.
+        let mut ins = Vec::new();
+        f.conjunct_in_sets(params, &mut ins);
+        // Whether the chosen candidate set *is* the answer. `in` needs its own
+        // flag where a single equality has `is_bare_equality`: without it the
+        // union is re-evaluated row by row, which on a 56 374-document bucket
+        // costs 3.2 ms against the 90 us the same bucket takes as `= x`.
+        let mut bare_in = false;
+        for (field, vals) in ins {
+            if field == "id" {
+                let Some(hit) = id_candidates(&c.store, &vals) else {
+                    continue;
+                };
+                if candidates
+                    .as_ref()
+                    .map(|c| hit.len() < c.len())
+                    .unwrap_or(true)
+                {
+                    candidates = Some(hit);
+                    source = ("the id index, `in`", "id");
+                    bare_in = matches!(f, Expr::In(..));
+                }
+                continue;
+            }
+            let Some(map) = c.hash(field)? else {
+                continue;
+            };
+            let mut union: Vec<DocId> = Vec::new();
+            let mut ends: Vec<usize> = Vec::new();
+            let mut whole = true;
+            for v in vals {
+                // The same coercion the single equality needs, and for the
+                // same reason. An element the index cannot express takes the
+                // whole list back to the eval path: a union missing one
+                // element's rows is a wrong answer, not a slow one.
+                let Some(key) = lookup_key(&c.schema, field, v) else {
+                    whole = false;
+                    break;
+                };
+                if let Some(bucket) = map.get(&key) {
+                    // Where the run before ends, from the second bucket on:
+                    // one bucket, the usual list, is its own answer, and
+                    // noting its end was an allocation more a query.
+                    if !union.is_empty() {
+                        ends.push(union.len());
+                    }
+                    union.extend(bucket.iter());
+                }
+            }
+            if !whole {
+                continue;
+            }
+            // The union is k buckets laid end to end, each ascending. One is
+            // its own answer; up to eight are merged where they are known to
+            // end, and past that the ids are sorted. The stable sort that
+            // did this found the runs again a comparison at a time, its code
+            // -- a stable sort of ids, for this alone -- 3.4 KB of the
+            // browser module. Over runs of random ids, merged against it and
+            // the unstable sort every other list of ids takes: 2 runs of 200
+            // 0.5 us against 1.6 and 2.2, 8 of 200 6.0 against 14.7 and 9.6,
+            // 12 of 200 21.7 against 26.7 and 14.6, 2 000 of 10 846 against
+            // 233 and 166.
+            if !ends.is_empty() {
+                ends.push(union.len());
+                match ends.len() <= 8 {
+                    true => merge_runs(&mut union, &mut ends),
+                    false => union.sort_unstable(),
+                }
+            }
+            // Two elements can coerce to the same key (`year in [2024,
+            // 2024.0]`), and a document reached twice would be counted twice
+            // by `count` and emitted twice by `get`.
+            union.dedup();
+            if candidates
+                .as_ref()
+                .map(|c| union.len() < c.len())
+                .unwrap_or(true)
+            {
+                candidates = Some(union);
+                source = ("the hash index, `in`, on", field);
+                // Exact only when the list is the whole filter. With anything
+                // `and`ed on, every candidate still has to be tested -- and a
+                // filter holding an equality as well cannot be a bare `in`,
+                // so this cannot be set by the wrong branch.
+                bare_in = matches!(f, Expr::In(..));
+            }
+        }
+
+        // An index over several fields narrows to the run of its entries the
+        // equalities on its first parts and a range on the next name --
+        // counted exactly, two searches a span, before anything is gathered,
+        // and taken under the rule a range is: while it is smaller than what
+        // is in hand and than half the collection, past which the scan is
+        // cheaper. Its rows apart, which no span holds, are candidates too.
+        // Whether it is the answer is its own to say (`Composed::exact`),
+        // since the rows apart need a look.
+        let mut composed_exact: Option<bool> = None;
+        if cfg!(feature = "composite") {
+            let n = c.store.len();
+            for at in 0..c.composites.len() {
+                let comp = &c.composites[at].0;
+                if !names_first(Some(f), params, &comp.keys[0].0) {
+                    continue;
+                }
+                let Some(ix) = c.composite(at)? else {
+                    continue;
+                };
+                let p = composed(comp, ix, Some(f), params);
+                if p.fixed == 0 && !p.ranged {
+                    continue;
+                }
+                let count = p.spans.iter().map(|s| ix.count(s)).sum::<usize>() + ix.apart().len();
+                let mut cap = candidates.as_ref().map_or(n / 2, |b| b.len()).min(n / 2);
+                if want != usize::MAX {
+                    cap = cap.min(want.saturating_mul(64).max(4096));
+                }
+                if count > cap || candidates.as_ref().is_some_and(|b| count >= b.len()) {
+                    plan(|| {
+                        format!(
+                            "filter: {} not used, its {count} rows are more than the other plans read",
+                            composed_text(comp, &p)
+                        )
+                    });
+                    continue;
+                }
+                let mut ids = Vec::with_capacity(count);
+                for s in &p.spans {
+                    ix.ids(s, usize::MAX, &mut ids);
+                }
+                // A row apart may lie in a span too: once each.
+                if !ix.apart().is_empty() {
+                    ids.extend_from_slice(ix.apart());
+                    ids.sort_unstable();
+                    ids.dedup();
+                }
+                candidates = Some(ids);
+                composed_said = Some(composed_text(comp, &p));
+                composed_exact = Some(p.exact);
+            }
+        }
+
+        // Comparisons over an ordered index narrow to a range. It is collected
+        // only while it stays smaller than the candidates already in hand and
+        // than the scan it would replace: past half the collection the scan
+        // is cheaper than gathering and sorting the ids, and a page of twenty
+        // over a wide range is found sooner by the scan in id order.
+        let mut bare_range = false;
+        if !c.sorted.is_empty() {
+            let mut ranges = Vec::new();
+            f.conjunct_ranges(params, &mut ranges);
+            let n = c.store.len();
+            for (field, _) in &c.sorted {
+                if !ranges.iter().any(|r| r.0 == field) {
+                    continue;
+                }
+                let Some(fd) = c.schema.indexed(field) else {
+                    continue;
+                };
+                let Some((range, exact)) = sorted_range(fd, field, f, params) else {
+                    continue;
+                };
+                let Some(ix) = c.sorted_index(field)? else {
+                    continue;
+                };
+                if !ix.answers() {
+                    plan(|| {
+                        format!(
+                            "filter: the ordered index on {field} not used, it holds a value \
+                             it cannot order"
+                        )
+                    });
+                    continue;
+                }
+                let mut cap = candidates.as_ref().map_or(n / 2, |b| b.len()).min(n / 2);
+                if want != usize::MAX {
+                    cap = cap.min(want.saturating_mul(64).max(4096));
+                }
+                if let Some(ids) = ix.range_ids(&range, cap) {
+                    candidates = Some(ids);
+                    source = ("the ordered index on", field);
+                    bare_range = exact && f.only_ranges_on(field, params);
+                    bare_in = false;
+                    (composed_exact, composed_said) = (None, None);
+                } else {
+                    plan(|| {
+                        format!(
+                            "filter: the ordered index on {field} not used, \
+                             its range holds more than {cap} rows"
+                        )
+                    });
+                }
+            }
+        }
+
+        // A radius or a box over a point index narrows to the rows whose
+        // key lies in its bounding box, under the same rule as a range:
+        // while it stays smaller than what is in hand and than the scan.
+        // Never the answer itself: each row's own point is tested.
+        if cfg!(all(feature = "sorted", feature = "geo")) && !c.geo.is_empty() {
+            let mut shapes = Vec::new();
+            crate::geo::conjunct_shapes(f, params, &mut shapes);
+            let n = c.store.len();
+            for (field, shape) in shapes {
+                let Some(ix) = c.geo_index(field)? else {
+                    continue;
+                };
+                let mut cap = candidates.as_ref().map_or(n / 2, |b| b.len()).min(n / 2);
+                if want != usize::MAX {
+                    cap = cap.min(want.saturating_mul(64).max(4096));
+                }
+                if let Some(ids) = ix.candidates(&shape, cap) {
+                    candidates = Some(ids);
+                    source = ("the point index on", field);
+                    (bare_range, bare_in) = (false, false);
+                    (composed_exact, composed_said) = (Some(false), None);
+                } else {
+                    plan(|| {
+                        format!(
+                            "filter: the point index on {field} not used, \
+                             its box holds more than {cap} rows"
+                        )
+                    });
+                }
+            }
+        }
+
+        Ok(candidates.map(|mut b| {
+            b.sort_unstable();
+            b.retain(|id| c.store.contains(*id));
+            // If the filter is exactly that equality, or exactly a list that
+            // was pushed down whole, or exactly the range an ordered index
+            // expressed, no re-evaluation is needed.
+            let exact = composed_exact
+                .unwrap_or_else(|| f.is_bare_equality(params) || bare_in || bare_range);
+            plan(|| {
+                let (index, field) = source;
+                let named = match (&composed_said, field == "id") {
+                    (Some(said), _) => said.clone(),
+                    (None, true) => index.to_string(),
+                    (None, false) => format!("{index} {field}"),
+                };
+                let then = if exact { ", which is the answer" } else { "" };
+                format!("filter: {named}, {} rows{then}", b.len())
+            });
+            (b, exact)
+        }))
+    }
+
+    /// A filtered `near`, finding the filter's rows only as far as the plan
+    /// needs them.
+    ///
+    /// The plan follows the size of that set. At most `probe_budget` rows --
+    /// about the number of distances the ANN would measure anyway -- are
+    /// searched exactly; more go through the ANN, whose candidates are tested
+    /// against the filter; and an ANN that comes up short, because the filter
+    /// correlates with the vector, falls back to searching the whole set.
+    ///
+    /// Finding the whole set first was nearly all of the query when no index
+    /// narrows the filter: `year >= 2020` over 200 000 x 128 took 16.4 ms,
+    /// of which the ANN was 0.14. But the plan only needs to know whether
+    /// the set is larger than the budget, so the rows are probed until it is
+    /// (1.1 ms), and the rest is read only where the whole set would have
+    /// been used -- so the answer is the same one, row for row, and a filter
+    /// under the budget costs what it did (17.9 ms against 17.6).
+    #[allow(clippy::too_many_arguments)]
+    fn filtered_near(
+        &self,
+        c: &Collection,
+        sp: &Space,
+        f: &Expr,
+        qv: &[f32],
+        want: usize,
+        near: &Near,
+        params: &[Value],
+        ctx: &EvalCtx,
+    ) -> Result<Vec<(DocId, f32)>> {
+        let ix = sp.ix;
+        let budget = ix.probe_budget(near.ef);
+        let test = Filter::new(c, f, ctx);
+        let matches = |id: DocId| test.matches(id, ctx);
+        // A set an index names and sizes past the budget -- a hash bucket, a
+        // union of them -- decides the plan without being gathered: 250 000
+        // ids of a quarter's bucket, copied, sorted and looked up each, were
+        // most of the 0.77 ms a filter keeping a quarter of a million rows
+        // took, against 0.18 unfiltered. The walk's beam is widened until
+        // about twice the page passes the filter: at the page exactly, 43%
+        // of the walks at a beam of 40 came up short and searched the
+        // quarter's 250 000 rows exactly. Where that beam would measure as
+        // many vectors as the set holds, the set is searched exactly at
+        // once, as the walk would have ended doing.
+        if !near.exact {
+            if let Some(size) = self.indexed_size(c, f, params)? {
+                if size > budget {
+                    let beam = near.ef.unwrap_or(ix.spec.ef_search).max(want);
+                    let rows = c.store.len().max(1);
+                    let wide = want
+                        .saturating_mul(2)
+                        .saturating_mul(rows)
+                        .div_ceil(size)
+                        .max(beam);
+                    if ix.probe_budget(Some(wide)) < size {
+                        plan(|| {
+                            format!(
+                                "filter: an index names {size} rows, more than the ANN budget \
+                                 of {budget}; walked with a beam of {wide}"
+                            )
+                        });
+                        let field = &near.field;
+                        return self.filtered_walk(
+                            c,
+                            sp,
+                            f,
+                            qv,
+                            want,
+                            field,
+                            Some(wide),
+                            params,
+                            &matches,
+                            None,
+                        );
+                    }
+                    plan(|| {
+                        format!(
+                            "filter: an index names {size} rows of {rows}, fewer than a beam of \
+                             {wide} would measure to pass the page"
+                        )
+                    });
+                    let mut probe = match self.filter_candidates(c, f, params, usize::MAX)? {
+                        Some((rows, true)) => FilterProbe::done(rows),
+                        Some((rows, false)) => FilterProbe::new(rows),
+                        None => FilterProbe::new(c.store.ids()),
+                    };
+                    probe.run(usize::MAX, matches)?;
+                    let ids = probe.into_sorted();
+                    plan(|| format!("near: the {} rows searched exactly", ids.len()));
+                    return sp.search_ids(qv, want, near.ef, &ids);
+                }
+            }
+        }
+        let mut probe = match self.filter_candidates(c, f, params, usize::MAX)? {
+            Some((rows, true)) => FilterProbe::done(rows),
+            Some((rows, false)) => FilterProbe::new(rows),
+            None => FilterProbe::new(c.store.ids()),
+        };
+        // `exact` is the verification path: it always scans everything.
+        let cap = if near.exact { usize::MAX } else { budget + 1 };
+        let total = probe.rows.len();
+        let whole = probe.run(cap, matches)?;
+        // Rows an index answered exactly were not probed; that step said so.
+        if total > 0 {
+            plan(|| {
+                let found = if whole {
+                    "the whole set".to_string()
+                } else {
+                    format!("more than the ANN budget of {budget}")
+                };
+                format!(
+                    "filter: probed {} of {total} rows, {} matched, {found}",
+                    probe.tested,
+                    probe.matched.len()
+                )
+            });
+        }
+        let field = &near.field;
+        if whole {
+            let ids = probe.into_sorted();
+            let accept = |id: DocId| ids.binary_search(&id).is_ok();
+            return Ok(if near.exact {
+                plan(|| {
+                    format!("near: exact scan over every vector in {field}, the set as a test")
+                });
+                sp.search_exact(qv, want, &accept)?
+            } else if ids.len() <= budget {
+                // The set is smaller than the number of candidates the ANN
+                // walk would measure anyway: the walk buys nothing, and
+                // searching the set directly is both cheaper and exact.
+                plan(|| {
+                    format!(
+                        "near: the {} rows searched exactly, under the ANN budget of {budget}",
+                        ids.len()
+                    )
+                });
+                sp.search_ids(qv, want, near.ef, &ids)?
+            } else {
+                let hits = sp.search(qv, want, near.ef, &mut |id| Ok(accept(id)))?;
+                plan(|| {
+                    format!(
+                        "near: ANN over {field}, the set as a test, {} kept",
+                        hits.len()
+                    )
+                });
+                if hits.len() < want.min(ids.len()) {
+                    plan(|| {
+                        format!(
+                            "near: the ANN came up short, the {} rows searched exactly",
+                            ids.len()
+                        )
+                    });
+                    sp.search_ids(qv, want, near.ef, &ids)?
+                } else {
+                    hits
+                }
+            });
+        }
+        self.filtered_walk(
+            c,
+            sp,
+            f,
+            qv,
+            want,
+            &near.field,
+            near.ef,
+            params,
+            &matches,
+            Some(probe),
+        )
+    }
+
+    /// More rows match than the budget: the ANN, testing each candidate in
+    /// distance order as `search` would test membership -- over codes only
+    /// those still able to make the page (`Space::order`). `probe` is what
+    /// has been found of the set, `None` for none of it yet.
+    #[allow(clippy::too_many_arguments)]
+    fn filtered_walk(
+        &self,
+        c: &Collection,
+        sp: &Space,
+        f: &Expr,
+        qv: &[f32],
+        want: usize,
+        field: &str,
+        ef: Option<usize>,
+        params: &[Value],
+        matches: &dyn Fn(DocId) -> Result<bool>,
+        probe: Option<FilterProbe>,
+    ) -> Result<Vec<(DocId, f32)>> {
+        let mut tested = 0usize;
+        let hits = sp.search(qv, want, ef, &mut |id| {
+            tested += 1;
+            Ok(c.store.contains(id) && matches(id)?)
+        })?;
+        plan(|| {
+            format!(
+                "near: ANN over {field}, {}, {tested} candidates tested, {} kept",
+                beam(sp.ix, ef, want),
+                hits.len()
+            )
+        });
+        // The filter is applied after the candidates are gathered, so a
+        // filter correlated with the vector can eliminate all of them. If the
+        // result comes up short the rest of the set is found and searched
+        // exactly, as it always was.
+        if hits.len() < want {
+            let mut probe = match probe {
+                Some(p) => p,
+                None => match self.filter_candidates(c, f, params, usize::MAX)? {
+                    Some((rows, true)) => FilterProbe::done(rows),
+                    Some((rows, false)) => FilterProbe::new(rows),
+                    None => FilterProbe::new(c.store.ids()),
+                },
+            };
+            probe.run(usize::MAX, matches)?;
+            let ids = probe.into_sorted();
+            if hits.len() < want.min(ids.len()) {
+                plan(|| {
+                    format!(
+                        "near: the ANN came up short, the probe finished, {} rows searched exactly",
+                        ids.len()
+                    )
+                });
+                return sp.search_ids(qv, want, ef, &ids);
+            }
+        }
+        Ok(hits)
+    }
+
+    /// How many rows the narrowest set an index names for `f` holds -- a
+    /// hash bucket for an equality, the buckets of an `in`, the ids named
+    /// -- counted without gathering it, as [`Self::filter_candidates`]
+    /// would choose it; `None` where no index names one. A bucket may still
+    /// hold a row deleted in a block not landed, so it is a bound.
+    fn indexed_size(&self, c: &Collection, f: &Expr, params: &[Value]) -> Result<Option<usize>> {
+        let mut best: Option<usize> = None;
+        let mut take = |n: usize| best = Some(best.map_or(n, |b| b.min(n)));
+        let mut eqs = Vec::new();
+        f.conjunct_equalities(params, &mut eqs);
+        for (field, val) in eqs {
+            if field == "id" {
+                take(1);
+                continue;
+            }
+            let Some(map) = c.hash(field)? else {
+                continue;
+            };
+            if let Some(key) = lookup_key(&c.schema, field, val) {
+                take(map.get(&key).map_or(0, |b| b.len()));
+            }
+        }
+        let mut ins = Vec::new();
+        f.conjunct_in_sets(params, &mut ins);
+        for (field, vals) in ins {
+            if field == "id" {
+                take(vals.len());
+                continue;
+            }
+            let Some(map) = c.hash(field)? else {
+                continue;
+            };
+            let mut sum = 0;
+            let mut whole = true;
+            for v in vals {
+                match lookup_key(&c.schema, field, v) {
+                    Some(key) => sum += map.get(&key).map_or(0, |b| b.len()),
+                    None => {
+                        whole = false;
+                        break;
+                    }
+                }
+            }
+            if whole {
+                take(sum);
+            }
+        }
+        // An index over several fields whose first parts an equality fixes:
+        // its spans counted, two searches each.
+        for at in (0..c.composites.len()).filter(|_| cfg!(feature = "composite")) {
+            if !names_first(Some(f), params, &c.composites[at].0.keys[0].0) {
+                continue;
+            }
+            let Some(ix) = c.composite(at)? else {
+                continue;
+            };
+            let p = composed(&c.composites[at].0, ix, Some(f), params);
+            if p.fixed > 0 {
+                take(p.spans.iter().map(|s| ix.count(s)).sum::<usize>() + ix.apart().len());
+            }
+        }
+        Ok(best)
+    }
+
+    /// `order <field> limit N` answered by walking an ordered index and
+    /// stopping at the page -- `None` when that is not the better plan.
+    ///
+    /// The walk visits rows in order and tests the filter on each, so it wins
+    /// when the page fills early; an equality over a hash index, an `in`, or
+    /// a narrow range on another ordered field names a small set that is
+    /// cheaper to sort, and those keep the sorting path. Without a `limit`
+    /// every row is emitted anyway, and `required` needs every candidate, so
+    /// both keep it too. A range on the ordered field itself bounds the walk.
+    fn walk_order(
+        &self,
+        c: &Collection,
+        sel: &Select,
+        params: &[Value],
+        ctx: &EvalCtx,
+    ) -> Result<Option<Vec<DocId>>> {
+        // A key worked out of the row walks no index of a field's, but the
+        // distance from a point one of a point's -- natively: a page's
+        // module sorts the distances, the same rows, where the walk and
+        // its call were 1.9 KB of it, 0.9 KB brotli, for a speed its few
+        // thousand rows do not need.
+        if let Some(i) = sel.order.iter().position(|s| s.expr.is_some()) {
+            return match (&sel.order[..], &sel.order[i].expr) {
+                ([s], Some(e)) if !cfg!(target_arch = "wasm32") => {
+                    self.walk_distance(c, sel, s, e, params, ctx)
+                }
+                _ => Ok(None),
+            };
+        }
+        if cfg!(feature = "composite") && !c.composites.is_empty() {
+            if let Some(ids) = self.walk_composite(c, sel, params, ctx)? {
+                return Ok(Some(ids));
+            }
+        }
+        let [Sort {
+            field,
+            asc,
+            collate,
+            ..
+        }] = sel.order.as_slice()
+        else {
+            return Ok(None);
+        };
+        // The index holds its field's order -- a collation's, or the
+        // bytes' -- so a key in another one sorts.
+        let own = c.schema.field(field).and_then(|f| f.collate);
+        if collate.is_some_and(|c| Some(c) != own) {
+            return Ok(None);
+        }
+        let (Some(ix), Some(limit)) = (c.sorted_index(field)?, sel.limit.map(|l| l.at(params)))
+        else {
+            return Ok(None);
+        };
+        if ix.has_nan() {
+            let what = match ix.answers() {
+                true => "a NaN",
+                false => "a value it cannot order",
+            };
+            plan(|| format!("order: the ordered index on {field} not walked, it holds {what}"));
+            return Ok(None);
+        }
+        if sel.lookup.as_ref().is_some_and(|l| l.required) {
+            return Ok(None);
+        }
+        let want = limit.saturating_add(sel.offset.at(params));
+        let mut range = None;
+        let mut bare = true;
+        if let Some(f) = &sel.filter {
+            let indexed = |name: &str| name == "id" || c.hashes.contains_key(name);
+            let mut eqs = Vec::new();
+            f.conjunct_equalities(params, &mut eqs);
+            let mut ins = Vec::new();
+            f.conjunct_in_sets(params, &mut ins);
+            if eqs.iter().any(|(n, _)| indexed(n)) || ins.iter().any(|(n, _)| indexed(n)) {
+                plan(|| {
+                    format!("order: the ordered index on {field} not walked, an equality names fewer rows")
+                });
+                return Ok(None);
+            }
+            let mut ranges = Vec::new();
+            f.conjunct_ranges(params, &mut ranges);
+            for (name, _, _) in &ranges {
+                if name == field {
+                    continue;
+                }
+                let (Some(other), Some(fd)) = (c.sorted_index(name)?, c.schema.indexed(name))
+                else {
+                    continue;
+                };
+                if !other.answers() {
+                    continue;
+                }
+                if let Some((r, _)) = sorted_range(fd, name, f, params) {
+                    if other.range_ids(&r, 4096).is_some() {
+                        plan(|| {
+                            format!(
+                                "order: the ordered index on {field} not walked, \
+                                 the range on {name} names fewer rows"
+                            )
+                        });
+                        return Ok(None);
+                    }
+                }
+            }
+            let fd = c
+                .schema
+                .indexed(field)
+                .expect("an ordered index has its field");
+            let own = sorted_range(fd, field, f, params);
+            bare = matches!(&own, Some((_, true))) && f.only_ranges_on(field, params);
+            range = own.map(|(r, _)| r);
+        }
+        let mut out = Vec::with_capacity(want.min(4096));
+        if want == 0 {
+            return Ok(Some(out));
+        }
+        // A filter the index cannot narrow is tested as the walk passes each
+        // row, and one that matches almost nothing would have the walk read
+        // every row in key order: random reads, which over a million rows
+        // took 237 ms against the scan's 121. Past an eighth of the
+        // collection the scan is the better bet, and the rows walked so far
+        // are what the wrong guess cost -- 1.25x the scan at worst, while a
+        // filter matching 1% still fills the page in 0.29 ms against 125.
+        let budget = (c.store.len() / 8).max(want);
+        let (mut walked, mut gave_up) = (0usize, false);
+        let test = sel.filter.as_ref().map(|f| Filter::new(c, f, ctx));
+        ix.walk(!asc, range.as_ref(), |id| {
+            if !bare {
+                if let Some(test) = &test {
+                    walked += 1;
+                    if walked > budget {
+                        gave_up = true;
+                        return Ok(false);
+                    }
+                    if !test.matches(id, ctx)? {
+                        return Ok(true);
+                    }
+                }
+            }
+            out.push(id);
+            Ok(out.len() < want)
+        })?;
+        plan(|| {
+            let dir = if *asc { "" } else { " desc" };
+            if gave_up {
+                format!(
+                    "order: walked the ordered index on {field}{dir}, gave up after {budget} rows \
+                     with {} kept, back to the scan",
+                    out.len()
+                )
+            } else if bare {
+                format!(
+                    "order: walked the ordered index on {field}{dir}, {} rows",
+                    out.len()
+                )
+            } else {
+                format!(
+                    "order: walked the ordered index on {field}{dir}, {walked} rows tested, {} kept",
+                    out.len()
+                )
+            }
+        });
+        Ok((!gave_up).then_some(out))
+    }
+
+    /// `order ... limit N` answered by walking an index over several
+    /// fields -- `None` where none fits, or where another plan reads fewer
+    /// rows.
+    ///
+    /// An index fits when the filter's equalities fix its first parts and
+    /// the order reads the parts after them, each in its direction or every
+    /// one the other way round (an order key an equality fixes holds one
+    /// value, and orders nothing); a range on the first part it orders by
+    /// bounds the walk. The walk is the run of entries those name, in the
+    /// order asked: one whose filter the index says whole reads the page
+    /// alone. One that tests the rest of the filter row by row is taken
+    /// while its run -- counted exactly, two searches -- holds no more rows
+    /// than the smallest set an equality over a hash index or the ids names,
+    /// and gives up as an ordered index's walk does past an eighth of the
+    /// collection. Of several that fit, the one the filter is wholly said
+    /// by, and then the shortest run.
+    fn walk_composite(
+        &self,
+        c: &Collection,
+        sel: &Select,
+        params: &[Value],
+        ctx: &EvalCtx,
+    ) -> Result<Option<Vec<DocId>>> {
+        let (Some(limit), false) = (sel.limit.map(|l| l.at(params)), sel.order.is_empty()) else {
+            return Ok(None);
+        };
+        if sel.lookup.as_ref().is_some_and(|l| l.required) {
+            return Ok(None);
+        }
+        // The smallest set an index names for the filter, exactly -- an
+        // equality's bucket, an `in`'s, the ids, an index over several
+        // fields' run: what a walk testing the filter row by row is held to.
+        let smallest = match &sel.filter {
+            Some(f) => self.indexed_size(c, f, params)?,
+            None => None,
+        };
+        // (index, plan, run, backwards, tie parts)
+        let mut best: Option<(usize, Composed, usize, bool, usize)> = None;
+        for at in 0..c.composites.len() {
+            let comp = &c.composites[at].0;
+            // Its first part fixed by the filter or read by the order.
+            let first = &comp.keys[0].0;
+            if !names_first(sel.filter.as_ref(), params, first)
+                && !sel.order.iter().any(|s| s.field == *first)
+            {
+                continue;
+            }
+            let Some(ix) = c.composite(at)? else {
+                continue;
+            };
+            if !ix.apart().is_empty() {
+                plan(|| {
+                    format!(
+                        "order: the index on ({}) not walked, it holds a value it cannot order",
+                        comp.keys_text()
+                    )
+                });
+                continue;
+            }
+            let p = composed(comp, ix, sel.filter.as_ref(), params);
+            let Some((back, next)) = walks(comp, p.fixed, p.inlisted, &sel.order, &c.schema) else {
+                continue;
+            };
+            let run: usize = p.spans.iter().map(|s| ix.count(s)).sum();
+            if !p.exact && smallest.is_some_and(|s| s < run) {
+                plan(|| {
+                    format!(
+                        "order: {} not walked, an equality names fewer rows than its {run}",
+                        composed_text(comp, &p)
+                    )
+                });
+                continue;
+            }
+            let better = match &best {
+                None => true,
+                Some((_, q, r, ..)) => (p.exact && !q.exact) || (p.exact == q.exact && run < *r),
+            };
+            if better {
+                best = Some((at, p, run, back, next));
+            }
+        }
+        let Some((at, p, run, back, ties)) = best else {
+            return Ok(None);
+        };
+        let ix = c.composite(at)?.expect("the index was there a moment ago");
+        let comp = &c.composites[at].0;
+        let want = limit.saturating_add(sel.offset.at(params));
+        let mut out = Vec::with_capacity(want.min(4096));
+        if want == 0 {
+            return Ok(Some(out));
+        }
+        let budget = (c.store.len() / 8).max(want);
+        let (mut walked, mut gave_up) = (0usize, false);
+        let test = match p.exact {
+            true => None,
+            false => sel.filter.as_ref().map(|f| Filter::new(c, f, ctx)),
+        };
+        ix.walk(&p.spans, p.fixed, back, ties, &mut |id| {
+            walked += 1;
+            if let Some(test) = &test {
+                if walked > budget {
+                    gave_up = true;
+                    return Ok(false);
+                }
+                if !test.matches(id, ctx)? {
+                    return Ok(true);
+                }
+            }
+            out.push(id);
+            Ok(out.len() < want)
+        })?;
+        plan(|| {
+            // One text for every outcome: each `format!` is code of its own
+            // in the browser module.
+            let (dir, read) = (if back { ", backwards" } else { "" }, walked.min(budget));
+            let then = if gave_up {
+                ", gave up, back to the scan"
+            } else {
+                ""
+            };
+            let tested = if p.exact { "read" } else { "tested" };
+            format!(
+                "order: walked {}{dir}, {read} of {run} rows {tested}, {} kept{then}",
+                composed_text(comp, &p),
+                out.len()
+            )
+        });
+        Ok((!gave_up).then_some(out))
+    }
+
+    /// A `count` an index over several fields says whole -- its filter is
+    /// that index's equalities and range, and no row of it apart -- counted
+    /// off its chunks, two searches a span, with no id gathered: a tenant's
+    /// rows in a range of days. `None` where none does, or where the count
+    /// needs the rows: a facet, a `lookup`, a block open (whose writes the
+    /// rows are read past, as `filter_candidates` reads them).
+    fn count_composed(
+        &self,
+        c: &Collection,
+        sel: &Select,
+        params: &[Value],
+    ) -> Result<Option<usize>> {
+        if !cfg!(feature = "composite")
+            || c.composites.is_empty()
+            || sel.lookup.is_some()
+            || !sel.facets.is_empty()
+            || self.block.is_some()
+        {
+            return Ok(None);
+        }
+        let Some(f) = &sel.filter else {
+            return Ok(None);
+        };
+        for at in 0..c.composites.len() {
+            let comp = &c.composites[at].0;
+            if !names_first(Some(f), params, &comp.keys[0].0) {
+                continue;
+            }
+            let Some(ix) = c.composite(at)? else {
+                continue;
+            };
+            let p = composed(comp, ix, Some(f), params);
+            if p.exact && (p.fixed > 0 || p.ranged) {
+                let n = p.spans.iter().map(|s| ix.count(s)).sum();
+                plan(|| format!("count: {}, counted off its chunks", composed_text(comp, &p)));
+                return Ok(Some(n));
+            }
+        }
+        Ok(None)
+    }
+
+    /// `near`'s first `want` candidates, nearest first -- the filter's rows
+    /// only, when there is one.
+    fn run_near(
+        &self,
+        c: &Collection,
+        sel: &Select,
+        near: &Near,
+        want: usize,
+        params: &[Value],
+        ctx: &EvalCtx,
+    ) -> Result<Vec<(DocId, f32)>> {
+        if let Some(m) = near.metric {
+            metric_held(c, &near.field, m)?;
+        }
+        match c.schema.field(&near.field).map(|f| &f.ty) {
+            Some(DataType::Sparse(dim)) => {
+                return self.run_sparse_near(c, sel, near, *dim, want, params, ctx);
+            }
+            Some(DataType::Geo) if !cfg!(feature = "geo") => {
+                return Err(not_built("`near` over a point", "geo"));
+            }
+            Some(DataType::Geo) => return self.run_geo_near(c, sel, near, want, params, ctx),
+            _ => {}
+        }
+        #[cfg(not(feature = "vector"))]
+        if let Some(f) = c.schema.field(&near.field) {
+            if let (IndexKind::Vector(spec), DataType::Vector(dim, prec)) = (&f.index, &f.ty) {
+                return self.near_stored(c, sel, near, spec, (*dim, *prec), want, params, ctx);
+            }
+        }
+        let ix = c.vectors.get(&near.field).ok_or_else(|| {
+            not_built_on(c, &near.field, "vector index").unwrap_or_else(|| {
+                Error::Query(format!(
+                    "field `{}` has no vector index (declare it with @hnsw)",
+                    near.field
+                ))
+            })
+        })?;
+        let qv = near_vector(eval(&near.vector, &mut NoRow, ctx)?)?;
+        if qv.len() != ix.dim {
+            return Err(Error::Type(format!(
+                "the query vector must have {} dimensions, got {}",
+                ix.dim,
+                qv.len()
+            )));
+        }
+
+        let sp = Space::new(c, ix, &near.field);
+        if ix.unlinked() > 0 && !near.exact {
+            plan(|| {
+                format!(
+                    "near: {} vectors of {} not linked into the graph yet, each measured",
+                    ix.unlinked(),
+                    near.field
+                )
+            });
+        }
+        let hits = match &sel.filter {
+            // No filter: ANN directly, or a full scan when asked for -- or
+            // when tombstones cut the ANN's answer short. One call each to
+            // the walk and the scan: a second call site inlined the walk
+            // again, 819 bytes of the browser module.
+            None => {
+                if near.exact {
+                    plan(|| format!("near: exact scan over every vector in {}", near.field));
+                } else {
+                    plan(|| format!("near: ANN over {}, {}", near.field, beam(ix, near.ef, want)));
+                }
+                let (mut ef, mut exact, mut widened) = (near.ef, near.exact, false);
+                loop {
+                    if exact {
+                        break sp.search_exact(&qv, want, &|_| true)?;
+                    }
+                    let hits = sp.search(&qv, want, ef, &mut |_| Ok(true))?;
+                    match past_tombstones(ix, near, want, hits.len(), widened) {
+                        Short::Whole => break hits,
+                        Short::Wider(wider) => (ef, widened) = (Some(wider), true),
+                        Short::Exact => exact = true,
+                    }
+                }
+            }
+            Some(f) => self.filtered_near(c, &sp, f, &qv, want, near, params, ctx)?,
+        };
+        Ok(hits)
+    }
+
+    /// `near` over a field declaring `@hnsw` in a build without the graph
+    /// (`vector`): every vector measured, as `near ... exact` measures them
+    /// in the full build -- the rows, their scores and their order -- so a
+    /// module without the graph answers what the full one would, only
+    /// slower past a few thousand rows. Over codes (`quant=`) the full
+    /// build's exact search reads each document's own vector
+    /// ([`order_exactly`]), and so does this; a bit index holds its vectors
+    /// whole until it has [`crate::vector::BIT_TRAIN`] nodes, and is taken
+    /// to hold them so while the collection has fewer distinct vectors --
+    /// its tombstones, which counted there, are not known here. `ef` is
+    /// taken and has nothing to widen.
+    #[cfg(not(feature = "vector"))]
+    #[allow(clippy::too_many_arguments)]
+    fn near_stored(
+        &self,
+        c: &Collection,
+        sel: &Select,
+        near: &Near,
+        spec: &crate::schema::VectorIndexSpec,
+        (dim, prec): (usize, VecPrec),
+        want: usize,
+        params: &[Value],
+        ctx: &EvalCtx,
+    ) -> Result<Vec<(DocId, f32)>> {
+        use crate::schema::Quant;
+        let qv = near_vector(eval(&near.vector, &mut NoRow, ctx)?)?;
+        if qv.len() != dim {
+            return Err(Error::Type(format!(
+                "the query vector must have {dim} dimensions, got {}",
+                qv.len()
+            )));
+        }
+        let field = &near.field;
+        let pos = c
+            .schema
+            .field_pos(field)
+            .expect("a declared field is in the schema");
+        let ids = match &sel.filter {
+            Some(_) => self.matching_ids(&sel.collection, &sel.filter, params)?,
+            None => c.store.ids(),
+        };
+        plan(|| {
+            format!(
+                "near: exact scan over every vector in {field}, {} rows: this build has no graph",
+                ids.len()
+            )
+        });
+        let coded = match spec.quant {
+            Quant::None => false,
+            Quant::Int8 => true,
+            // The nodes it would hold are its vectors told apart as it
+            // stores them: documents holding one vector are one node.
+            Quant::Bit => {
+                let train = crate::vector::BIT_TRAIN;
+                let (mut buf, mut nodes) = (Vec::new(), Vec::new());
+                let mut ids = c.store.iter_ids();
+                loop {
+                    let Some(id) = ids.next() else {
+                        nodes.sort_unstable();
+                        nodes.dedup();
+                        break nodes.len() >= train;
+                    };
+                    if c.store.read_vector_into(id, pos, &mut buf)? && buf.len() == dim {
+                        nodes.push(crate::vector::stored_hash(spec.metric, prec, &buf));
+                    }
+                    if nodes.len() == 2 * train {
+                        nodes.sort_unstable();
+                        nodes.dedup();
+                        if nodes.len() >= train {
+                            break true;
+                        }
+                    }
+                }
+            }
+        };
+        if coded {
+            let mut ids = ids.into_iter().map(|id| (id, f32::NEG_INFINITY));
+            let keep = &mut |_| Ok(true);
+            return Ok(order_exactly(&c.store, pos, spec.metric, &qv, &mut ids, want, keep)?.0);
+        }
+        let read = &mut |id, out: &mut Vec<f32>| c.store.read_vector_into(id, pos, out);
+        crate::vector::search_stored(spec.metric, prec, &qv, want, &ids, read)
+    }
+
+    /// `near` over a `geo` field: the rows nearest the point first, in the
+    /// order of `(distance(<their point>, <the point>), id)`, each scored
+    /// by its distance in metres -- Redis's `GEOSEARCH ... ASC COUNT n
+    /// WITHDIST`. The filter's rows only, and a row with no point never.
+    /// Through the point index where it answers ([`Self::walk_geo_near`]),
+    /// otherwise -- with `exact`, without the index, past what a walk is
+    /// worth -- every row the filter passes measured: the same rows in the
+    /// same order either way.
+    #[allow(clippy::too_many_arguments)]
+    fn run_geo_near(
+        &self,
+        c: &Collection,
+        sel: &Select,
+        near: &Near,
+        want: usize,
+        params: &[Value],
+        ctx: &EvalCtx,
+    ) -> Result<Vec<(DocId, f32)>> {
+        if near.ef.is_some() {
+            return Err(Error::Query(
+                "`ef` widens a vector search's beam, and `near` over a point is exact".into(),
+            ));
+        }
+        let Some(from) = crate::geo::point_of(&eval(&near.vector, &mut NoRow, ctx)?)? else {
+            return Err(Error::Type(
+                "`near` over a point takes a point, [lon, lat], and was given null".into(),
+            ));
+        };
+        let pos = c
+            .schema
+            .field_pos(&near.field)
+            .expect("a declared field is in the schema");
+        if !near.exact {
+            if let Some(hits) = self.walk_geo_near(c, sel, near, from, want, params, ctx)? {
+                return Ok(hits);
+            }
+        }
+        let ids = match &sel.filter {
+            Some(_) => self.matching_ids(&sel.collection, &sel.filter, params)?,
+            None => c.store.ids(),
+        };
+        plan(|| format!("near: every point measured, {} rows", ids.len()));
+        nearest_of(&c.store, pos, from, &ids, want)
+    }
+
+    /// [`Self::run_geo_near`] through the point index, `None` where it does
+    /// not answer. A filter a hash index names few rows for -- a bucket,
+    /// the buckets of an `in` -- has those measured (or the fewer a radius
+    /// or a range names among them). Otherwise the index is walked nearest
+    /// first ([`GeoIndex::nearest`]), each row tested against the filter as it
+    /// comes, stopping at the page or past a radius the filter puts on the
+    /// same point; a filter that passes almost nothing would have the walk
+    /// test the whole collection out of order, so past an eighth of it the
+    /// walk gives up, and every row the filter passes is measured instead.
+    #[cfg(all(feature = "sorted", feature = "geo"))]
+    #[allow(clippy::too_many_arguments)]
+    fn walk_geo_near(
+        &self,
+        c: &Collection,
+        sel: &Select,
+        near: &Near,
+        from: (f64, f64),
+        want: usize,
+        params: &[Value],
+        ctx: &EvalCtx,
+    ) -> Result<Option<Vec<(DocId, f32)>>> {
+        let field = &near.field;
+        let Some(ix) = c.geo_index(field)? else {
+            return Ok(None);
+        };
+        let pos = c
+            .schema
+            .field_pos(field)
+            .expect("a declared field is in the schema");
+        let test = sel.filter.as_ref().map(|f| Filter::new(c, f, ctx));
+        let passes = |id: DocId| match &test {
+            Some(t) => t.matches(id, ctx),
+            None => Ok(true),
+        };
+        // The farthest a row may lie: a radius the filter's `and` chain
+        // puts on this field about the same point.
+        let mut max = f64::INFINITY;
+        if let Some(f) = &sel.filter {
+            let mut shapes = Vec::new();
+            crate::geo::conjunct_shapes(f, params, &mut shapes);
+            for (name, s) in shapes {
+                if let (true, crate::geo::Shape::Circle(p, r)) = (name == field, s) {
+                    if p == from {
+                        max = max.min(r);
+                    }
+                }
+            }
+            // A set an equality or an `in` names through a hash index, if
+            // it is small: measured whole. Not a radius's own box: about
+            // the same point the walk stops at the radius, and over 100 000
+            // rows round cities a 50 km box held thousands of rows to
+            // measure where the walk read a few dozen -- 440 us against 32.
+            if self
+                .indexed_size(c, f, params)?
+                .is_some_and(|n| n <= GEO_SET)
+            {
+                if let Some((rows, exact)) = self.filter_candidates(c, f, params, usize::MAX)? {
+                    let mut kept = Vec::with_capacity(rows.len());
+                    for id in rows {
+                        if exact || passes(id)? {
+                            kept.push(id);
+                        }
+                    }
+                    plan(|| format!("near: {} rows the index named, each measured", kept.len()));
+                    return nearest_of(&c.store, pos, from, &kept, want).map(Some);
+                }
+            }
+        }
+        let budget = (c.store.len() / 8).max(want);
+        let (mut out, mut met) = (Vec::new(), 0usize);
+        ix.nearest(
+            from,
+            max,
+            &mut |id| c.store.read_point(id, pos),
+            &mut |id, d| {
+                met += 1;
+                if test.is_some() && met > budget {
+                    return Ok(false);
+                }
+                if passes(id)? {
+                    out.push((id, d as f32));
+                }
+                Ok(out.len() < want)
+            },
+        )?;
+        let gave_up = met > budget;
+        plan(|| {
+            let then = if gave_up { ", gave up" } else { "" };
+            format!(
+                "near: walked the point index on {field}, {met} rows met, {} kept{then}",
+                out.len()
+            )
+        });
+        Ok((!gave_up).then_some(out))
+    }
+
+    /// A build without ordered indexes, or without points, has no point
+    /// index to walk.
+    #[cfg(not(all(feature = "sorted", feature = "geo")))]
+    #[allow(clippy::too_many_arguments)]
+    fn walk_geo_near(
+        &self,
+        _: &Collection,
+        _: &Select,
+        _: &Near,
+        _: (f64, f64),
+        _: usize,
+        _: &[Value],
+        _: &EvalCtx,
+    ) -> Result<Option<Vec<(DocId, f32)>>> {
+        Ok(None)
+    }
+
+    /// `order distance(<field>, <point>) limit N` over a field with `@geo`
+    /// answered by walking the point index nearest first, as `near` walks
+    /// it ([`Self::walk_geo_near`]), and stopping at the page -- `None`
+    /// where the scan answers. The walk's order is the scan's sort of every
+    /// distance, ties in id order, but it meets no row without a point,
+    /// whose null distance the scan puts first: so only where none can
+    /// pass -- the index holds every row, or the filter's `and` chain puts
+    /// a radius or a box on the field. Descending, it is the scan's.
+    fn walk_distance(
+        &self,
+        c: &Collection,
+        sel: &Select,
+        s: &Sort,
+        e: &Expr,
+        params: &[Value],
+        ctx: &EvalCtx,
+    ) -> Result<Option<Vec<DocId>>> {
+        let (true, None, Some(limit)) = (s.asc, s.collate, sel.limit.map(|l| l.at(params))) else {
+            return Ok(None);
+        };
+        let Some((field, from)) = crate::geo::distance_call(e, params) else {
+            return Ok(None);
+        };
+        if sel.lookup.as_ref().is_some_and(|l| l.required) {
+            return Ok(None);
+        }
+        let Some(ix) = c.geo_index(field)? else {
+            return Ok(None);
+        };
+        let shaped = sel.filter.as_ref().is_some_and(|f| {
+            let mut shapes = Vec::new();
+            crate::geo::conjunct_shapes(f, params, &mut shapes);
+            shapes.iter().any(|(n, _)| *n == field)
+        });
+        if ix.len() != c.store.len() && !shaped {
+            plan(|| {
+                format!(
+                    "order: the point index on {field} not walked, {} rows hold no point",
+                    c.store.len() - ix.len()
+                )
+            });
+            return Ok(None);
+        }
+        let near = Near {
+            field: field.to_string(),
+            vector: Expr::Lit(Value::Null),
+            ef: None,
+            exact: false,
+            metric: None,
+        };
+        let want = limit.saturating_add(sel.offset.at(params));
+        plan(|| format!("order: distance from a point on {field}, by its point index"));
+        Ok(self
+            .walk_geo_near(c, sel, &near, from, want, params, ctx)?
+            .map(|hits| hits.into_iter().map(|(id, _)| id).collect()))
+    }
+
+    /// `near` over a `sparse<N>` field: the documents with the largest dot
+    /// product with the query, through the field's inverted index -- the
+    /// exact top `want`, not an estimate, so there is no beam to widen -- or
+    /// with `exact` every document scored, which is what the index is held
+    /// to. Only a document sharing a dimension with the query is ranked, on
+    /// either path. The filter is tested as the lists are merged, as
+    /// `match` tests it.
+    #[allow(clippy::too_many_arguments)]
+    fn run_sparse_near(
+        &self,
+        c: &Collection,
+        sel: &Select,
+        near: &Near,
+        dim: usize,
+        want: usize,
+        params: &[Value],
+        ctx: &EvalCtx,
+    ) -> Result<Vec<(DocId, f32)>> {
+        let field = &near.field;
+        // A build without `sparse` answers as `exact` does, every document
+        // scored: the index's answer is that one (`tests/sparse.rs`), and
+        // the scan needs nothing the build left out.
+        let unbuilt = !cfg!(feature = "sparse")
+            && c.schema.field(field).map(|f| &f.index) == Some(&IndexKind::Inverted);
+        let ix = match c.sparse_index(field)? {
+            Some(ix) => Some(ix),
+            None if unbuilt => None,
+            None => {
+                return Err(Error::Query(format!(
+                    "field `{field}` has no inverted index (declare it with @inverted)"
+                )))
+            }
+        };
+        if near.ef.is_some() {
+            return Err(Error::Query(format!(
+                "`ef` is the HNSW beam; `{field}` is searched exactly, through its inverted index"
+            )));
+        }
+        let (d, q) = match eval(&near.vector, &mut NoRow, ctx)? {
+            Value::Sparse(d, e) => crate::sparse::normalise(d, e).map_err(Error::Type)?,
+            Value::Text(t) => crate::sparse::parse(&t)?,
+            other => {
+                return Err(Error::Type(format!(
+                    "`near` on `{field}` expects a sparse vector, found {}",
+                    other.type_name()
+                )))
+            }
+        };
+        if d as usize != dim {
+            return Err(Error::Type(format!(
+                "the query vector must have dimension {dim}, got {d}"
+            )));
+        }
+        let allowed: Option<Vec<DocId>> = match &sel.filter {
+            Some(_) => Some(self.matching_ids(&sel.collection, &sel.filter, params)?),
+            None => None,
+        };
+        let accept = |id: DocId| {
+            allowed
+                .as_ref()
+                .is_none_or(|l| l.binary_search(&id).is_ok())
+        };
+        if let Some(ix) = ix.filter(|_| !near.exact) {
+            let hits = ix.search(&q, want, &accept);
+            plan(|| {
+                format!(
+                    "near: the inverted index on {field}, {} dimensions, {} ranked",
+                    q.len(),
+                    hits.len()
+                )
+            });
+            return Ok(hits);
+        }
+        plan(|| match ix {
+            Some(_) => format!("near: exact scan over every sparse vector in {field}"),
+            None => format!(
+                "near: exact scan over every sparse vector in {field}: this build has no index"
+            ),
+        });
+        let pos = c
+            .schema
+            .field_pos(field)
+            .expect("an indexed field is in the schema");
+        let mut hits = Vec::new();
+        for id in c.store.iter_ids() {
+            if !accept(id) {
+                continue;
+            }
+            if let Some(Value::Sparse(_, e)) = c.store.read_field(id, pos)? {
+                if let Some(score) = crate::sparse::dot(&e, &q) {
+                    hits.push((id, score as f32));
+                }
+            }
+        }
+        hits.sort_by(best_first);
+        hits.truncate(want);
+        Ok(hits)
+    }
+
+    /// `match ... near ... fuse`: each side ranks its own candidates -- the
+    /// filter applied to both -- and a document's score is the sum of
+    /// `1 / (k + rank)` over the lists it is on. A document one side missed
+    /// still scores from the other; ties go to the lower id.
+    ///
+    /// Built from what the engine already has -- the two searches, the
+    /// vector index's id map, the text index's order: written with types of
+    /// its own it was 11 KB of the browser module, this way it is 2.
+    #[allow(clippy::too_many_arguments)]
+    fn run_fuse(
+        &self,
+        c: &Collection,
+        sel: &Select,
+        m: &Match,
+        near: &Near,
+        f: &Fuse,
+        params: &[Value],
+        ctx: &EvalCtx,
+    ) -> Result<Vec<(DocId, f32)>> {
+        // Each side ranks its own first `depth`, never fewer than the page:
+        // a document neither list reaches cannot be on it.
+        let page = ranked_rows(sel, params, "fuse", MAX_MATCH_ROWS)?;
+        let depth = f.candidates.unwrap_or(DEFAULT_FUSE_CANDIDATES).max(page);
+        if depth > MAX_MATCH_ROWS {
+            return Err(Error::Query(format!(
+                "`fuse` ranks at most {MAX_MATCH_ROWS} candidates a side, {depth} were requested"
+            )));
+        }
+        let whole_k = f.k.unwrap_or(DEFAULT_FUSE_K);
+        let k = whole_k as f32;
+        let text = self.run_match(c, sel, m, depth, params, ctx)?;
+        let vectors = self.run_near(c, sel, near, depth, params, ctx)?;
+        plan(|| {
+            format!(
+                "fuse: reciprocal rank, k = {whole_k}, over {} + {} candidates",
+                text.len(),
+                vectors.len()
+            )
+        });
+        let mut fused: Vec<(DocId, f32)> = Vec::with_capacity(text.len() + vectors.len());
+        let mut at: HashMap<DocId, u32> = HashMap::new();
+        at.reserve(text.len() + vectors.len());
+        let ids = text.iter().map(|h| h.0).chain(vectors.iter().map(|h| h.0));
+        for (i, id) in ids.enumerate() {
+            // Rank within its own list, from 1.
+            let rank = if i < text.len() { i } else { i - text.len() };
+            let w = 1.0 / (k + rank as f32 + 1.0);
+            match at.get(&id) {
+                Some(&slot) => fused[slot as usize].1 += w,
+                None => {
+                    at.insert(id, fused.len() as u32);
+                    fused.push((id, w));
+                }
+            }
+        }
+        fused.sort_by(best_first);
+        // Two lists can hold twice the ceiling between them; the answer
+        // keeps to it, as `match` and `near` do.
+        fused.truncate(page);
+        Ok(fused)
+    }
+
+    /// `match`, and `rerank` on top of it when the query asks for one: the
+    /// first `want` rows, best first.
+    ///
+    /// The two stages answer different questions. `match` is recall: cheap,
+    /// lexical, and wrong about meaning. `rerank` is precision: exact vector
+    /// distance, but only over what the first stage handed it. Neither needs
+    /// an HNSW graph, which is the point -- see [`Rerank`].
+    fn run_match(
+        &self,
+        c: &Collection,
+        sel: &Select,
+        m: &Match,
+        want: usize,
+        params: &[Value],
+        ctx: &EvalCtx,
+    ) -> Result<Vec<(DocId, f32)>> {
+        let ix = c.text(&m.field)?.ok_or_else(|| {
+            not_built_on(c, &m.field, "full-text index").unwrap_or_else(|| {
+                Error::Query(format!(
+                    "field `{}` has no full-text index (declare it with @text)",
+                    m.field
+                ))
+            })
+        })?;
+        let query = match eval(&m.query, &mut NoRow, ctx)? {
+            Value::Text(t) => t,
+            other => {
+                return Err(Error::Type(format!(
+                    "`match` expects text, found {}",
+                    other.type_name()
+                )))
+            }
+        };
+
+        let allowed: Option<Vec<DocId>> = match &sel.filter {
+            Some(_) => Some(self.matching_ids(&sel.collection, &sel.filter, params)?),
+            None => None,
+        };
+        let accept = |id: DocId| match &allowed {
+            Some(list) => list.binary_search(&id).is_ok(),
+            None => true,
+        };
+        // A scoped token's BM25 counts the rows its filter selects, which
+        // its rules are part of ([`Match::within`]).
+        let within = allowed.as_deref().filter(|_| m.within);
+
+        let Some(rr) = &sel.rerank else {
+            let hits = search(ix, m, &query, want, accept, within)?;
+            plan(|| {
+                format!(
+                    "match: the text index on {}{}, {} ranked",
+                    m.field,
+                    loosely(m),
+                    hits.len()
+                )
+            });
+            return Ok(hits);
+        };
+
+        // The candidate set has to be at least as large as what the caller
+        // asked for, or reranking would throw away rows it never scored.
+        let candidates = rr.candidates.unwrap_or(DEFAULT_RERANK_CANDIDATES).max(want);
+        if candidates > MAX_MATCH_ROWS {
+            return Err(Error::Query(format!(
+                "`rerank` scores at most {MAX_MATCH_ROWS} candidates, {candidates} were requested"
+            )));
+        }
+
+        let pos = c
+            .schema
+            .field_pos(&rr.field)
+            .ok_or_else(|| Error::NotFound(format!("field `{}`", rr.field)))?;
+        let field = &c.schema.fields[pos];
+        let DataType::Vector(dim, _) = field.ty else {
+            return Err(Error::Type(format!(
+                "`rerank` needs a vector field, `{}` is {}",
+                rr.field,
+                field.ty.name()
+            )));
+        };
+        // No index is consulted: the vectors are read out of the store. When
+        // the field does carry one its metric is reused, so `rerank` and
+        // `near` over the same field agree on what "close" means.
+        let metric = match &field.index {
+            IndexKind::Vector(spec) => spec.metric,
+            _ => Metric::Cosine,
+        };
+        let qv = near_vector(eval(&rr.vector, &mut NoRow, ctx)?)?;
+        if qv.len() != dim {
+            return Err(Error::Type(format!(
+                "the rerank vector must have {dim} dimensions, got {}",
+                qv.len()
+            )));
+        }
+        let hits = search(ix, m, &query, candidates, accept, within)?;
+        plan(|| {
+            format!(
+                "match: the text index on {}{}, {} candidates",
+                m.field,
+                loosely(m),
+                hits.len()
+            )
+        });
+        plan(|| format!("rerank: {}, exact distance read from the store", rr.field));
+        let mut ids = hits.into_iter().map(|h| (h.0, f32::NEG_INFINITY));
+        Ok(
+            order_exactly(&c.store, pos, metric, &qv, &mut ids, want, &mut |_| {
+                Ok(true)
+            })?
+            .0,
+        )
+    }
+
+    /// Collects the children of each parent row.
+    ///
+    /// One bucket probe per parent, which is the same plan an application
+    /// would write by hand as a page query plus one indexed query per row --
+    /// measured at 0.265 ms for twenty parents through `/batch`. The clause
+    /// does not make that cheaper; it removes the round trips and the
+    /// regrouping, and it makes `limit` mean "per parent", which is the part
+    /// no join can express.
+    /// The parts of a `lookup` that do not depend on a row: where the
+    /// children live, how they are addressed, and where the parent's key
+    /// sits. Resolved once per level by both passes.
+    fn lookup_plan<'a>(
+        &'a self,
+        above: Above,
+        l: &Lookup,
+    ) -> Result<(&'a Collection, Probe<'a>, Option<usize>)> {
+        let child = self.collection(&l.collection)?;
+        // A level that groups orders its groups, by its columns, and reads
+        // its children in no order: no walk is its.
+        let order: &[Sort] = if l.group.is_empty() { &l.order } else { &[] };
+        let (child_field, parent_field) = match (&l.on[..], &l.parent[..]) {
+            ([one], [up]) => (one, up),
+            ([], _) => return Err(Error::Query("`lookup` needs `on`".into())),
+            _ => {
+                let Some(t) = Tuple::resolve(child, above, l, order, false)? else {
+                    return Err(Error::Query("`lookup` needs an index".into()));
+                };
+                return Ok((child, Probe::Tuple(t), None));
+            }
+        };
+        // One field leading an index over several: its run is the
+        // children where the level's `order` walks the index past it --
+        // "the latest three reviews of each product" reads three, where a
+        // bucket is read whole and sorted -- or where the field has no
+        // `@hash` to probe.
+        if child_field != "id" && !child.composites.is_empty() {
+            let hashed = child
+                .schema
+                .field(child_field)
+                .is_some_and(|f| matches!(f.index, IndexKind::Hash { .. }));
+            if let Some(t) = Tuple::resolve(child, above, l, order, hashed)? {
+                return Ok((child, Probe::Tuple(t), None));
+            }
+        }
+        let probe = Probe::resolve(child, child_field, &l.collection)?;
+        // `id` is not a schema field but is the commonest key on both sides.
+        let (parent_pos, parent_ty) = above.key(parent_field)?;
+        check_key_types(
+            &parent_ty,
+            &probe.key_type(),
+            parent_field,
+            &l.collection,
+            child_field,
+        )?;
+        Ok((child, probe, parent_pos))
+    }
+
+    /// The whole chain resolved once, outermost first.
+    ///
+    /// Every level costs two map lookups and a type check. One resolution
+    /// per level is nothing; one per *row* would not be, and both the
+    /// collecting pass and the existence check behind `required` walk rows
+    /// at every depth. Holding the resolved levels in a slice also turns the
+    /// recursion into an index, so nothing below has to re-derive where it is.
+    ///
+    /// `list`: the aggregating list of the `get` the chain hangs off, whose
+    /// rows are its groups and keep the first level's key in their columns;
+    /// a level whose list aggregates keeps the next one's so.
+    fn lookup_chain<'a>(
+        &'a self,
+        parent: &'a Collection,
+        l: &'a Lookup,
+        list: Option<&'a [Column]>,
+    ) -> Result<Vec<Step<'a>>> {
+        let mut steps: Vec<Step<'a>> = Vec::new();
+        let mut above = match list {
+            Some(list) => Above::Rows(parent, list),
+            None => Above::Docs(parent),
+        };
+        let mut cur = Some(l);
+        while let Some(step) = cur {
+            let (child, probe, parent_pos) = self.lookup_plan(above, step)?;
+            steps.push(Step {
+                l: step,
+                parent: above.collection(),
+                child,
+                probe,
+                parent_pos,
+                test: std::cell::OnceCell::new(),
+            });
+            above = match step.folds() {
+                true => Above::Rows(child, &step.aggregate),
+                false => Above::Docs(child),
+            };
+            cur = step.next.as_deref();
+        }
+        Ok(steps)
+    }
+
+    /// The children a `@hash` equality inside the child filter names
+    /// directly, or `None` when the filter holds no equality an index can
+    /// answer.
+    ///
+    /// `Some(&[])` is a real answer and a cheap one: the equality names a
+    /// bucket that does not exist, so no child matches and therefore no
+    /// parent does.
+    ///
+    /// An equality the child cannot index is skipped, not fatal -- the same
+    /// smallest-wins walk `matching_ids` makes. Returning `None` at the first
+    /// one instead made the plan depend on a conjunct that has nothing to do
+    /// with it: over 20 000 parents and 200 000 children, `stars = 5 and tag
+    /// = "x"` with no `@hash` on `tag` fell back to the parent side at 13.06
+    /// ms, while the identical question written `tag ~ "x"` -- never
+    /// collected as an equality, so never in the way -- took 8.14 ms. The
+    /// candidates are re-filtered in full either way, so the bucket is
+    /// always safe to use; it only has to be the smallest one on offer.
+    fn child_candidates<'a>(
+        child: &'a Collection,
+        filter: &Expr,
+        params: &[Value],
+    ) -> Option<Option<&'a Bucket>> {
+        let mut eqs = Vec::new();
+        filter.conjunct_equalities(params, &mut eqs);
+        let mut best: Option<Option<&Bucket>> = None;
+        for (field, val) in eqs {
+            let Ok(Some(map)) = child.hash(field) else {
+                continue;
+            };
+            let Some(fd) = child.schema.field(field) else {
+                continue;
+            };
+            let Ok(key) = val.clone().coerce(&fd.ty) else {
+                continue;
+            };
+            let bucket = map.get(&map.key(&key));
+            let len = |b: Option<&Bucket>| b.map_or(0, Bucket::len);
+            if best.map(|b| len(bucket) < len(b)).unwrap_or(true) {
+                best = Some(bucket);
+            }
+        }
+        best
+    }
+
+    /// `required` answered from the child side: read the candidate children,
+    /// keep the ones the filter passes, and take their parent keys.
+    ///
+    /// Only for the shape where the parent's key is `id`. That is the
+    /// foreign-key-to-primary-key case, and it is the only one where this
+    /// plan pays: the child's join field already holds parent ids, so
+    /// mapping a key back to its parents is integer work -- sort, dedup,
+    /// binary search -- and not one parent is read.
+    ///
+    /// A named key was written and measured and is not here. Mapping values
+    /// back means encoding ~40 000 of them and sorting the byte strings,
+    /// which costs more than it saves: over 20 000 parents and 200 000
+    /// children it came out 2-4% slower with a `@hash` on the parent's field
+    /// and 21-34% slower without one. The win in the `id` case is the cheap
+    /// mapping, not the direction of the walk.
+    fn retain_via_children(
+        &self,
+        steps: &[Step],
+        ids: Vec<DocId>,
+        candidates: Option<&Bucket>,
+        ctx: &EvalCtx,
+    ) -> Result<Vec<DocId>> {
+        let l = steps[0].l;
+        let child = steps[0].child;
+        // The child's field its parent's `id` pairs with: the key, or that
+        // part of a key over several fields.
+        let at = l.parent.iter().position(|p| p == "id").unwrap_or(0);
+        let child_field = &l.on[at];
+        let child_pos = if child_field == "id" {
+            None
+        } else {
+            Some(
+                child
+                    .schema
+                    .field_pos(child_field)
+                    .ok_or_else(|| Error::NotFound(format!("field `{child_field}`")))?,
+            )
+        };
+
+        let mut keys: Vec<DocId> = Vec::new();
+        for cid in candidates.unwrap_or(&bucket::EMPTY).iter() {
+            // The bucket can name a document that is gone.
+            if !child.store.contains(cid) {
+                continue;
+            }
+            // The bucket covers one equality out of the filter; the rest of
+            // it still has to be evaluated -- and so does whatever a
+            // `required` level below adds, which the bucket knows nothing
+            // about. It stays a valid superset either way: a deeper level
+            // only ever removes children.
+            if !survives(steps, 0, cid, ctx)? {
+                continue;
+            }
+            let k = match child_pos {
+                None => Value::Int(cid as i64),
+                Some(p) => child.store.read_field(cid, p)?.unwrap_or(Value::Null),
+            };
+            // The same rule the probe follows from the other side: a NULL
+            // key matches nothing, and a value the id space cannot express
+            // names no parent.
+            let Ok(Value::Int(i)) = k.coerce(&DataType::Int) else {
+                continue;
+            };
+            let Ok(id) = DocId::try_from(i) else {
+                continue;
+            };
+            // A key over several fields: the child names its parent by the
+            // part paired with `id`, and holds the rest of the key or not.
+            // Probing each parent so named for the whole key instead read
+            // every child of every one again, where a tenth of the children
+            // named most of the parents: over 20 000 orders and 200 000
+            // lines, 11.7 ms against 5.7, and 9.5 for the parents' side
+            // alone (`make lookup-bench`); and mapping each child's key back
+            // whole, sorted beside the parent named, was a sort of its own,
+            // 4.5 KB of the browser module.
+            if let Probe::Tuple(t) = &steps[0].probe {
+                if t.parts.len() > 1 && !t.holds(child, cid, steps[0].parent, id)? {
+                    continue;
+                }
+            }
+            keys.push(id);
+        }
+        keys.sort_unstable();
+        keys.dedup();
+        Ok(ids
+            .into_iter()
+            .filter(|id| keys.binary_search(id).is_ok())
+            .collect())
+    }
+
+    /// Drops the parents that no child matches, for `required`.
+    ///
+    /// It runs before the ordering and before `limit`, because it decides
+    /// who is on the page: filtering afterwards would answer a request for
+    /// twenty rows with three. It stops at the first child that passes, so a
+    /// parent with a thousand matches costs what one with a single match
+    /// costs, and the collecting pass afterwards still only sees the page.
+    ///
+    /// The cost is one bucket probe per candidate parent -- there is no
+    /// index from "a child matching this filter" back to its parent, and
+    /// inventing one would be a second index to build, hold and validate. A
+    /// field on the parent, maintained on write, remains the cheap way to
+    /// ask this often.
+    fn retain_with_children(
+        &self,
+        parent: &Collection,
+        l: &Lookup,
+        ids: Vec<DocId>,
+        ctx: &EvalCtx,
+    ) -> Result<Vec<DocId>> {
+        self.retain_with_children_to(parent, l, ids, ctx, None)
+    }
+
+    /// [`Self::retain_with_children`], the first `stop` kept, in the order
+    /// of `ids`, enough: the parents after them are not probed.
+    fn retain_with_children_to(
+        &self,
+        parent: &Collection,
+        l: &Lookup,
+        ids: Vec<DocId>,
+        ctx: &EvalCtx,
+        stop: Option<usize>,
+    ) -> Result<Vec<DocId>> {
+        let steps = self.lookup_chain(parent, l, None)?;
+        let child = steps[0].child;
+
+        // Two plans answer this question, and every number that decides
+        // between them is exact and already in hand: the candidate parents
+        // are a vector whose length is known, a `@hash` bucket's length is an
+        // O(1) read, and so is the child collection's size. This is the
+        // smallest-wins comparison the planner already makes inside one
+        // collection, reaching across the clause.
+        //
+        // Walking the parents costs one probe each plus however many children
+        // it reads before one passes. The bucket's share of the collection is
+        // the equality's selectivity `p`, so that is about `1/p` children per
+        // parent; reading the bucket instead costs `|bucket|` outright, and
+        // `|bucket| = p * n`. Child-driven wins when
+        //
+        //     |ids| / p  >  |bucket|      i.e.   |ids| * n  >  |bucket|^2
+        //
+        // which is derived rather than fitted -- the only assumption is that
+        // the matching children are spread across parents rather than piled
+        // on a few, and where they are piled the comparison errs toward the
+        // bucket, which is the bounded side.
+        //
+        // Measured over 20 000 parents and 200 007 children with a 40 013
+        // bucket (threshold 8 004), parent-driven against child-driven:
+        // 21 parents 1.10/5.01 ms, 736 1.76/5.87, 4 172 7.67/10.13,
+        // 10 932 19.40/17.07, 20 000 36.84/30.68. The rule picks the winner
+        // at every one of them.
+        // The child names its parent by the field its `id` pairs with.
+        if l.parent.iter().any(|p| p == "id") {
+            if let Some(f) = &l.filter {
+                if let Some(cands) = Self::child_candidates(child, f, ctx.params) {
+                    let n = child.store.len() as u64;
+                    let b = cands.map_or(0, Bucket::len) as u64;
+                    if (ids.len() as u64).saturating_mul(n) > b.saturating_mul(b) {
+                        let parents = ids.len();
+                        let mut kept = self.retain_via_children(&steps, ids, cands, ctx)?;
+                        kept.truncate(stop.unwrap_or(usize::MAX));
+                        plan(|| {
+                            format!(
+                                "required: from the child side, {} children in a hash bucket, \
+                                 {} of {parents} parents kept",
+                                cands.map_or(0, Bucket::len),
+                                kept.len()
+                            )
+                        });
+                        return Ok(kept);
+                    }
+                }
+            }
+        }
+
+        let mut out = Vec::new();
+        let (parents, mut probed) = (ids.len(), 0);
+        let stop = stop.unwrap_or(usize::MAX);
+        for id in ids {
+            if out.len() >= stop {
+                break;
+            }
+            probed += 1;
+            // A child only counts if it survives what is below it too: with
+            // a `required` level further down, a child that passes its own
+            // `where` may still have nothing hanging off it.
+            if steps[0].any(id, |cid| survives(&steps, 0, cid, ctx))? {
+                out.push(id);
+            }
+        }
+        plan(|| {
+            let of = match probed < parents {
+                true => format!("{probed} of {parents}"),
+                false => parents.to_string(),
+            };
+            format!(
+                "required: from the parent side, {of} parents probed in {}, {} kept",
+                l.collection,
+                out.len()
+            )
+        });
+        Ok(out)
+    }
+
+    fn run_lookup(
+        &self,
+        parent: &Collection,
+        l: &Lookup,
+        ids: &[DocId],
+        ctx: &EvalCtx,
+    ) -> Result<Nested> {
+        let steps = self.lookup_chain(parent, l, None)?;
+        self.run_level(&steps, 0, Parents::Ids(ids), ctx)
+    }
+
+    /// The children of one row of the level above that survive -- the
+    /// level's own `where`, any `required` level below -- and where the
+    /// level orders them (`keys`), the first `want` in that order: walked
+    /// off an index over several fields whose order is the level's, or
+    /// probed and put in order. Unordered, every survivor in id order.
+    #[allow(clippy::too_many_arguments)]
+    fn kept_children(
+        &self,
+        steps: &[Step],
+        depth: usize,
+        parent: Parent,
+        keys: &[OrderKey],
+        want: usize,
+        bucket: &mut Vec<DocId>,
+        ctx: &EvalCtx,
+    ) -> Result<Vec<DocId>> {
+        let step = &steps[depth];
+        let child = step.child;
+        let mut kept: Vec<DocId> = Vec::new();
+        // A key over several fields whose index holds the level's `order`
+        // past its leading parts walks each parent's run in it, as far as
+        // its page: "the latest five lines of each order" reads five.
+        if let Probe::Tuple(
+            t @ Tuple {
+                walk: Some((back, ties)),
+                ..
+            },
+        ) = &step.probe
+        {
+            let prefix = match parent {
+                Parent::Doc(pid) => t.prefix(step.parent, pid)?,
+                Parent::Row(row) => t.prefix_of(row),
+            };
+            if let (true, Some(k)) = (want > 0, prefix) {
+                let mut take = |cid| {
+                    if child.store.contains(cid) && survives(steps, depth, cid, ctx)? {
+                        kept.push(cid);
+                    }
+                    Ok(kept.len() < want)
+                };
+                // Forwards over every part, the run is in the order as it
+                // lies, ties and all; the rest a walk puts in order.
+                match !back && *ties >= t.ix.parts().len() {
+                    true => t.ix.run(&k, &mut take)?,
+                    false => {
+                        t.ix.walk(&[t.span(&k)], t.parts.len(), *back, *ties, &mut take)?
+                    }
+                }
+            }
+            return Ok(kept);
+        }
+        match parent {
+            Parent::Doc(pid) => step.ids(pid, bucket)?,
+            Parent::Row(row) => step.ids_of(row, bucket),
+        }
+        // The child filter is evaluated over the bucket rather than sent
+        // through `matching_ids`. The bucket is already one parent's
+        // children, so a second index lookup would have to be intersected
+        // with it and would almost always cost more than reading the
+        // handful of rows it is narrowing.
+        //
+        // `survives` also drops a child a `required` level below has nothing
+        // for, and it does so here -- before the ordering and before
+        // `offset` and `limit` -- for the reason `required` already runs
+        // there: it decides who is on the page, so cutting afterwards would
+        // answer a request for three with one.
+        for &cid in bucket.iter() {
+            if survives(steps, depth, cid, ctx)? {
+                kept.push(cid);
+            }
+        }
+        if !keys.is_empty() {
+            // Put in order as the parent path is, through `order_ids`, which
+            // reads the keys up front -- comparing through the store would
+            // read every row log(n) times. Its ties go by position, so the
+            // children go in ascending id first: a hash bucket holds them
+            // that way almost always, not always, and a tie has gone to the
+            // lower id. A sort of its own, of `(Vec<Value>, DocId)` rows,
+            // was 8.1 KB of the browser module.
+            //
+            // `lookup` is the one place a bounded `order` is known up front:
+            // the clause carries its own `limit`, so only `offset + limit`
+            // children can ever be emitted and the rest never need an order
+            // at all. Elsewhere `order` has no such guarantee, which is why
+            // the engine sorts in full there.
+            kept.sort_unstable();
+            kept = order_ids(&child.store, &kept, keys, want)?;
+        }
+        Ok(kept)
+    }
+
+    /// One level of the chain, then the level below it.
+    ///
+    /// The rows it is given are the level above's, and the rows it produces
+    /// are what the next call is given -- concatenated in group order, which
+    /// is exactly the alignment `Nested` documents. Only the ids travel: a
+    /// level reads its keys out of the store, never out of the projected
+    /// values, so a chain works no matter what the level above selected --
+    /// but for a level above that answered groups, whose rows are no
+    /// documents and keep the keys in their columns.
+    fn run_level(
+        &self,
+        steps: &[Step],
+        depth: usize,
+        parents: Parents,
+        ctx: &EvalCtx,
+    ) -> Result<Nested> {
+        let Step { l, child, .. } = &steps[depth];
+        let (l, child) = (*l, *child);
+        if l.folds() {
+            return self.fold_level(steps, depth, parents, ctx);
+        }
+
+        let columns = projection_columns(&child.schema, &l.project);
+        let mut sources = Vec::with_capacity(columns.len());
+        for col in &columns {
+            if col == "id" {
+                sources.push(None);
+                continue;
+            }
+            let owner = format!("{}.", l.collection);
+            sources.push(Some(source_or_err(&child.schema, col, &owner)?));
+        }
+
+        let mut keys = Vec::with_capacity(l.order.len());
+        let owner = format!("{}.", l.collection);
+        for s in &l.order {
+            keys.push(order_key(&child.schema, s, &owner)?);
+        }
+
+        let params = ctx.params;
+        let (limit, offset) = (
+            l.limit.map_or(usize::MAX, |l| l.at(params)),
+            l.offset.at(params),
+        );
+        let mut groups = Vec::with_capacity(parents.len());
+        let mut bucket: Vec<DocId> = Vec::new();
+        let want = offset.saturating_add(limit);
+        for i in 0..parents.len() {
+            let kept =
+                self.kept_children(steps, depth, parents.at(i), &keys, want, &mut bucket, ctx)?;
+            let mut group = Vec::new();
+            for cid in kept.into_iter().skip(offset) {
+                if group.len() >= limit {
+                    break;
+                }
+                let mut values = Vec::with_capacity(sources.len());
+                for src in &sources {
+                    values.push(match src {
+                        None => Value::Int(cid as i64),
+                        Some(at) => read_source(&child.store, cid, *at)?,
+                    });
+                }
+                group.push(Row {
+                    id: cid,
+                    values,
+                    score: None,
+                });
+            }
+            groups.push(group);
+        }
+
+        plan(|| {
+            format!(
+                "lookup: {} on {}, {} for {} parents, {} children",
+                l.collection,
+                l.side(true),
+                steps[depth].probed(),
+                parents.len(),
+                groups.iter().map(Vec::len).sum::<usize>()
+            )
+        });
+        // The level below is aligned to these rows read left to right, so it
+        // is handed exactly that: one flat list of ids, in group order.
+        let nested = match steps.get(depth + 1) {
+            None => None,
+            Some(_) => {
+                let below: Vec<DocId> = groups.iter().flatten().map(|r| r.id).collect();
+                Some(Box::new(self.run_level(
+                    steps,
+                    depth + 1,
+                    Parents::Ids(&below),
+                    ctx,
+                )?))
+            }
+        };
+
+        Ok(Nested {
+            name: l.collection.clone(),
+            columns,
+            groups,
+            nested,
+            flat: None,
+        })
+    }
+
+    /// Runs the query and answers with the path it took instead of its
+    /// rows: one row a step, in the order the steps ran.
+    fn explain(&self, sel: &Select, params: &[Value]) -> Result<ResultSet> {
+        PLAN.with(|p| *p.borrow_mut() = Some(Vec::new()));
+        // The inner `get`s run inside the plan, which names what each found.
+        let result = self
+            .answered_top(sel, params)
+            .and_then(|sel| self.select(&sel, params));
+        let mut steps = PLAN.with(|p| p.borrow_mut().take()).unwrap_or_default();
+        let rs = result?;
+        steps.push(match rs.rows.first().map(|r| &r.values[..]) {
+            Some([Value::Int(n)]) if sel.count => format!("count: {n}"),
+            _ => format!("rows: {}", rs.rows.len()),
+        });
+        Ok(ResultSet {
+            columns: vec![PLAN_COLUMN.to_string()],
+            rows: steps
+                .into_iter()
+                .map(|s| Row {
+                    id: 0,
+                    values: vec![Value::Text(s)],
+                    score: None,
+                })
+                .collect(),
+            nested: None,
+            facets: Vec::new(),
+        })
+    }
+
+    fn select(&self, sel: &Select, params: &[Value]) -> Result<ResultSet> {
+        let c = self.collection(&sel.collection)?;
+        let ctx = EvalCtx {
+            params,
+            registry: &self.registry,
+            clock: self.clock,
+        };
+        sel.check()?;
+        if !sel.aggregate.is_empty() {
+            return self.aggregate(c, sel, params);
+        }
+
+        // `count` sends the filter down the same path but never decodes the
+        // rows: it returns a single row with a single column.
+        if sel.count {
+            if let Some(n) = self.count_composed(c, sel, params)? {
+                return Ok(ResultSet::counted(n, Vec::new()));
+            }
+            let mut ids = self.matching_ids(&sel.collection, &sel.filter, params)?;
+            // `count` reaches here with a `lookup` only when it is
+            // `required`, so the children are a filter and nothing is being
+            // attached: the number is how many parents have a match.
+            if let Some(l) = &sel.lookup {
+                ids = self.retain_with_children(c, l, ids, &ctx)?;
+            }
+            let n = ids.len();
+            let all = sel.filter.is_none() && sel.lookup.is_none();
+            let facets = match cfg!(feature = "facets") {
+                true => self.facets(c, sel, &ids, all, &ctx)?,
+                false => Vec::new(),
+            };
+            return Ok(ResultSet::counted(n, facets));
+        }
+
+        let mut columns = projection_columns(&c.schema, &sel.project);
+        // `select *` puts the marks after every field.
+        if sel.project.is_none() {
+            for m in &sel.marks {
+                columns.push(m.label());
+            }
+        }
+        // Each column's field, or the path into one, or the mark it is,
+        // found once a query.
+        let mut sources = Vec::with_capacity(columns.len());
+        let mut taken = vec![false; sel.marks.len()];
+        for col in &columns {
+            let mark = (0..sel.marks.len()).find(|&i| !taken[i] && sel.marks[i].label() == *col);
+            let calc = sel.computed.iter().position(|k| k.name == *col);
+            sources.push(match (mark, calc, col == "id") {
+                (Some(i), ..) => {
+                    taken[i] = true;
+                    Source::Mark(i)
+                }
+                (None, Some(i), _) => Source::Calc(i),
+                (None, None, true) => Source::Id,
+                (None, None, false) => Source::At(source_or_err(&c.schema, col, "")?),
+            });
+        }
+        // The computed columns, bound once a query: each row's fields they
+        // read decoded in one pass, apart from the columns' own.
+        let exprs: Vec<&Expr> = sel.computed.iter().map(|k| &k.expr).collect();
+        let mut calc = aggregate::Reader::new(c, &exprs, params)?;
+        let mut calcs = Vec::with_capacity(exprs.len());
+        for e in &exprs {
+            calcs.push(calc.bind(e)?);
+        }
+        let limit = sel.limit.map_or(usize::MAX, |l| l.at(params));
+        let scored: Vec<(DocId, Option<f32>)>;
+        // The rows `facet` counts over, when it is asked: every row the
+        // filter and `match` select, before `offset` and `limit`. `all`:
+        // every row of the collection, which a hash index's buckets count
+        // without a look at the rows.
+        let mut facet_ids: Option<Vec<DocId>> = None;
+        let wants_facets = cfg!(feature = "facets") && !sel.facets.is_empty();
+        let required = sel.lookup.as_ref().is_some_and(|l| l.required);
+        let all = sel.filter.is_none() && !required && sel.matcher.is_none();
+
+        if let (Some(m), Some(near), Some(f)) = (&sel.matcher, &sel.near, &sel.fuse) {
+            scored = with_scores(self.run_fuse(c, sel, m, near, f, params, &ctx)?);
+        } else if let Some(m) = &sel.matcher {
+            let want = ranked_rows(sel, params, "match", MAX_MATCH_ROWS)?;
+            scored = with_scores(self.run_match(c, sel, m, want, params, &ctx)?);
+            if wants_facets {
+                facet_ids = Some(self.matched_set(c, &sel.filter, m, &ctx)?);
+            }
+        } else if let Some(near) = &sel.near {
+            // `near` decides the ordering by similarity; a second ordering is
+            // rejected explicitly rather than ignored silently.
+            if !sel.order.is_empty() {
+                return Err(Error::Query(
+                    "`near` cannot be combined with `order`: near orders results by similarity"
+                        .into(),
+                ));
+            }
+            let want = ranked_rows(sel, params, "near", MAX_NEAR_ROWS)?;
+            scored = with_scores(self.run_near(c, sel, near, want, params, &ctx)?);
+        } else {
+            let (ids, counted) =
+                self.page_ids(c, sel, params, &ctx, wants_facets, all, required)?;
+            scored = ids.into_iter().map(|id| (id, None)).collect();
+            if counted.is_some() {
+                facet_ids = counted;
+            }
+        }
+
+        // Worked out once `match` has run, which refused what it could not
+        // search: a field with no text index, a query that is not text.
+        let (terms, marks) = match (&sel.matcher, sel.marks.is_empty()) {
+            (Some(m), false) if cfg!(feature = "highlight") => self.mark_plans(c, sel, m, &ctx)?,
+            _ => (None, Vec::new()),
+        };
+        // Fields alone, in their order, are read in one pass (`one_pass`).
+        let one = one_pass(&c.schema, &sources);
+        let in_one_pass = one.is_some();
+        let places = one.unwrap_or_default();
+        let mut read = Vec::with_capacity(places.len());
+        let mut rows = Vec::new();
+        for (id, score) in scored.into_iter().skip(sel.offset.at(params)) {
+            if rows.len() >= limit {
+                break;
+            }
+            let mut values = Vec::with_capacity(columns.len());
+            if in_one_pass {
+                read.clear();
+                if !c.store.read_fields(id, &places, &mut read)? {
+                    read.resize(places.len(), Value::Null);
+                }
+                let mut fields = read.drain(..);
+                for src in &sources {
+                    values.push(match src {
+                        Source::Id => Value::Int(id as i64),
+                        _ => fields.next().unwrap_or(Value::Null),
+                    });
+                }
+                drop(fields);
+                rows.push(Row { id, values, score });
+                continue;
+            }
+            let found = calcs.is_empty() || calc.read(id, &self.registry, self.clock)?;
+            for src in &sources {
+                values.push(match src {
+                    Source::Id => Value::Int(id as i64),
+                    Source::At(at) => read_source(&c.store, id, *at)?,
+                    Source::Calc(i) if found => calc.env[calcs[*i]].clone(),
+                    Source::Calc(_) => Value::Null,
+                    // Without the text index no `match` ran, and the marking
+                    // is left out of the build, as it is without `highlight`.
+                    Source::Mark(i) => {
+                        match (&terms, cfg!(all(feature = "text", feature = "highlight"))) {
+                            (Some(t), true) => marks[*i].value(t, &c.store, id)?,
+                            _ => Value::Null,
+                        }
+                    }
+                });
+            }
+            rows.push(Row { id, values, score });
+        }
+        let facets = match (wants_facets, &facet_ids) {
+            (false, _) => Vec::new(),
+            (true, Some(ids)) => self.facets(c, sel, ids, false, &ctx)?,
+            (true, None) => self.facets(c, sel, &[], true, &ctx)?,
+        };
+
+        // Children are attached after the parent page is decided, so a
+        // `limit 20` probes twenty buckets and not one per matching row.
+        // `check` has already refused `count`, `near` and `match` alongside
+        // `lookup`, which is what lets this sit at the end of every path
+        // rather than forking one.
+        let mut nested = match &sel.lookup {
+            None => None,
+            Some(l) => {
+                let ids: Vec<DocId> = rows.iter().map(|r| r.id).collect();
+                Some(self.run_lookup(c, l, &ids, &ctx)?)
+            }
+        };
+        // A SQL join's: its rows answered flat, which a writer makes of
+        // the levels once a token's masks have read them.
+        if let (Some(f), Some(n)) = (&sel.flat, &mut nested) {
+            n.flat = Some(flat_page(f, &columns, n, params)?);
+        }
+
+        Ok(ResultSet {
+            columns,
+            rows,
+            nested,
+            facets,
+        })
+    }
+
+    /// The page of a `get` that neither `match` nor `near` ranks, in its
+    /// order -- an ordered index walked, or the filter's matches put in
+    /// order -- and, when `facet` asks, every row it counts over: what
+    /// `select` and `query_json` both answer from.
+    #[allow(clippy::too_many_arguments)]
+    fn page_ids(
+        &self,
+        c: &Collection,
+        sel: &Select,
+        params: &[Value],
+        ctx: &EvalCtx,
+        wants_facets: bool,
+        all: bool,
+        required: bool,
+    ) -> Result<(Vec<DocId>, Option<Vec<DocId>>)> {
+        if let Some(ids) = self.walk_order(c, sel, params, ctx)? {
+            let mut facet_ids = None;
+            if wants_facets && !all {
+                let mut set = self.matching_ids(&sel.collection, &sel.filter, params)?;
+                if let Some(l) = sel.lookup.as_ref().filter(|l| l.required) {
+                    set = self.retain_with_children(c, l, set, ctx)?;
+                }
+                facet_ids = Some(set);
+            }
+            Ok((ids, facet_ids))
+        } else {
+            // With no ordering the page is the first `offset + limit` matches
+            // in id order, so the scan can stop there. `required` drops
+            // parents after the filter and so still needs every candidate,
+            // and so do facets, which count every one -- the page is then
+            // the front of what they count. Its probe stops at the page:
+            // the parents in id order, the first that many kept are it,
+            // where a page of 20 probed every parent the filter passed.
+            let page = match sel.order.is_empty() {
+                true => (sel.limit).map(|l| l.at(params).saturating_add(sel.offset.at(params))),
+                false => None,
+            };
+            let cap = page.filter(|_| !required);
+            let counted = wants_facets && !all;
+            let mut facet_ids = None;
+            let mut ids = self.matching_ids_capped(
+                &sel.collection,
+                &sel.filter,
+                params,
+                if counted { None } else { cap },
+            )?;
+            // `required` decides who is on the page, so it runs before the
+            // ordering and before `limit`. Dropping rows afterwards would
+            // answer a request for twenty with however many happened to
+            // survive.
+            if let Some(l) = &sel.lookup {
+                if l.required {
+                    let stop = page.filter(|_| !counted);
+                    ids = self.retain_with_children_to(c, l, ids, ctx, stop)?;
+                }
+            }
+            if counted {
+                facet_ids = Some(ids.clone());
+                if let Some(k) = cap {
+                    ids.truncate(k);
+                }
+            }
+            if sel.order.iter().any(|s| s.expr.is_some()) {
+                let k = sel
+                    .limit
+                    .map(|l| l.at(params).saturating_add(sel.offset.at(params)))
+                    .unwrap_or(usize::MAX);
+                ids = self.order_ids_by(c, &sel.order, &ids, k, params)?;
+            } else if !sel.order.is_empty() {
+                // `id` is not a schema field but must still be sortable -- the
+                // field lookup used to happen first, so `order id` raised an
+                // error.
+                let mut keys = Vec::with_capacity(sel.order.len());
+                for s in &sel.order {
+                    keys.push(order_key(&c.schema, s, "")?);
+                }
+                let k = sel
+                    .limit
+                    .map(|l| l.at(params).saturating_add(sel.offset.at(params)))
+                    .unwrap_or(usize::MAX);
+                plan(|| {
+                    // Built by hand: `join` brought a 1.2 KB copy of its own
+                    // into the browser module for this one line.
+                    let mut by = String::new();
+                    // The collation in force, named or the field's, and the
+                    // field's fold.
+                    for (i, (s, key)) in sel.order.iter().zip(&keys).enumerate() {
+                        by.push_str(if i == 0 { "" } else { ", " });
+                        by.push_str(&s.field);
+                        if let Some(c) = key.2.coll {
+                            by.push_str(" collate ");
+                            by.push_str(c.name());
+                        }
+                        if key.2.fold.is_some() {
+                            by.push_str(" nocase");
+                        }
+                        by.push_str(if s.asc { "" } else { " desc" });
+                    }
+                    let kept = if k < ids.len() {
+                        format!("the first {k} put in order")
+                    } else {
+                        "all put in order".to_string()
+                    };
+                    format!("order: {by}, every key read, {} matches, {kept}", ids.len())
+                });
+                ids = order_ids(&c.store, &ids, &keys, k)?;
+            }
+            Ok((ids, facet_ids))
+        }
+    }
+
+    /// `ids` in the order of `sorts`, an expression among them -- `order
+    /// distance(loc, $1)`, `order price * qty desc` -- the first `k`: what
+    /// [`order_ids`] does with keys read, each key worked out of each row,
+    /// every field and path the keys read decoded in one pass a row
+    /// ([`aggregate::Reader`], as a computed column's are). A field among
+    /// them orders as it does alone, in its collation and by its fold; an
+    /// expression's text in the one `collate` names, its bytes' otherwise.
+    /// Out of line, so an order of fields alone keeps the code it had.
+    #[inline(never)]
+    fn order_ids_by(
+        &self,
+        c: &Collection,
+        sorts: &[Sort],
+        ids: &[DocId],
+        k: usize,
+        params: &[Value],
+    ) -> Result<Vec<DocId>> {
+        let fields: Vec<Expr> = sorts.iter().map(|s| Expr::Field(s.field.clone())).collect();
+        let (mut exprs, mut keys) = (Vec::with_capacity(sorts.len()), Vec::new());
+        for (s, f) in sorts.iter().zip(&fields) {
+            match &s.expr {
+                Some(e) => {
+                    exprs.push(e);
+                    let text = TextOrder {
+                        coll: s.collate,
+                        fold: None,
+                    };
+                    keys.push((None, s.asc, text, None));
+                }
+                None => {
+                    exprs.push(f);
+                    keys.push(order_key(&c.schema, s, "")?);
+                }
+            }
+        }
+        let mut rd = aggregate::Reader::new(c, &exprs, params)?;
+        let mut slots = Vec::with_capacity(exprs.len());
+        for e in &exprs {
+            slots.push(rd.bind(e)?);
+        }
+        let n = keys.len();
+        let mut flat: Vec<Value> = Vec::with_capacity(ids.len() * n);
+        for &id in ids {
+            let found = rd.read(id, &self.registry, self.clock)?;
+            for &at in &slots {
+                flat.push(match found {
+                    true => rd.env[at].clone(),
+                    false => Value::Null,
+                });
+            }
+        }
+        let unfolded: Vec<OrderKey>;
+        let keys = match keys.iter().any(|k| k.2.fold.is_some()) {
+            false => &keys,
+            true => {
+                unfolded = folded_keys(&mut flat, &keys);
+                &unfolded
+            }
+        };
+        plan(|| format!("order: keys worked out of each row, {} matches", ids.len()));
+        let idx = order_rows(&flat, n, ids.len(), keys, k);
+        Ok(idx.into_iter().map(|i| ids[i]).collect())
+    }
+
+    /// What each `highlight()` and `snippet()` of the list needs once a
+    /// query: its field, the query's terms as the index on the field
+    /// `match` searched reads them, and its arguments' values. Asked after
+    /// `match` ran, which refused a field with no text index and a query
+    /// that is not text -- and in a build without the index, every `match`.
+    fn mark_plans(
+        &self,
+        c: &Collection,
+        sel: &Select,
+        m: &Match,
+        ctx: &EvalCtx,
+    ) -> Result<(Option<crate::highlight::Terms>, Vec<MarkPlan>)> {
+        let index = c.schema.field(&m.field).map(|f| &f.index);
+        let (true, Some(IndexKind::Text(spec)), Value::Text(query)) = (
+            cfg!(feature = "text"),
+            index,
+            eval(&m.query, &mut NoRow, ctx)?,
+        ) else {
+            return Ok((None, Vec::new()));
+        };
+        let mut terms = crate::highlight::Terms::new(&query, *spec);
+        if m.fuzzy > 0 || m.prefix {
+            if let Some(ix) = c.text(&m.field)? {
+                for w in ix.loose_words(&query, m.loose())? {
+                    terms.add(w);
+                }
+            }
+        }
+        let text = |e: &Expr, what: &str| -> Result<String> {
+            match eval(e, &mut NoRow, ctx)? {
+                Value::Text(t) => Ok(t),
+                other => Err(Error::Type(format!(
+                    "{what} is text, found {}",
+                    other.type_name()
+                ))),
+            }
+        };
+        let mut out = Vec::with_capacity(sel.marks.len());
+        for mark in &sel.marks {
+            let pos = c
+                .schema
+                .field_pos(&mark.field)
+                .ok_or_else(|| Error::NotFound(format!("field `{}`", mark.field)))?;
+            let ty = &c.schema.fields[pos].ty;
+            if *ty != DataType::Text {
+                return Err(Error::Type(format!(
+                    "`{}` marks text, and `{}` is {}",
+                    mark.label(),
+                    mark.field,
+                    ty.name()
+                )));
+            }
+            let (ellipsis, tags) = mark.parts();
+            let tags = match tags {
+                Some((pre, post)) => Some((text(pre, "a tag")?, text(post, "a tag")?)),
+                None => None,
+            };
+            let ellipsis = match ellipsis {
+                Some(e) => text(e, "an ellipsis")?,
+                None => String::new(),
+            };
+            out.push(MarkPlan {
+                pos,
+                snippet: mark.snippet,
+                tags,
+                ellipsis,
+            });
+        }
+        Ok((Some(terms), out))
+    }
+
+    /// Every row `match` selects: each holding a term of the query, the
+    /// filter tested on those alone -- what `facet` counts over, where the
+    /// ranking keeps only the page.
+    fn matched_set(
+        &self,
+        c: &Collection,
+        filter: &Option<Expr>,
+        m: &Match,
+        ctx: &EvalCtx,
+    ) -> Result<Vec<DocId>> {
+        let Some(ix) = c.text(&m.field)? else {
+            return Ok(Vec::new());
+        };
+        let query = match eval(&m.query, &mut NoRow, ctx)? {
+            Value::Text(t) => t,
+            _ => return Ok(Vec::new()),
+        };
+        let mut ids = match m.fuzzy == 0 && !m.prefix {
+            true => ix.matching(&query),
+            false => ix.matching_loose(&query, m.loose())?,
+        };
+        if let Some(f) = filter {
+            let test = Filter::new(c, f, ctx);
+            let mut kept = Vec::with_capacity(ids.len());
+            for id in ids {
+                if test.matches(id, ctx)? {
+                    kept.push(id);
+                }
+            }
+            ids = kept;
+        }
+        Ok(ids)
+    }
+
+    /// The values each `facet` field holds over `ids` -- every row of the
+    /// collection when `all` -- and how many rows hold each, most first,
+    /// then by value in the field's order.
+    ///
+    /// A field with a hash index over a type whose bucket is exactly its
+    /// value -- text, int, bool, timestamp -- is counted from the buckets:
+    /// each bucket's length over every row, or how many of its documents
+    /// the set holds. Anything else, a path or a list among them, reads the
+    /// field of every row, a list counting once a row for each value it
+    /// holds. `null` is a value: a row whose field is null is counted
+    /// under it, so a scalar field's counts add up to the rows.
+    ///
+    /// A `disjunctive` facet counts over the rows its own set selects --
+    /// the filter with its conditions on the field left out
+    /// ([`Facet::rest`]), `match` and a required `lookup` as they are --
+    /// found in the same statement, under the same lock, rather than a
+    /// query of its own a field.
+    fn facets(
+        &self,
+        c: &Collection,
+        sel: &Select,
+        ids: &[DocId],
+        all: bool,
+        ctx: &EvalCtx,
+    ) -> Result<Vec<FacetValues>> {
+        let mut out = Vec::with_capacity(sel.facets.len());
+        // Which rows the set holds, for the buckets: made once, for the
+        // first field that reads them.
+        let mut member: Option<Vec<u64>> = None;
+        for f in &sel.facets {
+            // One call whichever set it counts: `facet` is inlined, and
+            // called from two arms it was two copies of itself, 2.6 KB of
+            // the browser module.
+            let (own, mut apart);
+            let (set, every, member) = match (&f.rest, f.disjunctive) {
+                (Some(rest), true) => {
+                    let every;
+                    (own, every) = self.facet_set(c, sel, rest, ctx)?;
+                    apart = None;
+                    (&own[..], every, &mut apart)
+                }
+                _ => (ids, all, &mut member),
+            };
+            out.push(self.facet(c, f, set, every, member, ctx.params)?);
+        }
+        Ok(out)
+    }
+
+    /// The rows a disjunctive facet counts over: those `filter` -- the
+    /// query's, its own conditions left out -- `match` and a required
+    /// `lookup` select, or every row (`true`) when none of them narrows.
+    fn facet_set(
+        &self,
+        c: &Collection,
+        sel: &Select,
+        filter: &Option<Expr>,
+        ctx: &EvalCtx,
+    ) -> Result<(Vec<DocId>, bool)> {
+        if let Some(m) = &sel.matcher {
+            return Ok((self.matched_set(c, filter, m, ctx)?, false));
+        }
+        let required = sel.lookup.as_ref().filter(|l| l.required);
+        if filter.is_none() && required.is_none() {
+            return Ok((Vec::new(), true));
+        }
+        let mut ids = self.matching_ids(&sel.collection, filter, ctx.params)?;
+        if let Some(l) = required {
+            ids = self.retain_with_children(c, l, ids, ctx)?;
+        }
+        Ok((ids, false))
+    }
+
+    /// One facet's counts over `ids`, or every row when `all`.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    fn facet(
+        &self,
+        c: &Collection,
+        f: &Facet,
+        ids: &[DocId],
+        all: bool,
+        member: &mut Option<Vec<u64>>,
+        params: &[Value],
+    ) -> Result<FacetValues> {
+        let rows = if all { c.store.len() } else { ids.len() } as u64;
+        {
+            let (pos, keys) = source_or_err(&c.schema, &f.field, "")?;
+            let field = &c.schema.fields[pos];
+            if let Some(bounds) = &f.ranges {
+                return self.facet_ranges(c, f, (pos, keys), bounds, ids, all, member);
+            }
+            let bucketed = keys.is_none()
+                && matches!(
+                    field.ty,
+                    DataType::Text | DataType::Int | DataType::Bool | DataType::Timestamp
+                );
+            let mut counted: Vec<(Value, u64)> = Vec::new();
+            // A `nocase` field's values are its folds, each shown as the
+            // first row holding it -- in id order, as the rows come --
+            // wrote it.
+            let fold = keys.is_none().then(|| field.case_fold()).flatten();
+            let ix = bucketed.then(|| c.hash(&f.field)).transpose()?.flatten();
+            if let Some(ix) = ix {
+                if !all && member.is_none() {
+                    *member = Some(member_bits(ids));
+                }
+                let bit = |bits: &[u64], d: DocId| {
+                    let w = bits.get(d as usize / 64).copied().unwrap_or(0);
+                    (w >> (d % 64)) & 1
+                };
+                let mut held = 0u64;
+                for (key, docs) in ix.iter() {
+                    let mut n = docs.len() as u64;
+                    if let (Some(bits), false) = (&*member, all) {
+                        n = 0;
+                        for d in docs.iter() {
+                            n += bit(bits, d);
+                        }
+                    }
+                    // The first of the set the bucket holds, read as written.
+                    let mut shown = None;
+                    if fold.is_some() && n > 0 {
+                        for d in docs.iter() {
+                            if all || member.as_deref().is_some_and(|b| bit(b, d) == 1) {
+                                shown = c.store.read_field(d, pos)?;
+                                break;
+                            }
+                        }
+                    }
+                    let value = match shown {
+                        Some(v) => v,
+                        None => crate::codec::decode_value(key, &mut 0)?,
+                    };
+                    if n > 0 && !value.is_null() {
+                        held += n;
+                        counted.push((value, n));
+                    }
+                }
+                if rows > held {
+                    counted.push((Value::Null, rows - held));
+                }
+            } else {
+                // A value's number under its encoding, and the row it was
+                // last counted for: a list holding a value twice counts its
+                // row once. The hash index's own map type.
+                let mut index: crate::maps::Map<Vec<u8>, Bucket> = Default::default();
+                let mut last: Vec<usize> = Vec::new();
+                let mut key = Vec::new();
+                let mut count = |row: usize, v: &Value| {
+                    key.clear();
+                    encode_folded(&mut key, v, fold);
+                    let at = match index.get(&key) {
+                        Some(n) => n.first().unwrap_or(0) as usize,
+                        None => {
+                            index.insert(key.clone(), Bucket::one(counted.len() as DocId));
+                            counted.push((v.clone(), 0));
+                            last.push(usize::MAX);
+                            counted.len() - 1
+                        }
+                    };
+                    if last[at] != row {
+                        last[at] = row;
+                        counted[at].1 += 1;
+                    }
+                };
+                // The browser module reads the rows through the range
+                // facet's loop, one copy of it; natively through a loop of
+                // its own, since through that one's `dyn` a facet by the
+                // scan of 100 000 rows went 4.8 -> 5.2 ms.
+                #[cfg(target_arch = "wasm32")]
+                each_value(c, (pos, keys), ids, all, &mut count)?;
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let every;
+                    let ids = match all {
+                        true => {
+                            every = c.store.ids();
+                            &every
+                        }
+                        false => ids,
+                    };
+                    let mut slot = vec![Value::Null];
+                    let place = [c.schema.place(pos)];
+                    for (row, &id) in ids.iter().enumerate() {
+                        let found = match keys {
+                            None => c.store.read_fields(id, &place, &mut slot)?,
+                            Some(k) => c.store.read_paths(id, &[(pos, k)], &mut slot)?,
+                        };
+                        match (&slot[0], found) {
+                            (_, false) => {}
+                            (Value::List(items), true) => items.iter().for_each(|v| count(row, v)),
+                            (v, true) => count(row, v),
+                        }
+                    }
+                }
+            }
+            plan(|| {
+                let how = if ix.is_some() {
+                    "its hash index"
+                } else {
+                    "read"
+                };
+                format!(
+                    "facet {}: {how}, {} values over {rows} rows",
+                    f.field,
+                    counted.len()
+                )
+            });
+            let n = counted.len();
+            if f.top.is_none() && n > MAX_FACET_VALUES {
+                return Err(Error::Query(format!(
+                    "`facet {}` holds {n} values, past the {MAX_FACET_VALUES} one answers with: \
+                     `top <n>` names how many",
+                    f.field
+                )));
+            }
+            // Most first, then by value -- in the field's collation when it
+            // has one, by its fold where it is `nocase` -- through the one
+            // sort `order` and `group` use.
+            let text = match keys {
+                None => field.text_order(),
+                Some(_) => TextOrder::BYTES,
+            };
+            let order: [OrderKey; 2] = [
+                (None, false, TextOrder::BYTES, None),
+                (None, true, text, None),
+            ];
+            let mut flat = Vec::with_capacity(n * 2);
+            for (v, k) in &counted {
+                flat.push(Value::Int(*k as i64));
+                flat.push(v.clone());
+            }
+            let k = f.top.map_or(n, |t| t.at(params)).min(n);
+            let picked = order_rows(&flat, 2, n, &order, k);
+            let mut values = Vec::with_capacity(picked.len());
+            for i in picked {
+                values.push(std::mem::replace(&mut counted[i], (Value::Null, 0)));
+            }
+            Ok(FacetValues {
+                field: f.field.clone(),
+                values,
+            })
+        }
+    }
+
+    /// `facet <field> ranges [...]`: how many rows hold a number in each
+    /// range, the ranges in order. Through the field's ordered index when
+    /// every bound is a key it holds exactly -- each range two searches and
+    /// the chunks between over every row, its entries walked against the
+    /// set otherwise -- and by reading the field of every row else, a list
+    /// counting once a row in each range a value of it falls in.
+    #[allow(clippy::too_many_arguments)]
+    fn facet_ranges(
+        &self,
+        c: &Collection,
+        f: &Facet,
+        (pos, keys): (usize, Option<&str>),
+        bounds: &[Value],
+        ids: &[DocId],
+        all: bool,
+        member: &mut Option<Vec<u64>>,
+    ) -> Result<FacetValues> {
+        let field = &c.schema.fields[pos];
+        let numeric = |t: &DataType| {
+            matches!(
+                t,
+                DataType::Int | DataType::Float | DataType::Timestamp | DataType::Json
+            )
+        };
+        let counts_numbers = match &field.ty {
+            DataType::List(t) => numeric(t),
+            t => numeric(t),
+        };
+        if keys.is_none() && !counts_numbers {
+            return Err(Error::Query(format!(
+                "`facet {} ranges` counts numbers, and `{}` is not one",
+                f.field, f.field
+            )));
+        }
+        let mut counts = None;
+        if let (None, Some(ix)) = (keys, c.sorted_index(&f.field)?) {
+            let mut at = Vec::with_capacity(bounds.len());
+            for b in bounds {
+                match SortedIndex::bound(&field.ty, None, b) {
+                    Some(k) => at.push(k),
+                    None => break,
+                }
+            }
+            if at.len() == bounds.len() {
+                if !all && member.is_none() {
+                    *member = Some(member_bits(ids));
+                }
+                counts = ix.range_counts(&at, if all { None } else { member.as_deref() });
+            }
+        }
+        let indexed = counts.is_some();
+        let counts = match counts {
+            Some(n) => n,
+            None => {
+                let mut n = vec![0u64; bounds.len() - 1];
+                // The row each range was last counted for: a list with two
+                // values in one range counts its row once.
+                let mut last = vec![usize::MAX; n.len()];
+                each_value(c, (pos, keys), ids, all, &mut |row: usize, v: &Value| {
+                    if !matches!(v, Value::Int(_) | Value::Float(_) | Value::Timestamp(_)) {
+                        return;
+                    }
+                    // The bounds at or below it; a `NaN`, equal to every
+                    // one, is past them all.
+                    let at =
+                        bounds.partition_point(|b| b.cmp_value(v) != std::cmp::Ordering::Greater);
+                    if at > 0 && at < bounds.len() && last[at - 1] != row {
+                        last[at - 1] = row;
+                        n[at - 1] += 1;
+                    }
+                })?;
+                n
+            }
+        };
+        plan(|| {
+            let how = if indexed { "its ordered index" } else { "read" };
+            format!("facet {}: {how}, {} ranges", f.field, counts.len())
+        });
+        let mut values = Vec::with_capacity(counts.len());
+        for (i, n) in counts.into_iter().enumerate() {
+            values.push((
+                Value::List(vec![bounds[i].clone(), bounds[i + 1].clone()]),
+                n,
+            ));
+        }
+        Ok(FacetValues {
+            field: f.field.clone(),
+            values,
+        })
+    }
+
+    fn update(
+        &mut self,
+        collection: &str,
+        set: &[(String, Expr)],
+        filter: &Option<Expr>,
+        pick: Option<&Pick>,
+        params: &[Value],
+    ) -> Result<Response> {
+        let ids = self.picked_ids(collection, filter, pick, params)?;
+        // Taken out for the statement, so that the expressions can call its
+        // functions while each row is written through `&mut self`, and put
+        // back whatever the rows came to.
+        let registry = std::mem::take(&mut self.registry);
+        let out = self.update_rows(collection, set, &ids, &registry, params);
+        self.registry = registry;
+        match (out, pick.and_then(|p| p.returning.as_ref())) {
+            (Ok(_), Some(list)) => Ok(Response::Rows(self.returned(
+                collection,
+                list,
+                &ids,
+                &[WriteOp::Update],
+            )?)),
+            (out, _) => out.map(Response::Affected),
+        }
+    }
+
+    /// The rows a `set` or a `del` writes: every match of its filter, or,
+    /// with an `order` or a `limit`, those a `get` with the same clauses
+    /// answers -- an `@sorted` field's index walked to the page -- in that
+    /// order.
+    fn picked_ids(
+        &self,
+        collection: &str,
+        filter: &Option<Expr>,
+        pick: Option<&Pick>,
+        params: &[Value],
+    ) -> Result<Vec<DocId>> {
+        match pick.filter(|p| p.picks()) {
+            None => self.matching_ids(collection, filter, params),
+            Some(p) => self.page_of(collection, filter, p, params),
+        }
+    }
+
+    /// [`Self::picked_ids`] of a write with an `order` or a `limit`: out
+    /// of line, as [`Self::returned`] is, so a `set` or a `del` that picks
+    /// nothing keeps the code it had.
+    #[inline(never)]
+    fn page_of(
+        &self,
+        collection: &str,
+        filter: &Option<Expr>,
+        p: &Pick,
+        params: &[Value],
+    ) -> Result<Vec<DocId>> {
+        let c = self.collection(collection)?;
+        let ctx = EvalCtx {
+            params,
+            registry: &self.registry,
+            clock: self.clock,
+        };
+        let sel = Select {
+            collection: collection.to_string(),
+            filter: filter.clone(),
+            order: p.order.clone(),
+            limit: p.limit,
+            ..Default::default()
+        };
+        // `limit $1` checked here, where the write's parameters are, as a
+        // `get`'s is where it is answered, and an expression's key as a
+        // `get`'s `check` holds it.
+        sel.check_counts(params)?;
+        crate::query::check_order(&sel.order, false)?;
+        Ok(self.page_ids(c, &sel, params, &ctx, false, false, false)?.0)
+    }
+
+    /// What a write's `returning` answers: each of `ids` read out of the
+    /// store as it stands -- a `set`'s rows as written, a `del`'s before
+    /// they go -- under the columns `select` names in a `get`, `list`
+    /// every field after the id when `None`. Each is handed to the hooks
+    /// first (`Hook::answering`), as the write it was answers it: `ops`
+    /// one for every row, or one a row -- a `put`'s rows are inserts and
+    /// updates.
+    #[inline(never)]
+    fn returned(
+        &self,
+        collection: &str,
+        list: &Option<Vec<String>>,
+        ids: &[DocId],
+        ops: &[WriteOp],
+    ) -> Result<ResultSet> {
+        let c = self.collection(collection)?;
+        let columns = projection_columns(&c.schema, list);
+        // Refused by name, over no rows too.
+        for col in columns.iter().filter(|c| *c != "id") {
+            source_or_err(&c.schema, col, "")?;
+        }
+        // Each row decoded whole, once: a page of them, where `select`'s
+        // reading by places (`one_pass`) was 1.4 KB more of the browser
+        // module, and took `one_pass` out of line from `select`.
+        let mut rows = Vec::with_capacity(ids.len());
+        for (i, &id) in ids.iter().enumerate() {
+            // A row the write did not find is not answered: the count and
+            // the rows agree.
+            let Some(doc) = c.store.read(&c.schema, id)? else {
+                continue;
+            };
+            // The browser module registers no hook -- a scoped token's rules
+            // are a server's -- and the loop was 147 bytes of it.
+            #[cfg(not(target_arch = "wasm32"))]
+            for h in self.registry.hooks() {
+                h.answering(&c.schema, ops[i.min(ops.len() - 1)], &doc)?;
+            }
+            #[cfg(target_arch = "wasm32")]
+            let _ = (i, ops);
+            // A loop rather than a `map` and `collect`: a copy of the
+            // adapter of its own, 249 bytes of the browser module.
+            let mut values = Vec::with_capacity(columns.len());
+            for col in &columns {
+                values.push(match col.as_str() {
+                    "id" => Value::Int(id as i64),
+                    path => doc.at(path).cloned().unwrap_or(Value::Null),
+                });
+            }
+            rows.push(Row {
+                id,
+                values,
+                score: None,
+            });
+        }
+        Ok(ResultSet {
+            columns,
+            rows,
+            nested: None,
+            facets: Vec::new(),
+        })
+    }
+
+    /// Each of `ids` set by `set`: how many there were.
+    fn update_rows(
+        &mut self,
+        collection: &str,
+        set: &[(String, Expr)],
+        ids: &[DocId],
+        registry: &Registry,
+        params: &[Value],
+    ) -> Result<usize> {
+        let schema = self.collection(collection)?.schema.clone();
+        let cid = self.collection(collection)?.id;
+        let hooks: Vec<_> = registry.hooks().to_vec();
+        let ctx = EvalCtx {
+            params,
+            registry,
+            clock: self.clock,
+        };
+        let assigns: Vec<Assign> = set
+            .iter()
+            .map(|(key, e)| Assign {
+                key,
+                at: schema.field_pos(key),
+                calc: Calc::bind(&schema, e, &ctx),
+            })
+            .collect();
+        // What the filter compared without, and what the new values would:
+        // worked out in a pass of their own, since a write that stopped
+        // half way could not be run again.
+        if collate::PARTIAL {
+            let mut missing = collate::take_missing();
+            if schema.fields.iter().any(|f| f.collate.is_some()) {
+                let c = self.collection(collection)?;
+                for &id in ids {
+                    if let Some(doc) = c.store.read(&schema, id)? {
+                        let doc = updated(&schema, &doc, &assigns, &ctx, None)?;
+                        missing |= collation_missing(&schema, &doc) | collate::take_missing();
+                    }
+                }
+            }
+            collate::refuse(missing)?;
+        }
+
+        let mut n = 0;
+        for &id in ids {
+            if self.set_row(collection, &schema, cid, id, &assigns, &ctx, &hooks, None)? {
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
+    /// Row `id` set by `assigns`, each over the row as it was -- and over
+    /// `new`, an upsert's document; whether there was such a row.
+    #[allow(clippy::too_many_arguments)]
+    fn set_row(
+        &mut self,
+        collection: &str,
+        schema: &Schema,
+        cid: u32,
+        id: DocId,
+        assigns: &[Assign],
+        ctx: &EvalCtx,
+        hooks: &[Arc<dyn crate::plugin::Hook>],
+        new: Option<&Document>,
+    ) -> Result<bool> {
+        let c = self.collections.get_mut(collection).unwrap();
+        // Read once: the row the expressions read is the one the indexes
+        // take out. Read twice, as it was, a `set` of a constant over
+        // 100 000 rows decoded each of them again.
+        let Some(old) = c.store.read(schema, id)? else {
+            return Ok(false);
+        };
+        let mut doc = updated(schema, &old, assigns, ctx, new)?;
+        for h in hooks {
+            h.before_write(schema, WriteOp::Update, &mut doc)?;
+        }
+        for h in hooks {
+            h.before_overwrite(schema, &old, &doc)?;
+        }
+        // An update makes a duplicate as a put does: `set email = "a"`
+        // over two documents is refused at the second.
+        c.unique_clash(&doc)?;
+        c.unindex_doc(&old, Some(&doc));
+        let payload = Store::encode_doc(schema, &doc);
+        let (mark, was) = (c.store.mark(), c.store.loc(id));
+        let frame = c.store.append(OP_PUT, id, &payload);
+        c.index_doc(&doc, Some(&old));
+        self.remember(cid, id, was, mark);
+        self.wal(REC_DATA, cid, &frame)?;
+        self.note(cid, id);
+        for h in hooks {
+            h.after_write(collection, WriteOp::Update, &doc)?;
+        }
+        Ok(true)
+    }
+
+    fn delete(
+        &mut self,
+        collection: &str,
+        filter: &Option<Expr>,
+        pick: Option<&Pick>,
+        params: &[Value],
+    ) -> Result<Response> {
+        let ids = self.picked_ids(collection, filter, pick, params)?;
+        if collate::PARTIAL {
+            collate::refuse(collate::take_missing())?;
+        }
+        // Read before they go: what a pop hands back.
+        let rows = match pick.and_then(|p| p.returning.as_ref()) {
+            Some(list) => Some(self.returned(collection, list, &ids, &[WriteOp::Delete])?),
+            None => None,
+        };
+        let schema = self.collection(collection)?.schema.clone();
+        let hooks: Vec<_> = self.registry.hooks().to_vec();
+        let n = ids.len();
+        for id in ids {
+            self.erase(collection, &schema, id, &hooks)?;
+        }
+        Ok(match rows {
+            Some(rs) => Response::Rows(rs),
+            None => Response::Affected(n),
+        })
+    }
+
+    /// Deletes the document `id` of `collection`: what a `del` does to each
+    /// row it matches, and a write to a row past its `@ttl` that holds the
+    /// id or the `@unique` value the write is about to take.
+    fn erase(
+        &mut self,
+        collection: &str,
+        schema: &Schema,
+        id: DocId,
+        hooks: &[Arc<dyn crate::plugin::Hook>],
+    ) -> Result<()> {
+        let c = self.collections.get_mut(collection).unwrap();
+        let cid = c.id;
+        if let Some(doc) = c.store.read(schema, id)? {
+            for h in hooks {
+                h.after_write(collection, WriteOp::Delete, &doc)?;
+            }
+            c.unindex_doc(&doc, None);
+        }
+        let (mark, was) = (c.store.mark(), c.store.loc(id));
+        let frame = c.store.append(OP_DEL, id, &[]);
+        self.remember(cid, id, was, mark);
+        self.wal(REC_DATA, cid, &frame)?;
+        self.note(cid, id);
+        Ok(())
+    }
+
+    /// Drops the dead records of `which` (every collection when `None`) and
+    /// rewrites the file. `graphs`: whether a graph holding tombstones is
+    /// rebuilt here -- a compact beside the database has rebuilt them
+    /// already, without the lock.
+    fn compact(&mut self, which: Option<&str>, graphs: bool) -> Result<Response> {
+        #[cfg(not(target_arch = "wasm32"))]
+        let began = std::time::Instant::now();
+        let targets: Vec<String> = match which {
+            Some(n) => {
+                self.collection(n)?;
+                vec![n.to_string()]
+            }
+            None => self.order.clone(),
+        };
+        let reclaimed: usize = targets
+            .iter()
+            .map(|n| self.collections[n].store.dead_bytes())
+            .sum();
+        // Over a mapped file the records never come into memory: the live
+        // ones are written into the new file, and the stores are pointed at
+        // it. The documents are the same ones, so no index is rebuilt.
+        #[cfg(not(target_arch = "wasm32"))]
+        let mapped = self.mapped;
+        #[cfg(target_arch = "wasm32")]
+        let mapped = false;
+        // A dropped field's places are taken out of every document, which
+        // compacts the store besides; over a mapped file the documents come
+        // into memory for it, until the rewrite below points them at the new
+        // file.
+        for name in &targets {
+            let c = self.collections.get_mut(name).unwrap();
+            match c.schema.dropped.is_empty() {
+                false => c.strip_dropped()?,
+                true if !mapped => c.store.compact()?,
+                true => {}
+            }
+        }
+        // A compact drops dead records and moves the live ones; the
+        // documents are the same, and every index is keyed by id, so none
+        // needs rebuilding for that -- a graph without tombstones took 50 s
+        // at 100 000 x 768 to rebuild for nothing. A graph with them is
+        // rebuilt: nothing else ever takes one out, every rewrite of a
+        // document with a vector leaves one, and they crowd the beam `near`
+        // walks (a `limit 10` answered 4 rows once enough had gathered).
+        if graphs {
+            for name in &targets {
+                let c = self.collections.get_mut(name).unwrap();
+                // By position, not by collecting the names: the list of
+                // strings was 440 bytes of the browser module.
+                for pos in 0..c.schema.fields.len() {
+                    let IndexKind::Vector(spec) = c.schema.fields[pos].index else {
+                        continue;
+                    };
+                    let field = &c.schema.fields[pos].name;
+                    if c.vectors.get(field).is_some_and(|ix| ix.dead() > 0) {
+                        build_graph(c, pos, spec)?;
+                    }
+                }
+            }
+        }
+        // After compaction the persisted image is rewritten from scratch.
+        let compacting: &[String] = if mapped { &targets } else { &[] };
+        let mut placed = Vec::new();
+        let mut len = 0;
+        let r = {
+            let mut sink = self.sink.lock().unwrap_or_else(|e| e.into_inner());
+            sink.rewrite_with(&mut |out| {
+                self.image_into(out, compacting, &mut placed)?;
+                len = out.at();
+                Ok(())
+            })
+        };
+        self.storage(r)?;
+        self.rewrote(len);
+        #[cfg(not(target_arch = "wasm32"))]
+        self.repoint(Some(&placed), compacting)?;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.compacted_to(len);
+            self.swap_held = began.elapsed();
+        }
+        Ok(Response::Ok(format!(
+            "compaction done, {reclaimed} bytes reclaimed"
+        )))
+    }
+}
+
+/// The documents [`Database::apply`] has yet to put into the graph: one
+/// collection's, none of them twice.
+#[derive(Default)]
+struct VectorBatch {
+    cid: u32,
+    ids: std::collections::HashSet<DocId>,
+    docs: Vec<Document>,
+}
+
+fn missing(cid: u32) -> Error {
+    Error::Corrupt(format!("a write to collection {cid}, which is not here"))
+}
+
+/// Builds the graph of the vector field at `pos` from the documents' vectors.
+/// Not inlined, as `build_index` is: `compact` rebuilds a graph holding
+/// tombstones through it too, and a second inlined copy of `build_index`
+/// was 3 KB of the browser module.
+#[inline(never)]
+fn build_graph(c: &mut Collection, pos: usize, spec: crate::schema::VectorIndexSpec) -> Result<()> {
+    let field = &c.schema.fields[pos].name;
+    let DataType::Vector(dim, prec) = c.schema.fields[pos].ty else {
+        return Err(Error::Type(format!("field `{field}` is not vector<N>")));
+    };
+    let mut ix = VectorIndex::with_precision(dim, spec, prec);
+    let ids: Vec<DocId> = c.store.ids();
+    ix.reserve(ids.len());
+    let mut items: Vec<(DocId, Vec<f32>)> = Vec::with_capacity(ids.len());
+    for id in &ids {
+        if let Some(Value::Vector(v)) = c.store.read_field(*id, pos)? {
+            items.push((*id, v));
+        }
+    }
+    ix.insert_batch(&items);
+    c.vectors.insert(field.clone(), ix);
+    Ok(())
+}
+
+/// The hash index of the field at `pos`, from the documents: what `create
+/// index` builds, and what the first read after an open does.
+fn hash_of(
+    store: &Store,
+    pos: usize,
+    keys: Option<&str>,
+    fold: Option<CaseFold>,
+) -> Result<HashIndex> {
+    let mut ix = HashIndex::folding(fold);
+    for id in store.ids() {
+        let v = match keys {
+            None => store.read_field(id, pos)?,
+            Some(keys) => store.read_path(id, pos, keys)?,
+        };
+        if let Some(v) = v {
+            ix.add(ix.key(&v), id);
+        }
+    }
+    Ok(ix)
+}
+
+/// The refusal of a unique index over the field at `pos` whose documents
+/// hold a value twice.
+/// The refusal of a unique index over several fields that documents `a`
+/// and `b` both hold one key of.
+fn composite_shared(c: &Collection, comp: &Composite, a: DocId, b: DocId) -> Error {
+    let mut vals = String::from("[");
+    if let Ok(Some(doc)) = c.store.read(&c.schema, a) {
+        for (i, (k, _)) in comp.keys.iter().enumerate() {
+            if i > 0 {
+                vals.push_str(", ");
+            }
+            vals.push_str(&crate::json::to_string(doc.at(k).unwrap_or(&Value::Null)));
+        }
+    }
+    vals.push(']');
+    Error::Duplicate(format!(
+        "`{} ({})` cannot be unique: documents {a} and {b} both hold {vals}",
+        c.schema.name,
+        comp.keys_text()
+    ))
+}
+
+fn refuse_shared(c: &Collection, field: &str) -> Result<()> {
+    let shared = c.hash(field)?.and_then(HashIndex::shared);
+    match shared {
+        Some((v, a, b)) => {
+            // A `nocase` field's key is the fold: the value is named as the
+            // first document wrote it.
+            let v = match c.schema.field(field).filter(|f| f.nocase) {
+                Some(f) => c
+                    .store
+                    .read(&c.schema, a)?
+                    .and_then(|d| d.get(&f.name).cloned()),
+                None => None,
+            }
+            .unwrap_or(v);
+            Err(Error::Duplicate(format!(
+                "`{}.{field}` cannot be unique: documents {a} and {b} both hold {}",
+                c.schema.name,
+                crate::json::to_string(&v)
+            )))
+        }
+        None => Ok(()),
+    }
+}
+
+/// The full-text index of the field at `pos`, as [`hash_of`].
+fn text_of(store: &Store, pos: usize, spec: crate::schema::TextIndexSpec) -> Result<TextIndex> {
+    let mut ix = TextIndex::new(spec);
+    for id in store.ids() {
+        if let Some(Value::Text(t)) = store.read_field(id, pos)? {
+            ix.insert(id, &t);
+        }
+    }
+    ix.shrink_to_fit();
+    Ok(ix)
+}
+
+/// The ordered index of the field at `pos`, as [`hash_of`]: sorted once
+/// from its keys rather than inserted row by row.
+#[cfg(feature = "sorted")]
+fn sorted_of(
+    store: &Store,
+    field: &crate::schema::Field,
+    pos: usize,
+    keys: Option<&str>,
+) -> Result<SortedIndex> {
+    let mut rows = Vec::with_capacity(store.len());
+    for id in store.ids() {
+        rows.push((
+            id,
+            match keys {
+                None => store.read_field(id, pos)?,
+                Some(keys) => store.read_path(id, pos, keys)?,
+            },
+        ));
+    }
+    Ok(SortedIndex::build(
+        &field.ty,
+        field.text_order(),
+        &mut rows.into_iter(),
+    ))
+}
+
+/// A build without ordered indexes holds none to build.
+#[cfg(not(feature = "sorted"))]
+fn sorted_of(
+    _: &Store,
+    _: &crate::schema::Field,
+    _: usize,
+    _: Option<&str>,
+) -> Result<SortedIndex> {
+    Err(not_built("the index", "sorted"))
+}
+
+/// The inverted index over the sparse vectors of the field at `pos`, as
+/// [`hash_of`].
+/// The parts of `c`, an index over several fields of `schema`: each part's
+/// kind by its field's type, its collation and its fold by its field's.
+/// `None` in a build without the `composite` feature, or where a part names no
+/// field -- which the schema refuses before it gets here.
+fn composite_parts(schema: &Schema, c: &Composite) -> Option<Vec<crate::composite::Part>> {
+    if !cfg!(feature = "composite") {
+        return None;
+    }
+    let mut parts = Vec::with_capacity(c.keys.len());
+    for (k, desc) in &c.keys {
+        let ty = schema.part_type(k).ok()?;
+        let order = schema.field(k).map_or(TextOrder::BYTES, |f| f.text_order());
+        parts.push(crate::composite::Part::of(&ty, *desc, order));
+    }
+    Some(parts)
+}
+
+/// An empty index over the parts of `c` ([`composite_parts`]).
+fn empty_composite(schema: &Schema, c: &Composite) -> Option<CompositeIndex> {
+    composite_parts(schema, c).map(CompositeIndex::new)
+}
+
+/// `doc`'s key in `ix`, the index over the fields of `c`: a value a part
+/// does not find is `null`.
+fn composite_key(ix: &CompositeIndex, c: &Composite, doc: &Document) -> crate::composite::RowKey {
+    const NULL: Value = Value::Null;
+    let mut vals = [&NULL; crate::schema::MAX_COMPOSITE_KEYS];
+    for (slot, (k, _)) in vals.iter_mut().zip(&c.keys) {
+        *slot = doc.at(k).unwrap_or(&NULL);
+    }
+    ix.key(&vals[..c.keys.len().min(vals.len())])
+}
+
+/// A build without the indexes over several fields holds none to build.
+#[cfg(not(feature = "composite"))]
+fn composite_of(_: &Store, _: &Schema, _: &Composite) -> Result<CompositeIndex> {
+    Err(not_built("the index", "composite"))
+}
+
+/// The index over the fields of `c` built from the documents: each read
+/// once, the fields its parts read in one pass, and the keys put in order
+/// together ([`CompositeIndex::build`]).
+#[cfg(feature = "composite")]
+fn composite_of(store: &Store, schema: &Schema, c: &Composite) -> Result<CompositeIndex> {
+    let parts = composite_parts(schema, c).ok_or_else(|| not_built("the index", "composite"))?;
+    let ix = CompositeIndex::new(parts.clone());
+    let mut keys = Vec::with_capacity(store.len());
+    composite_keys(store, schema, c, &ix, &mut |id, k| keys.push((id, k)))?;
+    Ok(CompositeIndex::build(parts, keys))
+}
+
+/// Each document's key in `ix`, the index over the fields of `c`, handed
+/// to `out` in id order: what a build puts in, and what a build beside the
+/// database copies under the read lock to put in with none held.
+#[cfg(feature = "composite")]
+fn composite_keys(
+    store: &Store,
+    schema: &Schema,
+    c: &Composite,
+    ix: &CompositeIndex,
+    out: &mut dyn FnMut(DocId, crate::composite::RowKey),
+) -> Result<()> {
+    let mut srcs = Vec::with_capacity(c.keys.len());
+    for (k, _) in &c.keys {
+        srcs.push(source_or_err(schema, k, "")?);
+    }
+    // The fields read, in field order, as `read_fields` wants them; walked
+    // rather than sorted, as `rebuild_indexes_with` walks them.
+    let mut positions = Vec::new();
+    for p in 0..schema.fields.len() {
+        if srcs.iter().any(|s| s.0 == p) {
+            positions.push(p);
+        }
+    }
+    let mut places = Vec::with_capacity(positions.len());
+    for &p in &positions {
+        places.push(schema.place(p));
+    }
+    let mut slots = Vec::with_capacity(srcs.len());
+    for s in &srcs {
+        slots.push(positions.iter().position(|&p| p == s.0).unwrap_or(0));
+    }
+    let mut vals = Vec::with_capacity(places.len());
+    const NULL: Value = Value::Null;
+    for id in store.iter_ids() {
+        if !store.read_fields(id, &places, &mut vals)? {
+            continue;
+        }
+        let mut row = [&NULL; crate::schema::MAX_COMPOSITE_KEYS];
+        for (i, (s, &at)) in srcs.iter().zip(&slots).enumerate() {
+            row[i] = match s.1 {
+                None => &vals[at],
+                Some(keys) => vals[at].at_path(keys),
+            };
+        }
+        out(id, ix.key(&row[..srcs.len()]));
+    }
+    Ok(())
+}
+
+fn sparse_of(store: &Store, pos: usize) -> Result<SparseIndex> {
+    let mut ix = SparseIndex::new();
+    for id in store.ids() {
+        if let Some(Value::Sparse(_, e)) = store.read_field(id, pos)? {
+            ix.insert(id, &e);
+        }
+    }
+    ix.shrink_to_fit();
+    Ok(ix)
+}
+
+/// Builds the index the schema declares on the field at `pos` and fills it
+/// from the collection's documents: what `create index` does, and what a
+/// replica does with the primary's. Inlined natively for the reason
+/// [`Collection::reset_index_structures`] is; in the browser module both
+/// its callers are linked -- `create index` and `alter collection` -- and
+/// inlined into each it was 2.2 KB more of it.
+#[cfg_attr(not(target_arch = "wasm32"), inline(always))]
+fn build_index(c: &mut Collection, pos: usize) -> Result<()> {
+    // An index this build lacks is not built: a file's log replays the
+    // `create index` that made it, and the file opens all the same. Asked
+    // after `EVERY_INDEX`, or the bounds check of the lookup stays in the
+    // module that has every index.
+    if !EVERY_INDEX && missing_feature(&c.schema.fields[pos].index).is_some() {
+        return Ok(());
+    }
+    let field = c.schema.fields[pos].name.clone();
+    match c.schema.fields[pos].index.clone() {
+        IndexKind::Vector(spec) => build_graph(c, pos, spec)?,
+        IndexKind::Hash { .. } => {
+            let fold = c.schema.fields[pos].case_fold();
+            let ix = Derived::new(hash_of(&c.store, pos, None, fold)?);
+            c.hashes.insert(field, ix);
+        }
+        IndexKind::Text(spec) => {
+            let ix = Derived::new(text_of(&c.store, pos, spec)?);
+            c.texts.insert(field, ix);
+        }
+        IndexKind::Sorted { .. } => {
+            let ix = Derived::new(sorted_of(&c.store, &c.schema.fields[pos], pos, None)?);
+            match c.sorted.iter_mut().find(|(n, _)| *n == field) {
+                Some(slot) => slot.1 = ix,
+                None => c.sorted.push((field, ix)),
+            }
+        }
+        IndexKind::Inverted => {
+            let ix = Derived::new(sparse_of(&c.store, pos)?);
+            match c.sparse.iter_mut().find(|(n, _)| *n == field) {
+                Some(slot) => slot.1 = ix,
+                None => c.sparse.push((field, ix)),
+            }
+        }
+        IndexKind::Geo => {
+            let ix = Derived::new(geo_of(&c.store, pos)?);
+            match c.geo.iter_mut().find(|(n, _)| *n == field) {
+                Some(slot) => slot.1 = ix,
+                None => c.geo.push((field, ix)),
+            }
+        }
+        IndexKind::None => {}
+    }
+    Ok(())
+}
+
+/// The point index of the field at `pos`, as [`sorted_of`]: sorted once
+/// from its keys, each row's point read straight off its 16 bytes.
+#[cfg(all(feature = "sorted", feature = "geo"))]
+fn geo_of(store: &Store, pos: usize) -> Result<GeoIndex> {
+    let mut rows = Vec::with_capacity(store.len());
+    for id in store.ids() {
+        if let Some(p) = store.read_point(id, pos)? {
+            rows.push((id, p));
+        }
+    }
+    Ok(GeoIndex::build(&mut rows.into_iter()))
+}
+
+/// A build without ordered indexes, or without points, holds no point
+/// index either.
+#[cfg(not(all(feature = "sorted", feature = "geo")))]
+fn geo_of(_: &Store, _: usize) -> Result<GeoIndex> {
+    Err(not_built("the index", "geo"))
+}
+
+/// Builds the index the schema declares on the path `path` into a json
+/// field and fills it from the documents, as [`build_index`] does a
+/// field's: a hash or an ordered index, the two a path takes.
+fn build_path_index(c: &mut Collection, path: &str) -> Result<()> {
+    let Some(f) = c.schema.path(path) else {
+        return Ok(());
+    };
+    if !EVERY_INDEX && missing_feature(&f.index).is_some() {
+        return Ok(());
+    }
+    let Some((pos, keys)) = source(&c.schema, path) else {
+        return Ok(());
+    };
+    match f.index {
+        IndexKind::Hash { .. } => {
+            let ix = Derived::new(hash_of(&c.store, pos, keys, None)?);
+            c.hashes.insert(path.to_string(), ix);
+        }
+        IndexKind::Sorted { .. } => {
+            let ix = Derived::new(sorted_of(&c.store, f, pos, keys)?);
+            match c.sorted.iter_mut().find(|(n, _)| *n == path) {
+                Some(slot) => slot.1 = ix,
+                None => in_schema_order(&mut c.sorted, &c.schema, path, ix),
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// The refusal of a `create statement`, a `drop statement` and a `call`:
+/// nothing runs them yet ([`crate::named::NOT_BUILT`]). Out of line, one
+/// copy for its callers.
+#[cfg(feature = "statements")]
+#[inline(never)]
+fn not_named() -> Error {
+    Error::Query(crate::named::NOT_BUILT.into())
+}
+
+/// What `statements` answers while no database holds one: no row, under
+/// the column a statement's row leads with.
+#[cfg(feature = "statements")]
+#[inline(never)]
+fn no_statements() -> Response {
+    Response::Rows(ResultSet {
+        columns: vec!["name".to_string()],
+        ..ResultSet::default()
+    })
+}
+
+/// What `describe statement <name>` answers while no database holds one,
+/// as `describe` answers for a collection it does not hold.
+#[cfg(feature = "statements")]
+#[inline(never)]
+fn no_statement(name: &str) -> Error {
+    Error::NotFound(format!("statement `{name}`"))
+}
+
+/// What of a statement has to be read as written for a json field: its
+/// text, where a literal list of numbers is put into one or compared with a
+/// path into one, and the parameters given there by their number (`$1` is
+/// 0). A list of numbers alone is read into a vector's `f32`s by a reader
+/// that has no schema -- FennecQL's lexer, the JSON reader of a query's
+/// parameters, the browser module's vectors handed over apart -- which is
+/// the quick way for the vector fields it nearly always is, and a json
+/// field refuses (`Value::coerce`). A caller holding the text reads it again
+/// as written (`fennec_ql::parse_exact`, `json::parse_params_exact`) where
+/// this names it, and only then: a statement with no list of numbers costs
+/// the walk of its literals, and one into a collection with no json field a
+/// look at its fields.
+#[derive(Debug, Default, PartialEq)]
+pub struct Exactly {
+    pub text: bool,
+    pub params: Vec<usize>,
+}
+
+impl Exactly {
+    pub fn is_needed(&self) -> bool {
+        self.text || !self.params.is_empty()
+    }
+}
+
+impl Database {
+    /// The refusal of a statement that would hand a json field, or compare
+    /// a path with, a vector where a list of numbers was written: read in
+    /// the quick way it holds `f32`s, and a write would keep other numbers
+    /// than those given and a comparison find none of the documents holding
+    /// them -- a wrong answer believed right. A statement with no list of
+    /// numbers, the one nearly every statement is, costs the walk of its
+    /// literals.
+    fn refuse_inexact(&self, stmt: &Statement, params: &[Value]) -> Result<()> {
+        if !stmt.reads_vectors() && !params.iter().any(crate::query::holds_vector) {
+            return Ok(());
+        }
+        let need = self.exactly(stmt);
+        let param = need
+            .params
+            .iter()
+            .any(|&i| params.get(i).is_some_and(crate::query::holds_vector));
+        match need.text || param {
+            false => Ok(()),
+            true => Err(Error::Query(
+                "a json field or a point keeps a list of numbers as written, and this one was \
+                 read into a vector's f32s: read the text with fennec_ql::parse_for, a parameter \
+                 as JSON"
+                    .into(),
+            )),
+        }
+    }
+
+    /// What of `stmt` a json field needs read as written ([`Exactly`]):
+    /// every collection it reads by its own schema -- an inner `get`'s at
+    /// any depth, each `lookup` level's. A collection it names that is not
+    /// here asks nothing: the statement is refused for it when it runs.
+    pub fn exactly(&self, stmt: &Statement) -> Exactly {
+        let mut out = Exactly::default();
+        let of = |name: &str| match self.collections.get(name) {
+            Some(c) => Known::of(&c.schema),
+            None => Known::Missing,
+        };
+        statement_needs(&of, stmt, &mut out);
+        out
+    }
+}
+
+/// What [`exactly_for`]'s walk knows of a collection a statement reads.
+#[derive(Clone, Copy)]
+enum Known<'a> {
+    /// Its schema, and whether a field of it keeps a list of numbers as
+    /// written: a collection with none is asked of no comparison.
+    Schema(&'a Schema, bool),
+    /// Another collection than the one [`exactly_for`] was handed: every
+    /// field is taken to keep numbers, so its lists are read as written --
+    /// slower for a vector, never wrong.
+    Unknown,
+    /// None by that name: the statement is refused for it as it runs.
+    Missing,
+}
+
+impl<'a> Known<'a> {
+    fn of(schema: &'a Schema) -> Known<'a> {
+        Known::Schema(schema, schema.fields.iter().any(|f| f.ty.keeps_numbers()))
+    }
+
+    /// Whether `name` keeps a list of numbers as written ([`names_json`]).
+    fn keeps(self, name: &str) -> bool {
+        match self {
+            Known::Schema(schema, true) => names_json(schema, name),
+            Known::Unknown => true,
+            _ => false,
+        }
+    }
+
+    /// Whether `e` is such a field.
+    fn field(self, e: &Expr) -> bool {
+        matches!(e, Expr::Field(n) if self.keeps(n))
+    }
+
+    /// Whether `field` is a point: `near` over it takes one.
+    fn geo(self, field: &str) -> bool {
+        match self {
+            Known::Schema(schema, _) => schema.field(field).is_some_and(|f| f.ty == DataType::Geo),
+            Known::Unknown => true,
+            Known::Missing => false,
+        }
+    }
+}
+
+/// The collection a statement [`exactly_for`] looks at is of, or `""`.
+fn stmt_collection(stmt: &Statement) -> &str {
+    match stmt {
+        Statement::Put { collection, .. }
+        | Statement::Update { collection, .. }
+        | Statement::Delete { collection, .. } => collection,
+        Statement::Select(s) | Statement::Explain(s) => &s.collection,
+        _ => "",
+    }
+}
+
+/// What of `stmt`, a statement over a collection of `schema`, a json field
+/// or a point needs read as written ([`Exactly`]): what a json or `geo`
+/// field is given or compared with, a point or a box given to `distance`
+/// or `within` anywhere, and the point of a `near` over a `geo` field. An
+/// inner `get` or a `lookup` level over another collection, whose schema
+/// it has not got, has every list of numbers in it read as written
+/// ([`Known::Unknown`]): a REST `where=` and an MCP tool's filter, which
+/// read the text alone, take it that way.
+pub fn exactly_for(schema: &Schema, stmt: &Statement) -> Exactly {
+    let mut out = Exactly::default();
+    let of = |name: &str| match name == schema.name {
+        true => Known::of(schema),
+        false => Known::Unknown,
+    };
+    statement_needs(&of, stmt, &mut out);
+    out
+}
+
+/// [`exactly_for`]'s walk, each collection known through `of`.
+fn statement_needs<'a>(of: &dyn Fn(&str) -> Known<'a>, stmt: &Statement, out: &mut Exactly) {
+    let k = of(stmt_collection(stmt));
+    if matches!(k, Known::Missing) {
+        return;
+    }
+    // The value given first: a key is looked up only for a list of numbers
+    // or a parameter, so a `put` of 1 000 rows looks up the vector field's
+    // name and none of the others.
+    // A collection with no json field or point is asked nothing of its
+    // values (`Known::Schema(_, false)`), checked once.
+    let any = !matches!(k, Known::Schema(_, false));
+    let mut pair = |(key, e): &(String, Expr)| {
+        if any && (matches!(e, Expr::Param(_)) || e.reads_vectors()) && k.keeps(key) {
+            given(e, out);
+        }
+        // A literal or a parameter holds no call and no inner `get`: a
+        // `put`'s values, nearly all of them one, are not walked. Walked,
+        // and each asked whether it holds a vector before `any`, `exactly`
+        // over a `put` of 1 000 128-dim rows took 10.3 us against the 3.2
+        // of the walk before; this way 2.7 to 3.0 against its 3.5 to 3.7.
+        if !matches!(e, Expr::Lit(_) | Expr::Param(_)) {
+            expr_needs(of, k, e, out);
+        }
+    };
+    match stmt {
+        Statement::Put { docs, else_set, .. } => {
+            docs.iter().flatten().for_each(&mut pair);
+            else_set.iter().flatten().for_each(&mut pair);
+        }
+        Statement::Update {
+            set, filter, pick, ..
+        } => {
+            set.iter().for_each(&mut pair);
+            filter.iter().for_each(|f| expr_needs(of, k, f, out));
+            sorts_need(of, k, pick.as_deref(), out);
+        }
+        Statement::Delete { filter, pick, .. } => {
+            filter.iter().for_each(|f| expr_needs(of, k, f, out));
+            sorts_need(of, k, pick.as_deref(), out);
+        }
+        Statement::Select(s) | Statement::Explain(s) => select_needs(of, s, out),
+        _ => {}
+    }
+}
+
+/// What a `set`'s or a `del`'s `order` expressions need: `order
+/// distance(loc, [29.09, 41.09]) limit 1`.
+fn sorts_need<'a>(
+    of: &dyn Fn(&str) -> Known<'a>,
+    k: Known<'a>,
+    pick: Option<&Pick>,
+    out: &mut Exactly,
+) {
+    for s in pick.iter().flat_map(|p| &p.order) {
+        if let Some(e) = &s.expr {
+            expr_needs(of, k, e, out);
+        }
+    }
+}
+
+/// What a `get` needs, by its collection's schema: every expression it
+/// holds -- its filter, a disjunctive facet's, `having`, `group`, each item
+/// of its list, each `order` key -- the point of a `near` over a point,
+/// and each `lookup` level's filter by the level's own collection. An
+/// inner `get` is walked where it is met, by its own.
+fn select_needs<'a>(of: &dyn Fn(&str) -> Known<'a>, s: &Select, out: &mut Exactly) {
+    let k = of(&s.collection);
+    if matches!(k, Known::Missing) {
+        return;
+    }
+    // Loops rather than a chain of the lists: each `Chain` was a copy of
+    // its own in the browser module.
+    let mut each = |e: &Expr| expr_needs(of, k, e, out);
+    s.filter.iter().for_each(&mut each);
+    s.having.iter().for_each(&mut each);
+    s.group.iter().for_each(&mut each);
+    for c in s.aggregate.iter().chain(&s.computed) {
+        each(&c.expr);
+    }
+    for o in &s.order {
+        o.expr.iter().for_each(&mut each);
+    }
+    for f in &s.facets {
+        if let Some(Some(rest)) = &f.rest {
+            each(rest);
+        }
+    }
+    if let Some(n) = &s.near {
+        if k.geo(&n.field) {
+            given(&n.vector, out);
+        }
+    }
+    let mut level = s.lookup.as_ref();
+    while let Some(l) = level {
+        let lk = of(&l.collection);
+        if let (Some(f), false) = (&l.filter, matches!(lk, Known::Missing)) {
+            expr_needs(of, lk, f, out);
+        }
+        level = l.next.as_deref();
+    }
+}
+
+/// What an expression over a collection known as `k` needs, at every
+/// depth: each argument of a `distance` or `within`, each value compared
+/// with a json field or a point, or with a path into one -- under a `case`
+/// or any call as much as in an `and` chain -- and each inner `get`, by its
+/// own collection.
+fn expr_needs<'a>(of: &dyn Fn(&str) -> Known<'a>, k: Known<'a>, e: &Expr, out: &mut Exactly) {
+    match e {
+        Expr::Call(name, args) if crate::geo::is_geo_call(name) => {
+            args.iter().for_each(|a| given(a, out));
+        }
+        Expr::Cmp(_, a, b) | Expr::Has(a, b) => {
+            if k.field(a) {
+                given(b, out);
+            }
+            if k.field(b) {
+                given(a, out);
+            }
+        }
+        Expr::In(a, items) if k.field(a) => items.iter().for_each(|i| given(i, out)),
+        Expr::InSelect(_, sel) => select_needs(of, sel, out),
+        _ => {}
+    }
+    e.each_child(&mut |c| expr_needs(of, k, c, out));
+}
+
+/// Whether `name` is a json field of `schema` or a path into one, or a
+/// point -- a field that keeps a list of numbers as written.
+fn names_json(schema: &Schema, name: &str) -> bool {
+    // A path's field is a json one, or the path is refused where it is read.
+    let field = name.split_once('.').map_or(name, |(f, _)| f);
+    schema.field(field).is_some_and(|f| f.ty.keeps_numbers())
+}
+
+/// What a value given a json field, or compared with one, needs: a
+/// parameter by its place, once, or the text where a literal holds a list
+/// of numbers.
+fn given(e: &Expr, out: &mut Exactly) {
+    match e {
+        Expr::Param(i) if !out.params.contains(i) => out.params.push(*i),
+        Expr::Param(_) => {}
+        e => out.text |= e.reads_vectors(),
+    }
+}
+
+/// Sets `k` of `doc` to `v`: a field, coerced to its type, or a path into
+/// a json field (`meta.lang: "en"`), the one key set inside it and the rest
+/// kept, an object made where the path finds none.
+/// A field of a document being put, `id` naming the document.
+fn doc_field(schema: &Schema, doc: &mut Document, k: &str, v: Value) -> Result<()> {
+    if k == "id" {
+        doc.id = match v {
+            Value::Int(i) if i > 0 => i as u64,
+            _ => return Err(Error::Type("`id` must be a positive integer".into())),
+        };
+        return Ok(());
+    }
+    set_field(schema, doc, k, v)
+}
+
+/// A `put`'s documents, onto the end of `built`: each of its pairs' values
+/// worked out and made its field's type, then each object its parameter
+/// holds (`put <c> $n`). The same under the write lock and beside it
+/// ([`Database::prepare`]).
+fn build_docs(
+    schema: &Schema,
+    collection: &str,
+    docs: &[Vec<(String, Expr)>],
+    docs_param: Option<usize>,
+    ctx: &EvalCtx,
+    built: &mut Vec<Document>,
+) -> Result<()> {
+    for pairs in docs {
+        let mut doc = Document::default();
+        for (k, e) in pairs {
+            doc_field(schema, &mut doc, k, eval(e, &mut NoRow, ctx)?)?;
+        }
+        built.push(doc_done(schema, doc)?);
+    }
+    if let Some(i) = docs_param {
+        let given = documents_in(collection, i, ctx.params)?;
+        built.reserve(given.len());
+        for members in given {
+            built.push(Database::document_of(schema, members)?);
+        }
+    }
+    Ok(())
+}
+
+/// A document being put with every field it was not given `null`, or
+/// refused for a required one.
+fn doc_done(schema: &Schema, mut doc: Document) -> Result<Document> {
+    for f in &schema.fields {
+        match doc.get(&f.name) {
+            None | Some(Value::Null) if f.required => return Err(not_null(&f.name)),
+            None => doc.set(&f.name, Value::Null),
+            Some(_) => {}
+        }
+    }
+    Ok(doc)
+}
+
+fn set_field(schema: &Schema, doc: &mut Document, k: &str, v: Value) -> Result<()> {
+    if let Some((pos, keys)) = schema.path_of(k)? {
+        let f = &schema.fields[pos];
+        let mut whole = doc.get(&f.name).cloned().unwrap_or(Value::Null);
+        whole.set_path(&f.name, keys, v)?;
+        doc.set(&f.name, whole.coerce(&f.ty)?);
+        return Ok(());
+    }
+    let f = schema
+        .field(k)
+        .ok_or_else(|| Error::NotFound(format!("field `{k}` in collection `{}`", schema.name)))?;
+    doc.set(k, v.coerce(&f.ty)?);
+    Ok(())
+}
+
+/// Whether the row `id` of `c` is past its time: its `@ttl` field, at
+/// `cut.0`, at or before `cut.1`. A row whose field is null lives, as a
+/// read takes it.
+fn expired(c: &Collection, id: DocId, cut: (usize, i64)) -> Result<bool> {
+    Ok(matches!(c.store.read_field(id, cut.0)?, Some(Value::Timestamp(t)) if t <= cut.1))
+}
+
+/// One pair of a `set`, bound to its collection once a statement, as a
+/// [`Filter`] is: the field it writes by its position, and its value as a
+/// [`Calc`] -- a constant worked out once rather than a row, a field the
+/// expression reads by its position in the document. What it cannot bind,
+/// or a constant whose working out failed, it works out as `eval` does, so
+/// every error comes where and as it came before: at the first row, and
+/// never over no rows.
+struct Assign<'q> {
+    key: &'q str,
+    /// The field's position, for a field rather than a path into one.
+    at: Option<usize>,
+    calc: Calc<'q>,
+}
+
+/// A `set` value's expression over the row as it was ([`Assign`]).
+enum Calc<'q> {
+    Value(Value),
+    Field(usize),
+    /// `new.f` in an upsert's `else set`: the document's `f`.
+    New(&'q str),
+    Arith(ArithOp, Box<Calc<'q>>, Box<Calc<'q>>),
+    Eval(&'q Expr),
+}
+
+/// What `new.` names in an upsert's `else set`: the document put, where
+/// the row's own fields are named bare -- `{n: n + new.n}`.
+const NEW: &str = "new.";
+
+impl<'q> Calc<'q> {
+    fn bind(schema: &Schema, e: &'q Expr, ctx: &EvalCtx) -> Calc<'q> {
+        Self::bound(schema, e, ctx, false)
+    }
+
+    /// [`Calc::bind`] for an upsert's `else set`, where `new.f` is the
+    /// document's field.
+    fn bind_upsert(schema: &Schema, e: &'q Expr, ctx: &EvalCtx) -> Calc<'q> {
+        Self::bound(schema, e, ctx, true)
+    }
+
+    fn bound(schema: &Schema, e: &'q Expr, ctx: &EvalCtx, upsert: bool) -> Calc<'q> {
+        match e {
+            // `strip_prefix`, not a slice: a slice that can panic brought a
+            // `char`'s formatting and Unicode's tables into the browser
+            // module (`make size-report WHY=slice_error_fail`).
+            Expr::Field(name) if upsert && name.starts_with(NEW) => {
+                match name
+                    .strip_prefix(NEW)
+                    .filter(|f| schema.field_pos(f).is_some())
+                {
+                    Some(f) => Calc::New(f),
+                    None => Calc::Eval(e),
+                }
+            }
+            Expr::Field(name) => match schema.field_pos(name) {
+                Some(p) if name != "id" => Calc::Field(p),
+                _ => Calc::Eval(e),
+            },
+            Expr::Arith(op, a, b) => Calc::Arith(
+                *op,
+                Box::new(Calc::bound(schema, a, ctx, upsert)),
+                Box::new(Calc::bound(schema, b, ctx, upsert)),
+            ),
+            // Reading no field, the same on every row: `now()` is the one
+            // time for the whole statement.
+            _ => {
+                let mut fields = Vec::new();
+                e.referenced_fields(&mut fields);
+                match fields.is_empty() {
+                    true => match eval(e, &mut NoRow, ctx) {
+                        Ok(v) => Calc::Value(v),
+                        Err(_) => Calc::Eval(e),
+                    },
+                    false => Calc::Eval(e),
+                }
+            }
+        }
+    }
+
+    fn value(
+        &self,
+        schema: &Schema,
+        row: &Document,
+        ctx: &EvalCtx,
+        new: Option<&Document>,
+    ) -> Result<Value> {
+        Ok(match self {
+            Calc::Value(v) => v.clone(),
+            Calc::Field(p) => row.fields.get(*p).map_or(Value::Null, |(_, v)| v.clone()),
+            Calc::New(f) => new.and_then(|d| d.get(f)).cloned().unwrap_or(Value::Null),
+            Calc::Arith(op, a, b) => arith(
+                *op,
+                &a.value(schema, row, ctx, new)?,
+                &b.value(schema, row, ctx, new)?,
+            )?,
+            Calc::Eval(e) => match new {
+                Some(new) => eval(e, &mut Upserting(DocRow(row, schema), new), ctx)?,
+                None => eval(e, &mut DocRow(row, schema), ctx)?,
+            },
+        })
+    }
+}
+
+/// The row an upsert's `else set` reads, and the document put as `new.`.
+struct Upserting<'a>(DocRow<'a>, &'a Document);
+
+impl RowAccess for Upserting<'_> {
+    fn id(&self) -> DocId {
+        self.0.id()
+    }
+    fn field(&mut self, name: &str) -> Result<Value> {
+        let Some(f) = name.strip_prefix(NEW) else {
+            return self.0.field(name);
+        };
+        if f == "id" {
+            return Ok(match self.1.id {
+                0 => Value::Null,
+                id => Value::Int(id as i64),
+            });
+        }
+        // One of its fields, or a path into a json one: a name the
+        // collection does not have is refused, not read as null.
+        let schema = self.0 .1;
+        if schema.path_of(f)?.is_none() && schema.field(f).is_none() {
+            return Err(Error::NotFound(format!("field `{f}`, read as `{name}`")));
+        }
+        Ok(self.1.at(f).cloned().unwrap_or(Value::Null))
+    }
+    fn text_order(&self, name: &str) -> TextOrder {
+        self.0.text_order(name.strip_prefix(NEW).unwrap_or(name))
+    }
+}
+
+/// `old` with a `set`'s pairs applied, every expression over the document
+/// as it was -- and an upsert's over `new`, the document put.
+fn updated(
+    schema: &Schema,
+    old: &Document,
+    set: &[Assign],
+    ctx: &EvalCtx,
+    new: Option<&Document>,
+) -> Result<Document> {
+    let mut doc = old.clone();
+    for a in set {
+        // Checked before the value is worked out, over the document as it
+        // was, as every other is.
+        if a.at.is_none() && schema.path_of(a.key)?.is_none() {
+            return Err(Error::NotFound(format!("field `{}`", a.key)));
+        }
+        let v = a.calc.value(schema, old, ctx, new)?;
+        match a.at {
+            Some(p) => {
+                if schema.fields[p].required && matches!(v, Value::Null) {
+                    return Err(not_null(&schema.fields[p].name));
+                }
+                doc.fields[p].1 = v.coerce(&schema.fields[p].ty)?
+            }
+            None => set_field(schema, &mut doc, a.key, v)?,
+        }
+    }
+    Ok(doc)
+}
+
+/// A required field left out or given `null`: SQL's `not null`, which
+/// `required` is -- the types `fennec types` writes, and the declared
+/// schema's `.notNull()`, read it never null.
+#[inline(never)]
+fn not_null(name: &str) -> Error {
+    Error::Type(format!(
+        "field `{name}` is required: it holds a value, never null"
+    ))
+}
+
+thread_local! {
+    /// The steps an `explain` is recording on this thread, `None` outside
+    /// one. A thread-local rather than a parameter: the steps are taken deep
+    /// in paths every query shares, and threading a recorder through them
+    /// would touch every signature on the way for a statement most queries
+    /// never are. Outside an `explain` a step costs one check of this cell.
+    static PLAN: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+    /// Whether an `in (get ...)` was refused past [`MAX_SUBQUERY_VALUES`]
+    /// since [`Database::answered_top`] cleared it, which reads a SQL
+    /// join's probe then. A flag rather than the refusal's words looked
+    /// for: `str::contains` brought its two-way searcher and a slice's
+    /// panic into the browser module, 9.6 KB of it and 3.6 KB brotli.
+    static OVERFLOWED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Records a step of the plan while an `explain` runs; `step` is called only
+/// then.
+///
+/// Only the test is inlined into the caller. With the whole of it generic
+/// over the closure, each of the two dozen steps carried its own copy of the
+/// thread-local access and the push, and `explain` cost the browser module
+/// 16 KB.
+#[inline(always)]
+fn plan(step: impl FnOnce() -> String) {
+    if planning() {
+        push_step(step());
+    }
+}
+
+#[inline(never)]
+fn planning() -> bool {
+    PLAN.with(|p| p.borrow().is_some())
+}
+
+#[inline(never)]
+fn push_step(line: String) {
+    PLAN.with(|p| {
+        if let Some(steps) = p.borrow_mut().as_mut() {
+            steps.push(line);
+        }
+    });
+}
+
+/// `match`'s first `k`: a plain one down the path it always took, one
+/// reading its words loosely (`fuzzy`, `prefix`) through their variants.
+fn search<F>(
+    ix: &TextIndex,
+    m: &Match,
+    query: &str,
+    k: usize,
+    accept: F,
+    within: Option<&[DocId]>,
+) -> Result<Vec<(DocId, f32)>>
+where
+    F: Fn(DocId) -> bool,
+{
+    match m.fuzzy == 0 && !m.prefix {
+        true => Ok(ix.search_within(query, k, accept, within)),
+        false => ix.search_loose(query, k, accept, within, m.loose()),
+    }
+}
+
+/// How `explain` says a `match` reads its words, as the clause wrote it.
+fn loosely(m: &Match) -> &'static str {
+    match (m.fuzzy, m.prefix) {
+        (0, false) => "",
+        (0, true) => ", prefix",
+        (1, false) => ", fuzzy 1",
+        (1, true) => ", fuzzy 1, prefix",
+        (_, false) => ", fuzzy",
+        (_, true) => ", fuzzy, prefix",
+    }
+}
+
+/// How many rows a ranked clause has to produce: `limit + offset`, or the
+/// ceiling when there is no limit. A request past the ceiling is refused
+/// before anything is scanned -- erroring beats handing back a truncated
+/// ranking.
+fn ranked_rows(sel: &Select, params: &[Value], clause: &str, ceiling: usize) -> Result<usize> {
+    let offset = sel.offset.at(params);
+    let bound = sel.limit.map(|l| l.at(params).saturating_add(offset));
+    if bound.unwrap_or(offset) > ceiling {
+        return Err(Error::Query(format!(
+            "`{clause}` returns at most {ceiling} rows, {} were requested (limit + offset)",
+            bound.unwrap_or(offset)
+        )));
+    }
+    Ok(bound.unwrap_or(ceiling).max(1))
+}
+
+/// The most rows `near` over a point measures, every one, when an index
+/// names them for its filter, rather than walk the point index: a few
+/// thousand distances are a fraction of a millisecond.
+#[cfg(all(feature = "sorted", feature = "geo"))]
+const GEO_SET: usize = 4096;
+
+/// The `want` of `ids` -- ascending -- nearest `from`, in the order of
+/// `(distance, id)`, each with its distance in metres: what `near` over a
+/// point answers wherever no walk of its index does. Put in order by
+/// `order_rows`, which an `order` over documents and groups shares, each
+/// distance a key and a tie left in the order the ids came: a sort of its
+/// own for the pairs was 1.2 KB of the browser module.
+fn nearest_of(
+    store: &Store,
+    pos: usize,
+    from: (f64, f64),
+    ids: &[DocId],
+    want: usize,
+) -> Result<Vec<(DocId, f32)>> {
+    // A page of a few: the nearest held in order as the rows come, a row
+    // whose latitude alone puts it past the last of them passed over with
+    // no trigonometry (`geo::past`), and a row as near as the last after it
+    // in the order, its id higher. Over a million rows the ten nearest took
+    // 147 ms put in order by `order_rows`.
+    if want <= 64 {
+        let mut kept: Vec<(f64, DocId)> = Vec::with_capacity(want + 1);
+        for &id in ids {
+            let Some(p) = store.read_point(id, pos)? else {
+                continue;
+            };
+            let last = kept.last().map(|k| k.0).filter(|_| kept.len() == want);
+            if last.is_some_and(|r| crate::geo::past(p, from, r).is_some()) {
+                continue;
+            }
+            let d = crate::geo::distance(p, from);
+            if last.is_some_and(|r| d >= r) {
+                continue;
+            }
+            let at = kept.partition_point(|k| k.0 <= d);
+            kept.insert(at, (d, id));
+            kept.truncate(want);
+        }
+        return Ok(kept.into_iter().map(|(d, id)| (id, d as f32)).collect());
+    }
+    let (mut keys, mut held) = (Vec::with_capacity(ids.len()), Vec::with_capacity(ids.len()));
+    for &id in ids {
+        if let Some(p) = store.read_point(id, pos)? {
+            keys.push(Value::Float(crate::geo::distance(p, from)));
+            held.push(id);
+        }
+    }
+    let by: [OrderKey; 1] = [(None, true, TextOrder::BYTES, None)];
+    let mut out = Vec::with_capacity(want.min(held.len()));
+    for i in order_rows(&keys, 1, held.len(), &by, want) {
+        if let Value::Float(d) = keys[i] {
+            out.push((held[i], d as f32));
+        }
+    }
+    Ok(out)
+}
+
+/// Each value a range facet's field holds over `ids` -- every row when
+/// `all` -- handed with the row's place: a scalar's value, a list's one by
+/// one, none for a row without the field.
+fn each_value(
+    c: &Collection,
+    (pos, keys): (usize, Option<&str>),
+    ids: &[DocId],
+    all: bool,
+    f: &mut dyn FnMut(usize, &Value),
+) -> Result<()> {
+    let every;
+    let ids = match all {
+        true => {
+            every = c.store.ids();
+            &every
+        }
+        false => ids,
+    };
+    let mut slot = vec![Value::Null];
+    let place = [c.schema.place(pos)];
+    for (row, &id) in ids.iter().enumerate() {
+        let found = match keys {
+            None => c.store.read_fields(id, &place, &mut slot)?,
+            Some(k) => c.store.read_paths(id, &[(pos, k)], &mut slot)?,
+        };
+        let values = match (&slot[0], found) {
+            (_, false) => &[],
+            (Value::List(items), true) => items.as_slice(),
+            (_, true) => std::slice::from_ref(&slot[0]),
+        };
+        for v in values {
+            f(row, v);
+        }
+    }
+    Ok(())
+}
+
+/// Which rows `ids` holds, a bit an id: what a facet asks an index's
+/// entries against.
+fn member_bits(ids: &[DocId]) -> Vec<u64> {
+    let top = ids.iter().max().map_or(0, |&d| d as usize + 1);
+    let mut bits = vec![0u64; top.div_ceil(64)];
+    for &d in ids {
+        bits[d as usize / 64] |= 1 << (d % 64);
+    }
+    bits
+}
+
+/// A ranking as the rows carry it. One conversion for `match`, `near` and
+/// `fuse`: a closure each was a copy each in the browser module.
+fn with_scores(hits: Vec<(DocId, f32)>) -> Vec<(DocId, Option<f32>)> {
+    hits.into_iter().map(|(id, s)| (id, Some(s))).collect()
+}
+
+/// The `k` of `ids` nearest `q` by the documents' own vectors, read out of
+/// the store, that `keep` passes: nearest first, ties to the lower id so the
+/// answer is stable. How `match ... rerank` orders the text index's
+/// candidates, and `near` the candidates a quantized index found.
+///
+/// Each id comes with the nearest its vector can lie (`VectorIndex::floor`),
+/// and one that cannot come nearer than the `k` held already is neither
+/// tested nor read; how many were read is the second half of the answer.
+fn order_exactly(
+    store: &Store,
+    pos: usize,
+    metric: Metric,
+    q: &[f32],
+    ids: &mut dyn Iterator<Item = (DocId, f32)>,
+    k: usize,
+    keep: &mut dyn FnMut(DocId) -> Result<bool>,
+) -> Result<(Vec<(DocId, f32)>, usize)> {
+    let q = match metric {
+        Metric::Cosine => normalized(q),
+        _ => q.to_vec(),
+    };
+    // Distances held negated, so the engine's one sort puts the nearest
+    // first, and cut back to the `k` nearest whenever there are twice as
+    // many: `worst` is then what a candidate has to beat, and a scan of
+    // every row holds 2k of them rather than all.
+    let mut out: Vec<(DocId, f32)> = Vec::new();
+    let mut worst = f32::INFINITY;
+    let mut read = 0;
+    let mut buf: Vec<f32> = Vec::with_capacity(q.len());
+    for (id, floor) in ids {
+        if floor > worst || !keep(id)? {
+            continue;
+        }
+        read += 1;
+        // A document without a vector cannot be ordered.
+        if !store.read_vector_into(id, pos, &mut buf)? || buf.len() != q.len() {
+            continue;
+        }
+        // The store holds vectors as they were written; the HNSW arena is
+        // what normalises on insert, and it is not in play here. With the
+        // query already unit length, cosine only needs the candidate's own
+        // norm -- computing it beside the dot product costs one pass and
+        // saves a `Vec` per candidate, which at a thousand candidates a
+        // query is the difference between an allocation-free scan and a
+        // thousand allocations.
+        let d = match metric {
+            Metric::Cosine => {
+                let n = norm(&buf);
+                if n == 0.0 {
+                    1.0
+                } else {
+                    1.0 - dot(&q, &buf) / n
+                }
+            }
+            _ => distance(metric, &q, &buf),
+        };
+        out.push((id, -d));
+        if out.len() == k || out.len() == 2 * k {
+            out.sort_by(best_first);
+            out.truncate(k);
+            worst = -out[k - 1].1;
+        }
+    }
+    out.sort_by(best_first);
+    out.truncate(k);
+    for h in &mut out {
+        h.1 = score_from_distance(metric, -h.1);
+    }
+    Ok((out, read))
+}
+
+/// What `near` searches: a vector index, and when the index holds codes
+/// rather than vectors (`quant=`) the store the field's vectors are in. The
+/// codes find the candidates, the beam's worth of them, and the documents'
+/// own vectors put those in order -- so a search over codes answers in exact
+/// distances, and an exact search reads every vector it ranks.
+struct Space<'a> {
+    ix: &'a VectorIndex,
+    /// The store and the field's position, over codes.
+    exact: Option<(&'a Store, usize)>,
+}
+
+impl<'a> Space<'a> {
+    fn new(c: &'a Collection, ix: &'a VectorIndex, field: &str) -> Space<'a> {
+        let exact = match ix.quantized() {
+            true => c.schema.field_pos(field).map(|p| (&c.store, p)),
+            false => None,
+        };
+        Space { ix, exact }
+    }
+
+    /// The `k` nearest the walk finds that `keep` passes, over a beam `ef`
+    /// wide: the beam's candidates tested in order (`order`). One call to
+    /// the index either way: a second one in the other branch doubled its
+    /// inlined body in the browser module.
+    fn search(
+        &self,
+        q: &[f32],
+        k: usize,
+        ef: Option<usize>,
+        keep: &mut dyn FnMut(DocId) -> Result<bool>,
+    ) -> Result<Vec<(DocId, f32)>> {
+        let n = ef.unwrap_or(self.ix.spec.ef_search).max(k);
+        let found = self.ix.search(q, n, ef, |_| true);
+        self.order(q, found, k, keep)
+    }
+
+    /// [`VectorIndex::search_ids`]: every row of `ids` measured, and over
+    /// codes the beam's worth of the nearest put in order as a walk's are.
+    /// Read whole, a filtered set under the budget of `ef x m0` was up to
+    /// 12 800 vectors a query at the beam bit codes take, 39 MB of them at
+    /// 768 dimensions; a set of 3 000 rows read 12 over int8 codes and 100
+    /// over bit codes at a beam of 100, and answered the same ten.
+    fn search_ids(
+        &self,
+        q: &[f32],
+        k: usize,
+        ef: Option<usize>,
+        ids: &[DocId],
+    ) -> Result<Vec<(DocId, f32)>> {
+        let n = match self.exact {
+            None => k,
+            Some(_) => ef.unwrap_or(self.ix.spec.ef_search).max(k),
+        };
+        let found = self.ix.search_ids(q, n, ids);
+        self.order(q, found, k, &mut |_| Ok(true))
+    }
+
+    /// The first `k` of `found`, the index's candidates nearest first, that
+    /// `keep` passes. Over codes that order is an estimate: the candidates
+    /// are put in the order of the documents' own vectors, read nearest
+    /// estimate first and only while one can still make the `k` -- an int8
+    /// code knows how far off it can be (`VectorIndex::floor`), a bit code
+    /// does not and every candidate is read. Reading every one was a third
+    /// of an int8 query over a million vectors; at 100 000 x 768 a page of
+    /// ten reads 16.8 of a beam of 100, and of 400, with the same answer.
+    fn order(
+        &self,
+        q: &[f32],
+        found: Vec<(DocId, f32)>,
+        k: usize,
+        keep: &mut dyn FnMut(DocId) -> Result<bool>,
+    ) -> Result<Vec<(DocId, f32)>> {
+        let ix = self.ix;
+        let Some((store, pos)) = self.exact else {
+            let mut hits = Vec::with_capacity(k);
+            for (id, score) in found {
+                if hits.len() == k {
+                    break;
+                }
+                if keep(id)? {
+                    hits.push((id, score));
+                }
+            }
+            return Ok(hits);
+        };
+        let n = found.len();
+        // The query as the codes measured it: unit length under cosine.
+        let reach = match ix.spec.metric {
+            Metric::Cosine => 1.0,
+            _ => norm(q),
+        };
+        let (hits, read) = order_exactly(
+            store,
+            pos,
+            ix.spec.metric,
+            q,
+            &mut found
+                .into_iter()
+                .map(|(id, score)| (id, ix.floor(id, score, reach))),
+            k,
+            keep,
+        )?;
+        plan(|| {
+            format!("near: {read} of the {n} candidates of the codes read from the store, in exact order")
+        });
+        Ok(hits)
+    }
+
+    /// [`VectorIndex::search_exact`], exactly over codes as well: every
+    /// vector read.
+    fn search_exact(
+        &self,
+        q: &[f32],
+        k: usize,
+        accept: &dyn Fn(DocId) -> bool,
+    ) -> Result<Vec<(DocId, f32)>> {
+        match self.exact {
+            None => Ok(self.ix.search_exact(q, k, accept)),
+            Some((store, pos)) => {
+                let mut ids = store
+                    .ids()
+                    .into_iter()
+                    .filter(|id| accept(*id))
+                    .map(|id| (id, f32::NEG_INFINITY));
+                let metric = self.ix.spec.metric;
+                Ok(order_exactly(store, pos, metric, q, &mut ids, k, &mut |_| Ok(true))?.0)
+            }
+        }
+    }
+}
+
+/// The ANN's beam as `explain` states it: the `ef` in force, and the page
+/// when that is wider, since the walk keeps at least as many candidates as
+/// it has to return.
+fn beam(ix: &VectorIndex, ef: Option<usize>, want: usize) -> String {
+    let ef = ef.unwrap_or(ix.spec.ef_search);
+    if want > ef {
+        format!("ef {ef}, widened to the {want} rows asked for")
+    } else {
+        format!("ef {ef}")
+    }
+}
+
+/// What an unfiltered ANN answer of `found` rows still needs.
+enum Short {
+    Whole,
+    /// Walked again with this `ef`.
+    Wider(usize),
+    Exact,
+}
+
+/// Every rewrite or deletion of a document with a vector leaves a tombstone
+/// in the graph until a compact, and the walk passes through them: a beam
+/// of `ef` around many of them held fewer live nodes than the page, and a
+/// `limit 10` answered 4 rows. No more than every tombstone can be in the
+/// beam, so one wider by their number holds `ef` live nodes -- unless
+/// walking that wide costs more than reading every vector: a step measures
+/// about `2m` neighbours, so past `live / 2m` steps the exact search is
+/// cheaper, and it is also the answer when the wider beam comes up short.
+fn past_tombstones(
+    ix: &VectorIndex,
+    near: &Near,
+    want: usize,
+    found: usize,
+    widened: bool,
+) -> Short {
+    let live = ix.len();
+    if found >= want.min(live) {
+        return Short::Whole;
+    }
+    let dead = ix.dead();
+    let ef = near.ef.unwrap_or(ix.spec.ef_search).max(want) + dead;
+    if !widened && dead > 0 && ef.saturating_mul(2 * ix.spec.m) < live {
+        plan(|| {
+            format!(
+                "near: the ANN came up short past {dead} tombstones, the beam widened to ef {ef}"
+            )
+        });
+        return Short::Wider(ef);
+    }
+    plan(|| {
+        format!("near: the ANN came up short past {dead} tombstones, every vector searched exactly")
+    });
+    Short::Exact
+}
+
+/// A filter bound to the collection it tests rows of, once a query: each
+/// field it compares with a value by position, and the value worked out.
+/// A row is then decoded once for every field the filter reads
+/// (`Store::read_fields`), and tested without looking the field up by
+/// name or cloning the value, row after row. What it cannot bind -- a field
+/// it does not know, a parameter not given, a call, two fields compared --
+/// it evaluates as `eval` does, so every error comes where and as it came
+/// before: at the first row tested, and never over no rows.
+struct Filter<'q> {
+    c: &'q Collection,
+    root: Test<'q>,
+    /// The places in a document of the fields the filter reads, ascending
+    /// (`Schema::place`), and for each field position where its value lands
+    /// among them.
+    positions: Vec<usize>,
+    index_of: Vec<usize>,
+    /// The paths into json fields the filter reads, each its field's
+    /// position and the keys past it: read a row after the fields, each
+    /// its value off the bytes, into `vals` past theirs.
+    paths: Vec<(usize, &'q str)>,
+    /// A row's values: its fields', then its paths'.
+    vals: std::cell::RefCell<Vec<Value>>,
+    /// A row's value encoded, for a [`Test::InSet`] to look up.
+    key: std::cell::RefCell<Vec<u8>>,
+    /// A `nocase` field's text of a row, folded, for a [`Folded`] test that
+    /// needs it whole: written over row after row, so nothing is allocated
+    /// once it has grown.
+    scratch: std::cell::RefCell<String>,
+}
+
+/// How long an `in` list is before a row is looked up in it rather than
+/// compared with each value. An `in (get ...)` hands one of up to 100 000:
+/// the 2 000 codes one handed a scan of 200 000 rows by an unindexed field
+/// took 2 302 ms compared a value at a time, and take 16 looked up. Over
+/// those rows 4 ints took 9.2 ms compared and 13.2 looked up, 8 took 11.6
+/// and 11.1, 64 took 56.4 and 11.5; text pays sooner, 4 of it 20.2 against
+/// 14.9.
+const IN_SET_AT: usize = 8;
+
+/// The values of an `in` over `slot` as the keys a hash index files them
+/// under, when the list is long and a key's bytes say what `cmp_value`
+/// says: every value of the type the field holds -- an int, a text, a
+/// timestamp or a boolean, which a typed field's every row holds or
+/// `null` -- so equal keys are equal values and no others are. A float
+/// (`NaN` equals everything), a timestamp written as text, a json field or
+/// a path is compared a value at a time, as before.
+fn in_set(c: &Collection, slot: Slot, values: &[Value]) -> Option<HashIndex> {
+    let ty = match slot {
+        Slot::Id => DataType::Int,
+        Slot::At(p) => c.schema.fields[p].ty.clone(),
+        Slot::Path(_) => return None,
+    };
+    let mut set = HashIndex::default();
+    for v in values {
+        match (&ty, v) {
+            (DataType::Int, Value::Int(_))
+            | (DataType::Text, Value::Text(_))
+            | (DataType::Timestamp, Value::Timestamp(_))
+            | (DataType::Bool, Value::Bool(_)) => {}
+            _ => return None,
+        }
+        let mut key = Vec::new();
+        crate::codec::encode_value(&mut key, v);
+        set.add(key, 0);
+    }
+    Some(set)
+}
+
+/// Where a bound test reads its field: the document's id, a field by its
+/// position in the schema, or the `n`th of the filter's paths.
+#[derive(Clone, Copy)]
+enum Slot {
+    Id,
+    At(usize),
+    Path(usize),
+}
+
+enum Test<'q> {
+    And(Box<Test<'q>>, Box<Test<'q>>),
+    Or(Box<Test<'q>>, Box<Test<'q>>),
+    Not(Box<Test<'q>>),
+    IsNull(Slot),
+    /// The field against the value, the field on the left when `first`,
+    /// and ordered in the field's collation when both are text.
+    Cmp {
+        op: CmpOp,
+        slot: Slot,
+        value: Value,
+        first: bool,
+        coll: Option<Collation>,
+    },
+    In(Slot, Vec<Value>),
+    /// [`Test::In`] over a long list, its values made the keys a hash index
+    /// files them under ([`in_set`]) when the first row is tested: made
+    /// where the filter is bound, it was built for an `in` an index answers
+    /// whole, and 2 000 ids took that query from 0.93 to 2.48 ms.
+    InSet(Slot, Vec<Value>, std::cell::OnceCell<Option<HashIndex>>),
+    Like(Slot, Value),
+    Has(Slot, Value),
+    /// `distance(<a point field>, <point>) <op> <value>`, the call and its
+    /// arguments either way round: the distance worked out as the call
+    /// works it out, the row's point first when `field_first`, and
+    /// compared as a `Cmp` compares it, the call on the left when
+    /// `call_first` -- so the answer is `eval`'s, null point and all.
+    #[cfg(feature = "geo")]
+    Distance {
+        slot: Slot,
+        to: (f64, f64),
+        field_first: bool,
+        op: CmpOp,
+        value: Value,
+        call_first: bool,
+    },
+    /// `within(<a point field>, <box>)`.
+    #[cfg(feature = "geo")]
+    Within(Slot, crate::geo::GeoBox),
+    /// A `nocase` field's text against values folded where it is bound,
+    /// by its fold.
+    Folded(Slot, CaseFold, Box<Folded>),
+    /// SQL's `like` over a text field (`query::sql_like`), its pattern
+    /// checked and folded once a query: through `eval`, a scan by one took
+    /// five times a scan by `~`.
+    Pattern(Slot, Box<Pattern>),
+    Eval(&'q Expr),
+}
+
+/// What a [`Test::Pattern`] matches a row's text against: the pattern
+/// and its escape, and the fold both sides are compared by.
+struct Pattern {
+    pat: String,
+    esc: String,
+    fold: Option<CaseFold>,
+}
+
+/// What a [`Test::Folded`] asks of its field's fold. Folded as a row was
+/// read, a scan for one name over 100 000 rows, a third of them past ASCII,
+/// took 5.4 -> 17.0 ms -- each such row's fold a new text, and the whole of
+/// it; compared as it is folded, `=` and the order stop where the two
+/// part, mostly at the first character, and nothing is allocated.
+enum Folded {
+    /// `=`, `!=`, `<`...: the field on the left when `first`, its text
+    /// ordered in its collation over the folds, which `=` need not ask.
+    Cmp {
+        op: CmpOp,
+        value: Value,
+        first: bool,
+        coll: Option<Collation>,
+    },
+    /// `in`, each text folded.
+    In(Vec<Value>),
+    /// `in` a long list, looked up as [`Test::InSet`] is: the row's fold's
+    /// key among its values'.
+    InSet(Vec<Value>, std::cell::OnceCell<Option<HashIndex>>),
+    /// `~`: whether the row's fold holds the needle's. A fold is lowercase
+    /// but where a character's fold is its capital (Cherokee) or a letter
+    /// of its own (`ı`), and lowercasing tells no two folds' characters
+    /// apart it did not: searched as bytes, it is `~`'s answer over the
+    /// two lowercased.
+    Like(String),
+}
+
+impl<'q> Filter<'q> {
+    fn new(c: &'q Collection, f: &'q Expr, ctx: &EvalCtx) -> Filter<'q> {
+        let mut positions = Vec::new();
+        let mut paths = Vec::new();
+        let root = Filter::bind(c, f, ctx, &mut positions, &mut paths);
+        let mut index_of = vec![usize::MAX; c.schema.fields.len()];
+        for (i, p) in positions.iter_mut().enumerate() {
+            index_of[*p] = i;
+            // Its place in the payload, past a dropped field's, once a
+            // query rather than once a row.
+            *p = c.schema.place(*p);
+        }
+        Filter {
+            c,
+            root,
+            positions,
+            index_of,
+            paths,
+            vals: std::cell::RefCell::new(Vec::new()),
+            key: std::cell::RefCell::new(Vec::new()),
+            scratch: std::cell::RefCell::new(String::new()),
+        }
+    }
+
+    fn bind(
+        c: &Collection,
+        e: &'q Expr,
+        ctx: &EvalCtx,
+        used: &mut Vec<usize>,
+        paths: &mut Vec<(usize, &'q str)>,
+    ) -> Test<'q> {
+        let mut slot = |e: &'q Expr| match e {
+            Expr::Field(name) if name == "id" => Some(Slot::Id),
+            // A path is bound as a field is: its field's position and its
+            // keys once a query, the keys walked a row. One the schema
+            // cannot read is left to `eval`, which says why at the first
+            // row.
+            Expr::Field(name) if name.contains('.') => match c.schema.path_of(name) {
+                Ok(Some(p)) => Some(Slot::Path(match paths.iter().position(|q| *q == p) {
+                    Some(n) => n,
+                    None => {
+                        paths.push(p);
+                        paths.len() - 1
+                    }
+                })),
+                _ => None,
+            },
+            // Kept ascending as they come, a few at most: sorted after,
+            // `usize` was a sort of its own, 3 KB of the browser module.
+            Expr::Field(name) => c.schema.field_pos(name).map(|p| {
+                let at = used.iter().position(|&q| q >= p).unwrap_or(used.len());
+                if used.get(at) != Some(&p) {
+                    used.insert(at, p);
+                }
+                Slot::At(p)
+            }),
+            _ => None,
+        };
+        let value = |e: &Expr| match e {
+            Expr::Lit(v) => Some(v.clone()),
+            Expr::Param(i) => ctx.params.get(*i).cloned(),
+            _ => None,
+        };
+        let coll = |s: Slot| match s {
+            Slot::At(p) => c.schema.fields[p].collate,
+            Slot::Id | Slot::Path(_) => None,
+        };
+        // A `nocase` field's fold, and a value it is compared with folded,
+        // once a query.
+        let fold_of = |s: Option<Slot>| match s {
+            Some(Slot::At(p)) => c.schema.fields[p].case_fold(),
+            _ => None,
+        };
+        let folded = |f: CaseFold, v: Value| match v {
+            Value::Text(t) => Value::Text(crate::case::fold(&t, f).into_owned()),
+            v => v,
+        };
+        #[cfg(feature = "geo")]
+        if let Some(t) = Filter::bind_geo(c, e, &value, &mut slot) {
+            return t;
+        }
+        match e {
+            Expr::And(a, b) => Test::And(
+                Box::new(Filter::bind(c, a, ctx, used, paths)),
+                Box::new(Filter::bind(c, b, ctx, used, paths)),
+            ),
+            Expr::Or(a, b) => Test::Or(
+                Box::new(Filter::bind(c, a, ctx, used, paths)),
+                Box::new(Filter::bind(c, b, ctx, used, paths)),
+            ),
+            Expr::Not(a) => Test::Not(Box::new(Filter::bind(c, a, ctx, used, paths))),
+            Expr::IsNull(a) => match slot(a) {
+                Some(s) => Test::IsNull(s),
+                None => Test::Eval(e),
+            },
+            Expr::Cmp(op, a, b) => {
+                let (s, value, first) = match (slot(a), value(b), value(a), slot(b)) {
+                    (Some(s), Some(value), ..) => (s, value, true),
+                    (_, _, Some(value), Some(s)) => (s, value, false),
+                    _ => return Test::Eval(e),
+                };
+                match (fold_of(Some(s)), value) {
+                    (Some(f), v @ Value::Text(_)) => Test::Folded(
+                        s,
+                        f,
+                        Box::new(Folded::Cmp {
+                            op: *op,
+                            value: folded(f, v),
+                            first,
+                            coll: coll(s),
+                        }),
+                    ),
+                    (_, value) => Test::Cmp {
+                        op: *op,
+                        slot: s,
+                        value,
+                        first,
+                        coll: coll(s),
+                    },
+                }
+            }
+            Expr::In(a, items) => {
+                let s = slot(a);
+                let fold = fold_of(s);
+                let mut values = Vec::with_capacity(items.len());
+                for it in items {
+                    match (value(it), fold) {
+                        (Some(v), Some(f)) => values.push(folded(f, v)),
+                        (Some(v), None) => values.push(v),
+                        (None, _) => return Test::Eval(e),
+                    }
+                }
+                let long = values.len() >= IN_SET_AT;
+                match (s, fold) {
+                    (Some(s), Some(f)) => {
+                        let t = match long {
+                            true => Folded::InSet(values, Default::default()),
+                            false => Folded::In(values),
+                        };
+                        Test::Folded(s, f, Box::new(t))
+                    }
+                    (Some(s), None) if long => Test::InSet(s, values, Default::default()),
+                    (Some(s), None) => Test::In(s, values),
+                    (None, _) => Test::Eval(e),
+                }
+            }
+            Expr::Like(a, b) => match (slot(a), value(b)) {
+                (Some(s), Some(Value::Text(t))) if fold_of(Some(s)).is_some() => {
+                    #[cfg(feature = "nocase")]
+                    let f = fold_of(Some(s)).unwrap_or(CaseFold::Unicode);
+                    #[cfg(not(feature = "nocase"))]
+                    let Some(f) = fold_of(Some(s)) else {
+                        return Test::Eval(e);
+                    };
+                    let needle = crate::case::fold(&t, f).into_owned();
+                    Test::Folded(s, f, Box::new(Folded::Like(needle)))
+                }
+                (Some(s), Some(v)) => Test::Like(s, v),
+                _ => Test::Eval(e),
+            },
+            Expr::Has(a, b) => match (slot(a), value(b)) {
+                (Some(s), Some(v)) => Test::Has(s, v),
+                _ => Test::Eval(e),
+            },
+            Expr::Call(name, args) if name == "like" || name == "ilike" => {
+                Filter::bind_pattern(c, name.starts_with('i'), args, &value, &mut slot)
+                    .unwrap_or(Test::Eval(e))
+            }
+            _ => Test::Eval(e),
+        }
+    }
+
+    /// `like(<a text field>, <pattern> [, <escape>])`, `ilike` when `ci`,
+    /// the pattern and the escape values: bound as [`Test::Pattern`],
+    /// which answers as `sql_like` does. `None` for anything `sql_like`
+    /// would refuse or read otherwise -- a field of another type, a path,
+    /// an escape it takes no case of, a pattern ending in it -- left to
+    /// `eval`, which says why at the first row.
+    #[inline(never)]
+    fn bind_pattern(
+        c: &Collection,
+        ci: bool,
+        args: &'q [Expr],
+        value: &dyn Fn(&Expr) -> Option<Value>,
+        slot: &mut dyn FnMut(&'q Expr) -> Option<Slot>,
+    ) -> Option<Test<'q>> {
+        let [x, p, e @ ..] = args else { return None };
+        let Some(Slot::At(at)) = slot(x) else {
+            return None;
+        };
+        let field = &c.schema.fields[at];
+        if field.ty != DataType::Text {
+            return None;
+        }
+        let fold = field.case_fold();
+        #[cfg(feature = "nocase")]
+        let fold = fold.or(ci.then_some(CaseFold::Unicode));
+        #[cfg(not(feature = "nocase"))]
+        if ci {
+            return None;
+        }
+        let esc = match e {
+            [] => String::new(),
+            [e] => match value(e)? {
+                Value::Text(t) => t,
+                _ => return None,
+            },
+            _ => return None,
+        };
+        let Value::Text(pat) = value(p)? else {
+            return None;
+        };
+        let fit = |s: &str| match fold {
+            Some(f) => crate::case::fold(s, f).into_owned(),
+            None => s.to_string(),
+        };
+        let pat = fit(&pat);
+        if esc.chars().nth(1).is_some() || fit(&esc) != esc {
+            return None;
+        }
+        like_pattern(&[], pat.as_bytes(), esc.as_bytes())?;
+        Some(Test::Pattern(
+            Slot::At(at),
+            Box::new(Pattern { pat, esc, fold }),
+        ))
+    }
+
+    /// `distance(<point field>, <point>) <op> <value>` -- the call's
+    /// arguments either way round, the call on either side -- and
+    /// `within(<point field>, <box>)`, the point, the box and the value
+    /// constants: bound as [`Test::Distance`] and [`Test::Within`], a row's
+    /// point read off its bytes with the rest of its fields where `eval`
+    /// would look the field up by name and the function by its, and
+    /// allocate the call's arguments. `None` for anything else.
+    #[cfg(feature = "geo")]
+    fn bind_geo(
+        c: &Collection,
+        e: &'q Expr,
+        value: &dyn Fn(&Expr) -> Option<Value>,
+        slot: &mut dyn FnMut(&'q Expr) -> Option<Slot>,
+    ) -> Option<Test<'q>> {
+        let point = |e: &Expr| match e {
+            Expr::Field(name) => c.schema.field(name).is_some_and(|f| f.ty == DataType::Geo),
+            _ => false,
+        };
+        // `distance(<point field>, <point>)` either way round: the field,
+        // the point, and whether the field is the first argument.
+        let distance = |e: &'q Expr| -> Option<(&'q Expr, (f64, f64), bool)> {
+            let Expr::Call(name, args) = e else {
+                return None;
+            };
+            let ([a, b], true) = (
+                args.as_slice(),
+                name.eq_ignore_ascii_case(crate::geo::DISTANCE),
+            ) else {
+                return None;
+            };
+            let (field, other, first) = match (point(a), point(b)) {
+                (true, _) => (a, b, true),
+                (false, true) => (b, a, false),
+                _ => return None,
+            };
+            let to = crate::geo::point_of(&value(other)?).ok()??;
+            Some((field, to, first))
+        };
+        match e {
+            Expr::Cmp(op, a, b) => {
+                let ((field, to, field_first), other, call_first) = match distance(a) {
+                    Some(d) => (d, b, true),
+                    None => (distance(b)?, a, false),
+                };
+                let value = value(other)?;
+                Some(Test::Distance {
+                    slot: slot(field)?,
+                    to,
+                    field_first,
+                    op: *op,
+                    value,
+                    call_first,
+                })
+            }
+            Expr::Call(name, args) if name.eq_ignore_ascii_case(crate::geo::WITHIN) => {
+                let [f, b] = args.as_slice() else {
+                    return None;
+                };
+                let bx = crate::geo::box_of(&value(b)?).ok()??;
+                match point(f) {
+                    true => Some(Test::Within(slot(f)?, bx)),
+                    false => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether the stored row `id` passes the filter; `ctx` is what the
+    /// filter was bound with, for what it evaluates as `eval` does.
+    ///
+    /// Inlined into its scans natively: left to the compiler, the paths'
+    /// branch beside a field's read had it out of line, and a scan of
+    /// 100 000 rows by a text field took 3.05 -> 3.17 ms; inlined, 3.07,
+    /// and one by two numbers 3.47 -> 3.36.
+    #[cfg_attr(not(target_arch = "wasm32"), inline(always))]
+    fn matches(&self, id: DocId, ctx: &EvalCtx) -> Result<bool> {
+        let mut vals = self.vals.borrow_mut();
+        if !self.positions.is_empty()
+            && !self.c.store.read_fields(id, &self.positions, &mut vals)?
+        {
+            vals.clear();
+            vals.resize(self.positions.len(), Value::Null);
+        }
+        // A filter over no path reads none, and asks no more than this,
+        // the reading out of line so that what is inlined into every scan
+        // stays the size it was. Its paths' values go after its fields',
+        // which `read_fields` leaves where they are.
+        if !self.paths.is_empty() {
+            self.read_paths(id, &mut vals)?;
+        }
+        self.test(&self.root, id, &vals, &Value::Int(id as i64), ctx)
+    }
+
+    /// A point's test or a `nocase` field's, of a row's value `v`.
+    #[inline(never)]
+    fn apart(&self, slot: Slot, t: &Test, v: &Value) -> bool {
+        match t {
+            Test::Folded(_, f, folded) => self.folded(slot, v, *f, folded),
+            Test::Pattern(_, p) => match v {
+                Value::Text(h) => {
+                    let h = match p.fold {
+                        Some(f) => crate::case::fold(h, f),
+                        None => std::borrow::Cow::Borrowed(h.as_str()),
+                    };
+                    like_pattern(h.as_bytes(), p.pat.as_bytes(), p.esc.as_bytes()) == Some(true)
+                }
+                _ => false,
+            },
+            #[cfg(feature = "geo")]
+            t => geo_test(t, v),
+            #[cfg(not(feature = "geo"))]
+            _ => false,
+        }
+    }
+
+    /// A [`Folded`] test of a row's value `v`.
+    fn folded(&self, slot: Slot, v: &Value, f: CaseFold, t: &Folded) -> bool {
+        let Value::Text(x) = v else {
+            // No text: a null, which compares as it does anywhere.
+            return match t {
+                Folded::Cmp {
+                    op, value, first, ..
+                } => {
+                    let (l, r) = if *first { (v, value) } else { (value, v) };
+                    compare(*op, l, r, &|| TextOrder::BYTES)
+                }
+                Folded::In(values) | Folded::InSet(values, _) => {
+                    values.iter().any(|w| w.cmp_value(v) == Ordering::Equal)
+                }
+                Folded::Like(_) => false,
+            };
+        };
+        // The row's fold, whole, into the scratch text.
+        let whole = || {
+            let mut s = self.scratch.borrow_mut();
+            s.clear();
+            crate::case::fold_into(x, f, &mut s);
+            s
+        };
+        match t {
+            Folded::Cmp {
+                op,
+                value,
+                first,
+                coll,
+            } => {
+                let y = value.as_text().unwrap_or("");
+                let o = match (op, coll) {
+                    (CmpOp::Eq | CmpOp::Ne, _) | (_, None) => crate::case::cmp_to_folded(x, y, f),
+                    (_, Some(c)) => c.compare(&whole(), y),
+                };
+                let o = if *first { o } else { o.reverse() };
+                match op {
+                    CmpOp::Eq => o == Ordering::Equal,
+                    CmpOp::Ne => o != Ordering::Equal,
+                    CmpOp::Lt => o == Ordering::Less,
+                    CmpOp::Le => o != Ordering::Greater,
+                    CmpOp::Gt => o == Ordering::Greater,
+                    CmpOp::Ge => o != Ordering::Less,
+                }
+            }
+            Folded::InSet(values, set)
+                if set.get_or_init(|| in_set(self.c, slot, values)).is_some() =>
+            {
+                let s = whole();
+                let mut key = self.key.borrow_mut();
+                key.clear();
+                key.push(crate::codec::TAG_TEXT);
+                crate::codec::encode_str(&mut key, &s);
+                set.get()
+                    .and_then(Option::as_ref)
+                    .is_some_and(|set| set.get(&key).is_some())
+            }
+            // A short list, or a long one no set holds: a value at a time.
+            Folded::In(values) | Folded::InSet(values, _) => values.iter().any(|w| match w {
+                Value::Text(y) => crate::case::cmp_to_folded(x, y, f) == Ordering::Equal,
+                w => w.cmp_value(v) == Ordering::Equal,
+            }),
+            Folded::Like(needle) => {
+                let (h, n) = (whole(), needle.as_bytes());
+                n.is_empty() || h.as_bytes().windows(n.len()).any(|w| w == n)
+            }
+        }
+    }
+
+    #[inline(never)]
+    fn read_paths(&self, id: DocId, vals: &mut Vec<Value>) -> Result<()> {
+        let n = self.positions.len();
+        vals.resize(n + self.paths.len(), Value::Null);
+        if !self.c.store.read_paths(id, &self.paths, &mut vals[n..])? {
+            vals[n..].fill(Value::Null);
+        }
+        Ok(())
+    }
+
+    fn test(
+        &self,
+        t: &Test,
+        id: DocId,
+        vals: &[Value],
+        idv: &Value,
+        ctx: &EvalCtx,
+    ) -> Result<bool> {
+        let get = |s: Slot| match s {
+            Slot::Id => idv,
+            Slot::At(p) => &vals[self.index_of[p]],
+            Slot::Path(n) => &vals[self.positions.len() + n],
+        };
+        Ok(match t {
+            Test::And(a, b) => {
+                self.test(a, id, vals, idv, ctx)? && self.test(b, id, vals, idv, ctx)?
+            }
+            Test::Or(a, b) => {
+                self.test(a, id, vals, idv, ctx)? || self.test(b, id, vals, idv, ctx)?
+            }
+            Test::Not(a) => !self.test(a, id, vals, idv, ctx)?,
+            Test::IsNull(s) => get(*s).is_null(),
+            Test::Cmp {
+                op,
+                slot,
+                value,
+                first,
+                coll,
+            } => {
+                let f = get(*slot);
+                let (l, r) = if *first { (f, value) } else { (value, f) };
+                // A `nocase` field's value and its value are folds already.
+                let order = TextOrder {
+                    coll: *coll,
+                    fold: None,
+                };
+                compare(*op, l, r, &|| order)
+            }
+            Test::In(s, values) => {
+                let f = get(*s);
+                values.iter().any(|v| v.cmp_value(f) == Ordering::Equal)
+            }
+            Test::InSet(s, values, set) => {
+                let f = get(*s);
+                match set.get_or_init(|| in_set(self.c, *s, values)) {
+                    Some(set) => {
+                        let mut key = self.key.borrow_mut();
+                        key.clear();
+                        crate::codec::encode_value(&mut key, f);
+                        !f.is_null() && set.get(&key).is_some()
+                    }
+                    None => values.iter().any(|v| v.cmp_value(f) == Ordering::Equal),
+                }
+            }
+            Test::Like(s, v) => match (get(*s).as_text(), v.as_text()) {
+                (Some(hay), Some(needle)) => like_match(hay, needle),
+                _ => false,
+            },
+            Test::Has(s, v) => match get(*s) {
+                Value::List(items) => items.iter().any(|i| i.cmp_value(v) == Ordering::Equal),
+                _ => false,
+            },
+            // One arm, out of line, for the tests no scan of a plain field
+            // runs: an arm of its own for a `nocase` field's took the
+            // browser module's count over 20 000 rows by two numbers, which
+            // runs neither, 1.25 -> 1.34 ms.
+            #[cfg(feature = "geo")]
+            Test::Distance { slot, .. }
+            | Test::Within(slot, _)
+            | Test::Folded(slot, ..)
+            | Test::Pattern(slot, _) => self.apart(*slot, t, get(*slot)),
+            #[cfg(not(feature = "geo"))]
+            Test::Folded(slot, ..) | Test::Pattern(slot, _) => self.apart(*slot, t, get(*slot)),
+            Test::Eval(e) => {
+                let mut row = StoreRow {
+                    store: &self.c.store,
+                    schema: &self.c.schema,
+                    id,
+                };
+                truthy(&eval(e, &mut row, ctx)?)
+            }
+        })
+    }
+}
+
+/// A point's test, out of `Filter::test`'s line so that the test every
+/// scan runs stays the size it was: in it, `test` grew by 367 bytes of the
+/// browser module, a quarter. The module's scans measured the same either
+/// way, and with no point in the scan's path at all: 3% slower than main's
+/// (a count over 20 000 rows 1.20 -> 1.23 ms), as main's own were with 26
+/// KB of float formatting that nothing calls -- where the code lands.
+///
+/// A row whose latitude alone puts it past a number compares as its
+/// distance would, with no trigonometry (`geo::past`): a scan of a million
+/// rows by a radius went 136 -> 22 ms.
+#[cfg(feature = "geo")]
+#[inline(never)]
+fn geo_test(t: &Test, v: &Value) -> bool {
+    match t {
+        Test::Distance {
+            to,
+            field_first,
+            op,
+            value,
+            call_first,
+            ..
+        } => {
+            let d = match crate::geo::point_in(v) {
+                Some(p) => Value::Float(
+                    match value.as_f64().and_then(|r| crate::geo::past(p, *to, r)) {
+                        Some(floor) => floor,
+                        None if *field_first => crate::geo::distance(p, *to),
+                        None => crate::geo::distance(*to, p),
+                    },
+                ),
+                None => Value::Null,
+            };
+            let (l, r) = if *call_first {
+                (&d, value)
+            } else {
+                (value, &d)
+            };
+            compare(*op, l, r, &|| TextOrder::BYTES)
+        }
+        Test::Within(_, b) => crate::geo::point_in(v).is_some_and(|p| b.holds(p)),
+        _ => false,
+    }
+}
+
+/// A filter evaluated over `rows` in blocks taken a stride apart, so that
+/// the first matches it finds come from across the whole collection rather
+/// than its oldest rows: a filter for the newest rows, which sit at the end
+/// of the id order, is known to be large as soon as one for rows everywhere
+/// -- `recent >= 20` over 200 000 rows, the newest 23%, took 1.67 ms against
+/// 1.12 for the same share spread out, and 16.7 before the probe. It can
+/// stop at a number of matches and later carry on from where it stopped.
+struct FilterProbe {
+    rows: Vec<DocId>,
+    matched: Vec<DocId>,
+    tested: usize,
+    /// The next row to test, and the pass it belongs to: pass `p` reads
+    /// blocks `p`, `p + PROBE_STRIDE`, `p + 2 * PROBE_STRIDE`, ...
+    next: usize,
+    pass: usize,
+}
+
+/// Rows read in sequence. Blocks rather than single rows a stride apart:
+/// reading every 64th row took a scan of the whole set from 17.6 ms to 32.1,
+/// because a row read alone is a row the prefetcher did not see coming.
+const PROBE_BLOCK: usize = 256;
+/// Blocks between two read in the same pass.
+const PROBE_STRIDE: usize = 16;
+
+impl FilterProbe {
+    fn new(rows: Vec<DocId>) -> FilterProbe {
+        FilterProbe {
+            rows,
+            matched: Vec::new(),
+            tested: 0,
+            next: 0,
+            pass: 0,
+        }
+    }
+
+    /// Rows that are the answer already, with nothing left to test.
+    fn done(rows: Vec<DocId>) -> FilterProbe {
+        FilterProbe {
+            rows: Vec::new(),
+            matched: rows,
+            tested: 0,
+            next: 0,
+            pass: 0,
+        }
+    }
+
+    /// Tests rows until `cap` have matched or none is left; true when none
+    /// is left, which makes `matched` the whole set.
+    fn run(&mut self, cap: usize, matches: impl Fn(DocId) -> Result<bool>) -> Result<bool> {
+        while self.pass < PROBE_STRIDE {
+            while self.next < self.rows.len() {
+                if self.matched.len() >= cap {
+                    return Ok(false);
+                }
+                let id = self.rows[self.next];
+                self.next += 1;
+                if self.next.is_multiple_of(PROBE_BLOCK) {
+                    self.next += (PROBE_STRIDE - 1) * PROBE_BLOCK;
+                }
+                self.tested += 1;
+                if matches(id)? {
+                    self.matched.push(id);
+                }
+            }
+            self.pass += 1;
+            self.next = self.pass * PROBE_BLOCK;
+        }
+        Ok(true)
+    }
+
+    fn into_sorted(self) -> Vec<DocId> {
+        let mut ids = self.matched;
+        ids.sort_unstable();
+        ids
+    }
+}
+
+/// What an index over several fields answers of a filter: the run of its
+/// entries the `and` chain's equalities on its first parts and the
+/// comparisons on the part after them name.
+struct Composed {
+    /// The spans: one, or one for each combination of the elements of the
+    /// `in` lists that fix parts.
+    spans: Vec<crate::composite::Span>,
+    /// How many leading parts an equality or an `in` fixes.
+    fixed: usize,
+    /// Whether an `in` fixed one, making several spans.
+    listed: bool,
+    /// Which of the fixed parts an `in` fixed, a bit each: they hold
+    /// several values, which an `order` on them puts in order.
+    inlisted: u8,
+    /// Whether the part after the fixed ones is narrowed by a range.
+    ranged: bool,
+    /// Whether the spans are the filter's whole answer: every term of it
+    /// one the index said exactly, and no row of the index apart.
+    exact: bool,
+}
+
+/// The most spans the `in` lists over an index's parts make together, past
+/// which the lists are tested row by row: each span is two searches.
+const MAX_SPANS: usize = 256;
+
+/// The plan of the index over several fields `comp`, `ix`, for `filter`:
+/// its first parts fixed by the chain's equalities -- or `in` lists, each
+/// element said exactly as a key or none of the list taken -- in order, as
+/// far as one is fixed, and the part after them narrowed by the chain's
+/// comparisons on it. Every term it did not take is tested row by row.
+fn composed(
+    comp: &Composite,
+    ix: &CompositeIndex,
+    filter: Option<&Expr>,
+    params: &[Value],
+) -> Composed {
+    let mut terms = Vec::new();
+    if let Some(f) = filter {
+        f.conjuncts(&mut terms);
+    }
+    let mut used = vec![false; terms.len()];
+    let mut prefixes: Vec<Vec<u8>> = vec![Vec::new()];
+    let (mut fixed, mut listed, mut inlisted) = (0, false, 0u8);
+    'parts: for (i, (k, _)) in comp.keys.iter().enumerate() {
+        for (j, e) in terms.iter().enumerate() {
+            let Some((name, v)) = e.equality_key(params).filter(|_| !used[j]) else {
+                continue;
+            };
+            if let (true, Some(b)) = (name == k, ix.literal(i, v)) {
+                for p in prefixes.iter_mut() {
+                    p.extend_from_slice(&b);
+                }
+                used[j] = true;
+                fixed += 1;
+                continue 'parts;
+            }
+        }
+        for (j, e) in terms.iter().enumerate() {
+            let (Expr::In(lhs, items), false) = (e, used[j]) else {
+                continue;
+            };
+            if !matches!(lhs.as_ref(), Expr::Field(n) if n == k) {
+                continue;
+            }
+            if items.len() * prefixes.len() > MAX_SPANS {
+                continue;
+            }
+            // Every element said exactly, once: two that coerce to one key
+            // (`year in [2024, 2024.0]`) would read its span twice.
+            let mut parts: Vec<Vec<u8>> = Vec::with_capacity(items.len());
+            let mut whole = true;
+            for it in items {
+                let v = match it {
+                    Expr::Lit(v) => Some(v),
+                    Expr::Param(p) => params.get(*p),
+                    _ => None,
+                };
+                match v.and_then(|v| ix.literal(i, v)) {
+                    Some(b) if !parts.contains(&b) => parts.push(b),
+                    Some(_) => {}
+                    None => {
+                        whole = false;
+                        break;
+                    }
+                }
+            }
+            if !whole {
+                continue;
+            }
+            let mut next = Vec::with_capacity(prefixes.len() * parts.len());
+            for p in &prefixes {
+                for b in &parts {
+                    let mut q = p.clone();
+                    q.extend_from_slice(b);
+                    next.push(q);
+                }
+            }
+            prefixes = next;
+            used[j] = true;
+            listed = true;
+            inlisted |= 1 << i;
+            fixed += 1;
+            continue 'parts;
+        }
+        break;
+    }
+    let mut range = crate::composite::PartRange {
+        lo: std::ops::Bound::Unbounded,
+        hi: std::ops::Bound::Unbounded,
+    };
+    let mut ranged = false;
+    if let Some((k, _)) = comp.keys.get(fixed) {
+        for (j, e) in terms.iter().enumerate() {
+            let Some((name, op, v)) = e.range_key(params).filter(|_| !used[j]) else {
+                continue;
+            };
+            if name == k && ix.narrow(&mut range, fixed, op, v) {
+                used[j] = true;
+                ranged = true;
+            }
+        }
+    }
+    let none = by_kinds(comp, ix, &terms, params, fixed, &mut used, &mut ranged);
+    let spans = match none {
+        true => Vec::new(),
+        false => prefixes
+            .iter()
+            .map(|p| ix.span(p, fixed, ranged.then_some(&range)))
+            .collect(),
+    };
+    Composed {
+        spans,
+        fixed,
+        listed,
+        inlisted,
+        ranged,
+        exact: used.iter().all(|u| *u) && ix.apart().is_empty(),
+    }
+}
+
+/// The terms of a [`composed`] plan left untaken that compare a typed part
+/// with a value of another kind, true of every value it holds or of none
+/// (`by_kind`): what a scoped token's rule ANDs in to hold a claim to its
+/// kind (`level > true` beside `level <= $jwt.c`). True, it bounds nothing
+/// and is taken where the part is fixed, whose value is one of its kind,
+/// or ranged, whose range holds no `null`; false, no row is in the spans,
+/// which is the answer: `true`. Left to be tested row by row, it read
+/// every row of a span a count was answered from -- a scoped count over 5
+/// 000 of 200 000 rows took 285 us where the server token's took 0.85,
+/// and takes 1.3 now; over 500 of 20 000, 31 us -> 1.4. Natively alone,
+/// as `by_kind` is.
+#[cfg(not(target_arch = "wasm32"))]
+fn by_kinds(
+    comp: &Composite,
+    ix: &CompositeIndex,
+    terms: &[&Expr],
+    params: &[Value],
+    fixed: usize,
+    used: &mut [bool],
+    ranged: &mut bool,
+) -> bool {
+    let mut none = false;
+    for (j, e) in terms.iter().enumerate() {
+        let Some((name, op, v)) = e.range_key(params).filter(|_| !used[j]) else {
+            continue;
+        };
+        let Some(i) = comp.keys.iter().position(|(k, _)| k == name) else {
+            continue;
+        };
+        match ix.part_type(i).and_then(|ty| by_kind(&ty, op, v)) {
+            Some(false) => {
+                none = true;
+                used[j] = true;
+                *ranged |= i == fixed;
+            }
+            Some(true) if i <= fixed => {
+                used[j] = true;
+                *ranged |= i == fixed;
+            }
+            _ => {}
+        }
+    }
+    none
+}
+
+#[cfg(target_arch = "wasm32")]
+fn by_kinds(
+    _: &Composite,
+    _: &CompositeIndex,
+    _: &[&Expr],
+    _: &[Value],
+    _: usize,
+    _: &mut [bool],
+    _: &mut bool,
+) -> bool {
+    false
+}
+
+/// Whether `order`, over a run of `comp`'s entries whose first `fixed`
+/// parts the run fixes, is the run's order -- forwards, or every part
+/// reversed -- and the part after the last it reads: what a walk of the
+/// run takes. `None` where it sorts. A part an equality fixes orders
+/// nothing; one an `in` fixes (`inlisted`, a bit a part) holds several
+/// values, which the walk of each span does not put in order.
+fn walks(
+    comp: &Composite,
+    fixed: usize,
+    inlisted: u8,
+    order: &[Sort],
+    schema: &Schema,
+) -> Option<(bool, usize)> {
+    let (mut next, mut back) = (fixed, None);
+    for s in order {
+        match comp.keys[..fixed].iter().position(|(k, _)| *k == s.field) {
+            Some(i) if inlisted & (1 << i) == 0 => continue,
+            Some(_) => return None,
+            None => {}
+        }
+        let (k, desc) = comp.keys.get(next)?;
+        // The index holds its field's order, a collation's or the bytes':
+        // a key in another one sorts.
+        let own = schema.field(k).and_then(|f| f.collate);
+        if *k != s.field || s.collate.is_some_and(|x| Some(x) != own) {
+            return None;
+        }
+        let rev = s.asc == *desc;
+        if *back.get_or_insert(rev) != rev {
+            return None;
+        }
+        next += 1;
+    }
+    back.map(|b| (b, next))
+}
+
+/// Whether the `and` chain of `filter` names `field` -- an equality, an
+/// `in`, a comparison: what an index over several fields whose first part
+/// it is could answer anything of. Asked before the index is reached for,
+/// so a read it could not help neither builds one nor, pinned, meets one.
+fn names_first(filter: Option<&Expr>, params: &[Value], field: &str) -> bool {
+    let mut terms = Vec::new();
+    if let Some(f) = filter {
+        f.conjuncts(&mut terms);
+    }
+    terms.iter().any(|e| match e {
+        Expr::In(lhs, _) => matches!(lhs.as_ref(), Expr::Field(n) if n == field),
+        e => e.range_key(params).is_some_and(|(n, ..)| n == field),
+    })
+}
+
+/// How `explain` says what a plan of an index over several fields reads:
+/// `the index on (owner, created desc), owner fixed, a range on created`.
+fn composed_text(comp: &Composite, p: &Composed) -> String {
+    let mut s = format!("the index on ({})", comp.keys_text());
+    if p.fixed > 0 {
+        s.push_str(", ");
+        for (i, (k, _)) in comp.keys[..p.fixed].iter().enumerate() {
+            if i > 0 {
+                s.push_str(", ");
+            }
+            s.push_str(k);
+        }
+        s.push_str(" fixed");
+        if p.listed {
+            s.push_str(&format!(", {} spans", p.spans.len()));
+        }
+    }
+    if p.ranged {
+        s.push_str(", a range on ");
+        s.push_str(&comp.keys[p.fixed].0);
+    }
+    s
+}
+
+/// The range a filter's comparisons put on an ordered field, and whether
+/// every one of them could be said as a key. A comparison the key space
+/// cannot express exactly -- `price < 12.5` on an `int` field -- is left out
+/// of the range, which then only narrows, and the filter is evaluated.
+fn sorted_range(
+    fd: &crate::schema::Field,
+    field: &str,
+    f: &Expr,
+    params: &[Value],
+) -> Option<(SortRange, bool)> {
+    let ty = &fd.ty;
+    let mut ranges = Vec::new();
+    f.conjunct_ranges(params, &mut ranges);
+    let mut range = SortRange::all(fd.collate);
+    let (mut any, mut exact) = (false, true);
+    for (name, op, v) in ranges {
+        if name != field {
+            continue;
+        }
+        match SortedIndex::bound(ty, fd.case_fold(), v) {
+            Some(key) => {
+                range.narrow(op, key);
+                any = true;
+            }
+            None => match by_kind(ty, op, v) {
+                Some(true) => {}
+                Some(false) => {
+                    range.close(ty);
+                    any = true;
+                }
+                None => exact = false,
+            },
+        }
+    }
+    any.then_some((range, exact))
+}
+
+/// What a comparison of a typed field with a value of another kind is of
+/// every row ([`SortedIndex::by_kind`]): true, no bound; false, no row.
+/// Natively alone: what writes such a literal is a scoped token's rule
+/// (`fennec_http::access`), which the browser module has none of, and there
+/// it was 611 bytes; it evaluates such a comparison row by row, as before.
+#[cfg(not(target_arch = "wasm32"))]
+fn by_kind(ty: &DataType, op: CmpOp, v: &Value) -> Option<bool> {
+    SortedIndex::by_kind(ty, op, v)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn by_kind(_: &DataType, _: CmpOp, _: &Value) -> Option<bool> {
+    None
+}
+
+/// The field `e` holds to the edge below a text that reads as a time,
+/// `x >= "" or x >= "<text>"`: what a scoped token's rule ANDs in beside
+/// `x <= $jwt.until` (`fennec_http::access`), whose claim a time compares
+/// with as the time it reads and a text as the text it is. No two
+/// comparisons ANDed said both -- an int and a time order alike against
+/// every value but such a text -- so it is an `or`, true of every text by
+/// the first and of every time from the second's on.
+#[cfg(not(target_arch = "wasm32"))]
+fn kind_split(e: &Expr) -> Option<&str> {
+    let Expr::Or(a, b) = e else {
+        return None;
+    };
+    match (a.as_ref(), b.as_ref()) {
+        (Expr::Cmp(CmpOp::Ge, x, t), Expr::Cmp(CmpOp::Ge, y, u)) => {
+            match (&**x, &**t, &**y, &**u) {
+                (
+                    Expr::Field(f),
+                    Expr::Lit(Value::Text(t)),
+                    Expr::Field(g),
+                    Expr::Lit(Value::Text(_)),
+                ) if f == g && t.is_empty() => Some(f),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Whether [`kind_split`] is in `e`'s conditions.
+#[cfg(not(target_arch = "wasm32"))]
+fn kind_splits(e: &Expr) -> bool {
+    match e {
+        Expr::Or(..) if kind_split(e).is_some() => true,
+        Expr::And(a, b) | Expr::Or(a, b) => kind_splits(a) || kind_splits(b),
+        Expr::Not(a) => kind_splits(a),
+        _ => false,
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn kind_splits(_: &Expr) -> bool {
+    false
+}
+
+/// Each [`kind_split`] in `e` made the side its field's declared type
+/// reads: a `timestamp` field's values are times, which no text but one
+/// reading as a time ranks with, so the second; any other field's -- a
+/// json one's among them, whose times are their ISO texts -- are no
+/// time, and every one the second takes the first takes too, `""` being
+/// below every text. Either way the same rows, `null`s left out by both,
+/// and a comparison an ordered index says as a key, where the `or` was
+/// tested row by row through every row of its range.
+#[cfg(not(target_arch = "wasm32"))]
+fn fold_kinds(e: &mut Expr, schema: &Schema) {
+    if let Some(f) = kind_split(e) {
+        let time = schema.field(f).is_some_and(|f| f.ty == DataType::Timestamp);
+        if let Expr::Or(a, b) = std::mem::replace(e, Expr::Lit(Value::Null)) {
+            *e = if time { *b } else { *a };
+        }
+        return;
+    }
+    match e {
+        Expr::And(a, b) | Expr::Or(a, b) => {
+            fold_kinds(a, schema);
+            fold_kinds(b, schema);
+        }
+        Expr::Not(a) => fold_kinds(a, schema),
+        _ => {}
+    }
+}
+
+/// Sort keys: a field position (`None` for `id`), whether it ascends, how
+/// its text is compared -- its collation, its fold -- and the keys past the
+/// field of a path into a json one.
+type OrderKey = (Option<usize>, bool, TextOrder, Option<Box<str>>);
+
+/// The key `s` names in `schema`. `collate` is refused on anything but text:
+/// on a number it would claim an order it does not change. `owner` goes in
+/// front of the field's name in an error -- `reviews.` for a `lookup`'s.
+fn order_key(schema: &Schema, s: &Sort, owner: &str) -> Result<OrderKey> {
+    let f = &s.field;
+    let (pos, keys) = match f == "id" {
+        true => (None, None),
+        false => {
+            let (p, keys) = source_or_err(schema, f, owner)?;
+            (Some(p), keys.map(Box::from))
+        }
+    };
+    if let Some(c) = s.collate {
+        let ty = match (pos, &keys) {
+            // A path's values have no type: a text among them orders in
+            // the collation, and the rest as they always do.
+            (_, Some(_)) => &DataType::Text,
+            (Some(p), None) => &schema.fields[p].ty,
+            (None, _) => &DataType::Int,
+        };
+        if !collatable(ty) {
+            return Err(Error::Query(format!(
+                "`collate {}` orders text; `{owner}{f}` is {}",
+                c.name(),
+                ty.name()
+            )));
+        }
+    }
+    // A field in a collation orders in it unless the query names one, and
+    // a `nocase` one by its fold whatever the collation.
+    let field = match pos.filter(|_| keys.is_none()) {
+        Some(p) => schema.fields[p].text_order(),
+        None => TextOrder::BYTES,
+    };
+    let order = TextOrder {
+        coll: s.collate.or(field.coll),
+        fold: field.fold,
+    };
+    Ok((pos, s.asc, order, keys))
+}
+
+/// The order `order` asks for between two rows' keys, before any tie-break.
+fn rank(keys: &[OrderKey], a: &[Value], b: &[Value]) -> Ordering {
+    for (i, (_, asc, text, _)) in keys.iter().enumerate() {
+        let o = match text.is_bytes() {
+            true => a[i].cmp_value(&b[i]),
+            false => text.compare_values(&a[i], &b[i]),
+        };
+        if o != Ordering::Equal {
+            return if *asc { o } else { o.reverse() };
+        }
+    }
+    Ordering::Equal
+}
+
+/// `ids` in the order `keys` ask for, the first `k` of them.
+///
+/// Every key is read whatever `k` is -- the first twenty cannot be known
+/// without looking at all of them -- so the cost follows the number of
+/// matches, not the limit; only an ordered index would change that. What `k`
+/// buys is the sort: the rows past it are partitioned away in linear time.
+/// Over a million rows `order created desc limit 20` went 49.4 -> 28.4 ms,
+/// and most of that was not the sort but the one small `Vec` each row used to
+/// hold its keys, now a single flat buffer.
+///
+/// A streaming heap of `k` rows would have kept the buffer out of memory,
+/// and was measured: 77 ms on the same query. `created` grows with the id,
+/// so under `desc` every row beats the ones kept and the heap sifts on every
+/// row -- and "the latest twenty" is the ordering asked for most.
+fn order_ids(store: &Store, ids: &[DocId], keys: &[OrderKey], k: usize) -> Result<Vec<DocId>> {
+    if k == 0 {
+        return Ok(Vec::new());
+    }
+    let n = keys.len();
+    let mut flat: Vec<Value> = Vec::with_capacity(ids.len() * n);
+    // The read stays inline: behind a closure returning `Result<Value>` the
+    // same query measured 39 ms.
+    for &id in ids {
+        for (pos, _, _, path) in keys {
+            flat.push(match (pos, path) {
+                (None, _) => Value::Int(id as i64),
+                (Some(p), None) => store.read_field(id, *p)?.unwrap_or(Value::Null),
+                (Some(p), Some(k)) => store.read_path(id, *p, k)?.unwrap_or(Value::Null),
+            });
+        }
+    }
+    let unfolded: Vec<OrderKey>;
+    let keys = match keys.iter().any(|k| k.2.fold.is_some()) {
+        false => keys,
+        true => {
+            unfolded = folded_keys(&mut flat, keys);
+            &unfolded
+        }
+    };
+    let idx = order_rows(&flat, n, ids.len(), keys, k);
+    Ok(idx.into_iter().map(|i| ids[i]).collect())
+}
+
+/// The `nocase` keys' texts in `flat`, rows of `keys.len()`, made their
+/// folds, once a row, and the keys that order them -- by their bytes or
+/// their collation, the fold done. Compared by their folds as they were,
+/// two texts were folded again at every comparison, and an order of 100 000
+/// rows by a name, a third past ASCII, took 8.6 -> 17.4 ms; this is 16.2.
+/// A pass of its own after the reading, so that an order over no `nocase`
+/// key reads as it did: asked of each value as it was read, the browser
+/// module's scan with an order went 1.76 -> 1.85 ms (`make wasm-speed`).
+#[inline(never)]
+fn folded_keys(flat: &mut [Value], keys: &[OrderKey]) -> Vec<OrderKey> {
+    let mut scratch = String::new();
+    for (i, v) in flat.iter_mut().enumerate() {
+        if let (Some(f), Value::Text(t)) = (keys[i % keys.len()].2.fold, v) {
+            // Folded into the text the value before was read into, which
+            // this one's then is: no text made for it.
+            scratch.clear();
+            crate::case::fold_into(t, f, &mut scratch);
+            std::mem::swap(t, &mut scratch);
+        }
+    }
+    let mut out = Vec::with_capacity(keys.len());
+    for (p, asc, t, path) in keys {
+        let t = TextOrder {
+            coll: t.coll,
+            fold: None,
+        };
+        out.push((*p, *asc, t, path.clone()));
+    }
+    out
+}
+
+/// The first `k` of `count` rows, each `n` keys wide in `flat`, in the
+/// order `keys` ask for: `order` over documents, and over the groups of an
+/// aggregate -- one function, so the browser module holds one sort for both.
+fn order_rows(flat: &[Value], n: usize, count: usize, keys: &[OrderKey], k: usize) -> Vec<usize> {
+    let row = |i: usize| &flat[i * n..i * n + n];
+    // Ties fall back to the position the row came in, which is what the
+    // stable sort this replaced gave them: a selection is not stable, and a
+    // page must not change with the plan.
+    let cmp = |a: &usize, b: &usize| rank(keys, row(*a), row(*b)).then(a.cmp(b));
+    let mut idx: Vec<usize> = (0..count).collect();
+    if k == 0 {
+        return Vec::new();
+    }
+    if k < idx.len() {
+        idx.select_nth_unstable_by(k - 1, cmp);
+        idx.truncate(k);
+    }
+    idx.sort_unstable_by(cmp);
+    idx
+}
+
+/// The query vector of `near`. Three forms are accepted, none of them
+/// silently mangled.
+///
+/// The text form (`near embed '[1,2,3]'`) is pgvector's notation, and a
+/// string is what most clients send. On the parameter path the same
+/// value was already parsed into a list; on the literal path it stayed
+/// `text` and raised a type error.
+fn near_vector(v: Value) -> Result<Vec<f32>> {
+    let items = match v {
+        Value::Vector(v) => return Ok(v),
+        Value::List(items) => items,
+        Value::Text(s) => match crate::json::parse(s.trim()) {
+            // The JSON parser already reduces a numeric array to a vector;
+            // a mixed array comes back as a list and is checked below.
+            Ok(Value::Vector(v)) => return Ok(v),
+            Ok(Value::List(items)) => items,
+            _ => {
+                return Err(Error::Type(format!(
+                    "near expects a vector, unparseable text: {s}"
+                )))
+            }
+        },
+        other => {
+            return Err(Error::Type(format!(
+                "near expects a vector, found {}",
+                other.type_name()
+            )))
+        }
+    };
+    // A non-numeric component used to silently become 0.0: a result that
+    // corrupts the distance without erroring, the worst kind of wrong answer.
+    Value::floats(&items).map_err(|i| {
+        Error::Type(format!(
+            "non-numeric value in the near vector: {}",
+            i.type_name()
+        ))
+    })
+}

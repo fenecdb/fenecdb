@@ -1,7 +1,7 @@
-// The data the "fenecdb data" dashboard (grafana/fenecdb-data.json) reads:
+// The data the "fennecdb data" dashboard (grafana/fennecdb-data.json) reads:
 // thirty days of a product site's events, made by examples/analytics'
 // traffic simulator, and the trades of twenty invented symbols since
-// midnight UTC a week ago. docker-compose.yml runs it once fenec-server is
+// midnight UTC a week ago. docker-compose.yml runs it once fennec-server is
 // up and before Grafana starts; a database that already holds the
 // collections keeps them.
 //
@@ -14,22 +14,22 @@
 // Node strips sim.ts's types as it imports it (22.18 and later), so there
 // is nothing to build or install.
 //
-//   FENEC_URL            http://127.0.0.1:8080
-//   FENEC_HTTP_TOKEN     the server's token: makes the collections, writes
-//   FENEC_JWT_SECRET     the secret fenec-server checks JWTs with, or
-//   FENEC_JWT_SECRET_FILE  the file holding it
+//   FENNEC_URL           http://127.0.0.1:8080
+//   FENNEC_HTTP_TOKEN    the server's token: makes the collections, writes
+//   FENNEC_JWT_SECRET    the secret fennec-server checks JWTs with, or
+//   FENNEC_JWT_SECRET_FILE  the file holding it
 //   GRAFANA_TOKEN_FILE   where the data source's token goes (none: printed)
 import { createHmac } from 'node:crypto';
 import { chownSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { DAY_MS, rng, Traffic } from '../../examples/analytics/src/sim.ts';
 
-const BASE = (process.env.FENEC_URL ?? 'http://127.0.0.1:8080').replace(/\/$/, '');
-const TOKEN = need('FENEC_HTTP_TOKEN');
-// As fenec-server reads --jwt-secret-file: the file less its line ending.
-const SECRET = process.env.FENEC_JWT_SECRET_FILE
-  ? readFileSync(process.env.FENEC_JWT_SECRET_FILE, 'utf8').replace(/[\r\n]+$/, '')
-  : need('FENEC_JWT_SECRET');
-if (Buffer.byteLength(SECRET) < 32) throw new Error('FENEC_JWT_SECRET: fenec-server takes a secret of 32 bytes or more');
+const BASE = (process.env.FENNEC_URL ?? 'http://127.0.0.1:8080').replace(/\/$/, '');
+const TOKEN = need('FENNEC_HTTP_TOKEN');
+// As fennec-server reads --jwt-secret-file: the file less its line ending.
+const SECRET = process.env.FENNEC_JWT_SECRET_FILE
+  ? readFileSync(process.env.FENNEC_JWT_SECRET_FILE, 'utf8').replace(/[\r\n]+$/, '')
+  : need('FENNEC_JWT_SECRET');
+if (Buffer.byteLength(SECRET) < 32) throw new Error('FENNEC_JWT_SECRET: fennec-server takes a secret of 32 bytes or more');
 // Grafana's image runs as this user; the file is its alone.
 const GRAFANA_UID = 472;
 

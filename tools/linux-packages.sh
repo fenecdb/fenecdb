@@ -3,12 +3,12 @@
 #
 #   tools/linux-packages.sh VERSION TARBALL_DIR OUT_DIR [amd64] [arm64]
 #
-# TARBALL_DIR holds the release's fenec-vVERSION-<arch>-unknown-linux-musl.tar.gz
+# TARBALL_DIR holds the release's fennec-vVERSION-<arch>-unknown-linux-musl.tar.gz
 # (release.yml's `binaries` job); OUT_DIR gets, for each architecture named
 # (both when none is):
 #
-#   fenecdb_VERSION-1_amd64.deb    fenecdb-VERSION-1.x86_64.rpm
-#   fenecdb_VERSION-1_arm64.deb    fenecdb-VERSION-1.aarch64.rpm
+#   fennecdb_VERSION-1_amd64.deb    fennecdb-VERSION-1.x86_64.rpm
+#   fennecdb_VERSION-1_arm64.deb    fennecdb-VERSION-1.aarch64.rpm
 #
 # The packages are nfpm's (packaging/nfpm.yaml), which makes both formats
 # from one description and needs no dpkg or rpmbuild, nor a machine of the
@@ -31,7 +31,7 @@ here=$(cd "$(dirname "$0")/.." && pwd)
 nfpm=${NFPM:-nfpm}
 command -v "$nfpm" >/dev/null 2>&1 || { echo "nfpm is not on PATH (or set NFPM)" >&2; exit 1; }
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/fenecdb-packages.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/fennecdb-packages.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 # nfpm globs the sources, and macOS's TMPDIR ends in a slash: `//` matches nothing.
 work=$(cd "$work" && pwd -P)
@@ -45,19 +45,19 @@ for arch in "$@"; do
         arm64) triple=aarch64 ;;
         *) echo "no such architecture: $arch (amd64 or arm64)" >&2; exit 2 ;;
     esac
-    name=fenec-v$version-$triple-unknown-linux-musl
+    name=fennec-v$version-$triple-unknown-linux-musl
     [ -f "$tarballs/$name.tar.gz" ] || { echo "$tarballs/$name.tar.gz is not there" >&2; exit 1; }
     tar -xzf "$tarballs/$name.tar.gz" -C "$work"
 
     # The packages' contents are the tarball's binaries, nothing rebuilt.
-    for b in fenec fenec-server; do
+    for b in fennec fennec-server; do
         [ -f "$work/$name/$b" ] || { echo "$name.tar.gz holds no $b" >&2; exit 1; }
     done
 
     for format in deb rpm; do
         case $format in
-            deb) file=fenecdb_${version}-1_$arch.deb ;;
-            rpm) file=fenecdb-$version-1.$triple.rpm ;;
+            deb) file=fennecdb_${version}-1_$arch.deb ;;
+            rpm) file=fennecdb-$version-1.$triple.rpm ;;
         esac
         (
             cd "$here"

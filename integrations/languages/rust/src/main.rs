@@ -1,12 +1,12 @@
 //! Rust with ureq and serde_json. Run by ../run-tests.sh.
 use serde_json::{json, Value};
 
-/// One FenecQL statement. A refusal is `ureq::Error::Status` with the
+/// One FennecQL statement. A refusal is `ureq::Error::Status` with the
 /// server's status, its body `{"error": ...}`.
 fn query(q: &str, params: Value) -> Result<Value, ureq::Error> {
-    let url = std::env::var("FENEC_URL").unwrap_or("http://127.0.0.1:8080".into());
+    let url = std::env::var("FENNEC_URL").unwrap_or("http://127.0.0.1:8080".into());
     let mut req = ureq::post(&format!("{url}/query"));
-    if let Ok(token) = std::env::var("FENEC_TOKEN") {
+    if let Ok(token) = std::env::var("FENNEC_TOKEN") {
         req = req.set("Authorization", &format!("Bearer {token}"));
     }
     Ok(req.send_json(json!({"query": q, "params": params}))?.into_json()?)

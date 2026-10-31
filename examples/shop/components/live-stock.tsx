@@ -3,7 +3,7 @@
 // (the page is kept for up to five minutes, so it may be a little old);
 // once the browser is idle it asks for the number now, and from the
 // shopper's first touch, scroll or key it follows the stock live:
-// `FenecHttp.live` from `@fenecdb/web/client`, straight to fenec-server,
+// `FennecHttp.live` from `@fennecdb/web/client`, straight to fennec-server,
 // with a token that reads `inventory` and nothing else (policy.txt).
 //
 // It polls (`{ poll }`) rather than holding a subscription: a stream is
@@ -39,7 +39,7 @@ export function LiveStock({ sku, initial }: { sku: string; initial: number }) {
       const res = await fetch('/api/stock-token', { cache: 'no-store' }).catch(() => null);
       if (!res?.ok || stopped) return;
       const { url, token } = (await res.json()) as { url: string; token: string };
-      const { connect } = await import('@fenecdb/web/client');
+      const { connect } = await import('@fennecdb/web/client');
       if (stopped) return;
       const db = connect(url, { token });
       stop = db.live(db.from('inventory').select('available').where('sku', sku), (rows) => setN(Number(rows[0]?.available ?? 0)), {

@@ -11,7 +11,7 @@ import (
 )
 
 // Query is a panel's query as the editor writes it and the frontend sends
-// it: FenecQL with `$n` parameters and the parameters' list, and the
+// it: FennecQL with `$n` parameters and the parameters' list, and the
 // dashboard variables it names, resolved by the browser (Vars). An alert
 // rule sends the same JSON from Grafana's backend, with no Vars.
 type Query struct {
@@ -21,7 +21,7 @@ type Query struct {
 	// first column, a time), "table" or "time_series".
 	Format string `json:"format"`
 	// After is a change the server must hold before it answers
-	// (Fenec-After): a number, or one variable that holds one.
+	// (Fennec-After): a number, or one variable that holds one.
 	After string `json:"after"`
 	// Vars are the dashboard variables the text and the parameters name,
 	// each one value or a list of them, as the browser resolved them.
@@ -121,7 +121,7 @@ type Bound struct {
 // Bind makes a query's text and parameters into the statement the server
 // is sent. Values go only into the parameters: the text changes only where
 // a name of a variable stood, which becomes `$n` -- or, after `in`, a
-// bracket of them, one a value, since FenecQL's `in` takes a list of
+// bracket of them, one a value, since FennecQL's `in` takes a list of
 // values and a parameter binds one. So a variable can hold anything at all
 // and stay a value: a quote, a comment, a statement.
 func Bind(q Query, b Builtins) (Bound, error) {

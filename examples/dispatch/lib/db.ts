@@ -1,16 +1,16 @@
 // How Plover reaches its tenants: through the router, a tenant's prefix
 // (`/t/<tenant>/`) and a token for one person or for the app. A refusal
-// comes back as a FenecError whose `status` says what it was -- 412 a
+// comes back as a FennecError whose `status` says what it was -- 412 a
 // `require` not met (a lease lost), 409 a value taken, 403 outside the
 // token's rules, 429 and 507 the company's quota (`quota`, `retryAfter`).
-import { connect, FenecError, type FenecHttp } from '@fenecdb/web/client';
+import { connect, FennecError, type FennecHttp } from '@fennecdb/web/client';
 import { OPERATOR_TOKEN, PLATFORM, ROUTER_URL, tenantOf } from './config';
 import { appToken, tokenFor, type Who } from './tokens';
 import { nodeFetch } from './fetch';
 
-export { FenecError };
+export { FennecError };
 
-export type Db = FenecHttp;
+export type Db = FennecHttp;
 
 let router = ROUTER_URL;
 
@@ -62,7 +62,7 @@ export async function retrying<T>(f: () => Promise<T>, tries = 50): Promise<T> {
     try {
       return await f();
     } catch (e) {
-      if (!(e instanceof FenecError) || e.status !== 429 || i >= tries) throw e;
+      if (!(e instanceof FennecError) || e.status !== 429 || i >= tries) throw e;
       const ms = Math.max(50, (e.retryAfter ?? 0.2) * 1000);
       throttled.count++;
       throttled.waitedMs += ms;

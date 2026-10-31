@@ -1,8 +1,8 @@
 {
-  "name": "fenecdb-shop",
+  "name": "fennecdb-shop",
   "private": true,
   "type": "module",
-  "description": "Sandgrouse, a desert-gear shop: Next.js App Router over fenec-server -- a catalog of 10 000 products, search with facets and highlights, carts under scoped tokens, checkout that cannot oversell",
+  "description": "Sandgrouse, a desert-gear shop: Next.js App Router over fennec-server -- a catalog of 10 000 products, search with facets and highlights, carts under scoped tokens, checkout that cannot oversell",
   "scripts": {
     "db": "sh scripts/db.sh",
     "seed": "tsx scripts/seed.ts",
@@ -17,7 +17,7 @@
     "ci": "sh scripts/ci.sh"
   },
   "dependencies": {
-    "@fenecdb/web": "0.1.10",
+    "@fennecdb/web": "0.1.10",
     "next": "16.3.8",
     "react": "19.3.0",
     "react-dom": "19.3.0",

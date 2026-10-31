@@ -4,13 +4,13 @@ The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *The cr
 
 ## Zero dependencies
 
-**Zero dependencies is a hard rule** for `fenec-core`, `fenec-ql`, `fenec-abi`, `fenec-wasm`, `fenec-ffi`,
-`fenec-http`, `fenec-wire`, `fenec-server`, `fenec-import`, `fenec-shard`. The WASM output has to stay small and
+**Zero dependencies is a hard rule** for `fennec-core`, `fennec-ql`, `fennec-abi`, `fennec-wasm`, `fennec-ffi`,
+`fennec-http`, `fennec-wire`, `fennec-server`, `fennec-import`, `fennec-shard`. The WASM output has to stay small and
 auditable; own codec, own JSON, own HNSW, own SCRAM/crypto, own decimal-to-`f64`
 and back (`str::parse` drags in a 12 KB table, `{}` on a float 20.8 KB of
-Grisu and Dragon -- see `num.rs`). `fenec-core` does
-dev-depend on `fenec-ql` (Cargo allows the cycle through a dev dependency) so tests
-can write real queries. `fenec-bench` is the one exception: a measurement
+Grisu and Dragon -- see `num.rs`). `fennec-core` does
+dev-depend on `fennec-ql` (Cargo allows the cycle through a dev dependency) so tests
+can write real queries. `fennec-bench` is the one exception: a measurement
 harness (`publish = false`), where `rusqlite` and `postgres` live.
 
 ## Limits
@@ -23,15 +23,15 @@ answer believed right. Full table in `site/content/docs/limits.html`.
 
 ## Profiles
 
-**Profiles differ on purpose.** `fenec-cli` uses the `cli` profile (`panic =
-abort`, single process, nothing to recover). `fenec-server` stays on `release`: a
+**Profiles differ on purpose.** `fennec-cli` uses the `cli` profile (`panic =
+abort`, single process, nothing to recover). `fennec-server` stays on `release`: a
 panicking connection thread unwinds and drops only its own request. A cold
-crate is built for size in the profile it is cold in: in `cli`, `fenec-http`, which the shell reaches only for
+crate is built for size in the profile it is cold in: in `cli`, `fennec-http`, which the shell reaches only for
 `backup`, `archive` and `restore`, waiting on the network and the disk,
-and for `fenec mcp`, waiting on a model (16.3 KB of the released binary,
+and for `fennec mcp`, waiting on a model (16.3 KB of the released binary,
 measured before `mcp`). Not the importer, whose SQLite import of
 200 000 rows took 285 ms against 251 for 32.6 KB, nor the root crate, which
-built for size made the binary 129 KB larger (`make size-report BIN=fenec`).
+built for size made the binary 129 KB larger (`make size-report BIN=fennec`).
 Both binaries hold 72 KB of the standard library's backtrace symbolizer
 (`gimli`, `addr2line`, `rustc_demangle`, `object`), which only a nightly
 `build-std` leaves out.

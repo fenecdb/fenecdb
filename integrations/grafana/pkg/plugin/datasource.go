@@ -1,5 +1,5 @@
-// Package plugin is fenecdb-datasource's backend: it binds a panel's or an
-// alert rule's FenecQL to its parameters, sends it to fenec-server over the
+// Package plugin is fennecdb-datasource's backend: it binds a panel's or an
+// alert rule's FennecQL to its parameters, sends it to fennec-server over the
 // Go SDK (integrations/go), and makes the answer Grafana's frames.
 package plugin
 
@@ -19,7 +19,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 
-	fenecdb "github.com/fenecdb/fenecdb/integrations/go"
+	fennecdb "github.com/fennec-db/fennecdb/integrations/go"
 )
 
 var (
@@ -37,7 +37,7 @@ type Datasource struct {
 	// say it, rather than Grafana's "plugin unavailable".
 	err      error
 	settings Settings
-	client   *fenecdb.Client
+	client   *fennecdb.Client
 	answers  *answers
 	schemas  schemaCache
 }
@@ -61,7 +61,7 @@ func NewDatasource(ctx context.Context, s backend.DataSourceInstanceSettings) (i
 	opts.BasicAuth = nil
 	opts.Header = nil
 	opts.ForwardHTTPHeaders = false
-	// fenec-server closes a keep-alive connection silent for 60 s
+	// fennec-server closes a keep-alive connection silent for 60 s
 	// (--idle-timeout), and net/http sends no POST again that met a
 	// connection closing under it -- it retries idempotent methods alone --
 	// so the client lets its idle ones go first.
@@ -77,19 +77,19 @@ func NewDatasource(ctx context.Context, s backend.DataSourceInstanceSettings) (i
 	if err != nil {
 		return &Datasource{err: fmt.Errorf("the data source's HTTP client: %w", err)}, nil
 	}
-	fo := []fenecdb.Option{fenecdb.WithHTTPClient(hc)}
+	fo := []fennecdb.Option{fennecdb.WithHTTPClient(hc)}
 	if st.Token != "" {
-		fo = append(fo, fenecdb.WithToken(st.Token))
+		fo = append(fo, fennecdb.WithToken(st.Token))
 	}
 	if st.Tenant != "" {
-		fo = append(fo, fenecdb.WithTenant(st.Tenant))
+		fo = append(fo, fennecdb.WithTenant(st.Tenant))
 	}
 	if st.Timeout > 0 {
-		fo = append(fo, fenecdb.WithTimeout(st.Timeout))
+		fo = append(fo, fennecdb.WithTimeout(st.Timeout))
 	}
 	return &Datasource{
 		settings: st,
-		client:   fenecdb.New(st.URL, fo...),
+		client:   fennecdb.New(st.URL, fo...),
 		answers:  newAnswers(32 << 20),
 	}, nil
 }
@@ -177,7 +177,7 @@ func (d *Datasource) single(ctx context.Context, p prepared, schemas Schemas) ba
 	}
 	if p.bound.After > 0 {
 		c = c.After(p.bound.After)
-		// Fenec-Wait beside Fenec-After bounds the wait for the change; on
+		// Fennec-Wait beside Fennec-After bounds the wait for the change; on
 		// a read alone it holds nothing, but it is sent only where it says
 		// something.
 		if d.settings.Wait > 0 {
@@ -192,7 +192,7 @@ func (d *Datasource) single(ctx context.Context, p prepared, schemas Schemas) ba
 	if r.NotModified {
 		if !had {
 			return backend.ErrDataResponseWithSource(backend.StatusBadGateway, backend.ErrorSourceDownstream,
-				"fenec-server answered 304 to a statement the data source holds no answer to")
+				"fennec-server answered 304 to a statement the data source holds no answer to")
 		}
 		body = prev.body
 	} else {
@@ -209,9 +209,9 @@ func (d *Datasource) single(ctx context.Context, p prepared, schemas Schemas) ba
 // stops it (`at`) is answered with its refusal and the rest each on its
 // own, so one wrong query does not blank the panel's others.
 func (d *Datasource) batch(ctx context.Context, ready []prepared, schemas Schemas, resp *backend.QueryDataResponse) {
-	stmts := make([]fenecdb.Statement, len(ready))
+	stmts := make([]fennecdb.Statement, len(ready))
 	for i, p := range ready {
-		stmts[i] = fenecdb.Stmt(p.bound.Text, p.bound.Params...)
+		stmts[i] = fennecdb.Stmt(p.bound.Text, p.bound.Params...)
 	}
 	r, err := d.client.BatchRaw(ctx, stmts...)
 	if err == nil {
@@ -226,7 +226,7 @@ func (d *Datasource) batch(ctx context.Context, ready []prepared, schemas Schema
 			err = fmt.Errorf("a batch of %d statements answered %d", len(ready), len(all))
 		}
 	}
-	var fe *fenecdb.Error
+	var fe *fennecdb.Error
 	stopped := -1
 	if errors.As(err, &fe) && fe.At >= 0 && fe.At < len(ready) {
 		stopped = fe.At
@@ -245,7 +245,7 @@ func framed(a answer, schemas Schemas, p prepared, custom map[string]any) backen
 		return backend.ErrDataResponseWithSource(backend.StatusBadRequest, backend.ErrorSourceDownstream, err.Error())
 	}
 	if len(frames) > 0 && frames[0].Meta != nil {
-		frames[0].Meta.Custom = map[string]any{"fenecdb": custom}
+		frames[0].Meta.Custom = map[string]any{"fennecdb": custom}
 	}
 	return backend.DataResponse{Frames: frames}
 }
@@ -268,12 +268,12 @@ func executed(b Bound) string {
 // errorResponse says what the server refused, with its status: a parse
 // error's position, a policy's 403, an unmet `require`'s 412.
 func errorResponse(err error) backend.DataResponse {
-	var fe *fenecdb.Error
+	var fe *fennecdb.Error
 	if errors.As(err, &fe) {
-		msg := fmt.Sprintf("fenec-server answered %d: %s", fe.Status, fe.Message)
+		msg := fmt.Sprintf("fennec-server answered %d: %s", fe.Status, fe.Message)
 		switch fe.Status {
 		case 401:
-			msg = "fenec-server refused the data source's token (401): " + fe.Message
+			msg = "fennec-server refused the data source's token (401): " + fe.Message
 		case 403:
 			msg = "outside what the data source's token may read (403): " + fe.Message
 		case 404:
@@ -285,12 +285,12 @@ func errorResponse(err error) backend.DataResponse {
 	// Grafana cancels the request, and the server is not the one that
 	// failed.
 	if errors.Is(err, context.Canceled) {
-		return backend.ErrDataResponseWithSource(backend.StatusBadRequest, backend.ErrorSourceDownstream, "the query was canceled before fenec-server answered")
+		return backend.ErrDataResponseWithSource(backend.StatusBadRequest, backend.ErrorSourceDownstream, "the query was canceled before fennec-server answered")
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
-		return backend.ErrDataResponseWithSource(backend.StatusTimeout, backend.ErrorSourceDownstream, "fenec-server did not answer in time: "+err.Error())
+		return backend.ErrDataResponseWithSource(backend.StatusTimeout, backend.ErrorSourceDownstream, "fennec-server did not answer in time: "+err.Error())
 	}
-	return backend.ErrDataResponseWithSource(backend.StatusBadGateway, backend.ErrorSourceDownstream, "fenec-server could not be reached: "+err.Error())
+	return backend.ErrDataResponseWithSource(backend.StatusBadGateway, backend.ErrorSourceDownstream, "fennec-server could not be reached: "+err.Error())
 }
 
 // CheckHealth is the data source's "Save & test": the server answers
@@ -304,7 +304,7 @@ func (d *Datasource) CheckHealth(ctx context.Context, _ *backend.CheckHealthRequ
 		return fail(d.err.Error())
 	}
 	if err := d.client.Health(ctx); err != nil {
-		return fail(fmt.Sprintf("fenec-server at %s did not answer /_health: %v", d.settings.URL, err))
+		return fail(fmt.Sprintf("fennec-server at %s did not answer /_health: %v", d.settings.URL, err))
 	}
 	names, err := listCollections(ctx, d.client)
 	if err != nil {
@@ -317,7 +317,7 @@ func (d *Datasource) CheckHealth(ctx context.Context, _ *backend.CheckHealthRequ
 		}
 	}
 	if len(readable) == 0 {
-		return fail("fenec-server answers, but the token reads no collection here: give it a policy's role that reads one")
+		return fail("fennec-server answers, but the token reads no collection here: give it a policy's role that reads one")
 	}
 	// A name the server gave, and of a name's characters: no text a user
 	// typed goes into this statement.
@@ -333,13 +333,13 @@ func (d *Datasource) CheckHealth(ctx context.Context, _ *backend.CheckHealthRequ
 	}
 	return &backend.CheckHealthResult{
 		Status:  backend.HealthStatusOk,
-		Message: fmt.Sprintf("fenec-server answers, and the token reads %d collection(s): %s", len(readable), strings.Join(shown, ", ")),
+		Message: fmt.Sprintf("fennec-server answers, and the token reads %d collection(s): %s", len(readable), strings.Join(shown, ", ")),
 	}, nil
 }
 
 // listCollections is the `collections` statement's names, which a scoped
 // token answers with the collections its policy names.
-func listCollections(ctx context.Context, c *fenecdb.Client) ([]string, error) {
+func listCollections(ctx context.Context, c *fennecdb.Client) ([]string, error) {
 	s, err := describe(ctx, c)
 	if err != nil {
 		return nil, err
@@ -352,7 +352,7 @@ func listCollections(ctx context.Context, c *fenecdb.Client) ([]string, error) {
 	return names, nil
 }
 
-func describe(ctx context.Context, c *fenecdb.Client) (Schemas, error) {
+func describe(ctx context.Context, c *fennecdb.Client) (Schemas, error) {
 	type field struct {
 		Name string `json:"name"`
 		Type string `json:"type"`
@@ -361,7 +361,7 @@ func describe(ctx context.Context, c *fenecdb.Client) (Schemas, error) {
 		Name   string  `json:"name"`
 		Fields []field `json:"fields"`
 	}
-	list, err := fenecdb.QueryAs[collection](ctx, c, "collections")
+	list, err := fennecdb.QueryAs[collection](ctx, c, "collections")
 	if err != nil {
 		return nil, err
 	}
@@ -392,7 +392,7 @@ const (
 	schemaRetry = 5 * time.Second
 )
 
-func (c *schemaCache) get(ctx context.Context, client *fenecdb.Client, want []string) Schemas {
+func (c *schemaCache) get(ctx context.Context, client *fennecdb.Client, want []string) Schemas {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	age := time.Since(c.at)

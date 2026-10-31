@@ -1,7 +1,7 @@
-// fenec studio, desktop. The main process (Bun).
+// fennec studio, desktop. The main process (Bun).
 //
 // A window per open thing:
-//   - a file: a fenec-server this process started for it, and a window on
+//   - a file: a fennec-server this process started for it, and a window on
 //     that server's own /_studio/ (so the studio is the one the server was built with);
 //   - a remote server: a window on that server's /_studio/, same origin, so no CORS;
 // plus a launcher (recent files, saved servers) and a new-database window.
@@ -38,7 +38,7 @@ let autoLauncher = false;
 let handedOver = false;
 const AUTO_LAUNCHER_GRACE_MS = 5000;
 
-// Finder: a .fenec file double-clicked (macOS; Info.plist from app.fileAssociations).
+// Finder: a .fennec file double-clicked (macOS; Info.plist from app.fileAssociations).
 Electrobun.events.on("open-url", (event: any) => {
 	const url = String(event?.data?.url ?? "");
 	if (__TESTABLE__) void import("./testhooks.ts").then((h) => h.report("open-url", { url }));
@@ -46,7 +46,7 @@ Electrobun.events.on("open-url", (event: any) => {
 		void (async () => {
 			// The test variant can hold the event back until the launcher is up, as a
 			// slow launch delivers it after: the order a timer could only hope for.
-			if (__TESTABLE__ && process.env["FENEC_DESKTOP_HOLD_OPEN_URL"] === "launcher") {
+			if (__TESTABLE__ && process.env["FENNEC_DESKTOP_HOLD_OPEN_URL"] === "launcher") {
 				for (let i = 0; i < 200 && !launcherOpen(); i++) await Bun.sleep(50);
 			}
 			// A file handed over after the launcher was shown on its own (the launch

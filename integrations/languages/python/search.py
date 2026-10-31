@@ -1,11 +1,11 @@
-# Python, through the fenecdb client (pip install fenecdb): the standard
+# Python, through the fennecdb client (pip install fennecdb): the standard
 # library alone, one statement a request. Run by ../run-tests.sh.
 import os
 
-from fenecdb import Client, FenecError
+from fennecdb import Client, FennecError
 
-db = Client(os.environ.get("FENEC_URL", "http://127.0.0.1:8080"),
-            token=os.environ.get("FENEC_TOKEN"))
+db = Client(os.environ.get("FENNEC_URL", "http://127.0.0.1:8080"),
+            token=os.environ.get("FENNEC_TOKEN"))
 
 db.query("create collection if not exists docs "
          "(title text @text, year int @sorted)")
@@ -23,7 +23,7 @@ assert hits[0]["_score"] > 0, hits
 # The same through the query builder, which writes that statement itself.
 docs = db.collection("docs")
 query = docs.select("title", "year").where("year", ">=", 2020).order("year", "desc").limit(5)
-assert query.to_fenecql() == (
+assert query.to_fennecql() == (
     "get docs select title, year where year >= $1 order year desc limit $2", [2020, 5])
 assert query.rows() == rows, query.rows()
 assert docs.select("title").match("title", "oasys", fuzzy=True).rows() == hits
@@ -33,7 +33,7 @@ assert docs.where("title", "~", "Dunes").count() == 1
 try:
     db.query("get nowhere")
     raise AssertionError("a missing collection was answered")
-except FenecError as e:
+except FennecError as e:
     assert e.status == 404, e
 
 print("python: ok")

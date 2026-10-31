@@ -1,10 +1,10 @@
 <!--
-title: Monitoring — fenecdb
+title: Monitoring — fennecdb
 description: Prometheus metrics at /_metrics, ready Grafana dashboards of the metrics and of the data, a slow-statement log, per-statement counts, an audit log, a request id in every line, and OpenTelemetry traces.
 -->
 
 <h1>Monitoring</h1>
-<p class="kicker">fenec-server counts every statement it answers and serves the
+<p class="kicker">fennec-server counts every statement it answers and serves the
 counts to Prometheus, with a Grafana dashboard ready to load.</p>
 
 <h2>Turn it on</h2>
@@ -14,13 +14,13 @@ counts to Prometheus, with a Grafana dashboard ready to load.</p>
 writes apart, with how long each took.</p>
 
 <pre data-lang="bash"># /_metrics on a listener of its own, away from the data's
-fenec-server --file data.fenec --http 127.0.0.1:8080 \
+fennec-server --file data.fennec --http 127.0.0.1:8080 \
          --metrics 0.0.0.0:9464 --admin-token "$SCRAPE" --slow-ms 100
 
 curl -H "Authorization: Bearer $SCRAPE" http://127.0.0.1:9464/_metrics
-# fenec_statements_total{kind="read"} 1834
-# fenec_statement_duration_seconds_bucket{kind="read",le="0.001"} 1790
-# fenec_documents{collection="people"} 90000
+# fennec_statements_total{kind="read"} 1834
+# fennec_statement_duration_seconds_bucket{kind="read",le="0.001"} 1790
+# fennec_documents{collection="people"} 90000
 # ...
 </pre>
 
@@ -60,27 +60,27 @@ are reported as gauges.</p>
 <table>
 <thead><tr><th>Metric</th><th>Type</th><th>What it says</th></tr></thead>
 <tbody>
-<tr><td><code>fenec_statements_total{kind}</code></td><td>counter</td><td>statements answered; <code>kind</code> is <code>read</code> or <code>write</code></td></tr>
-<tr><td><code>fenec_statement_errors_total{kind}</code></td><td>counter</td><td>statements answered with an error, the client's (a typo, a 404) or the server's</td></tr>
-<tr><td><code>fenec_statement_duration_seconds{kind}</code></td><td>histogram</td><td>arrival to answer, in buckets from 100 µs to 10 s</td></tr>
-<tr><td><code>fenec_slow_statements_total</code></td><td>counter</td><td>statements over <code>--slow-ms</code>, each also in the log</td></tr>
-<tr><td><code>fenec_refused_total</code></td><td>counter</td><td>requests refused for their token (401), each also in the audit log</td></tr>
-<tr><td><code>fenec_connections</code></td><td>gauge</td><td>connections open now; a scrape is not one</td></tr>
-<tr><td><code>fenec_connections_refused_total{reason}</code></td><td>counter</td><td>connections answered 503 with <code>Retry-After</code> as they were taken, never served: <code>ceiling</code>, past <code>--max-connections</code>; <code>no_thread</code>, the process could make no thread for one — at its thread limit (systemd's <code>TasksMax=</code>, a cgroup's <code>pids.max</code>, <code>ulimit -u</code>, macOS's 2 048 a process), said in the log a minute apart at most. Any <code>no_thread</code> is worth an alert</td></tr>
-<tr><td><code>fenec_documents{collection}</code></td><td>gauge</td><td>documents in a collection</td></tr>
-<tr><td><code>fenec_data_bytes{collection}</code>, <code>fenec_dead_bytes{collection}</code></td><td>gauge</td><td>live records, and the overwritten and deleted ones <code>compact</code> gives back</td></tr>
-<tr><td><code>fenec_file_bytes</code>, <code>fenec_reclaimable_bytes</code></td><td>gauge</td><td>the file as written, and what a compact would give back of it now: the dead records, a record's head a write, the graph records a server appended in the tail; <code>--auto-compact</code> runs one once it passes its share (<a href="/docs/server#compaction">Compaction</a>)</td></tr>
-<tr><td><code>fenec_auto_compactions_total</code></td><td>counter</td><td>compacts the server ran on its own, every file it serves together</td></tr>
-<tr><td><code>fenec_memory_bytes</code></td><td>gauge</td><td>what the process holds of the database and <code>--max-memory</code> counts: the indexes, and the documents too where the file is not mapped (<code>--no-mmap</code>)</td></tr>
-<tr><td><code>fenec_change_sequence</code></td><td>gauge</td><td>the last write's sequence number; its rate is the writes per second</td></tr>
-<tr><td><code>fenec_storage_failed</code></td><td>gauge</td><td>1 once the disk refused a write: writes stop until the file is reopened, reads go on</td></tr>
-<tr><td><code>fenec_vectors_unlinked</code></td><td>gauge</td><td>vectors the open left out of the graph after a crash: <code>near</code> measures each one until a thread beside the queries has linked them, and the gauge falls to 0; on a <code>--dir</code> node, the open tenants' together</td></tr>
-<tr><td><code>fenec_replicas</code></td><td>gauge</td><td>on a primary, the replicas streaming from it</td></tr>
-<tr><td><code>fenec_replica_connected</code>, <code>fenec_replica_behind</code></td><td>gauge</td><td>on a replica: whether it hears its primary, and the writes on the primary's disk it has not applied</td></tr>
-<tr><td><code>fenec_replica_last_contact_seconds</code></td><td>gauge</td><td>since the primary was last heard from, a keep-alive included</td></tr>
-<tr><td><code>fenec_replica_images_total</code>, <code>fenec_replica_reconnects_total</code></td><td>counter</td><td>whole images taken, and connections made again</td></tr>
-<tr><td><code>fenec_tenants</code>, <code>fenec_tenants_open</code>, <code>fenec_tenants_disk_bytes</code></td><td>gauge</td><td>on a <code>--dir</code> node: tenants on disk, open, and their files together</td></tr>
-<tr><td><code>fenec_build_info{version}</code>, <code>fenec_start_time_seconds</code></td><td>gauge</td><td>the version running, and when the process started</td></tr>
+<tr><td><code>fennec_statements_total{kind}</code></td><td>counter</td><td>statements answered; <code>kind</code> is <code>read</code> or <code>write</code></td></tr>
+<tr><td><code>fennec_statement_errors_total{kind}</code></td><td>counter</td><td>statements answered with an error, the client's (a typo, a 404) or the server's</td></tr>
+<tr><td><code>fennec_statement_duration_seconds{kind}</code></td><td>histogram</td><td>arrival to answer, in buckets from 100 µs to 10 s</td></tr>
+<tr><td><code>fennec_slow_statements_total</code></td><td>counter</td><td>statements over <code>--slow-ms</code>, each also in the log</td></tr>
+<tr><td><code>fennec_refused_total</code></td><td>counter</td><td>requests refused for their token (401), each also in the audit log</td></tr>
+<tr><td><code>fennec_connections</code></td><td>gauge</td><td>connections open now; a scrape is not one</td></tr>
+<tr><td><code>fennec_connections_refused_total{reason}</code></td><td>counter</td><td>connections answered 503 with <code>Retry-After</code> as they were taken, never served: <code>ceiling</code>, past <code>--max-connections</code>; <code>no_thread</code>, the process could make no thread for one — at its thread limit (systemd's <code>TasksMax=</code>, a cgroup's <code>pids.max</code>, <code>ulimit -u</code>, macOS's 2 048 a process), said in the log a minute apart at most. Any <code>no_thread</code> is worth an alert</td></tr>
+<tr><td><code>fennec_documents{collection}</code></td><td>gauge</td><td>documents in a collection</td></tr>
+<tr><td><code>fennec_data_bytes{collection}</code>, <code>fennec_dead_bytes{collection}</code></td><td>gauge</td><td>live records, and the overwritten and deleted ones <code>compact</code> gives back</td></tr>
+<tr><td><code>fennec_file_bytes</code>, <code>fennec_reclaimable_bytes</code></td><td>gauge</td><td>the file as written, and what a compact would give back of it now: the dead records, a record's head a write, the graph records a server appended in the tail; <code>--auto-compact</code> runs one once it passes its share (<a href="/docs/server#compaction">Compaction</a>)</td></tr>
+<tr><td><code>fennec_auto_compactions_total</code></td><td>counter</td><td>compacts the server ran on its own, every file it serves together</td></tr>
+<tr><td><code>fennec_memory_bytes</code></td><td>gauge</td><td>what the process holds of the database and <code>--max-memory</code> counts: the indexes, and the documents too where the file is not mapped (<code>--no-mmap</code>)</td></tr>
+<tr><td><code>fennec_change_sequence</code></td><td>gauge</td><td>the last write's sequence number; its rate is the writes per second</td></tr>
+<tr><td><code>fennec_storage_failed</code></td><td>gauge</td><td>1 once the disk refused a write: writes stop until the file is reopened, reads go on</td></tr>
+<tr><td><code>fennec_vectors_unlinked</code></td><td>gauge</td><td>vectors the open left out of the graph after a crash: <code>near</code> measures each one until a thread beside the queries has linked them, and the gauge falls to 0; on a <code>--dir</code> node, the open tenants' together</td></tr>
+<tr><td><code>fennec_replicas</code></td><td>gauge</td><td>on a primary, the replicas streaming from it</td></tr>
+<tr><td><code>fennec_replica_connected</code>, <code>fennec_replica_behind</code></td><td>gauge</td><td>on a replica: whether it hears its primary, and the writes on the primary's disk it has not applied</td></tr>
+<tr><td><code>fennec_replica_last_contact_seconds</code></td><td>gauge</td><td>since the primary was last heard from, a keep-alive included</td></tr>
+<tr><td><code>fennec_replica_images_total</code>, <code>fennec_replica_reconnects_total</code></td><td>counter</td><td>whole images taken, and connections made again</td></tr>
+<tr><td><code>fennec_tenants</code>, <code>fennec_tenants_open</code>, <code>fennec_tenants_disk_bytes</code></td><td>gauge</td><td>on a <code>--dir</code> node: tenants on disk, open, and their files together</td></tr>
+<tr><td><code>fennec_build_info{version}</code>, <code>fennec_start_time_seconds</code></td><td>gauge</td><td>the version running, and when the process started</td></tr>
 </tbody>
 </table>
 </div>
@@ -102,23 +102,23 @@ in its stride.</p>
 
 <h2 id="grafana">Grafana</h2>
 
-<p>The repository's <code>monitoring/</code> folder runs fenec-server with
+<p>The repository's <code>monitoring/</code> folder runs fennec-server with
 Prometheus and Grafana and the dashboards already loaded: the server's
-metrics, and the database's own rows through fenecdb's data source plugin
+metrics, and the database's own rows through fennecdb's data source plugin
 and through the Infinity plugin.</p>
 
-<pre data-lang="bash">FENEC_HTTP_TOKEN=secret FENEC_METRICS_TOKEN=scrape \
-FENEC_JWT_SECRET=$(openssl rand -hex 32) \
+<pre data-lang="bash">FENNEC_HTTP_TOKEN=secret FENNEC_METRICS_TOKEN=scrape \
+FENNEC_JWT_SECRET=$(openssl rand -hex 32) \
   docker compose -f monitoring/docker-compose.yml up -d --build
-# metrics: http://127.0.0.1:3000/d/fenecdb     data: http://127.0.0.1:3000/d/fenecdb-data-plugin
+# metrics: http://127.0.0.1:3000/d/fennecdb     data: http://127.0.0.1:3000/d/fennecdb-data-plugin
 # Prometheus: http://127.0.0.1:9090
 </pre>
 
 <ul>
-  <li><b>The metrics</b> go fenec-server → Prometheus → Grafana, behind the
-    admin token: the dashboard is <code>grafana/fenecdb.json</code>.</li>
-  <li><b>The data</b> goes Grafana → the <code>fenecdb-datasource</code>
-    plugin → <code>POST /query</code>, each panel a FenecQL statement with
+  <li><b>The metrics</b> go fennec-server → Prometheus → Grafana, behind the
+    admin token: the dashboard is <code>grafana/fennecdb.json</code>.</li>
+  <li><b>The data</b> goes Grafana → the <code>fennecdb-datasource</code>
+    plugin → <code>POST /query</code>, each panel a FennecQL statement with
     the time range and variables bound as its parameters, under a token
     that reads two collections and writes nothing, with an alert rule over
     the same rows: <a href="/docs/grafana">Grafana</a>.</li>
@@ -126,11 +126,11 @@ FENEC_JWT_SECRET=$(openssl rand -hex 32) \
 
 <details class="deep"><summary>The dashboard's panels and alert expressions</summary>
 <p><code>monitoring/</code> in the repository holds a Grafana dashboard
-(<code>grafana/fenecdb.json</code>), a Prometheus configuration and a compose
-file that runs fenec-server with both, the dashboard already loaded. The
+(<code>grafana/fennecdb.json</code>), a Prometheus configuration and a compose
+file that runs fennec-server with both, the dashboard already loaded. The
 same compose seeds a site's events and a week of trades and loads the data
-dashboards (<code>grafana/fenecdb-data-plugin.json</code> and
-<code>grafana/fenecdb-data.json</code>) beside it.</p>
+dashboards (<code>grafana/fennecdb-data-plugin.json</code> and
+<code>grafana/fennecdb-data.json</code>) beside it.</p>
 
 <p>It opens on the figures that decide whether anything needs doing — the
 version and uptime, whether the disk has refused a write, statements and
@@ -143,12 +143,12 @@ node and its moves. The instance variable picks one server or all of them.
 Imported on its own, the dashboard asks for a Prometheus data source.</p>
 
 <pre data-lang="text"># the p99 of reads, over five minutes
-histogram_quantile(0.99, sum by (le) (rate(fenec_statement_duration_seconds_bucket{kind="read"}[5m])))
+histogram_quantile(0.99, sum by (le) (rate(fennec_statement_duration_seconds_bucket{kind="read"}[5m])))
 
 # worth an alert
-fenec_storage_failed == 1
-fenec_replica_behind > 10000
-fenec_dead_bytes / (fenec_data_bytes + fenec_dead_bytes) > 0.5
+fennec_storage_failed == 1
+fennec_replica_behind > 10000
+fennec_dead_bytes / (fennec_data_bytes + fennec_dead_bytes) > 0.5
 </pre>
 </details>
 
@@ -193,7 +193,7 @@ and parameter written <code>$1</code>, <code>$2</code>… and a list of literals
 alone, a vector's components, as one — so the same statement run with other
 values is one line: how often it ran, its total, mean, least and most time,
 the rows it returned or changed, and its failures. Over HTTP a
-<code>/query</code> or <code>/batch</code> is counted as its FenecQL; a call
+<code>/query</code> or <code>/batch</code> is counted as its FennecQL; a call
 to a collection's path as its method and path. <code>GET
 /_stats/statements</code> answers JSON, most time first, and
 <code>DELETE</code> forgets it all.</p>
@@ -213,8 +213,8 @@ tenant's, named, to its admin alone.</p>
 request, schema change and admin action. Ordinary reads and writes are
 not logged.</p>
 
-<pre data-lang="bash">fenec-server --file data.fenec --http 0.0.0.0:8080 \
-         --http-token "$TOKEN" --audit /var/log/fenec/audit.log</pre>
+<pre data-lang="bash">fennec-server --file data.fennec --http 0.0.0.0:8080 \
+         --http-token "$TOKEN" --audit /var/log/fennec/audit.log</pre>
 
 <ul>
   <li><b>Refused tokens are slowed down,</b> from 100 ms doubling to 5 s per
@@ -242,7 +242,7 @@ events:</p>
     logged by its shape, as <a href="#statements"><code>/_stats/statements</code></a>
     shows it, so no literal it held reaches the log.</li>
   <li><b>A request to <code>/_admin/</code> or <code>/_shard/</code> that
-    changes something</b>, with its status. <code>fenec-shard</code> takes
+    changes something</b>, with its status. <code>fennec-shard</code> takes
     <code>--audit</code> as well. A <a href="sharding-tenants.html#across-tenants">query
     across tenants</a> (<code>POST /_shard/query</code>) is one too: it reads
     every tenant's rows, which is what an audit log is kept for. The read it
@@ -281,14 +281,14 @@ the studio's files, a body over the ceiling, every answer of a server that
 asks for no token — leaves the count where it was, whatever
 <code>Authorization</code> the request carried. The count is the
 address's, not a token's: a client that holds one good token clears its
-count with it. Behind <code>fenec-shard</code> the router waits out a
+count with it. Behind <code>fennec-shard</code> the router waits out a
 refusal itself, keyed by its client's address, and the node waits none for
 what the router forwards: counted at the node, every client had the
 router's address, four forged tokens in a row made a fifth client's expired
 one wait 1.6 s, and any good token from anyone cleared the attacker's
 count. The node knows a forwarded request by a mark the router derives
 from the node's <code>--admin-token</code>, sent beside the client's address
-(<code>Fenec-Router: &lt;address&gt; &lt;mark&gt;</code>); the router drops
+(<code>Fennec-Router: &lt;address&gt; &lt;mark&gt;</code>); the router drops
 the header from what a client sends, and a node believes it from no one
 else. Its audit log names the client as <code>peer</code> and the router as
 <code>via</code>. The router holds no keys: the node tells it, in its
@@ -297,7 +297,7 @@ its client's count on that alone. Behind the <a
 href="sharding-entry.html#global-entry">global entry</a> every client reaches a
 router from Cloudflare's addresses; a router started with the entry's token
 (<code>--entry-token</code>) takes the address the entry names in
-<code>Fenec-Client</code> for the request's, its mark checked and its time
+<code>Fennec-Client</code> for the request's, its mark checked and its time
 within a minute, and counts, clears, logs (<code>peer</code>, the entry as
 <code>via</code>) and names that address onwards. An IPv4 client is one
 count however it arrives: a listener on <code>[::]</code> sees it as
@@ -309,14 +309,14 @@ off.</p>
 
 <h2 id="router">The router</h2>
 
-<p><code>fenec-shard</code> serves its own <code>/_metrics</code>, behind its
+<p><code>fennec-shard</code> serves its own <code>/_metrics</code>, behind its
 <code>--token</code>: requests, the time its nodes took, failed nodes and
 tenant moves. No label names a tenant.</p>
 
 <pre data-lang="bash">curl -H "Authorization: Bearer $SHARD_TOKEN" http://127.0.0.1:8090/_metrics
-# fenec_router_requests_total{route="tenant",code="2xx"} 48120
-# fenec_router_upstream_duration_seconds_bucket{le="0.001"} 47655
-# fenec_router_upstream_errors_total{node="n2"} 3
+# fennec_router_requests_total{route="tenant",code="2xx"} 48120
+# fennec_router_upstream_duration_seconds_bucket{le="0.001"} 47655
+# fennec_router_upstream_errors_total{node="n2"} 3
 # ...
 </pre>
 
@@ -324,36 +324,36 @@ tenant moves. No label names a tenant.</p>
 <table>
 <thead><tr><th>Metric</th><th>Type</th><th>What it says</th></tr></thead>
 <tbody>
-<tr><td><code>fenec_router_requests_total{route, code}</code></td><td>counter</td><td>requests answered; <code>route</code> is <code>tenant</code> (<code>/t/…</code>, forwarded), <code>shard</code>, <code>replication</code>, <code>metrics</code> or <code>other</code>, <code>code</code> the status class, <code>2xx</code> to <code>5xx</code>, or <code>gone</code>: a request held at its node (<code>Fenec-Wait</code>) whose client reset its connection, answered nothing. A client gone with its end — most timeouts and aborts — reads as one that half-closed and still reads, so its request is answered as the node answers it and counted by that status</td></tr>
-<tr><td><code>fenec_router_request_duration_seconds{route}</code></td><td>histogram</td><td>arrival to answer, in buckets from 100 µs to 10 s</td></tr>
-<tr><td><code>fenec_router_upstream_duration_seconds</code></td><td>histogram</td><td>a forwarded request's time at its node: from its sending to the whole answer. Taken from the request's duration, it leaves the router's own</td></tr>
-<tr><td><code>fenec_router_upstream_errors_total{node}</code></td><td>counter</td><td>forwarded requests a node did not answer or broke off, each answered 502: the one to alert on</td></tr>
-<tr><td><code>fenec_router_refused_total</code></td><td>counter</td><td>requests refused for their token (401): the router's own, and its nodes' it passed on</td></tr>
-<tr><td><code>fenec_router_entry_clients_total{outcome}</code></td><td>counter</td><td>with <code>--entry-token</code>, what the router made of the <a href="sharding-entry.html#global-entry">global entry</a>'s name for the client (<code>Fenec-Client</code>) of each request no other router relayed: <code>named</code>, the address taken for the request's; <code>bad_mark</code>, not the entry's mark (another token, or a client sending the header itself); <code>stale</code>, the entry's mark made more than a minute from the router's clock; <code>absent</code>, a tenant's request carrying none — a client reaching the router itself, or an entry with no <code>ENTRY_TOKEN</code>, which names nobody. All but <code>named</code> count by the connection's address</td></tr>
-<tr><td><code>fenec_router_moves_total{outcome}</code></td><td>counter</td><td>tenant moves that began, <code>done</code> or <code>failed</code> and thawed; one refused before it began is not one</td></tr>
-<tr><td><code>fenec_router_move_duration_seconds</code></td><td>histogram</td><td>how long a move that was done took, the tenant frozen for all of it, in buckets from 10 ms to 1 000 s</td></tr>
-<tr><td><code>fenec_router_fanouts_total{outcome}</code></td><td>counter</td><td><a href="sharding-tenants.html#across-tenants">queries across tenants</a>: <code>done</code>, every tenant answered; <code>partial</code>, some failed and the caller asked for the others' rows; <code>failed</code>, answered with the tenants that failed; <code>refused</code> as a whole, before or after the asking (a request that does not read, a bound passed)</td></tr>
-<tr><td><code>fenec_router_fanout_duration_seconds</code></td><td>histogram</td><td>a query across tenants from its arrival to the merged answer</td></tr>
-<tr><td><code>fenec_router_fanout_tenants_total{outcome}</code></td><td>counter</td><td>the tenants those queries asked, <code>answered</code> or <code>failed</code>; no label names a tenant</td></tr>
-<tr><td><code>fenec_router_connections</code></td><td>gauge</td><td>client connections open now, the scrape's own among them</td></tr>
-<tr><td><code>fenec_router_connections_refused_total{reason}</code></td><td>counter</td><td>client connections the router answered 503 with <code>Retry-After</code> as it took them, as a node's <code>fenec_connections_refused_total</code>: <code>ceiling</code> or <code>no_thread</code>. A node's own refusal reaches the client as the node's 503, its request never run</td></tr>
-<tr><td><code>fenec_router_nodes</code>, <code>fenec_router_tenants{node, region}</code></td><td>gauge</td><td>the nodes in the directory, and the tenants placed on each; <code>region</code> where the node names one (<a href="sharding-regions.html#regions">Regions</a>), as on every gauge by node below</td></tr>
-<tr><td><code>fenec_router_replicas{node, region}</code></td><td>gauge</td><td>the replicas of their own each node holds, with <code>--replicas</code>; a node's count falls to 0 after a failover took the node's replicas away, until <code>POST /_shard/replicas</code></td></tr>
-<tr><td><code>fenec_router_same_zone_copies{region}</code></td><td>gauge</td><td>tenants whose replica or standby copy is in their primary's zone, so a datacenter lost takes both: placed there only where the region had no node free in another zone</td></tr>
-<tr><td><code>fenec_router_tenants_unreplicated{region}</code></td><td>gauge</td><td>with <code>--replicas</code>, the tenants with no copy a failover could promote — no replica of their own and no standby on their node — every region a node names, 0 or not: an attach that did not take, tried again for about four minutes (<a href="sharding-failover.html#replicas-of-their-own">Replicas of their own</a>); the replicas a failed-over node held, until it answers again or <code>POST /_shard/replicas</code>; a region with no other node. A standby router counts its primary's directory</td></tr>
-<tr><td><code>fenec_router_files_left</code></td><td>gauge</td><td>files the router may have left on nodes — made, or meant to be taken off, and placed by nothing: a create taken back whose <code>DELETE</code> its node refused, a copy that stayed — which every repair lists under <code>left</code> with why (<a href="sharding-failover.html#replicas-of-their-own">Replicas of their own</a>). Never deleted by the router: an operator's to look at and remove by hand. A standby router counts its primary's directory</td></tr>
-<tr><td><code>fenec_router_tenants_moving</code></td><td>gauge</td><td>tenants a move began on and did not record done — served from where they were, and cleared by moving them again</td></tr>
-<tr><td><code>fenec_router_following</code></td><td>gauge</td><td>1 on a standby router; its directory's <code>fenec_replica_*</code> gauges follow, and a primary's <code>fenec_replicas</code></td></tr>
-<tr><td><code>fenec_router_lease_age_seconds{node, region}</code></td><td>gauge</td><td>with <code>--auto-failover</code>, the seconds since each node last took its lease: renewed every third of a lease, and failed over past the lease and a tenth</td></tr>
-<tr><td><code>fenec_router_node_failed_over{node, region}</code></td><td>gauge</td><td>1 for a node the router failed over on its own and that has not answered since; 0 again once it does and a repair has its copies follow</td></tr>
-<tr><td><code>fenec_router_auto_failovers_total{outcome}</code></td><td>counter</td><td>nodes failed over on their own, <code>done</code> when every tenant was promoted, <code>failed</code> when one was not</td></tr>
-<tr><td><code>fenec_router_cut_requests_total{outcome}</code></td><td>counter</td><td>requests out to a node as a failover — by hand or on a lease — moved their tenant off it, ended at once rather than left to wait for <code>--upstream-timeout</code> (<a href="sharding-design.html#in-flight">Requests out to a node failed over</a>): <code>sent_again</code> to the tenant's new primary, the node having run nothing or the request being a read or a keyed write; <code>may_have_run</code>, a write sent whole with no key, answered <code>502</code>; <code>stream_ended</code>, a subscription ended for its client to open again. Each is counted in <code>fenec_router_requests_total</code> as well, by the status it was answered with; none is an upstream error</td></tr>
+<tr><td><code>fennec_router_requests_total{route, code}</code></td><td>counter</td><td>requests answered; <code>route</code> is <code>tenant</code> (<code>/t/…</code>, forwarded), <code>shard</code>, <code>replication</code>, <code>metrics</code> or <code>other</code>, <code>code</code> the status class, <code>2xx</code> to <code>5xx</code>, or <code>gone</code>: a request held at its node (<code>Fennec-Wait</code>) whose client reset its connection, answered nothing. A client gone with its end — most timeouts and aborts — reads as one that half-closed and still reads, so its request is answered as the node answers it and counted by that status</td></tr>
+<tr><td><code>fennec_router_request_duration_seconds{route}</code></td><td>histogram</td><td>arrival to answer, in buckets from 100 µs to 10 s</td></tr>
+<tr><td><code>fennec_router_upstream_duration_seconds</code></td><td>histogram</td><td>a forwarded request's time at its node: from its sending to the whole answer. Taken from the request's duration, it leaves the router's own</td></tr>
+<tr><td><code>fennec_router_upstream_errors_total{node}</code></td><td>counter</td><td>forwarded requests a node did not answer or broke off, each answered 502: the one to alert on</td></tr>
+<tr><td><code>fennec_router_refused_total</code></td><td>counter</td><td>requests refused for their token (401): the router's own, and its nodes' it passed on</td></tr>
+<tr><td><code>fennec_router_entry_clients_total{outcome}</code></td><td>counter</td><td>with <code>--entry-token</code>, what the router made of the <a href="sharding-entry.html#global-entry">global entry</a>'s name for the client (<code>Fennec-Client</code>) of each request no other router relayed: <code>named</code>, the address taken for the request's; <code>bad_mark</code>, not the entry's mark (another token, or a client sending the header itself); <code>stale</code>, the entry's mark made more than a minute from the router's clock; <code>absent</code>, a tenant's request carrying none — a client reaching the router itself, or an entry with no <code>ENTRY_TOKEN</code>, which names nobody. All but <code>named</code> count by the connection's address</td></tr>
+<tr><td><code>fennec_router_moves_total{outcome}</code></td><td>counter</td><td>tenant moves that began, <code>done</code> or <code>failed</code> and thawed; one refused before it began is not one</td></tr>
+<tr><td><code>fennec_router_move_duration_seconds</code></td><td>histogram</td><td>how long a move that was done took, the tenant frozen for all of it, in buckets from 10 ms to 1 000 s</td></tr>
+<tr><td><code>fennec_router_fanouts_total{outcome}</code></td><td>counter</td><td><a href="sharding-tenants.html#across-tenants">queries across tenants</a>: <code>done</code>, every tenant answered; <code>partial</code>, some failed and the caller asked for the others' rows; <code>failed</code>, answered with the tenants that failed; <code>refused</code> as a whole, before or after the asking (a request that does not read, a bound passed)</td></tr>
+<tr><td><code>fennec_router_fanout_duration_seconds</code></td><td>histogram</td><td>a query across tenants from its arrival to the merged answer</td></tr>
+<tr><td><code>fennec_router_fanout_tenants_total{outcome}</code></td><td>counter</td><td>the tenants those queries asked, <code>answered</code> or <code>failed</code>; no label names a tenant</td></tr>
+<tr><td><code>fennec_router_connections</code></td><td>gauge</td><td>client connections open now, the scrape's own among them</td></tr>
+<tr><td><code>fennec_router_connections_refused_total{reason}</code></td><td>counter</td><td>client connections the router answered 503 with <code>Retry-After</code> as it took them, as a node's <code>fennec_connections_refused_total</code>: <code>ceiling</code> or <code>no_thread</code>. A node's own refusal reaches the client as the node's 503, its request never run</td></tr>
+<tr><td><code>fennec_router_nodes</code>, <code>fennec_router_tenants{node, region}</code></td><td>gauge</td><td>the nodes in the directory, and the tenants placed on each; <code>region</code> where the node names one (<a href="sharding-regions.html#regions">Regions</a>), as on every gauge by node below</td></tr>
+<tr><td><code>fennec_router_replicas{node, region}</code></td><td>gauge</td><td>the replicas of their own each node holds, with <code>--replicas</code>; a node's count falls to 0 after a failover took the node's replicas away, until <code>POST /_shard/replicas</code></td></tr>
+<tr><td><code>fennec_router_same_zone_copies{region}</code></td><td>gauge</td><td>tenants whose replica or standby copy is in their primary's zone, so a datacenter lost takes both: placed there only where the region had no node free in another zone</td></tr>
+<tr><td><code>fennec_router_tenants_unreplicated{region}</code></td><td>gauge</td><td>with <code>--replicas</code>, the tenants with no copy a failover could promote — no replica of their own and no standby on their node — every region a node names, 0 or not: an attach that did not take, tried again for about four minutes (<a href="sharding-failover.html#replicas-of-their-own">Replicas of their own</a>); the replicas a failed-over node held, until it answers again or <code>POST /_shard/replicas</code>; a region with no other node. A standby router counts its primary's directory</td></tr>
+<tr><td><code>fennec_router_files_left</code></td><td>gauge</td><td>files the router may have left on nodes — made, or meant to be taken off, and placed by nothing: a create taken back whose <code>DELETE</code> its node refused, a copy that stayed — which every repair lists under <code>left</code> with why (<a href="sharding-failover.html#replicas-of-their-own">Replicas of their own</a>). Never deleted by the router: an operator's to look at and remove by hand. A standby router counts its primary's directory</td></tr>
+<tr><td><code>fennec_router_tenants_moving</code></td><td>gauge</td><td>tenants a move began on and did not record done — served from where they were, and cleared by moving them again</td></tr>
+<tr><td><code>fennec_router_following</code></td><td>gauge</td><td>1 on a standby router; its directory's <code>fennec_replica_*</code> gauges follow, and a primary's <code>fennec_replicas</code></td></tr>
+<tr><td><code>fennec_router_lease_age_seconds{node, region}</code></td><td>gauge</td><td>with <code>--auto-failover</code>, the seconds since each node last took its lease: renewed every third of a lease, and failed over past the lease and a tenth</td></tr>
+<tr><td><code>fennec_router_node_failed_over{node, region}</code></td><td>gauge</td><td>1 for a node the router failed over on its own and that has not answered since; 0 again once it does and a repair has its copies follow</td></tr>
+<tr><td><code>fennec_router_auto_failovers_total{outcome}</code></td><td>counter</td><td>nodes failed over on their own, <code>done</code> when every tenant was promoted, <code>failed</code> when one was not</td></tr>
+<tr><td><code>fennec_router_cut_requests_total{outcome}</code></td><td>counter</td><td>requests out to a node as a failover — by hand or on a lease — moved their tenant off it, ended at once rather than left to wait for <code>--upstream-timeout</code> (<a href="sharding-design.html#in-flight">Requests out to a node failed over</a>): <code>sent_again</code> to the tenant's new primary, the node having run nothing or the request being a read or a keyed write; <code>may_have_run</code>, a write sent whole with no key, answered <code>502</code>; <code>stream_ended</code>, a subscription ended for its client to open again. Each is counted in <code>fennec_router_requests_total</code> as well, by the status it was answered with; none is an upstream error</td></tr>
 </tbody>
 </table>
 </div>
 
 <details class="deep"><summary>What the router counts</summary>
-<p><code>fenec-shard</code> serves <code>/_metrics</code> on its own listener,
+<p><code>fennec-shard</code> serves <code>/_metrics</code> on its own listener,
 behind its <code>--token</code> as <code>/_shard/</code> is: a scrape names the
 nodes. It counts what it answered and what the nodes took over it; what a
 tenant's statements did is its node's to count, and no label names a tenant.
@@ -365,26 +365,26 @@ statements, so a client holding its answer finds it in the next scrape; its
 time ends once the answer is written.</p>
 
 <pre data-lang="text"># what the router adds, at the median, over five minutes
-histogram_quantile(0.5, sum by (le) (rate(fenec_router_request_duration_seconds_bucket{route="tenant"}[5m])))
-  - histogram_quantile(0.5, sum by (le) (rate(fenec_router_upstream_duration_seconds_bucket[5m])))
+histogram_quantile(0.5, sum by (le) (rate(fennec_router_request_duration_seconds_bucket{route="tenant"}[5m])))
+  - histogram_quantile(0.5, sum by (le) (rate(fennec_router_upstream_duration_seconds_bucket[5m])))
 
 # worth an alert
-rate(fenec_router_upstream_errors_total[5m]) > 0
-fenec_router_tenants_moving > 0
-increase(fenec_router_auto_failovers_total[5m]) > 0
-fenec_router_node_failed_over > 0
-fenec_router_same_zone_copies > 0
+rate(fennec_router_upstream_errors_total[5m]) > 0
+fennec_router_tenants_moving > 0
+increase(fennec_router_auto_failovers_total[5m]) > 0
+fennec_router_node_failed_over > 0
+fennec_router_same_zone_copies > 0
 # tenants with no copy to fail over to, on the router keeping the directory
-fenec_router_tenants_unreplicated > 0 and on (instance) fenec_router_following == 0
+fennec_router_tenants_unreplicated > 0 and on (instance) fennec_router_following == 0
 # files the router may have left on nodes, for an operator to look at
-fenec_router_files_left > 0 and on (instance) fenec_router_following == 0
+fennec_router_files_left > 0 and on (instance) fennec_router_following == 0
 # behind the global entry: a token or a clock to fix, or an entry naming
 # nobody (its ENTRY_TOKEN unset) -- on a router only the entry reaches
-rate(fenec_router_entry_clients_total{outcome=~"bad_mark|stale"}[5m]) > 0
-rate(fenec_router_entry_clients_total{outcome="absent"}[5m]) > 0
+rate(fennec_router_entry_clients_total{outcome=~"bad_mark|stale"}[5m]) > 0
+rate(fennec_router_entry_clients_total{outcome="absent"}[5m]) > 0
 
 # tenants by region
-sum by (region) (fenec_router_tenants)
+sum by (region) (fennec_router_tenants)
 </pre>
 </details>
 
@@ -402,7 +402,7 @@ sent.</p>
 <details class="deep"><summary>How a request id is kept or made</summary>
 <p>An id a client sends is kept when it is printable ASCII of at most 128
 bytes; any other is replaced, as a header or a log line could not carry it
-whole. A made one is 16 hex characters. <code>fenec-shard</code> takes the
+whole. A made one is 16 hex characters. <code>fennec-shard</code> takes the
 client's id or makes one, sends it to the node, which takes it as its own,
 and answers with it: one request through the router has one id in the
 router's log, the node's and the answer. A text line on stderr written while
@@ -414,30 +414,30 @@ nothing measurable (<code>make requests-bench</code>, in turns).</p>
 
 <h2 id="tracing">Tracing</h2>
 
-<p>With <code>--otlp-endpoint</code>, fenec-server and fenec-shard send
+<p>With <code>--otlp-endpoint</code>, fennec-server and fennec-shard send
 OpenTelemetry traces: a span a request, with its waits under it — the
 lock, the statement, the disk, the replicas. Any system that takes OTLP
 shows where a request's time went: Datadog, Grafana Tempo, Honeycomb, New
 Relic, Elastic.</p>
 
 <pre data-lang="bash"># an OpenTelemetry Collector, or the Datadog Agent, on this host
-fenec-server --file data.fenec --sync always \
+fennec-server --file data.fennec --sync always \
          --otlp-endpoint http://127.0.0.1:4318 --trace-sample 0.1
 
-OTEL_SERVICE_NAME=orders-db fenec-server --file data.fenec \
+OTEL_SERVICE_NAME=orders-db fennec-server --file data.fennec \
          --otlp-endpoint http://127.0.0.1:4318
 </pre>
 
 <ul>
-  <li><b>A collector on loopback.</b> fenecdb speaks no TLS, so the endpoint
+  <li><b>A collector on loopback.</b> fennecdb speaks no TLS, so the endpoint
     is a collector on the same host or network — the OpenTelemetry
     Collector, the Datadog Agent's OTLP receiver, Grafana Alloy — which
     forwards over TLS: <a href="/docs/datadog#tracing">their setup</a>.</li>
   <li><b>W3C <code>traceparent</code>.</b> A request carrying one continues
-    the caller's trace; <code>fenec-shard</code> continues it and hands it to
+    the caller's trace; <code>fennec-shard</code> continues it and hands it to
     the node, so the router's spans and the node's are one tree.</li>
   <li><b>Off unless an endpoint is given</b>, and free when off. A ratio
-    samples the traces that start at fenecdb; a caller's sampled trace is
+    samples the traces that start at fennecdb; a caller's sampled trace is
     always followed.</li>
 </ul>
 
@@ -446,11 +446,11 @@ OTEL_SERVICE_NAME=orders-db fenec-server --file data.fenec \
 <thead><tr><th>Span</th><th>Kind</th><th>What it times</th></tr></thead>
 <tbody>
 <tr><td><code>POST /query</code>, <code>GET /{collection}</code>, <code>POST /t/{tenant}/batch</code>…</td><td>server</td><td>the request, from its head read to its answer written: its method and route, never a value</td></tr>
-<tr><td><code>lock.wait</code></td><td>internal</td><td>the wait for the database's lock, <code>fenec.lock</code> <code>read</code> or <code>write</code>: a read waits out a write's block, a write every read</td></tr>
-<tr><td><code>execute</code></td><td>internal</td><td>the statement run, under the lock; a <code>/batch</code>'s statements together, <code>fenec.statements</code> of them, and a <code>create index</code> or <code>compact</code> beside the database with <code>fenec.beside</code></td></tr>
+<tr><td><code>lock.wait</code></td><td>internal</td><td>the wait for the database's lock, <code>fennec.lock</code> <code>read</code> or <code>write</code>: a read waits out a write's block, a write every read</td></tr>
+<tr><td><code>execute</code></td><td>internal</td><td>the statement run, under the lock; a <code>/batch</code>'s statements together, <code>fennec.statements</code> of them, and a <code>create index</code> or <code>compact</code> beside the database with <code>fennec.beside</code></td></tr>
 <tr><td><code>durability</code></td><td>internal</td><td>a write's wait for the disk after the lock (<code>--sync always</code>); on a primary it holds <code>fsync</code> and <code>replication.wait_sent</code>, the wait for its replicas' streams to send the write</td></tr>
-<tr><td><code>fenec.wait_for_write</code></td><td>internal</td><td>a replica's wait for the write a <code>Fenec-After</code> names</td></tr>
-<tr><td><code>forward</code></td><td>client</td><td><code>fenec-shard</code>'s forward to the node, to its whole answer: the node's server span is its child</td></tr>
+<tr><td><code>fennec.wait_for_write</code></td><td>internal</td><td>a replica's wait for the write a <code>Fennec-After</code> names</td></tr>
+<tr><td><code>forward</code></td><td>client</td><td><code>fennec-shard</code>'s forward to the node, to its whole answer: the node's server span is its child</td></tr>
 </tbody>
 </table>
 </div>
@@ -463,21 +463,21 @@ OTEL_SERVICE_NAME=orders-db fenec-server --file data.fenec \
 <code>server.port</code>, <code>client.address</code> — the client behind
 a router, or behind the global entry where a router believes it — and the
 connection's own address as <code>network.peer.address</code>,
-<code>db.system</code> (<code>fenecdb</code>),
+<code>db.system</code> (<code>fennecdb</code>),
 <code>db.operation.name</code> (<code>get</code>, <code>put</code>,
-<code>create</code>…) and, for FenecQL, <code>db.query.text</code> — the
+<code>create</code>…) and, for FennecQL, <code>db.query.text</code> — the
 statement's shape, each literal and parameter written <code>$n</code>, as
 <a href="#statements">the statements' counts</a> show it, so no value
 reaches a span. A REST request's target holds values in its query string,
 so it has its route alone. A <code>--dir</code> node's and the router's
-spans carry <code>fenec.tenant</code>, the router's <code>fenec.node</code>,
-and every server span <code>fenec.request_id</code>, the
+spans carry <code>fennec.tenant</code>, the router's <code>fennec.node</code>,
+and every server span <code>fennec.request_id</code>, the
 <a href="#request-id">request id</a> its log lines carry. A 5xx marks the
 server span an error; a 4xx is the client's and does not.</p>
 
 <p>A request's <code>traceparent</code> is read as the W3C spec writes it;
 one that does not parse starts a trace of its own, and
-<code>tracestate</code> goes on unchanged. A trace starting at fenecdb is
+<code>tracestate</code> goes on unchanged. A trace starting at fennecdb is
 kept when its id's low 56 bits fall under the ratio, OpenTelemetry's
 <code>TraceIdRatioBased</code>, so a router and its nodes sampling at one
 ratio keep the same traces. <code>--trace-sample</code> is 1 with an
@@ -491,7 +491,7 @@ they name no path, then <code>OTEL_EXPORTER_OTLP_ENDPOINT</code>, under
 which <code>/v1/traces</code> goes. <code>--otlp-header k=v</code> (and
 <code>OTEL_EXPORTER_OTLP_HEADERS</code>) adds a header to every post, an
 API key a collector asks for; <code>OTEL_SERVICE_NAME</code> names the
-service (<code>fenec-server</code>, <code>fenec-shard</code>) and
+service (<code>fennec-server</code>, <code>fennec-shard</code>) and
 <code>OTEL_RESOURCE_ATTRIBUTES</code> adds to it. Spans go as OTLP over
 HTTP with JSON, <code>POST /v1/traces</code> with
 <code>application/json</code>, the collector's port 4318: an
@@ -506,7 +506,7 @@ as <code>OTEL_BSP_MAX_EXPORT_BATCH_SIZE</code> (512) are in, a post at
 most that many, each bounded by <code>OTEL_EXPORTER_OTLP_TIMEOUT</code>
 (10 s) and kept alive between posts. A request never waits for the
 collector: with the queue full its spans are dropped and counted, and a
-post that fails drops its spans, logged once a minute at most. <code>fenec-server</code> posts the
+post that fails drops its spans, logged once a minute at most. <code>fennec-server</code> posts the
 last second's spans as it shuts down.</p>
 </details>
 
@@ -514,8 +514,8 @@ last second's spans as it shuts down.</p>
 <table>
 <thead><tr><th>Metric</th><th>Type</th><th>What it says</th></tr></thead>
 <tbody>
-<tr><td><code>fenec_trace_spans_exported_total</code></td><td>counter</td><td>spans the endpoint took</td></tr>
-<tr><td><code>fenec_trace_spans_dropped_total{reason}</code></td><td>counter</td><td>spans left out: <code>queue_full</code>, the collector not keeping up, or <code>export_failed</code>, a post refused or unanswered</td></tr>
+<tr><td><code>fennec_trace_spans_exported_total</code></td><td>counter</td><td>spans the endpoint took</td></tr>
+<tr><td><code>fennec_trace_spans_dropped_total{reason}</code></td><td>counter</td><td>spans left out: <code>queue_full</code>, the collector not keeping up, or <code>export_failed</code>, a post refused or unanswered</td></tr>
 </tbody>
 </table>
 </div>

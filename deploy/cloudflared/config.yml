@@ -26,7 +26,7 @@ ingress:
     path: ^/+t/+[a-z0-9_-]{1,64}(/|$)
     service: http://10.1.0.21:8090
     originRequest:
-      # A held write (Fenec-Wait) waits 30 s at most and a silent stream
+      # A held write (Fennec-Wait) waits 30 s at most and a silent stream
       # writes a keep-alive every 20 s: neither meets these.
       connectTimeout: 10s
       keepAliveTimeout: 90s

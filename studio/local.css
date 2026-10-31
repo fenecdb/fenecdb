@@ -1,7 +1,7 @@
-/* fenec studio over a database in the page -- the site's playground --
+/* fennec studio over a database in the page -- the site's playground --
    beside app.css: what that page shows where a server's shows a token, and
    the dialog that keeps or resets the database. A stylesheet of its own,
-   which only that page links (site/build.py), so fenec-server's first load
+   which only that page links (site/build.py), so fennec-server's first load
    carries none of it. The same tokens as app.css: the oasis's green dot is
    an answer that came back, the sun's amber where you are. */
 

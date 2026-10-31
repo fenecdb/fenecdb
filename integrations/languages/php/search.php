@@ -1,10 +1,10 @@
 <?php
 // PHP with the curl extension and json_encode alone. Run by ../run-tests.sh.
 
-$url = getenv('FENEC_URL') ?: 'http://127.0.0.1:8080';
-$token = getenv('FENEC_TOKEN') ?: null;
+$url = getenv('FENNEC_URL') ?: 'http://127.0.0.1:8080';
+$token = getenv('FENNEC_TOKEN') ?: null;
 
-// One FenecQL statement; a refusal throws with the server's message and status.
+// One FennecQL statement; a refusal throws with the server's message and status.
 function query(string $q, array $params = []) {
     global $url, $token;
     $ch = curl_init("$url/query");

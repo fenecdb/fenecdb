@@ -9,14 +9,14 @@ import { AlreadyOpen, PortTaken, randomToken, startServer, type Child, type File
 import { DEFAULT_SETTINGS, servePlan, taskPlan, windowPlan, type Plan } from "../src/bun/serving.ts";
 import { missing, nodeSpawn, SERVER } from "./node-spawn.ts";
 
-// The real fenec-server, started through the app's own start (process.ts) on
+// The real fennec-server, started through the app's own start (process.ts) on
 // port 0, as a window's and a served database's servers are: where it listens,
 // that the token is in its environment and not its arguments, that a stop is
 // the server's own shutdown (exit 0, the lock let go), and that a file another
 // server holds, and a port another program holds, are said as what they are.
 
 const skip = missing() || false;
-const work = mkdtempSync(join(tmpdir(), "fenec-desktop-process-"));
+const work = mkdtempSync(join(tmpdir(), "fennec-desktop-process-"));
 const running: FileServer[] = [];
 after(async () => {
 	await Promise.all(running.map((s) => s.stop()));
@@ -30,7 +30,7 @@ const start = async (plan: Plan, token: string) => {
 };
 /** A database file made by a server, as New database makes one. */
 async function database(name: string) {
-	const file = join(work, `${name}.fenec`);
+	const file = join(work, `${name}.fennec`);
 	writeFileSync(file, "");
 	const s = await start(taskPlan(file), randomToken());
 	assert.equal(await s.stop(), 0);
@@ -118,7 +118,7 @@ test("what it writes is kept in a bounded ring, a line an entry, and told to who
 	const s = await start(windowPlan(file, "250"), randomToken());
 	const seen: string[] = [];
 	const stop = s.onLine((l) => seen.push(l));
-	assert.ok(s.lines().some((l) => /^fenec-http \S+ listening on:/.test(l)));
+	assert.ok(s.lines().some((l) => /^fennec-http \S+ listening on:/.test(l)));
 	await s.stop();
 	stop();
 	assert.ok(seen.length > 0 || s.lines().length > 0);
@@ -152,19 +152,19 @@ const writes =
 	};
 
 test("where it listens and its metrics are read before it answers anything: a line after is the data's", async () => {
-	const plan = { ...servePlan("/nowhere.fenec", "250", { ...DEFAULT_SETTINGS, metrics: true }), port: 0 };
+	const plan = { ...servePlan("/nowhere.fennec", "250", { ...DEFAULT_SETTINGS, metrics: true }), port: 0 };
 	// A statement logged after the start can hold a newline and so a line of its own.
-	const later = ["metrics on: http://127.0.0.1:6666/_metrics  [token]", "fenec-http 0.0.0 listening on: http://127.0.0.1:7777  [x]"];
-	const s = await startServer(writes(["fenec-http 0.0.0 listening on: http://127.0.0.1:5555  [token required]", ...later]), "fenec-server", plan, randomToken());
+	const later = ["metrics on: http://127.0.0.1:6666/_metrics  [token]", "fennec-http 0.0.0 listening on: http://127.0.0.1:7777  [x]"];
+	const s = await startServer(writes(["fennec-http 0.0.0 listening on: http://127.0.0.1:5555  [token required]", ...later]), "fennec-server", plan, randomToken());
 	assert.equal(s.port, 5555);
 	assert.equal(s.metrics, null, "none was said before it listened, and none is taken after");
 	await s.stop();
-	const t = await startServer(writes(["metrics on: http://127.0.0.1:9101/_metrics  [token]", "fenec-http 0.0.0 listening on: http://127.0.0.1:5556  [x]", ...later]), "fenec-server", plan, randomToken());
+	const t = await startServer(writes(["metrics on: http://127.0.0.1:9101/_metrics  [token]", "fennec-http 0.0.0 listening on: http://127.0.0.1:5556  [x]", ...later]), "fennec-server", plan, randomToken());
 	assert.equal(t.metrics, "http://127.0.0.1:9101");
 	assert.equal(t.port, 5556);
 	await t.stop();
 	// Not asked for, not read: a metrics line from a server started without them is nobody's.
-	const u = await startServer(writes(["metrics on: http://127.0.0.1:9102/_metrics  [token]", "fenec-http 0.0.0 listening on: http://127.0.0.1:5557  [x]"]), "fenec-server", { ...plan, metrics: false }, randomToken());
+	const u = await startServer(writes(["metrics on: http://127.0.0.1:9102/_metrics  [token]", "fennec-http 0.0.0 listening on: http://127.0.0.1:5557  [x]"]), "fennec-server", { ...plan, metrics: false }, randomToken());
 	assert.equal(u.metrics, null);
 	await u.stop();
 });

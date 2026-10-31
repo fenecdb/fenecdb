@@ -1,15 +1,15 @@
 {
-  "name": "@fenecdb/web",
+  "name": "@fennecdb/web",
   "version": "0.1.12",
-  "description": "fenecdb in the browser: the engine as WebAssembly, and dependency-free ES modules with its query builder, HTTP client and sync layer -- or the client alone, with no engine (@fenecdb/web/client)",
+  "description": "fennecdb in the browser: the engine as WebAssembly, and dependency-free ES modules with its query builder, HTTP client and sync layer -- or the client alone, with no engine (@fennecdb/web/client)",
   "license": "Apache-2.0",
   "type": "module",
-  "main": "fenec.js",
-  "types": "fenec.d.ts",
+  "main": "fennec.js",
+  "types": "fennec.d.ts",
   "exports": {
     ".": {
-      "types": "./fenec.d.ts",
-      "default": "./fenec.js"
+      "types": "./fennec.d.ts",
+      "default": "./fennec.js"
     },
     "./client": {
       "types": "./client.d.ts",
@@ -19,20 +19,20 @@
       "types": "./schema.d.ts",
       "default": "./schema.js"
     },
-    "./fenec.wasm": "./fenec.wasm",
+    "./fennec.wasm": "./fennec.wasm",
     "./collate/*": "./collate/*",
     "./package.json": "./package.json"
   },
   "files": [
-    "fenec.js",
-    "fenec.d.ts",
+    "fennec.js",
+    "fennec.d.ts",
     "builder.js",
     "http.js",
     "client.js",
     "client.d.ts",
     "schema.js",
     "schema.d.ts",
-    "fenec.wasm",
+    "fennec.wasm",
     "collate/"
   ],
   "sideEffects": false,
@@ -49,7 +49,7 @@
   "homepage": "https://fenecdb.com/docs/javascript",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/fenecdb/fenecdb.git",
+    "url": "git+https://github.com/fennec-db/fennecdb.git",
     "directory": "web"
   },
   "publishConfig": {

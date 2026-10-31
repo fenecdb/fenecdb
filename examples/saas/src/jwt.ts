@@ -1,5 +1,5 @@
 // RS256 JSON Web Tokens with node:crypto alone: signing the access tokens
-// fenec-server checks (it holds only the public key, from the JWKS file
+// fennec-server checks (it holds only the public key, from the JWKS file
 // --jwt-keys reads), and verifying the identity provider's ID tokens.
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify, type KeyObject } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';

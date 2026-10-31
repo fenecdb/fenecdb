@@ -1,4 +1,4 @@
-// fenec studio: a browser's view of a fenecdb server -- its collections,
+// fennec studio: a browser's view of a fennecdb server -- its collections,
 // their rows, a row's whole value -- and the writes a person makes there.
 // Every view reads through `state.db`: a server's (connect.js), or the
 // site playground's database in the page (local.js, `local` below).
@@ -41,7 +41,7 @@ const state = {
 
 // ------------------------------------------------------------------ theme
 
-const THEME = 'fenec-studio-theme';
+const THEME = 'fennec-studio-theme';
 
 function theme(next) {
   // A viewer's convenience, so localStorage; the token never goes there.
@@ -76,7 +76,7 @@ function say(text, kind = 'info') {
 // ------------------------------------------------------------------ sign in
 
 function signIn(problem = '') {
-  document.title = 'Sign in · fenec studio';
+  document.title = 'Sign in · fennec studio';
   const last = saved();
   const server = h('input', { id: 'server', name: 'server', type: 'url', value: last?.server ?? here(), required: true, spellcheck: 'false', autocomplete: 'off' });
   const token = h('input', { id: 'token', name: 'token', type: 'password', value: '', autocomplete: 'off', spellcheck: 'false' });
@@ -99,8 +99,8 @@ function signIn(problem = '') {
         }
       },
     },
-    h('div', { class: 'signin-brand' }, mark('mark big'), h('span', {}, 'fenec studio')),
-    h('h1', {}, 'Connect to a fenecdb server'),
+    h('div', { class: 'signin-brand' }, mark('mark big'), h('span', {}, 'fennec studio')),
+    h('h1', {}, 'Connect to a fennecdb server'),
     h('label', { for: 'server' }, 'Server'),
     server,
     h('label', { for: 'token' }, 'Token'),
@@ -117,16 +117,16 @@ function signIn(problem = '') {
 }
 
 /**
- * Under an app (`window.fenecHost`): why its connection failed, and no
+ * Under an app (`window.fennecHost`): why its connection failed, and no
  * form. Another token is the app's to hand over: typed in here, it would
  * be a connection the app never sees, kept in the tab's storage.
  */
 function refused(problem) {
-  document.title = 'Not connected · fenec studio';
+  document.title = 'Not connected · fennec studio';
   const card = h(
     'div',
     { class: 'signin host-refused' },
-    h('div', { class: 'signin-brand' }, mark('mark big'), h('span', {}, 'fenec studio')),
+    h('div', { class: 'signin-brand' }, mark('mark big'), h('span', {}, 'fennec studio')),
     h('h1', {}, 'The app’s connection was refused'),
     h('p', { class: 'form-error', role: 'alert' }, problem),
     h('p', { class: 'hint' }, `The app that opened this window holds the connection: ${AGAIN}`),
@@ -185,7 +185,7 @@ function layout() {
     placeholder: 'year >= $1 and tags has "rust"',
     spellcheck: 'false',
     autocomplete: 'off',
-    'aria-label': 'Where clause, FenecQL',
+    'aria-label': 'Where clause, FennecQL',
   });
   const params = h('input', { class: 'params', id: 'params', value: '[]', spellcheck: 'false', autocomplete: 'off', 'aria-label': 'Parameters, a JSON list' });
   const whereForm = h(
@@ -253,7 +253,7 @@ function layout() {
     'header',
     { class: 'top' },
     menu,
-    h('div', { class: 'brand' }, mark(), h('span', { class: 'brand-name' }, 'fenec studio')),
+    h('div', { class: 'brand' }, mark(), h('span', { class: 'brand-name' }, 'fennec studio')),
     local ? null : h('div', { class: 'where-at' }, h('span', { class: 'server-host', title: state.server }, new URL(state.server).host), tenantPick),
     tabs,
     h('div', { class: 'top-end' }, local ? [state.db.controls(ctx), themeBtn] : [whoBtn, themeBtn, out]),
@@ -503,7 +503,7 @@ function choose(name) {
   const c = state.collections.find((x) => x.name === name);
   if (!c) return null;
   state.current = c;
-  document.title = `${c.name} · fenec studio`;
+  document.title = `${c.name} · fennec studio`;
   sidebar.select(name);
   remember();
   return c;

@@ -2,7 +2,7 @@
 // database -- a Worker that is an endpoint (needs wrangler: WRANGLER=path/to/
 // wrangler, or one on PATH, and it is left out where there is none), a job
 // queue with a worker, and a signed webhook relay of the change stream. Each
-// runs against a fenec-server of its own, so what one writes does not number
+// runs against a fennec-server of its own, so what one writes does not number
 // what another says.
 //
 //   node examples/recipes/functions-demo.mjs            all three
@@ -56,7 +56,7 @@ try {
     mkdirSync(wdir);
     for (const f of ['index.mjs', 'wrangler.jsonc']) copyFileSync(join(here, 'worker', f), join(wdir, f));
     const der = createPrivateKey(pem).export({ type: 'pkcs8', format: 'der' }).toString('base64');
-    writeFileSync(join(wdir, '.dev.vars'), `SERVICE_KEY=${der}\nFENEC_URL=${url}\n`);
+    writeFileSync(join(wdir, '.dev.vars'), `SERVICE_KEY=${der}\nFENNEC_URL=${url}\n`);
     // On port 0, and the inspector's too, and the address read off the line wrangler says it is
     // ready on: a port found free and handed over is free only until another process takes it.
     // In a process group of its own, so that stopping it stops the workerd it starts.
@@ -121,7 +121,7 @@ try {
     const started = Date.now();
     const sent = [];
     const working = work({
-      fenec: url, token: tokenFor('welcome-worker'), id: 'w1', lease: 30_000, wait: 5_000, backoff: 300, signal: stop.signal,
+      fennec: url, token: tokenFor('welcome-worker'), id: 'w1', lease: 30_000, wait: 5_000, backoff: 300, signal: stop.signal,
       handlers: {
         welcome: async ({ email }) => {
           if (email.startsWith('poison')) throw new Error('mailbox refused');
@@ -168,7 +168,7 @@ try {
 
     const run = (opts = {}) => {
       const ctl = new AbortController();
-      const finished = relay({ fenec: url, adminToken: 'root', url: hook, secrets, collections: ['orders'], ops: ['put'],
+      const finished = relay({ fennec: url, adminToken: 'root', url: hook, secrets, collections: ['orders'], ops: ['put'],
         backoff: 100, tries: 3, wait: 500, signal: ctl.signal, log: (m) => say(m), ...opts })
         .then(() => null, (e) => e);
       return { stop: async () => (ctl.abort(), finished), finished };

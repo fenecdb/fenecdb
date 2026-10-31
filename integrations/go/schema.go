@@ -1,4 +1,4 @@
-package fenecdb
+package fennecdb
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 )
 
 // SchemaPlan is what the engine found comparing the server's schema with
-// the one the code declares, and did: the FenecQL that adds what is
+// the one the code declares, and did: the FennecQL that adds what is
 // missing, the migrations it recorded, and what it refused, each with how
 // to resolve it.
 type SchemaPlan struct {
@@ -37,7 +37,7 @@ type SchemaError struct {
 
 func (e *SchemaError) Error() string {
 	var b strings.Builder
-	b.WriteString("fenecdb: the database's schema differs from the code's:")
+	b.WriteString("fennecdb: the database's schema differs from the code's:")
 	for _, r := range e.Refusals {
 		b.WriteString("\n  - " + r.Message + "\n    " + r.Fix)
 	}
@@ -51,18 +51,18 @@ func Rebuild(collection, field string) any {
 	return map[string]any{"rebuild": map[string]string{"collection": collection, "field": field}}
 }
 
-// Schema checks the server's schema against fenecql -- `create collection`
-// and `create index` statements, a schema.fenecql file -- in the engine.
+// Schema checks the server's schema against fennecql -- `create collection`
+// and `create index` statements, a schema.fennecql file -- in the engine.
 // The server owns its schema: it is compared, and nothing applied, unless
 // migrate -- with the server's token -- runs the migrations it has not
 // recorded, in order, and adds what only adds, all one block. A migration
-// is FenecQL text or Rebuild(...). A difference that would lose data or
+// is FennecQL text or Rebuild(...). A difference that would lose data or
 // could mean two things is a *SchemaError.
-func (c *Client) Schema(ctx context.Context, fenecql string, migrations []any, migrate bool) (SchemaPlan, error) {
+func (c *Client) Schema(ctx context.Context, fennecql string, migrations []any, migrate bool) (SchemaPlan, error) {
 	if migrations == nil {
 		migrations = []any{}
 	}
-	body, err := json.Marshal(map[string]any{"format": 1, "fenecql": fenecql, "migrations": migrations})
+	body, err := json.Marshal(map[string]any{"format": 1, "fennecql": fennecql, "migrations": migrations})
 	if err != nil {
 		return SchemaPlan{}, err
 	}

@@ -1,5 +1,5 @@
 #!/bin/sh
-# docs/auth, run: a fenec-server that takes tokens, held to policy.txt, and
+# docs/auth, run: a fennec-server that takes tokens, held to policy.txt, and
 # what it answers a token it should and one it should not. Servers, one
 # after the other:
 #
@@ -15,13 +15,13 @@
 #   (4 to 7: a keys file the server cannot use, a person turned away, a tenant
 #   node, a legacy secret.)
 #
-#   FENEC_SERVER=target/debug/fenec-server sh examples/recipes/auth.sh
+#   FENNEC_SERVER=target/debug/fennec-server sh examples/recipes/auth.sh
 #
 # Every server listens on a port the system picks and says which.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
-server=${FENEC_SERVER:-$root/target/debug/fenec-server}
+server=${FENNEC_SERVER:-$root/target/debug/fennec-server}
 dir=$(mktemp -d)
 pid=
 idppid=
@@ -31,7 +31,7 @@ start() { # start <name> <flags...>: the server over a new file, its address in 
     name=$1
     shift
     rm -f "$dir/server.log"
-    "$server" --file "$dir/$name.fenec" --http 127.0.0.1:0 --http-token root \
+    "$server" --file "$dir/$name.fennec" --http 127.0.0.1:0 --http-token root \
         --policy "${policy:-$here/policy.txt}" "$@" 2>"$dir/server.log" &
     pid=$!
     i=0
@@ -76,7 +76,7 @@ accepts() {
 serves() { [ "$(curl -s -o /dev/null -w '%{http_code}' "$url/_whoami" -H "Authorization: Bearer $1")" = 200 ]; }
 
 setup() { # the collections and two profiles, written with the server's own token
-    while read -r stmt; do call "" root "$stmt" >/dev/null; done <"$here/schema.fenecql"
+    while read -r stmt; do call "" root "$stmt" >/dev/null; done <"$here/schema.fennecql"
     call "" root 'put profiles [{owner: "alice", name: "Alice", email: "alice@example.test", phone: "111"}, {owner: "bob", name: "Bob", email: "bob@example.test", phone: "222"}]' >/dev/null
 }
 
@@ -230,7 +230,7 @@ stop
 
 echo "-- your own service's token, beside the provider's: its issuer is one the server takes, and it names an audience"
 # shellcheck disable=SC2086
-fresh services 'auth0|ada' $AUTH0 --jwt-issuer urn:fenec:services
+fresh services 'auth0|ada' $AUTH0 --jwt-issuer urn:fennec:services
 who() { # who <what> <token>: what /_whoami takes the token for, or why not
     printf '%-42s ' "$1"
     curl -s "$url/_whoami" -H "Authorization: Bearer $2" | jq -c 'if .error then . else {kind, sub} end'
@@ -285,7 +285,7 @@ unset policy
 
 echo
 echo "== 6. a tenant node: the tenant claim"
-tenant_node() { # tenant_node <shape> <tenant> <other tenant> [fenec-server flags...]
+tenant_node() { # tenant_node <shape> <tenant> <other tenant> [fennec-server flags...]
     shape=$1
     mine=$2
     other=$3

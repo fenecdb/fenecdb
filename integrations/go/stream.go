@@ -1,4 +1,4 @@
-package fenecdb
+package fennecdb
 
 import (
 	"bufio"
@@ -33,7 +33,7 @@ type Event struct {
 // Subscribe streams a collection's rows that match filter, and every change
 // to them, over server-sent events (GET /<collection>/changes): a seed
 // first, then each change as it lands. filter is the REST surface's query
-// string -- year=gte.2024, where=<a FenecQL condition>, select=title,year,
+// string -- year=gte.2024, where=<a FennecQL condition>, select=title,year,
 // since=<a seq> to resume -- and takes no parameters. The channel closes
 // when ctx is done or the stream ends; a stream that ends for any other
 // reason sends an "error" event first.
@@ -88,7 +88,7 @@ func (c *Client) Subscribe(ctx context.Context, collection string, filter url.Va
 			if err != nil {
 				if ctx.Err() == nil {
 					if errors.Is(err, io.EOF) {
-						err = errors.New("fenecdb: the subscription ended")
+						err = errors.New("fennecdb: the subscription ended")
 					}
 					send(Event{Type: "error", Err: err})
 				}
@@ -126,7 +126,7 @@ func eventOf(name string, data []byte) Event {
 		Status int     `json:"status"`
 	}
 	if err := json.Unmarshal(data, &body); err != nil {
-		return Event{Type: "error", Err: fmt.Errorf("fenecdb: an event of the subscription: %w", err)}
+		return Event{Type: "error", Err: fmt.Errorf("fennecdb: an event of the subscription: %w", err)}
 	}
 	if name == "error" {
 		// The server ends a stream at its token's exp with status 401: an
@@ -135,7 +135,7 @@ func eventOf(name string, data []byte) Event {
 		if body.Status != 0 {
 			return Event{Type: "error", Err: errorOf(body.Status, data)}
 		}
-		return Event{Type: "error", Err: errors.New("fenecdb: " + body.Error)}
+		return Event{Type: "error", Err: errors.New("fennecdb: " + body.Error)}
 	}
 	return Event{Type: name, Seq: body.Seq, Rows: body.Rows, Puts: body.Puts, Dels: body.Dels, Schema: body.Schema}
 }
@@ -152,7 +152,7 @@ type Change struct {
 
 // ChangeBatch is what Changes hands over, and Next the last write it holds:
 // the since to read on from, so that nothing is missed or had twice. Seq is
-// the last write the database holds (Fenec-Seq): a Next that has reached it
+// the last write the database holds (Fennec-Seq): a Next that has reached it
 // has every write there is.
 type ChangeBatch struct {
 	Changes []Change
@@ -161,7 +161,7 @@ type ChangeBatch struct {
 }
 
 // Changes reads the writes on the server's disk after since (GET
-// /_changes; fenec-server --cdc, or a primary with --replication-token):
+// /_changes; fennec-server --cdc, or a primary with --replication-token):
 // 1 000 at most. With wait, an answer that would hold none waits that long
 // for a write, 30 seconds at most. A since the server no longer keeps is a
 // 410, whose Message says the first it does.
@@ -185,7 +185,7 @@ func (c *Client) Changes(ctx context.Context, since uint64, wait time.Duration) 
 		}
 		var ch Change
 		if err := json.Unmarshal(line, &ch); err != nil {
-			return ChangeBatch{}, fmt.Errorf("fenecdb: a line of /_changes: %w", err)
+			return ChangeBatch{}, fmt.Errorf("fennecdb: a line of /_changes: %w", err)
 		}
 		b.Changes = append(b.Changes, ch)
 	}

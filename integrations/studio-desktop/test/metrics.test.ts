@@ -2,22 +2,22 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { between, deadShare, formatBytes, formatCount, formatSeconds, readMetrics } from "../src/bun/metrics.ts";
 
-// As fenec-server writes /_metrics (crates/fenec-http/src/metrics.rs), cut to what is read.
-const text = (statements: number, buckets: number[]) => `# HELP fenec_documents Documents in a collection.
-# TYPE fenec_documents gauge
-fenec_documents{collection="orders"} 100000
-fenec_documents{collection="customers"} 2500
-fenec_data_bytes{collection="orders"} 8000000
-fenec_file_bytes 8700000
-fenec_reclaimable_bytes 348000
-fenec_connections 3
-fenec_connections_refused_total{reason="ceiling"} 0
-fenec_statements_total{kind="read"} ${statements - 10}
-fenec_statements_total{kind="write"} 10
-${["0.0001", "0.00025", "0.0005", "0.001", "+Inf"].map((le, i) => `fenec_statement_duration_seconds_bucket{kind="read",le="${le}"} ${buckets[i]}`).join("\n")}
-fenec_statement_duration_seconds_bucket{kind="write",le="0.001"} 0
-fenec_statement_duration_seconds_bucket{kind="write",le="+Inf"} 10
-fenec_statement_duration_seconds_sum{kind="read"} 0.5
+// As fennec-server writes /_metrics (crates/fennec-http/src/metrics.rs), cut to what is read.
+const text = (statements: number, buckets: number[]) => `# HELP fennec_documents Documents in a collection.
+# TYPE fennec_documents gauge
+fennec_documents{collection="orders"} 100000
+fennec_documents{collection="customers"} 2500
+fennec_data_bytes{collection="orders"} 8000000
+fennec_file_bytes 8700000
+fennec_reclaimable_bytes 348000
+fennec_connections 3
+fennec_connections_refused_total{reason="ceiling"} 0
+fennec_statements_total{kind="read"} ${statements - 10}
+fennec_statements_total{kind="write"} 10
+${["0.0001", "0.00025", "0.0005", "0.001", "+Inf"].map((le, i) => `fennec_statement_duration_seconds_bucket{kind="read",le="${le}"} ${buckets[i]}`).join("\n")}
+fennec_statement_duration_seconds_bucket{kind="write",le="0.001"} 0
+fennec_statement_duration_seconds_bucket{kind="write",le="+Inf"} 10
+fennec_statement_duration_seconds_sum{kind="read"} 0.5
 `;
 
 test("the figures a database's card shows, from its server's own metrics", () => {

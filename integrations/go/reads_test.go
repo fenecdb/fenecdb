@@ -1,4 +1,4 @@
-package fenecdb
+package fennecdb
 
 import (
 	"context"
@@ -27,11 +27,11 @@ func TestA504SetsThePositionBackOverItsOwnAloneNeverToAnEarlierTerm(t *testing.T
 		switch {
 		case strings.Contains(string(body), "put"):
 			writes++
-			w.Header().Set("Fenec-Seq", strconv.Itoa(99+writes))
-			w.Header().Set("Fenec-History", h2)
+			w.Header().Set("Fennec-Seq", strconv.Itoa(99+writes))
+			w.Header().Set("Fennec-History", h2)
 			mu.Unlock()
 			_, _ = w.Write([]byte(`{"affected":1}`))
-		case r.Header.Get("Fenec-Read") != "":
+		case r.Header.Get("Fennec-Read") != "":
 			marked = append(marked, r.Header.Clone())
 			reads++
 			n := reads
@@ -83,20 +83,20 @@ func TestA504SetsThePositionBackOverItsOwnAloneNeverToAnEarlierTerm(t *testing.T
 		t.Fatalf("%d marked reads", len(marked))
 	}
 	for _, i := range []int{1, 3} {
-		if h := marked[i]; h.Get("Fenec-After") != "101" || h.Get("Fenec-History") != h2 {
+		if h := marked[i]; h.Get("Fennec-After") != "101" || h.Get("Fennec-History") != h2 {
 			t.Fatalf("read %d: %v", i, h)
 		}
 	}
 }
 
 // A client made WithReadsNearest marks the builder's reads and a Read
-// copy's requests for a read replica near it (Fenec-Read: replica), each
-// after the furthest position an answer from home named (Fenec-After,
-// Fenec-History); its writes, and every request of a client reading home,
+// copy's requests for a read replica near it (Fennec-Read: replica), each
+// after the furthest position an answer from home named (Fennec-After,
+// Fennec-History); its writes, and every request of a client reading home,
 // go as before. A read no copy holds that for (504) is asked home with
 // neither, and home's position, which the 504 names, is the client's from
 // then. Against a scripted server: what a router does with the mark is
-// fenec-shard's to test, and the JavaScript client's against real routers.
+// fennec-shard's to test, and the JavaScript client's against real routers.
 func TestReadsNearestAreMarkedAndSentAfterTheClientsWrites(t *testing.T) {
 	type answer struct {
 		status  int
@@ -127,8 +127,8 @@ func TestReadsNearestAreMarkedAndSentAfterTheClientsWrites(t *testing.T) {
 		a := script[0]
 		script = script[1:]
 		if a.seq != "" {
-			w.Header().Set("Fenec-Seq", a.seq)
-			w.Header().Set("Fenec-History", a.history)
+			w.Header().Set("Fennec-Seq", a.seq)
+			w.Header().Set("Fennec-History", a.history)
 		}
 		w.WriteHeader(a.status)
 		_, _ = w.Write([]byte(a.body))
@@ -164,24 +164,24 @@ func TestReadsNearestAreMarkedAndSentAfterTheClientsWrites(t *testing.T) {
 		t.Fatalf("%d requests", len(seen))
 	}
 	for i, h := range seen[:3] {
-		if h.Get("Fenec-Read") != "" || h.Get("Fenec-After") != "" {
+		if h.Get("Fennec-Read") != "" || h.Get("Fennec-After") != "" {
 			t.Fatalf("write %d marked: %v", i, h)
 		}
 	}
 	// The furthest position, 12, not the last answered, 10.
 	for _, i := range []int{3, 4, 6, 7} {
 		h := seen[i]
-		if h.Get("Fenec-Read") != "replica" || h.Get("Fenec-After") != "12" || h.Get("Fenec-History") != h1 {
+		if h.Get("Fennec-Read") != "replica" || h.Get("Fennec-After") != "12" || h.Get("Fennec-History") != h1 {
 			t.Fatalf("read %d: %v", i, h)
 		}
 	}
 	for _, i := range []int{5, 8} {
-		if seen[i].Get("Fenec-Read") != "" || seen[i].Get("Fenec-After") != "" || seen[i].Get("Fenec-History") != "" {
+		if seen[i].Get("Fennec-Read") != "" || seen[i].Get("Fennec-After") != "" || seen[i].Get("Fennec-History") != "" {
 			t.Fatalf("request %d goes home: %v", i, seen[i])
 		}
 	}
 	// Home's position taken, lower and of the history after the failover.
-	if h := seen[9]; h.Get("Fenec-After") != "10" || h.Get("Fenec-History") != h2 {
+	if h := seen[9]; h.Get("Fennec-After") != "10" || h.Get("Fennec-History") != h2 {
 		t.Fatalf("after the 504: %v", h)
 	}
 	if db.Seq() != 10 {
@@ -205,10 +205,10 @@ func TestASubscriptionNearIsSentAfterTheClientsWritesAndGoesHomeOnA504(t *testin
 		mu.Unlock()
 		switch {
 		case n == 1:
-			w.Header().Set("Fenec-Seq", "12")
-			w.Header().Set("Fenec-History", h1)
+			w.Header().Set("Fennec-Seq", "12")
+			w.Header().Set("Fennec-History", h1)
 			_, _ = w.Write([]byte(`{"affected":1}`))
-		case r.Header.Get("Fenec-Read") != "":
+		case r.Header.Get("Fennec-Read") != "":
 			w.WriteHeader(http.StatusGatewayTimeout)
 			_, _ = w.Write([]byte(`{"error":"change 12 is not in this copy's history","seq":10,"history":"` + h2 + `"}`))
 		default:
@@ -235,10 +235,10 @@ func TestASubscriptionNearIsSentAfterTheClientsWritesAndGoesHomeOnA504(t *testin
 	if len(seen) != 3 {
 		t.Fatalf("%d requests", len(seen))
 	}
-	if h := seen[1]; h.Get("Fenec-Read") != "replica" || h.Get("Fenec-After") != "12" || h.Get("Fenec-History") != h1 {
+	if h := seen[1]; h.Get("Fennec-Read") != "replica" || h.Get("Fennec-After") != "12" || h.Get("Fennec-History") != h1 {
 		t.Fatalf("the stream near: %v", h)
 	}
-	if h := seen[2]; h.Get("Fenec-Read") != "" || h.Get("Fenec-After") != "" || h.Get("Fenec-History") != "" {
+	if h := seen[2]; h.Get("Fennec-Read") != "" || h.Get("Fennec-After") != "" || h.Get("Fennec-History") != "" {
 		t.Fatalf("the stream home: %v", h)
 	}
 	if seq, h := db.pos.get(); seq != 10 || h != h2 {
@@ -261,7 +261,7 @@ func TestAClientReadsHomeUnlessItAsksForNearest(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, h := range seen {
-		if h.Get("Fenec-Read") != "" {
+		if h.Get("Fennec-Read") != "" {
 			t.Fatalf("marked: %v", h)
 		}
 	}

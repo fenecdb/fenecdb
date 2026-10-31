@@ -1,37 +1,37 @@
 <!--
-title: Your language — fenecdb
-description: Use fenecdb from Python, JavaScript, Go, Rust, .NET, Java, PHP or Ruby over HTTP, with the HTTP client your language already has, or embedded in a Swift, Kotlin or Dart app.
+title: Your language — fennecdb
+description: Use fennecdb from Python, JavaScript, Go, Rust, .NET, Java, PHP or Ruby over HTTP, with the HTTP client your language already has, or embedded in a Swift, Kotlin or Dart app.
 -->
 
 <h1>Your language</h1>
-<p class="kicker">fenecdb speaks HTTP and JSON, so every language reaches it
+<p class="kicker">fennecdb speaks HTTP and JSON, so every language reaches it
 with the HTTP client it already has. No driver to install.</p>
 
 <p>Every example on this page is a program that runs against a real server
-on each change to fenecdb (<code>make languages-test</code>). Python,
+on each change to fennecdb (<code>make languages-test</code>). Python,
 JavaScript, Go and .NET have official clients, each its standard library
 alone; in the other languages these few lines are the whole client. Swift,
 Kotlin and Dart embed the database in the app, a file on the device
 (<a href="mobile.html">Mobile and native apps</a>), and reach a server with
-<code>Fenec.connect</code>; their tabs run the same flow in their own
+<code>Fennec.connect</code>; their tabs run the same flow in their own
 tests. Each tab ends with a full example: one app, Notes, in every
 language, a folder of a few files to clone and run
-(<a href="https://github.com/fenecdb/fenecdb/tree/main/examples">examples</a>),
+(<a href="https://github.com/fennec-db/fennecdb/tree/main/examples">examples</a>),
 and beside them a whole shop in Next.js
-(<a href="https://github.com/fenecdb/fenecdb/tree/main/examples/shop">shop</a>),
+(<a href="https://github.com/fennec-db/fennecdb/tree/main/examples/shop">shop</a>),
 a double-entry payments ledger on Node
-(<a href="https://github.com/fenecdb/fenecdb/tree/main/examples/ledger">ledger</a>)
+(<a href="https://github.com/fennec-db/fennecdb/tree/main/examples/ledger">ledger</a>)
 and courier dispatch across tenants
-(<a href="https://github.com/fenecdb/fenecdb/tree/main/examples/dispatch">dispatch</a>).</p>
+(<a href="https://github.com/fennec-db/fennecdb/tree/main/examples/dispatch">dispatch</a>).</p>
 
 <h2 id="setup">Start a server</h2>
 
-<pre data-lang="bash">fenec-server --file app.fenec --http 127.0.0.1:8080 --http-token secret</pre>
+<pre data-lang="bash">fennec-server --file app.fennec --http 127.0.0.1:8080 --http-token secret</pre>
 
 <p>Then pick your language. Each example makes a collection of a text and
 a number, each indexed, writes two rows, reads them back by a filter and an
 order, searches the words with a typo in them and handles a refusal. Each
-sends one FenecQL statement a request to <code>POST /query</code>, its
+sends one FennecQL statement a request to <code>POST /query</code>, its
 values as <code>$1</code>, <code>$2</code>, ... in <code>params</code>, and
 the token as <code>Authorization: Bearer</code>.</p>
 
@@ -40,8 +40,8 @@ the token as <code>Authorization: Bearer</code>.</p>
 <div class="langs" data-langs>
 
 <div class="lang" data-name="Python">
-<pre data-lang="bash" data-label="install">pip install fenecdb   # the standard library alone</pre>
-<pre data-lang="python" data-label="search.py">from fenecdb import Client, FenecError
+<pre data-lang="bash" data-label="install">pip install fennecdb   # the standard library alone</pre>
+<pre data-lang="python" data-label="search.py">from fennecdb import Client, FennecError
 
 db = Client("http://127.0.0.1:8080", token="secret")
 
@@ -58,7 +58,7 @@ hits = db.query("get docs select title match title $1 fuzzy", ["oasys"])
 
 try:
     db.query("get nowhere")
-except FenecError as e:
+except FennecError as e:
     print(e.status, e)   # 404 collection `nowhere`</pre>
 <p>Or let the <a href="#builder">query builder</a> write the statement,
 every value a parameter, every name checked: the read's text to the byte,
@@ -72,7 +72,7 @@ rows = docs.select("title", "year").where("year", "&gt;=", 2020).order("year", "
 hits = docs.select("title").match("title", "oasys", fuzzy=True).rows()
 n = docs.where("title", "~", "Dunes").count()</pre>
 <p><code>batch([(text, params), ...])</code> runs statements as one block,
-all or none -- a <code>FenecError</code> that stops it says which
+all or none -- a <code>FennecError</code> that stops it says which
 (<code>e.at</code>, from 0) and, where a write's
 <code>require=1, reason="..."</code> said why, <code>e.reason</code>;
 <code>idempotency_key=</code> on
@@ -83,7 +83,7 @@ write once however often it is sent (<code>db.replayed</code>), and
 <code>AsyncClient</code> does the same in an event loop, the endpoints of
 its <code>collection(...)</code> awaited; LangChain and LlamaIndex have
 stores of their own (<a href="integrations.html">Integrations</a>).</p>
-<p><a href="https://github.com/fenecdb/fenecdb/tree/main/examples/python">Full example</a>: Notes, a CLI over the server with the builder, <code>match</code>, <code>fuse</code> and the change stream.</p>
+<p><a href="https://github.com/fennec-db/fennecdb/tree/main/examples/python">Full example</a>: Notes, a CLI over the server with the builder, <code>match</code>, <code>fuse</code> and the change stream.</p>
 </div>
 
 <div class="lang" data-name="JavaScript">
@@ -104,13 +104,13 @@ await query('put docs {title: $1, year: $2}', ['Night at the oasis', 2024]);
 
 const rows = await query('get docs select title, year where year &gt;= $1 order year desc limit $2', [2020, 5]);
 const hits = await query('get docs select title match title $1 fuzzy', ['oasys']);</pre>
-<p>Or <code>npm install @fenecdb/web</code>: its <code>connect</code> sends
+<p>Or <code>npm install @fennecdb/web</code>: its <code>connect</code> sends
 the <a href="#builder">query builder</a>'s statements to a server, the same
 code that runs in the page.</p>
-<pre data-lang="ts" data-label="client.ts">import { connect } from '@fenecdb/web';
-import type { FenecSchema } from './fenec-schema.js';   // fenec types app.fenec
+<pre data-lang="ts" data-label="client.ts">import { connect } from '@fennecdb/web';
+import type { FennecSchema } from './fennec-schema.js';   // fennec types app.fennec
 
-const db = connect&lt;FenecSchema&gt;('http://127.0.0.1:8080', { token: 'secret' });
+const db = connect&lt;FennecSchema&gt;('http://127.0.0.1:8080', { token: 'secret' });
 await db.from('docs').insert({ title: 'Night at the oasis', year: 2024 });
 const rows = await db.from('docs').select('title', 'year').where('year', '&gt;=', 2020).order('year', 'desc').limit(5).rows();
 //    rows: { title: string | null; year: number | null }[]
@@ -119,14 +119,14 @@ const hits = await db.from('docs').select('title').match('title', 'oasys', { fuz
 <p>The same code runs as plain JavaScript, without the types. In the
 browser there is no server at all: the same database runs in the page
 (<a href="javascript.html">JavaScript and TypeScript</a>).</p>
-<p><a href="https://github.com/fenecdb/fenecdb/tree/main/examples/node-server">Full example</a>: Notes from Node through <code>@fenecdb/web/client</code>, its live queries run on the server; in the page, <a href="https://github.com/fenecdb/fenecdb/tree/main/examples/web-local">web-local</a> and <a href="https://github.com/fenecdb/fenecdb/tree/main/examples/react">react</a>.</p>
+<p><a href="https://github.com/fennec-db/fennecdb/tree/main/examples/node-server">Full example</a>: Notes from Node through <code>@fennecdb/web/client</code>, its live queries run on the server; in the page, <a href="https://github.com/fennec-db/fennecdb/tree/main/examples/web-local">web-local</a> and <a href="https://github.com/fennec-db/fennecdb/tree/main/examples/react">react</a>.</p>
 </div>
 
 <div class="lang" data-name="Go">
-<pre data-lang="bash" data-label="install">go get github.com/fenecdb/fenecdb/integrations/go   # the standard library alone</pre>
-<pre data-lang="go" data-label="main.go">import fenecdb "github.com/fenecdb/fenecdb/integrations/go"
+<pre data-lang="bash" data-label="install">go get github.com/fennec-db/fennecdb/integrations/go   # the standard library alone</pre>
+<pre data-lang="go" data-label="main.go">import fennecdb "github.com/fennec-db/fennecdb/integrations/go"
 
-db := fenecdb.New("http://127.0.0.1:8080", fenecdb.WithToken("secret"))
+db := fennecdb.New("http://127.0.0.1:8080", fennecdb.WithToken("secret"))
 
 db.Exec(ctx, "create collection if not exists docs (title text @text, year int @sorted)")
 db.Exec(ctx, "put docs {title: $1, year: $2}", "Dunes", 2021)
@@ -136,33 +136,33 @@ type Doc struct {
 	Title string `json:"title"`
 	Year  int    `json:"year"`
 }
-rows, err := fenecdb.QueryAs[Doc](ctx, db, "get docs select title, year where year &gt;= $1 order year desc limit $2", 2020, 5)
+rows, err := fennecdb.QueryAs[Doc](ctx, db, "get docs select title, year where year &gt;= $1 order year desc limit $2", 2020, 5)
 hits, err := db.Query(ctx, "get docs select title match title $1 fuzzy", "oasys")
 
-var e *fenecdb.Error
+var e *fennecdb.Error
 if _, err := db.Query(ctx, "get nowhere"); errors.As(err, &amp;e) {
 	fmt.Println(e.Status, e.Code, e.Message) // 404 not_found collection `nowhere`
 }</pre>
 <p>Or let the <a href="#builder">query builder</a> write the statement,
 immutable, each step a copy:</p>
 <pre data-lang="go" data-label="builder">docs := db.From("docs")
-docs.Insert(ctx, fenecdb.D("title", "Night at the oasis", "year", 2024))
+docs.Insert(ctx, fennecdb.D("title", "Night at the oasis", "year", 2024))
 
 query := docs.Select("title", "year").Where("year", "&gt;=", 2020).Order("year", "desc").Limit(5)
-rows, err := fenecdb.RowsAs[Doc](ctx, query)
-hits, err := docs.Select("title").Match("title", "oasys", fenecdb.Fuzzy(2)).Rows(ctx)
+rows, err := fennecdb.RowsAs[Doc](ctx, query)
+hits, err := docs.Select("title").Match("title", "oasys", fennecdb.Fuzzy(2)).Rows(ctx)
 n, err := docs.Where("title", "~", "Dunes").Count(ctx)</pre>
 <p><code>Query</code> gives rows as <code>[]map[string]any</code>;
 <code>Batch</code>, <code>IdempotencyKey</code>, <code>After</code> for a
 replica, <code>Subscribe</code>, <code>Changes</code> and
 <code>WithTenant</code> cover the rest of the <a href="http.html">HTTP
-endpoint</a> and its <a href="http-reference.html">reference</a> (<a href="https://github.com/fenecdb/fenecdb/tree/main/integrations/go">integrations/go</a>);
-a refusal is an <code>*fenecdb.Error</code>, and a batch's says which
+endpoint</a> and its <a href="http-reference.html">reference</a> (<a href="https://github.com/fennec-db/fennecdb/tree/main/integrations/go">integrations/go</a>);
+a refusal is an <code>*fennecdb.Error</code>, and a batch's says which
 statement stopped it (<code>At</code>, from 0).
 A <code>[]float32</code> goes out as the decimals that read back as each
 <code>f32</code>, so a vector round-trips to the bit.</p>
 <p>Without the SDK, <code>net/http</code> and <code>encoding/json</code>:</p>
-<pre data-lang="go" data-label="main.go">// query runs one FenecQL statement and decodes its answer into out.
+<pre data-lang="go" data-label="main.go">// query runs one FennecQL statement and decodes its answer into out.
 func query(out any, q string, params ...any) error {
 	body, _ := json.Marshal(map[string]any{"query": q, "params": params})
 	req, _ := http.NewRequest("POST", "http://127.0.0.1:8080/query", bytes.NewReader(body))
@@ -174,7 +174,7 @@ func query(out any, q string, params ...any) error {
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 300 {
-		e := &amp;FenecError{Status: res.StatusCode}
+		e := &amp;FennecError{Status: res.StatusCode}
 		json.NewDecoder(res.Body).Decode(e)
 		return e
 	}
@@ -193,9 +193,9 @@ var rows []struct {
 	Year  int    `json:"year"`
 }
 err := query(&amp;rows, "get docs select title, year where year &gt;= $1 order year desc limit $2", 2020, 5)</pre>
-<p><code>FenecError</code> is a struct of the status and the body's
+<p><code>FennecError</code> is a struct of the status and the body's
 <code>error</code>.</p>
-<p><a href="https://github.com/fenecdb/fenecdb/tree/main/examples/go">Full example</a>: Notes, a CLI over the server with the builder, typed rows and a subscription.</p>
+<p><a href="https://github.com/fennec-db/fennecdb/tree/main/examples/go">Full example</a>: Notes, a CLI over the server with the builder, typed rows and a subscription.</p>
 </div>
 
 <div class="lang" data-name="Rust">
@@ -223,14 +223,14 @@ match query("get nowhere", json!([])) {
 }</pre>
 <p>Or embed the engine in your process, with no server
 (<a href="embedding.html">Embedded Rust</a>).</p>
-<p><a href="https://github.com/fenecdb/fenecdb/tree/main/examples/rust">Full example</a>: Notes with <code>fenec-core</code> embedded, a file and no server.</p>
+<p><a href="https://github.com/fennec-db/fennecdb/tree/main/examples/rust">Full example</a>: Notes with <code>fennec-core</code> embedded, a file and no server.</p>
 </div>
 
 <div class="lang" data-name=".NET">
-<pre data-lang="bash" data-label="install">dotnet add package FenecDb   # HttpClient and System.Text.Json alone</pre>
-<pre data-lang="text" data-label="Program.cs">using FenecDb;
+<pre data-lang="bash" data-label="install">dotnet add package FennecDb   # HttpClient and System.Text.Json alone</pre>
+<pre data-lang="text" data-label="Program.cs">using FennecDb;
 
-using var db = new FenecClient("http://127.0.0.1:8080", new() { Token = "secret" });
+using var db = new FennecClient("http://127.0.0.1:8080", new() { Token = "secret" });
 
 await db.ExecAsync("create collection if not exists docs (title text @text, year int @sorted)");
 await db.ExecAsync("put docs {title: $1, year: $2}", ["Dunes", 2021]);
@@ -240,7 +240,7 @@ var rows = await db.QueryAsync&lt;Doc&gt;("get docs select title, year where yea
 var hits = await db.QueryAsync&lt;Hit&gt;("get docs select title match title $1 fuzzy", ["oasys"]);
 
 try { await db.QueryAsync("get nowhere"); }
-catch (FenecException e) { Console.WriteLine($"{e.Status} {e.Code} {e.Message}"); } // 404 not_found collection `nowhere`
+catch (FennecException e) { Console.WriteLine($"{e.Status} {e.Code} {e.Message}"); } // 404 not_found collection `nowhere`
 
 record Doc(string Title, int Year);
 record Hit(string Title, [property: JsonPropertyName("_score")] float Score);</pre>
@@ -261,8 +261,8 @@ classes by property name, any case; <code>BatchAsync</code>,
 <code>ChangesAsync</code> and a <code>Tenant</code> option cover the rest
 of the <a href="http.html">HTTP endpoint</a> and its
 <a href="http-reference.html">reference</a>
-(<a href="https://github.com/fenecdb/fenecdb/tree/main/integrations/dotnet">integrations/dotnet</a>);
-a refusal is a <code>FenecException</code>, and a batch's says which
+(<a href="https://github.com/fennec-db/fennecdb/tree/main/integrations/dotnet">integrations/dotnet</a>);
+a refusal is a <code>FennecException</code>, and a batch's says which
 statement stopped it (<code>At</code>, from 0) and, where its
 <code>require</code> said why, the <code>Reason</code>.
 A <code>float[]</code> or <code>ReadOnlyMemory&lt;float&gt;</code> goes out
@@ -289,7 +289,7 @@ var rows = await Query("get docs select title, year where year &gt;= $1 order ye
 var titles = rows.EnumerateArray().Select(r =&gt; r.GetProperty("title").GetString());</pre>
 <p>The body is serialised whole: <code>PostAsJsonAsync</code> streams it chunked,
 and the server wants a <code>Content-Length</code>.</p>
-<p><a href="https://github.com/fenecdb/fenecdb/tree/main/examples/dotnet">Full example</a>: Notes, a console app over the server with the builder, records and <code>SubscribeAsync</code>.</p>
+<p><a href="https://github.com/fennec-db/fennecdb/tree/main/examples/dotnet">Full example</a>: Notes, a console app over the server with the builder, records and <code>SubscribeAsync</code>.</p>
 </div>
 
 <div class="lang" data-name="Java">
@@ -373,11 +373,11 @@ hits = query("get docs select title match title $1 fuzzy", ["oasys"])</pre>
 </div>
 
 <div class="lang" data-name="Swift">
-<pre data-lang="text" data-label="Package.swift">.package(url: "https://github.com/fenecdb/fenecdb", from: "{{version}}")   // product "FenecDB"</pre>
-<pre data-lang="swift" data-label="Search.swift">import FenecDB
+<pre data-lang="text" data-label="Package.swift">.package(url: "https://github.com/fennec-db/fennecdb", from: "{{version}}")   // product "FennecDB"</pre>
+<pre data-lang="swift" data-label="Search.swift">import FennecDB
 
 // Embedded: the database is a file the app holds, no server.
-let db = try await Fenec.open(path: path)
+let db = try await Fennec.open(path: path)
 
 try await db.execute("create collection if not exists docs (title text @text, year int @sorted)")
 try await db.execute("put docs {title: $1, year: $2}", "Dunes", 2021)
@@ -390,7 +390,7 @@ let hits = try await db.query("get docs select title match title $1 fuzzy", "oas
 
 do {
     _ = try await db.query("get nowhere")
-} catch let e as FenecError {
+} catch let e as FennecError {
     print(e.code, e)   // notFound: collection `nowhere` ...
 }</pre>
 <pre data-lang="swift" data-label="builder">let docs = try db.from("docs")
@@ -399,7 +399,7 @@ let recent = try await docs.select("title", "year").where("year", "&gt;=", 2020)
 let found = try await docs.select("title").match("title", "oasys", fuzzy: 2).rows()
 let n = try await docs.where("title", "~", "Dunes").count()</pre>
 <pre data-lang="swift" data-label="over HTTP">// No file: every query goes to the server, through the same builder.
-let remote = Fenec.connect(url: "http://127.0.0.1:8080", token: "secret")
+let remote = Fennec.connect(url: "http://127.0.0.1:8080", token: "secret")
 try await remote.execute("put docs {title: $1, year: $2}", "Dunes", 2021)
 let recent = try await remote.from("docs").select("title", "year").where("year", "&gt;=", 2020).order("year", "desc").limit(5).rows()</pre>
 <p>Rows decode as any <code>Decodable</code>, and a <code>[Float]</code>
@@ -410,15 +410,15 @@ server through TLS: <code>URLSession</code> makes the requests; over it,
 <code>remote.batch([...], idempotencyKey:)</code> lands statements whole
 and <code>withIdempotencyKey</code> makes a write once
 (<a href="mobile.html#connect">Without a file</a>).</p>
-<p><a href="https://github.com/fenecdb/fenecdb/tree/main/examples/swift">Full example</a>: Notes, a SwiftUI app over a file, its list a <code>LiveQuery</code>, and a CLI.</p>
+<p><a href="https://github.com/fennec-db/fennecdb/tree/main/examples/swift">Full example</a>: Notes, a SwiftUI app over a file, its list a <code>LiveQuery</code>, and a CLI.</p>
 </div>
 
 <div class="lang" data-name="Kotlin">
-<pre data-lang="text" data-label="build.gradle.kts">implementation("com.fenecdb:fenecdb-android:{{version}}")   // the AAR; the JVM: com.fenecdb:fenecdb</pre>
-<pre data-lang="kotlin" data-label="Search.kt">import com.fenecdb.*
+<pre data-lang="text" data-label="build.gradle.kts">implementation("com.fennecdb:fennecdb-android:{{version}}")   // the AAR; the JVM: com.fennecdb:fennecdb</pre>
+<pre data-lang="kotlin" data-label="Search.kt">import com.fennecdb.*
 
 // Embedded: the database is a file the app holds, no server.
-val db = Fenec.openAsync(path)
+val db = Fennec.openAsync(path)
 
 db.execute("create collection if not exists docs (title text @text, year int @sorted)")
 db.execute("put docs {title: \$1, year: \$2}", "Dunes", 2021)
@@ -431,7 +431,7 @@ val hits = db.query("get docs select title match title \$1 fuzzy", "oasys")
 
 try {
     db.query("get nowhere")
-} catch (e: FenecException) {
+} catch (e: FennecException) {
     println("${e.code} ${e.message}")   // NOT_FOUND collection `nowhere` ...
 }</pre>
 <pre data-lang="kotlin" data-label="builder">val docs = db.from("docs")
@@ -440,26 +440,26 @@ val recent = docs.select("title", "year").where("year", "&gt;=", 2020).order("ye
 val found = docs.select("title").match("title", "oasys", fuzzy = 2).rows()
 val n = docs.where("title", "~", "Dunes").count()</pre>
 <pre data-lang="kotlin" data-label="over HTTP">// No file: every query goes to the server, through the same builder.
-val remote = Fenec.connect("http://127.0.0.1:8080", token = "secret")
+val remote = Fennec.connect("http://127.0.0.1:8080", token = "secret")
 remote.execute("put docs {title: \$1, year: \$2}", "Dunes", 2021)
 val recent = remote.from("docs").select("title", "year").where("year", "&gt;=", 2020).order("year", "desc").limit(5).rows()</pre>
 <p>The calls suspend, on <code>Dispatchers.IO</code>; Java calls the
 <code>...Blocking</code> ones. Live queries are <code>Flow</code>s, and a
-replica a server keeps in step is <code>Fenec.sync</code>
+replica a server keeps in step is <code>Fennec.sync</code>
 (<a href="mobile.html">Mobile and native apps</a>). A device reaches a
 server through TLS: <code>HttpURLConnection</code> makes the requests; over
 it, <code>remote.batch(listOf(...), idempotencyKey = id)</code> lands
 statements whole and <code>withIdempotencyKey</code> makes a write once
 (<a href="mobile.html#connect">Without a file</a>).</p>
-<p><a href="https://github.com/fenecdb/fenecdb/tree/main/examples/kotlin-android">Full example</a>: Notes, a Compose app over a file, its list a live <code>Flow</code>, and a JVM CLI.</p>
+<p><a href="https://github.com/fennec-db/fennecdb/tree/main/examples/kotlin-android">Full example</a>: Notes, a Compose app over a file, its list a live <code>Flow</code>, and a JVM CLI.</p>
 </div>
 
 <div class="lang" data-name="Dart">
-<pre data-lang="bash" data-label="install">flutter pub add fenecdb_flutter   # Dart alone: dart pub add fenecdb</pre>
-<pre data-lang="dart" data-label="search.dart">import 'package:fenecdb/fenecdb.dart';
+<pre data-lang="bash" data-label="install">flutter pub add fennecdb_flutter   # Dart alone: dart pub add fennecdb</pre>
+<pre data-lang="dart" data-label="search.dart">import 'package:fennecdb/fennecdb.dart';
 
 // Embedded: the database is a file the app holds, no server.
-final db = await Fenec.open(path);
+final db = await Fennec.open(path);
 
 await db.execute('create collection if not exists docs (title text @text, year int @sorted)');
 await db.execute(r'put docs {title: $1, year: $2}', ['Dunes', 2021]);
@@ -472,7 +472,7 @@ final hits = await db.query(r'get docs select title match title $1 fuzzy', ['oas
 
 try {
   await db.query('get nowhere');
-} on FenecException catch (e) {
+} on FennecException catch (e) {
   print('${e.code.name} ${e.message}');   // notFound collection `nowhere` ...
 }</pre>
 <pre data-lang="dart" data-label="builder">final docs = db.from('docs');
@@ -481,18 +481,18 @@ final recent = await docs.select(['title', 'year']).where('year', '&gt;=', 2020)
 final found = await docs.select(['title']).match('title', 'oasys', fuzzy: true).rows();
 final n = await docs.where('title', '~', 'Dunes').count();</pre>
 <pre data-lang="dart" data-label="over HTTP">// No file: every query goes to the server, through the same builder.
-final remote = Fenec.connect('http://127.0.0.1:8080', token: 'secret');
+final remote = Fennec.connect('http://127.0.0.1:8080', token: 'secret');
 await remote.execute(r'put docs {title: $1, year: $2}', ['Dunes', 2021]);
 final recent = await remote.from('docs').select(['title', 'year']).where('year', '&gt;=', 2020).order('year', 'desc').limit(5).rows();</pre>
 <p>Every call runs on an isolate the database keeps, so none blocks the UI.
 Live queries are <code>Stream</code>s, and a replica a server keeps in step
-is <code>Fenec.openSynced</code> (<a href="mobile.html">Mobile and native
+is <code>Fennec.openSynced</code> (<a href="mobile.html">Mobile and native
 apps</a>). A device reaches a server through TLS: <code>dart:io</code>'s
 <code>HttpClient</code> makes the requests; over it,
 <code>remote.batch([...], idempotencyKey: id)</code> lands statements whole
 and <code>withIdempotencyKey</code> makes a write once
 (<a href="mobile.html#connect">Without a file</a>).</p>
-<p><a href="https://github.com/fenecdb/fenecdb/tree/main/examples/flutter">Full example</a>: Notes, a Flutter app over a file, its list a <code>StreamBuilder</code> over a live query.</p>
+<p><a href="https://github.com/fennec-db/fennecdb/tree/main/examples/flutter">Full example</a>: Notes, a Flutter app over a file, its list a <code>StreamBuilder</code> over a live query.</p>
 </div>
 
 </div>
@@ -500,8 +500,8 @@ and <code>withIdempotencyKey</code> makes a write once
 <h2 id="builder">The builder</h2>
 
 <p>Python, JavaScript, Go, .NET, Swift, Kotlin and Dart each have a query
-builder: a chain of calls that writes the FenecQL statement, every value a
-parameter and every name checked against FenecQL's own rule, which is where
+builder: a chain of calls that writes the FennecQL statement, every value a
+parameter and every name checked against FennecQL's own rule, which is where
 an injection would have to get through. All seven build the same text from
 the same chain, to the byte, and refuse the same mistakes with the same
 message. Python's builder starts with <code>collection</code>, since
@@ -509,7 +509,7 @@ message. Python's builder starts with <code>collection</code>, since
 
 <p>A short tour, the same in every tab, over two collections:</p>
 
-<pre data-lang="fenecql">create collection docs (slug text @unique, title text @text, year int,
+<pre data-lang="fennecql">create collection docs (slug text @unique, title text @text, year int,
   lang text, tags [text], views int)
 create collection comments (doc_id int @hash, body text)
 </pre>
@@ -520,7 +520,7 @@ misspelt word; one document and a count; then the writes — an insert, an
 insert passed over because its slug is held (<code>slug</code> is
 <code>@unique</code>), a counter moved and a delete by a filter.
 <code>db</code> is the client each language's section above connects, and
-Go's <code>ctx</code> a context. The FenecQL tab is what each chain writes;
+Go's <code>ctx</code> a context. The FennecQL tab is what each chain writes;
 the block under the tabs is what it sends, its parameters apart.</p>
 
 {{builder "docs: a page of documents with their comments" "docs: documents matching a misspelt word" "docs: the document of a slug" "docs: documents counted since a year" "docs: a document inserted" "docs: a document inserted unless its slug is held" "docs: a document's views counted" "docs: the documents before a year deleted"}}
@@ -530,7 +530,7 @@ the block under the tabs is what it sends, its parameters apart.</p>
 paths into a json field and <code>or</code>, <code>and</code>,
 <code>not</code> and <code>raw</code>; <code>match</code>; <code>near</code>,
 a vector's nearest rows (<code>near('embed', v, { ef: 64 })</code> in
-JavaScript, <a href="fenecql-vector.html">Vector search</a>), and
+JavaScript, <a href="fennecql-vector.html">Vector search</a>), and
 <code>fuse</code> and <code>rerank</code>, which rank by the words and a
 vector together; <code>highlight</code>,
 <code>snippet</code> and <code>facet</code>, the facets beside the rows;
@@ -538,13 +538,13 @@ vector together; <code>highlight</code>,
 <code>offset</code>; and the writes, an <code>update</code> or
 <code>delete</code> with no filter refused unless it says <code>all</code>,
 a value worked out over the row with <code>inc</code> and <code>expr</code>
-(<a href="/docs/fenecql-writing#writes">Writes that read the row</a>), and an
+(<a href="/docs/fennecql-writing#writes">Writes that read the row</a>), and an
 insert <code>if absent</code>.
 A query is immutable, so a base query can be kept and branched from.</p>
 
 <p>Rows come back as each language holds a document, and three builders
 also decode them into a type of the app's: Go's
-<code>fenecdb.RowsAs[T](ctx, q)</code>, .NET's <code>RowsAsync&lt;T&gt;()</code>
+<code>fennecdb.RowsAs[T](ctx, q)</code>, .NET's <code>RowsAsync&lt;T&gt;()</code>
 and Swift's <code>rows(as: T.self)</code>. Go's endpoints take the
 <code>ctx</code> that bounds the request, .NET's are <code>…Async</code>,
 and Kotlin's suspend, with <code>rowsBlocking()</code> and
@@ -564,41 +564,41 @@ each operator and kind of value, parameter numbering across
 a lookup chain, and the names and combinations each builder refuses. Each
 SDK's tests also run builder queries against a real server and hold their
 answers to the same statements sent as text. The tour above and the tabs
-of the FenecQL reference's examples are cases of the file written in each
-language (<a href="fenecql-search.html#the-text-clause">Text search</a> has
+of the FennecQL reference's examples are cases of the file written in each
+language (<a href="fennecql-search.html#the-text-clause">Text search</a> has
 some): the JavaScript and Python tabs run as the page shows them, and each
 other language's tests hold a copy of its tabs' code, so a tab is code that
 sends the statement beside it.</p>
 <p>What a language has no word for is written its own way: Go's object
 conditions are <code>Fields</code> and <code>Ops</code>, names and values
 in turn, since a Go map has no order and the order is the text's; a Go
-document keeps its order as a <code>fenecdb.D(...)</code>, and a map's
+document keeps its order as a <code>fennecdb.D(...)</code>, and a map's
 fields go in sorted. Options are keyword arguments in Python, named
 arguments in C# and functional options in Go, where a struct could not tell
-<code>limit 0</code> from no limit. A refusal is a <code>FenecError</code>
-with status 0 in Python, a <code>*fenecdb.QueryError</code> in Go and a
-<code>FenecQueryException</code> in .NET. Swift's dictionaries have no
+<code>limit 0</code> from no limit. A refusal is a <code>FennecError</code>
+with status 0 in Python, a <code>*fennecdb.QueryError</code> in Go and a
+<code>FennecQueryException</code> in .NET. Swift's dictionaries have no
 order either, so a document or an object condition is a <code>Value</code>
 or <code>Row</code> literal, which keeps the order written, or a
 <code>Codable</code> type, its fields in the order it encodes them; Kotlin's
 and Dart's maps keep their order. A refusal there is a
-<code>FenecError</code>, a <code>FenecException</code> and a
-<code>FenecException</code>, each with the code <code>builder</code>, and
+<code>FennecError</code>, a <code>FennecException</code> and a
+<code>FennecException</code>, each with the code <code>builder</code>, and
 every builder method throws as it is called, so a Swift chain takes one
 <code>try</code>.</p>
 <p>A <code>require</code>'s reason (<code>require 1 else 'no such
-account'</code>, <a href="fenecql-writing.html#require-reason">A reason for the
+account'</code>, <a href="fennecql-writing.html#require-reason">A reason for the
 refusal</a>) is written the same way: on a read, Python's
 <code>.require(1, reason="...")</code>, Go's
-<code>q.Require(1, fenecdb.Reason("..."))</code>, .NET's
+<code>q.Require(1, fennecdb.Reason("..."))</code>, .NET's
 <code>Require(1, reason: "...")</code>, Swift's and Dart's
 <code>require(1, reason: "...")</code>, Kotlin's
 <code>require(1, reason = "...")</code>; on a write, the same name among its
 options (<code>require=1, reason="..."</code> in Python,
-<code>fenecdb.Reason("...")</code> in Go). The refusal reads it back as
-<code>FenecError.reason</code> in Python and Swift,
-<code>Error.Reason</code> in Go, <code>FenecException.Reason</code> in .NET,
-<code>FenecException.reason</code> in Kotlin and the error's
+<code>fennecdb.Reason("...")</code> in Go). The refusal reads it back as
+<code>FennecError.reason</code> in Python and Swift,
+<code>Error.Reason</code> in Go, <code>FennecException.Reason</code> in .NET,
+<code>FennecException.reason</code> in Kotlin and the error's
 <code>reason</code> in Dart.</p>
 </details>
 
@@ -617,7 +617,7 @@ options (<code>require=1, reason="..."</code> in Python,
 <details class="deep"><summary>What the examples and SDK tests run against</summary>
 <p>The programs under <code>integrations/languages</code> are the examples
 above with their asserts: <code>make languages-test</code> starts a
-<code>fenec-server</code> over a new file for each language and runs Python,
+<code>fennec-server</code> over a new file for each language and runs Python,
 Java, PHP and Ruby from their official images in Docker, and JavaScript, Go,
 C# and Rust with the toolchains on the machine — Go and C# both through
 their SDK and without it, and each SDK's program through its query builder

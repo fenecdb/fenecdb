@@ -1,12 +1,12 @@
 <!--
-title: Benchmarks — fenecdb
-description: fenecdb against SQLite, PostgreSQL, MongoDB and Redis on YCSB, writers beside readers, requests over HTTP, search and vectors: what is measured, how to read the tables, the headline numbers, and a page for each family with the method behind every number.
+title: Benchmarks — fennecdb
+description: fennecdb against SQLite, PostgreSQL, MongoDB and Redis on YCSB, writers beside readers, requests over HTTP, search and vectors: what is measured, how to read the tables, the headline numbers, and a page for each family with the method behind every number.
 -->
 
 {{moved_script}}
 
 <h1>Benchmarks</h1>
-<p class="kicker">How fenecdb compares with SQLite, PostgreSQL, MongoDB and
+<p class="kicker">How fennecdb compares with SQLite, PostgreSQL, MongoDB and
 Redis as a database first, then at search, measured by make targets you can
 run yourself.</p>
 
@@ -17,15 +17,15 @@ the method.</p>
 
 <ul class="cards">
   <li><a href="benchmarks-ycsb.html">YCSB benchmarks</a>
-    <p>Everyday reads and writes: YCSB's six core workloads over a million records. fenecdb in process against SQLite; fenec-server over HTTP against PostgreSQL, MongoDB and Redis. Durable and buffered, every cell, the ones fenecdb loses too.</p></li>
+    <p>Everyday reads and writes: YCSB's six core workloads over a million records. fennecdb in process against SQLite; fennec-server over HTTP against PostgreSQL, MongoDB and Redis. Durable and buffered, every cell, the ones fennecdb loses too.</p></li>
   <li><a href="benchmarks-requests.html">Concurrency and request benchmarks</a>
-    <p>Many writers and the readers beside them against SQLite, what one request to fenec-server costs and where its time goes, and what loading rows costs against PostgreSQL with pgvector.</p></li>
+    <p>Many writers and the readers beside them against SQLite, what one request to fennec-server costs and where its time goes, and what loading rows costs against PostgreSQL with pgvector.</p></li>
   <li><a href="benchmarks-text.html">Text search benchmarks</a>
     <p>What a search box costs (a match ranked by BM25, its marks, facets, and the words a typo reaches), and how good the answers are on two BEIR datasets.</p></li>
   <li><a href="benchmarks-vector.html">Vector search benchmarks</a>
-    <p>Search by meaning against SQLite and pgvector in process, fenec-server against pgvector at scale and at a million vectors, the ef and recall trade-off, and half precision.</p></li>
+    <p>Search by meaning against SQLite and pgvector in process, fennec-server against pgvector at scale and at a million vectors, the ef and recall trade-off, and half precision.</p></li>
   <li><a href="benchmarks-size.html">Size and memory benchmarks</a>
-    <p>What the browser downloads, how large each build is, what each feature adds to the WebAssembly module, and how the memory fenecdb counts compares with what the process uses.</p></li>
+    <p>What the browser downloads, how large each build is, what each feature adds to the WebAssembly module, and how the memory fennecdb counts compares with what the process uses.</p></li>
 </ul>
 
 <h2 id="at-a-glance">At a glance</h2>
@@ -39,7 +39,7 @@ three runs (<a href="benchmarks-ycsb.html#ycsb">Everyday reads and writes</a>).<
 
 <div class="tbl">
 <table>
-<thead><tr><th>YCSB, 1 000 000 records</th><th class="n">fenecdb</th><th class="n">SQLite</th></tr></thead>
+<thead><tr><th>YCSB, 1 000 000 records</th><th class="n">fennecdb</th><th class="n">SQLite</th></tr></thead>
 <tbody>
 <tr><td>B, 95% reads, 16 threads, buffered</td><td class="n"><b>545 k</b></td><td class="n">47.9 k</td></tr>
 <tr><td>C, reads, one thread, after the updates</td><td class="n"><b>438 k</b></td><td class="n">279 k</td></tr>
@@ -48,12 +48,12 @@ three runs (<a href="benchmarks-ycsb.html#ycsb">Everyday reads and writes</a>).<
 </table>
 </div>
 
-<p><b>The same over the wire:</b> fenec-server over HTTP against PostgreSQL
+<p><b>The same over the wire:</b> fennec-server over HTTP against PostgreSQL
 and MongoDB, all three in Docker, durable, an fsync a write.</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>YCSB, 1 000 000 records</th><th class="n">fenec-server</th><th class="n">PostgreSQL</th><th class="n">MongoDB</th></tr></thead>
+<thead><tr><th>YCSB, 1 000 000 records</th><th class="n">fennec-server</th><th class="n">PostgreSQL</th><th class="n">MongoDB</th></tr></thead>
 <tbody>
 <tr><td>B, 95% reads, 16 clients</td><td class="n"><b>18.2 k</b></td><td class="n">13.0 k</td><td class="n">11.1 k</td></tr>
 <tr><td>A, 50% updates, 16 clients</td><td class="n"><b>13.3 k</b></td><td class="n">10.5 k</td><td class="n">6.56 k</td></tr>
@@ -64,12 +64,12 @@ and MongoDB, all three in Docker, durable, an fsync a write.</p>
 
 <p><b>Many writers, and readers beside them:</b> one process against
 SQLite, a row a write, a row by id a read (<a href="benchmarks-requests.html#concurrency">Writers
-and readers at once</a>); then one request to fenec-server over HTTP on
+and readers at once</a>); then one request to fennec-server over HTTP on
 loopback (<a href="benchmarks-requests.html#requests">A request over HTTP</a>).</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>&nbsp;</th><th class="n">fenecdb</th><th class="n">SQLite</th></tr></thead>
+<thead><tr><th>&nbsp;</th><th class="n">fennecdb</th><th class="n">SQLite</th></tr></thead>
 <tbody>
 <tr><td>durable writes/s, 1 / 16 writers</td><td class="n">252 / <b>516</b></td><td class="n">248 / 258</td></tr>
 <tr><td>reads/s from 4 threads, beside 4 writers</td><td class="n"><b>701 k</b></td><td class="n">344 k</td></tr>
@@ -80,7 +80,7 @@ loopback (<a href="benchmarks-requests.html#requests">A request over HTTP</a>).<
 
 <div class="tbl">
 <table>
-<thead><tr><th>fenec-server over HTTP</th><th class="n">p50, one client</th><th class="n">8 clients</th></tr></thead>
+<thead><tr><th>fennec-server over HTTP</th><th class="n">p50, one client</th><th class="n">8 clients</th></tr></thead>
 <tbody>
 <tr><td>a row by id</td><td class="n"><b>0.022 ms</b></td><td class="n">149 268/s</td></tr>
 <tr><td>a filter, limit 10</td><td class="n"><b>0.032 ms</b></td><td class="n">107 322/s</td></tr>
@@ -114,7 +114,7 @@ and a typo's words among FiQA's 135 500 are found in 14 µs
 (<a href="benchmarks-text.html#text-search">Text search</a>, <a href="benchmarks-text.html#retrieval-quality">Retrieval
 quality</a>). Vectors have a page of their own, against
 SQLite and PostgreSQL with pgvector: at a million 128-dim vectors
-fenec-server answers the nearest ten at 99.1% recall in 0.141 ms, pgvector
+fennec-server answers the nearest ten at 99.1% recall in 0.141 ms, pgvector
 at 98.6% in 2.076 ms (<a href="benchmarks-vector.html#scale">At scale</a>).</p>
 
 <p><b>What the browser downloads:</b> the WebAssembly module and the
@@ -126,16 +126,16 @@ href="javascript.html#packages">Which package</a>).</p>
 <table>
 <thead><tr><th>What the page loads</th><th class="n">brotli</th><th class="n">gzip</th></tr></thead>
 <tbody>
-<tr><td>The WebAssembly module, <code>fenec.wasm</code></td><td class="n"><b>274 KB</b></td><td class="n">330 KB</td></tr>
-<tr><td>The JavaScript client, <code>fenec.js</code> and its modules</td><td class="n">51 KB</td><td class="n">60 KB</td></tr>
-<tr><td>The client alone in an app's bundle, <code>@fenecdb/web/client</code></td><td class="n">10 KB</td><td class="n">—</td></tr>
+<tr><td>The WebAssembly module, <code>fennec.wasm</code></td><td class="n"><b>274 KB</b></td><td class="n">330 KB</td></tr>
+<tr><td>The JavaScript client, <code>fennec.js</code> and its modules</td><td class="n">51 KB</td><td class="n">60 KB</td></tr>
+<tr><td>The client alone in an app's bundle, <code>@fennecdb/web/client</code></td><td class="n">10 KB</td><td class="n">—</td></tr>
 </tbody>
 </table>
 </div>
 
 <h2 id="how-to-read">How to read the tables</h2>
 
-<p>Every number here comes from <code>crates/fenec-bench</code>
+<p>Every number here comes from <code>crates/fennec-bench</code>
 and can be reproduced with a make target. The method is written out beside
 each table, because a number without one is a claim, not a measurement.</p>
 
@@ -147,8 +147,8 @@ each table, because a number without one is a claim, not a measurement.</p>
   <li><b>Durable and buffered</b> are the two settings the engines are compared in. Durable
     is an fsync a write, in each engine's own terms; buffered is each
     engine's default.</li>
-  <li><b>In process or over the wire.</b> In process, fenecdb and SQLite are
-    libraries in the benchmark's own program. Over the wire, fenec-server,
+  <li><b>In process or over the wire.</b> In process, fennecdb and SQLite are
+    libraries in the benchmark's own program. Over the wire, fennec-server,
     PostgreSQL, MongoDB and Redis are each asked by a client, and the network
     is part of every figure: the YCSB page measures it, and compares the
     servers inside Docker for that reason.</li>

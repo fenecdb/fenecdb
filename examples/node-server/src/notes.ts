@@ -1,4 +1,4 @@
-// Notes on a fenec-server, from Node. `@fenecdb/web/client` is the query
+// Notes on a fennec-server, from Node. `@fennecdb/web/client` is the query
 // builder and the HTTP client alone: no WebAssembly is fetched or loaded,
 // every query runs on the server.
 //
@@ -9,7 +9,7 @@
 //   npm start -- done <id>
 //   npm start -- watch                   the open notes again after every change
 //   npm start -- smoke                   what CI runs
-import { connect } from '@fenecdb/web/client';
+import { connect } from '@fennecdb/web/client';
 import { notes, SEEDS, embed } from './tables.js';
 
 // Every request the client makes, to show none of them is for a .wasm.
@@ -19,8 +19,8 @@ const fetchAndNote: typeof fetch = (input, init) => {
   return fetch(input, init);
 };
 
-const db = await connect(process.env.FENEC_URL ?? 'http://127.0.0.1:8080', {
-  token: process.env.FENEC_TOKEN ?? 'secret', // a dev default; never ship one
+const db = await connect(process.env.FENNEC_URL ?? 'http://127.0.0.1:8080', {
+  token: process.env.FENNEC_TOKEN ?? 'secret', // a dev default; never ship one
   schema: { notes },
   migrate: true, // the server's token may make what is missing
   fetch: fetchAndNote,

@@ -1,5 +1,5 @@
-// A fenec-server of a test's own: the crash test kills it, the benchmark
-// starts one per sync policy. The binary is FENEC_SERVER, or this
+// A fennec-server of a test's own: the crash test kills it, the benchmark
+// starts one per sync policy. The binary is FENNEC_SERVER, or this
 // repository's release build, or its debug build.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -12,10 +12,10 @@ const root = fileURLToPath(new URL('../../..', import.meta.url));
 const POLICY = fileURLToPath(new URL('../policy.txt', import.meta.url));
 
 export function serverBinary(): string {
-  const found = [process.env.FENEC_SERVER, join(root, 'target/release/fenec-server'), join(root, 'target/debug/fenec-server')].find(
+  const found = [process.env.FENNEC_SERVER, join(root, 'target/release/fennec-server'), join(root, 'target/debug/fennec-server')].find(
     (b) => b && existsSync(b),
   );
-  if (!found) throw new Error('no fenec-server: cargo build --release -p fenec-server, or set FENEC_SERVER');
+  if (!found) throw new Error('no fennec-server: cargo build --release -p fennec-server, or set FENNEC_SERVER');
   return found;
 }
 
@@ -56,7 +56,7 @@ export async function startNode(opts: { dir: string; sync: string; extra?: strin
     ...(opts.extra ?? []),
   ];
   const child = spawn(serverBinary(), args, {
-    env: { ...process.env, FENEC_HTTP_TOKEN: OPERATOR_TOKEN },
+    env: { ...process.env, FENNEC_HTTP_TOKEN: OPERATOR_TOKEN },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let out = '';
@@ -70,8 +70,8 @@ export async function startNode(opts: { dir: string; sync: string; extra?: strin
     const look = () => {
       const at = /listening on: (http:\/\/\S+)\s/.exec(out);
       if (at) return resolve(at[1]);
-      if (child.exitCode !== null) return reject(new Error(`fenec-server exited: ${out}`));
-      if (Date.now() - t0 > 30_000) return reject(new Error(`fenec-server did not start: ${out}`));
+      if (child.exitCode !== null) return reject(new Error(`fennec-server exited: ${out}`));
+      if (Date.now() - t0 > 30_000) return reject(new Error(`fennec-server did not start: ${out}`));
       setTimeout(look, 20);
     };
     look();

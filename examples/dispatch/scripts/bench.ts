@@ -1,5 +1,5 @@
 // `npm run bench`: Plover's numbers, over a cluster of its own (two tenant
-// nodes and fenec-shard, --sync 250) and through the router, as the app
+// nodes and fennec-shard, --sync 250) and through the router, as the app
 // reaches it. A company placed with no quota, so what is measured is the
 // database and not the plan:
 //

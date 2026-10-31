@@ -1,4 +1,4 @@
-/* Search, by fenecdb in the reader's tab.
+/* Search, by fennecdb in the reader's tab.
 
    Loaded only when the search is opened (`site.js`): the module, the
    engine and the index arrive then and not before, so a page that is only
@@ -19,15 +19,15 @@
    as text, and only the spans `highlight()` and `snippet()` name are
    wrapped, each in a <mark> made here. */
 
-import { Fenec } from './fenec.js';
+import { Fennec } from './fennec.js';
 import { search, grouped } from './search-query.js';
 import { asker, wordsIn, MIN_WORDS } from './search-meaning.js';
 import { MAX_QUERY } from './search-vectors.js';
 
 const at = (p) => new URL(p, import.meta.url);
-const WASM = './fenec.wasm';
-const INDEX = './search.fenec';
-const INDEX_VECTORS = './search-vectors.fenec';
+const WASM = './fennec.wasm';
+const INDEX = './search.fennec';
+const INDEX_VECTORS = './search-vectors.fennec';
 // How long the reader stops typing before the meaning is asked.
 const PAUSE_MS = 250;
 const CSS = './search.css';
@@ -81,7 +81,7 @@ async function load() {
   status('Loading the search…');
   const t = performance.now();
   const [engine, image] = await Promise.all([
-    Fenec.open(at(WASM).href),
+    Fennec.open(at(WASM).href),
     fetch(at(INDEX)).then(unpacked),
   ]);
   engine.load(image);
@@ -152,7 +152,7 @@ function build() {
     el('span', { class: 'search-keys', 'aria-hidden': 'true' },
       el('kbd', { text: '↑' }), el('kbd', { text: '↓' }), ' to move ',
       el('kbd', { text: '↵' }), ' to open ', el('kbd', { text: 'esc' }), ' to close'),
-    el('span', { class: 'search-by' }, 'Searched in this tab by fenecdb, ', by, timing));
+    el('span', { class: 'search-by' }, 'Searched in this tab by fennecdb, ', by, timing));
   const dialog = el('dialog', { class: 'search', 'aria-labelledby': 'search-title' },
     el('div', { class: 'search-box' },
       el('h2', { id: 'search-title', class: 'search-title', text: 'Search the docs' }),

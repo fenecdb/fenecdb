@@ -1,15 +1,15 @@
 target/
 pkg/
-*.fenec
+*.fennec
 # A file only a build with every feature can write, which the builds
-# without them open (crates/fenec-core/tests/language_file.rs).
-!crates/fenec-core/tests/language.fenec
+# without them open (crates/fennec-core/tests/language_file.rs).
+!crates/fennec-core/tests/language.fennec
 .DS_Store
 node_modules/
-web/fenec-schema.d.ts
-web/fenec.wasm
-web/fenec-lite.wasm
-web/fenec-min.wasm
+web/fennec-schema.d.ts
+web/fennec.wasm
+web/fennec-lite.wasm
+web/fennec-min.wasm
 web/collate/
 site/dist/
 .wrangler/
@@ -17,7 +17,7 @@ __pycache__/
 *.egg-info/
 integrations/python/build/
 .pytest_cache/
-*.fenec.lock
+*.fennec.lock
 # Swift: SwiftPM's build and state at the root, where Package.swift is, and
 # the XCFramework integrations/swift/build-xcframework.sh makes.
 /.build/
@@ -35,9 +35,9 @@ integrations/kotlin/local.properties
 integrations/dart/**/.dart_tool/
 integrations/dart/**/pubspec.lock
 integrations/dart/**/.flutter-plugins*
-integrations/dart/fenecdb_flutter/ios/Frameworks/
-integrations/dart/fenecdb_flutter/macos/Frameworks/
-integrations/dart/fenecdb_flutter/android/src/main/jniLibs/
-integrations/dart/fenecdb_flutter/example/*
-!integrations/dart/fenecdb_flutter/example/lib/
-!integrations/dart/fenecdb_flutter/example/pubspec.yaml
+integrations/dart/fennecdb_flutter/ios/Frameworks/
+integrations/dart/fennecdb_flutter/macos/Frameworks/
+integrations/dart/fennecdb_flutter/android/src/main/jniLibs/
+integrations/dart/fennecdb_flutter/example/*
+!integrations/dart/fennecdb_flutter/example/lib/
+!integrations/dart/fennecdb_flutter/example/pubspec.yaml

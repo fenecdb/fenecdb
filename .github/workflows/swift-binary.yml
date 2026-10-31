@@ -55,17 +55,17 @@ jobs:
 
       # The zip just built, linked into the tests on macOS and on a
       # simulator before its checksum goes anywhere. The sync tests start a
-      # fenec-server, as ci.yml's do.
+      # fennec-server, as ci.yml's do.
       # Bounded: a hung `swift test` held a runner for six hours.
       # test-strict.sh runs them again with Swift's cooperative pool cut to
       # one thread, where a call blocking a thread of it hangs at once.
       # The binaries ci.yml's mobile job builds for the same tests: the
-      # read-routing tests put fenec-shard routers in front of two servers,
+      # read-routing tests put fennec-shard routers in front of two servers,
       # and v0.1.11's run failed on the router this step had not built.
       - name: Swift (macOS, iOS simulator)
         timeout-minutes: 30
         run: |
-          cargo build -p fenec-server -p fenec-shard
+          cargo build -p fennec-server -p fennec-shard
           swift test
           integrations/swift/test-strict.sh
           integrations/swift/test-ios.sh
@@ -74,9 +74,9 @@ jobs:
         with:
           name: xcframework-v${{ inputs.version }}
           path: |
-            integrations/swift/build/FenecFFI.xcframework.zip
-            integrations/swift/build/FenecFFI.xcframework.zip.checksum
-            integrations/swift/build/FenecFFIDynamic.xcframework.zip
+            integrations/swift/build/FennecFFI.xcframework.zip
+            integrations/swift/build/FennecFFI.xcframework.zip.checksum
+            integrations/swift/build/FennecFFIDynamic.xcframework.zip
           retention-days: 90
           if-no-files-found: error
 
@@ -86,7 +86,7 @@ jobs:
         run: |
           set -eu
           v="${{ inputs.version }}"
-          sum=$(cat integrations/swift/build/FenecFFI.xcframework.zip.checksum)
+          sum=$(cat integrations/swift/build/FennecFFI.xcframework.zip.checksum)
           integrations/swift/set-binary.sh "$v" "$sum"
           branch="swift-binary-v$v"
           git config user.name 'github-actions[bot]'

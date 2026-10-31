@@ -9,7 +9,7 @@ The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *The en
 of writes (`begin` .. `commit`) is open only under the write lock of
 whoever opened it: a `/batch`, a keyed write, the browser module's `run` of
 several. So a read lock finds no block open and reads what has landed, and
-`fenec_http::held` is only the lock taken whole past a poisoned one. A pg
+`fennec_http::held` is only the lock taken whole past a poisoned one. A pg
 transaction once left its block open between statements, parked for
 readers (`leave_block`, `park`, savepoints); with the pg wire gone that
 machinery went, since nothing else leaves a block open. What one writer
@@ -25,9 +25,9 @@ and 4.8 quoted before), and before the handover counted writes the longest was
 lock: 252 -> 516 writes/s from 1 to 16 writers, SQLite's 248 -> 258. Two processes opening the same file corrupts
 it, which is why everything that writes one -- the HTTP endpoint, a
 replica's follower, the graph keeper, `--follow`'s mirror -- is a thread
-of `fenec-server`, never a binary of its own. A `/batch` whose every
+of `fennec-server`, never a binary of its own. A `/batch` whose every
 statement reads (`read_batch`) is one snapshot, as the native library's
-`fenec_abi::query` is: every read at the one change `Fenec-Seq` names, a
+`fennec_abi::query` is: every read at the one change `Fennec-Seq` names, a
 `require` stopping it with 412 and `at`. It took the write lock as every
 batch did, then the read lock once for all of them (reads by id with no
 transfer waiting, 18 waits past 50 ms -> 2), and a long one is pinned now
@@ -37,18 +37,18 @@ as before.
 
 **What takes `<file>.lock`.** A process that opens a file to write it, or
 renames a database file into its place, takes `<file>.lock` first
-(`fenec_abi::lock::hold`: a record lock, the process's, and a list of this
+(`fennec_abi::lock::hold`: a record lock, the process's, and a list of this
 process's lock files, [native-and-sync.md](native-and-sync.md#the-native-library)),
-and is refused while another holds it: `fenec-server --file`, the native
-library, `fenec mcp --file`, and the shell -- `fenec <file>` typed, `-c`,
+and is refused while another holds it: `fennec-server --file`, the native
+library, `fennec mcp --file`, and the shell -- `fennec <file>` typed, `-c`,
 piped or a script, a read too since the lock is taken at the open --
-`fenec import` into a file (one-shot and `--follow`), `fenec backup` into a
-file and `fenec restore` into one (a rename over the file, its sync log
+`fennec import` into a file (one-shot and `--follow`), `fennec backup` into a
+file and `fennec restore` into one (a rename over the file, its sync log
 removed first, which a server with it open would have gone on writing past
 and lost), and `.save <path>`, which writes beside the file and renames
 over it, as a mapped file is replaced, and is refused over the session's
-own file. The shell took none up to 0.1.12: beside a `fenec-server --file
-x.fenec`, `fenec x.fenec -c 'put ...'` printed `1 records` and exited 0;
+own file. The shell took none up to 0.1.12: beside a `fennec-server --file
+x.fennec`, `fennec x.fennec -c 'put ...'` printed `1 records` and exited 0;
 the server, which reads its file only at its open, never saw the row, and
 its next writes were appended at its own end of the file, over the
 shell's. A shell write of 300 bytes followed by two short server writes
@@ -56,16 +56,16 @@ left the tail of the shell's body behind them, and the next open, the
 shell's or a server's, refused the file (`corrupt: unknown record kind
 120`, the `x`s read as a kind): one write lost, then the file. Since the
 holder writes its id and program into the lock file as it takes the lock,
-a refusal names it -- `x.fenec is open in another process (fenec-server,
+a refusal names it -- `x.fennec is open in another process (fennec-server,
 pid 4242)` -- from the system's `F_GETLK` and that line, the line taken
 only where its id is the one the system names (under a holder of an older
 release, which writes none, the line an earlier holder left would name the
 wrong program), and the file is opened to ask only once it is known not to
 be this process's own, since closing a descriptor of it lets this
 process's lock go. The lock, the naming, `--read-only` and `.save`'s
-rename are 10.2 KB of code in the smallest `fenec` (`make small`, 16.7 KB
+rename are 10.2 KB of code in the smallest `fennec` (`make small`, 16.7 KB
 of file on arm64 macOS, whose pages are 16 KB). A tool that only looks takes none and
-writes nothing: `fenec --read-only`, `fenec mcp --read-only` and `fenec
+writes nothing: `fennec --read-only`, `fennec mcp --read-only` and `fennec
 types` open with `fs::open_read_only`, which maps the file at its length
 at the open, passes a record a server is in the middle of appending over
 as a torn tail, cuts nothing and plays no sync log -- the file only grows
@@ -75,7 +75,7 @@ write there before the engine sees it: handed over, the read-only sink's
 refusal was a storage error, after which every write said so.
 
 **A node's tenants, the router's directory, and links.** A `--dir` node
-took no lock, so `fenec T/acme.fenec -c 'put ...'` beside it printed
+took no lock, so `fennec T/acme.fennec -c 'put ...'` beside it printed
 `1 records`, and the node's next two writes left the file unreadable
 (`corrupt: unknown record kind 120`), as a `--file` server's had. Each
 tenant's open now takes its lock (`Tenants::open_as`, `hold_tenant`) and
@@ -106,7 +106,7 @@ their whole run -- keeps its tenant from closing (`Tenant::db_in_use`):
 closed when idle or for memory meanwhile, the database outlived the tenant
 with its lock, and every request's open waited the 5 s and answered 500. A
 delete or a follow meanwhile waits the same 5 s for it, then is refused. A
-`fenec restore --tenants` holds each file it writes across its check and
+`fennec restore --tenants` holds each file it writes across its check and
 its rename, as an install does. An in-process
 "restart" in `lease_stalls.rs`, which leaked its registry with its
 followers and opened another over the same files, now opens it over a copy,
@@ -124,9 +124,9 @@ Most of the hold is the lock file's `open`, 17-18 us on this Mac with or
 without `O_CREAT`, which no other way of taking the lock avoids: the lock
 cannot live on the database file, which a checkpoint renames over, and a
 lock kept past the tenant's close would refuse the shell a tenant the node
-is not using. `fenec-shard` holds its directory file's lock, and
+is not using. `fennec-shard` holds its directory file's lock, and
 a region's copy of the global directory's, for the life of the process, as
-`fenec-server --file` does.
+`fennec-server --file` does.
 
 A file opened through a symbolic link is the file the link leads to
 (`fs::resolved`, which the sink's open and `lock_path` both ask): a symbolic
@@ -136,8 +136,8 @@ nothing, since the files beside go through the same link. The sink keeps
 the resolved path, so a checkpoint and a compact rename their image over the
 file and the link stays a link; so do a restore, a backup, `.save` and a
 tenant's install. Before, the lock was named past the link but the sink
-renamed over the link itself (#420's review): after `fenec-server --file
-link.fenec` compacted, `link.fenec` was a regular file, a shell over it took
+renamed over the link itself (#420's review): after `fennec-server --file
+link.fennec` compacted, `link.fennec` was a regular file, a shell over it took
 that file's lock beside the server, wrote, and the file ended `corrupt:
 unknown record kind 120` (`a_file_served_through_a_link_stays_one_file_across_a_compact`).
 Not `canonicalize`: 20 us more an open, and an error for a file not made
@@ -152,7 +152,7 @@ Unix `hold` takes no lock at all (no release is built for Windows);
 there, since a Windows lock is mandatory and would refuse the reads of the
 line.
 
-`fenec restore` and `fenec backup` into a file renamed theirs over
+`fennec restore` and `fennec backup` into a file renamed theirs over
 whatever had the name, a database written since included, and exited 0:
 under the lock, one there already is refused now (exit 2, the file as it
 was) unless `--force` says to replace it.
@@ -181,7 +181,7 @@ read lock, builds and encodes the documents of every `put` among a block's
 statements into one buffer for the block -- buffers of its own a statement
 were three allocations each, a quarter of what they saved -- and the block
 takes them (`execute_prepared`; `execute_ready` for a `/batch` run a
-statement at a time, `fenec_http::held::prepared`) where its collection
+statement at a time, `fennec_http::held::prepared`) where its collection
 holds the very schema they were built against: the preparation holds the
 `Arc`, so any change copies it and `Arc::ptr_eq` fails, and the `put` builds
 its own as it always did. Everything the database decides -- the id, an
@@ -206,7 +206,7 @@ lock, its documents built under a second where that `Arc` is still the
 collection's, and the write lock takes both where the collection holds
 that very schema (`Early::holds`), routing the body again under it
 otherwise -- a field added, the collection made again, a vector field
-made json are read and built again (fenec-http's
+made json are read and built again (fennec-http's
 `a_rest_insert_whose_schema_moved_before_the_lock_is_read_again`, which
 fails with the check taken out). Under the write lock a body of 1 000
 rows was read, checked and built: a reader by id beside such inserts back
@@ -215,15 +215,15 @@ of a text and an int, 0.07-0.08 and 0.30-0.34 now, and of 3.25-3.73 and
 4.35-5.49 ms for rows with a 128-dim vector, 0.18-0.21 and 1.26-1.74 now,
 the writer as fast (`make concurrency-bench ARGS=rest`, in turns), and
 `make load-bench`'s REST arrays went in at 212-221k rows a second against
-216-217k, for 5.3 KB of `fenec-server`'s code. A body under `EARLY_AT`
+216-217k, for 5.3 KB of `fennec-server`'s code. A body under `EARLY_AT`
 (1 KB) with fewer `{` than 16 is read under the lock as before: read
 first, a read lock, the schema's count and a look-up more took a row 1.11
 -> 1.14-1.16 us in process. A token whose
 rules read another collection is bound under the write lock, so its
 insert routes there. The native library prepares a text's `put`s as well
-(`fenec_abi::execute_ready`): the lists a json field keeps are read first
+(`fennec_abi::execute_ready`): the lists a json field keeps are read first
 (`exact_noting`, which notes whether it read anything anew -- returned
-beside the error, the `bool` grew the browser module's `fenec_query` 48
+beside the error, the `bool` grew the browser module's `fennec_query` 48
 bytes), again under the write lock only where a write landed meanwhile,
 and the preparation is let go of where that read anything anew. An app's
 read by id beside texts of 1 000 128-dim rows waited 0.24-0.40 ms p50

@@ -1,7 +1,7 @@
 // No order is ever carried by two couriers: 50 courier clients claiming the
 // nearest ready order at once, each claim one statement under the courier's
 // own token, every order acked by delivering it -- and the same with 50
-// couriers waiting at the server (`Fenec-Wait`) while orders trickle in.
+// couriers waiting at the server (`Fennec-Wait`) while orders trickle in.
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startWorld, tandem, cast, sleep, type World } from './harness';

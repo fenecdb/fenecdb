@@ -2,7 +2,7 @@
 # Outside the workspace: the crates take no outside package, and this is
 # what an application of its own does.
 [package]
-name = "fenecdb-languages-rust"
+name = "fennecdb-languages-rust"
 version = "0.0.0"
 edition = "2021"
 publish = false

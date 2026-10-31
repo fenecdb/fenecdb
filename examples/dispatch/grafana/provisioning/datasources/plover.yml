@@ -7,7 +7,7 @@
 apiVersion: 1
 datasources:
   - name: Plover Tandem Couriers
-    type: fenecdb-datasource
+    type: fennecdb-datasource
     uid: plover-tandem
     url: http://host.docker.internal:8090/t/co-tandem
     access: proxy
@@ -18,7 +18,7 @@ datasources:
     secureJsonData:
       token: $__file{/run/plover/tandem.jwt}
   - name: Plover Hopper & Daughters
-    type: fenecdb-datasource
+    type: fennecdb-datasource
     uid: plover-hopper
     url: http://host.docker.internal:8090/t/co-hopper
     access: proxy

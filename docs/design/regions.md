@@ -24,7 +24,7 @@ another zone ranked first -- before a node holding a copy and before the
 fewest replicas, since a datacenter lost takes a replica in its primary's
 zone with it -- a zone not named between; one placed in its primary's zone
 where nothing else was free is logged, answered `"same_zone": true` and
-counted (`fenec_router_same_zone_copies{region}`), and a pair's standby must
+counted (`fennec_router_same_zone_copies{region}`), and a pair's standby must
 share its node's region. So a failover, by hand or on a lease, promotes
 within the region by construction: nothing placed a copy anywhere else. A
 move leaves the region only where the request names the region it goes to
@@ -53,7 +53,7 @@ on a machine whose load rose to 12 was left out. The gauges by node carry
 ## Region directories
 
 **A region may keep its own directory, and leases and fails over inside
-itself** (`fenec-shard/src/region.rs`, `--region`, `--global`, `PUT
+itself** (`fennec-shard/src/region.rs`, `--region`, `--global`, `PUT
 /_shard/regions/<r>`; `site/content/docs/sharding-regions.html#region-directories`).
 With one directory every lease came from the primary router, so every
 region's writes hung on the primary's region. A region's router (`--region us --global
@@ -77,7 +77,7 @@ then flips the home, one statement; each step undone where the next fails,
 so a region not reached refuses it 503 with `Retry-After` and nothing
 changed. A router relays a change it does not keep once (`regional_admin`),
 a region's to the global router, the global router's to the region's under
-`Fenec-Global`, which is carried out and never relayed on; a deployment
+`Fennec-Global`, which is carried out and never relayed on; a deployment
 whose regions keep none returns before reading a body (`route_global`), as
 before. Forwarding relays to the region's routers rather than keep a copy of
 every region's directory in every router -- rejected: a follower a region in
@@ -88,17 +88,17 @@ router reaches the new one with its first request, for a hop inside the
 tenant's region a client of that region never takes; a relayed request is
 never relayed again (503). The relaying router names its client -- the
 one the global entry named, where it believed one (`--entry-token`) -- in
-`Fenec-Router` under an HMAC of the shared `--token` (`relay_mark`, believed
-through `audit::request`, `Fenec-Verified` passed back), and moves to the
+`Fennec-Router` under an HMAC of the shared `--token` (`relay_mark`, believed
+through `audit::request`, `Fennec-Verified` passed back), and moves to the
 next router of a region only where the one asked cannot have run the
 request (`Pool::send_tried`'s `Tried::Unrun`), passing over one answering
-that it follows another. A lease names its holder (`fenec_http::lease::Holder`:
+that it follows another. A lease names its holder (`fennec_http::lease::Holder`:
 the directory's region, its term -- its history's forks, one more at each
 promotion -- and its history): a node takes a grant from the directory it
 holds at a term no lower and none from another while that lease runs,
 refuses a superseded router's (409 `held_by`, which a router from before
 reads as a node taking no lease and so fails over never) and its promotions
-and follows (`Fenec-Lease-Holder`, `Lease::admits`). So a router promoted
+and follows (`Fennec-Lease-Holder`, `Lease::admits`). So a router promoted
 over one still running fences it at every node it reaches; a node only the
 old one reaches is beyond that, and a router is promoted once the one before
 is gone, as before. A region's router fails over no node that took a grant
@@ -134,7 +134,7 @@ against 23.75 (16.3-24.3), and the failovers as they were, medians of four
 a side: a pair's 20 tenants 64 ms against 67, one node's 10 over their
 replicas 43.5 against 45.5, the repair after it 157.5 against 196, a lease's
 tenants writing again 1.36 s after the cut against 1.37. Nothing below
-`fenec-http`'s lease and admin changed.
+`fennec-http`'s lease and admin changed.
 
 ## The global entry
 
@@ -144,10 +144,10 @@ client had to know its tenant's region, a router of another relaying the
 request once, a hop between regions every request. The entry is a plain
 Worker -- Workers for Platforms' dispatch, about 17 ms, stays out of the
 path -- sending `/t/<tenant>/...` to the routers of the tenant's home, and
-asking nobody where that is: every request carries `Fenec-Home: 1`, and the
+asking nobody where that is: every request carries `Fennec-Home: 1`, and the
 router forwarding it to the tenant's node -- from its directory, or from
 its copy of the global one (`Target::Node` carries the node's region now)
--- answers `Fenec-Home: <region>`, the node's; a relaying router names
+-- answers `Fennec-Home: <region>`, the node's; a relaying router names
 nothing and passes the home router's through, and the entry takes it off
 the answer (a router names it on a 401 too, to anyone with a tenant's
 name). A tenant not heard goes to the region of the client's continent
@@ -165,7 +165,7 @@ home's region) sends a read on to the next region; the placing router's own
 502 for a node it could not reach names the home (`region::homed`), and is
 the answer. A move across leaves the old region's router relaying
 the tenant and the answer naming the new home, a hop and never an error.
-A read marked for a replica (`Fenec-Read: replica`, the read replicas
+A read marked for a replica (`Fennec-Read: replica`, the read replicas
 below; `marked`, `near`) goes to the region of the client's continent
 first whatever the home, then to the home where that region fails or
 answers a 5xx naming none: sent to the known home alone, every marked read
@@ -198,27 +198,27 @@ client is told no home: not asked, the router's added p50 was
 (23.4-24.1 and 23.7-24.0, six runs a side in ABBA turns, `make shard-bench
 ARGS=latency`; 24.15 against 24.1 before the mark), and asked, a router
 answered in 82-83 us p50 against 81. A path is judged as the router and the node read
-it, decoded as fenec-http decodes one (`percentDecode`, `segments`):
+it, decoded as fennec-http decodes one (`percentDecode`, `segments`):
 WHATWG's URL leaves `%5F` and `%2F` encoded, and `/t/acme/%5Freplication`
 with a tenant's replication token was its whole replication stream through
 the public entry. A request goes on with what the client sent but the
-hop-by-hop headers, the routers' marks (`Fenec-Router`, `Fenec-Global`,
-`Fenec-Verified`, the last dropped from answers too) and every address a
+hop-by-hop headers, the routers' marks (`Fennec-Router`, `Fennec-Global`,
+`Fennec-Verified`, the last dropped from answers too) and every address a
 client claims (`X-Forwarded-For`, `X-Real-IP`, `Forwarded`,
 `True-Client-IP`, `cf-*`); `X-Request-Id` is the client's or Cloudflare's
-ray id. The client is named in `Fenec-Client: <address> <seconds>
+ray id. The client is named in `Fennec-Client: <address> <seconds>
 <mark>`, the address `CF-Connecting-IP`, the mark 16 bytes of HMAC-SHA256
-of `fenec-client <address> <seconds>` under `ENTRY_TOKEN`, base64url
+of `fennec-client <address> <seconds>` under `ENTRY_TOKEN`, base64url
 (`clientMark`): bound to the address and the time, a mark seen names that
 address for a minute, where one of the token alone, as `audit::router_mark`
 is, would name any address for good -- and not `CF-Connecting-IP` believed
 from Cloudflare's ranges, since a Worker sets it and `X-Real-IP` as it
 likes towards an origin outside Cloudflare (Cloudflare's HTTP headers page),
 so any account's Worker could claim any address. A router started with
-the same token (`fenec-shard --entry-token`, `FENEC_SHARD_ENTRY_TOKEN`, set
+the same token (`fennec-shard --entry-token`, `FENNEC_SHARD_ENTRY_TOKEN`, set
 and empty being unset) reads it (`audit::entry`, after `audit::request`
 and for a request no router relayed): the mark first, in constant time
-against its own HMAC of `fenec-client <address> <seconds>` (`EntryKey`, the
+against its own HMAC of `fennec-client <address> <seconds>` (`EntryKey`, the
 key's padded blocks hashed once, a `HmacKey`: 0.73-0.78 us a mark checked
 where the HMAC alone took 1.28-1.36 with them hashed each time), then the seconds
 within 60 of its clock either way (`CLIENT_WITHIN_SECS`), so a stale header
@@ -229,7 +229,7 @@ refusal's wait and count (`audit::http`), a verified token's clearing
 (`audit::verified`), the audit and slow lines' `peer`, the entry's address
 their `via` (`audit::line`), the trace's `client.address` (on a node too,
 for the client a router named; the connection's own `network.peer.address`
-always), and the `Fenec-Router` the router names to a node, a read
+always), and the `Fennec-Router` the router names to a node, a read
 replica's (`forward_near`) or a relay, which names it to the node in turn
 -- the router still waiting a refusal out and still relaying a tenant of
 another region, where for a relayed request it does neither. A count is
@@ -244,7 +244,7 @@ every router drops the header from what it forwards, flag or not
 claim: relays, held requests, streams and a read replica's reads go out
 through those lists, and `/_shard/`'s relays and a fan-out write headers of
 their own. What each came to is counted
-(`fenec_router_entry_clients_total{outcome}`: `named`, `bad_mark`,
+(`fennec_router_entry_clients_total{outcome}`: `named`, `bad_mark`,
 `stale`, and `absent` for a tenant's request carrying none -- every one,
 behind an entry whose `ENTRY_TOKEN` is unset, which names nobody and
 otherwise shows nothing -- in the thread's metrics shard as a request is),
@@ -297,20 +297,20 @@ with no `CORS` logs it once: its own 503s would read as the network
 failing. Only `/t/<tenant>/` is served: `/_shard/` where `ADMIN` names the
 global router, everything else and a tenant's `/_replication` a 404. A
 region's routers are tried from the one that answered last; every answer a
-router writes carries its mark (`Fenec-Shard: 1`, `region::SHARD_HEADER`,
+router writes carries its mark (`Fennec-Shard: 1`, `region::SHARD_HEADER`,
 written by `Router::cors` and `forward`, a relayed answer's the relaying
 router's alone), and one without it is not the router's (`judged`) -- not
 `X-Request-Id`, which a load balancer may write on its own 502, so that a
 dead router behind one looked like the router's answer and its standby was
 never tried. Cloudflare's 521/523/525/526/530 never reached one, so
 any request goes on, and so does one a router answered 503 marked
-`Fenec-Unserved` -- written as it took the connection, past its ceiling or
+`Fennec-Unserved` -- written as it took the connection, past its ceiling or
 at its thread limit, before it read the request
 ([http.md](http.md#connections-without-a-thread)) -- that router not taken
 for the one that answered last, its 503 the client's where every router
 gives one: taken for the router's answer, a router at its thread limit kept
 every request from its standby. A standby's 409 refusing a `/_shard/`
-change is passed over the same way, marked `Fenec-Follows`
+change is passed over the same way, marked `Fennec-Follows`
 (`region::FOLLOWS_HEADER`, which `call_routers_by` reads too, beside the
 words a router from before the mark refuses in), the busy primary's 503
 the answer before it: taken for the router's answer, a change meeting the
@@ -336,7 +336,7 @@ on a fetch is not CPU time and an HTTP-triggered Worker has no duration
 limit while its client is connected (Cloudflare's Workers limits), so a
 held write or a stream is not cut; a proxied hostname's answer must start
 within the proxy read timeout (100 s below Enterprise), past
-`Fenec-Wait`'s 30. Under `wrangler dev` a client gone before its answer's
+`Fennec-Wait`'s 30. Under `wrangler dev` a client gone before its answer's
 head never reaches the Worker -- workerd notices a client only as it writes
 to it, past wrangler's own proxy Worker too -- so that case is held in Node,
 the handler over Node's `fetch`; a stream is let go of at a stand-in router

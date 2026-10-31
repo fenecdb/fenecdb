@@ -1,26 +1,26 @@
-// fenecdb over HTTP: `connect`, `FenecHttp` and its live queries, with the
+// fennecdb over HTTP: `connect`, `FennecHttp` and its live queries, with the
 // query builder of `builder.js`. Nothing here reaches the engine, so a page
 // whose queries run on a server loads this and not the module
-// (`@fenecdb/web/client`).
+// (`@fennecdb/web/client`).
 
-import { FenecError, Query, checked, declared, ident, nameOf, normalize, rowsOf, statementOf, whole } from './builder.js';
+import { FennecError, Query, checked, declared, ident, nameOf, normalize, rowsOf, statementOf, whole } from './builder.js';
 
 // ----------------------------------------------------------- HTTP endpoint
 //
 // The same query builder, against a remote server. The builder produces
-// FenecQL text and `POST /query` takes it as is, so query code moves between
+// FennecQL text and `POST /query` takes it as is, so query code moves between
 // wasm and HTTP unchanged. The REST surface (`GET /<name>?year=gte.2024`)
 // is for driverless clients; the builder does not use it.
 
-/** `Fenec-Wait` for `{ wait }`: milliseconds from 0, 30 000 at most at the server. */
+/** `Fennec-Wait` for `{ wait }`: milliseconds from 0, 30 000 at most at the server. */
 function held(ms) {
   if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) {
-    throw new FenecError(`wait is milliseconds, a number from 0 (got ${ms})`);
+    throw new FennecError(`wait is milliseconds, a number from 0 (got ${ms})`);
   }
   return Math.floor(ms);
 }
 
-export class FenecHttp {
+export class FennecHttp {
   #url;
   #token;
   #fetch;
@@ -42,22 +42,22 @@ export class FenecHttp {
     this.#key = opts.idempotencyKey ?? null;
     // Shared with every copy `withIdempotencyKey` makes, as Go's and
     // .NET's clients share theirs. `at` is the furthest position an answer
-    // from home named -- `Fenec-Seq` and the history it is a change of --
+    // from home named -- `Fennec-Seq` and the history it is a change of --
     // which a marked read is sent after: an answer that arrives late is not
     // the last.
     this.#last = opts[LAST] ?? { seq: null, at: null };
     this.#reads = opts.reads ?? 'home';
     if (this.#reads !== 'home' && this.#reads !== 'nearest') {
-      throw new FenecError(`reads is 'home' or 'nearest' (got ${this.#reads})`);
+      throw new FennecError(`reads is 'home' or 'nearest' (got ${this.#reads})`);
     }
     if (typeof this.#fetch !== 'function') {
-      throw new FenecError('fetch not found: pass one via opts.fetch');
+      throw new FennecError('fetch not found: pass one via opts.fetch');
     }
   }
 
   /**
    * The change the last write through this client, or a copy of it, left
-   * the database at (`Fenec-Seq`); `null` before any.
+   * the database at (`Fennec-Seq`); `null` before any.
    */
   get seq() {
     return this.#last.seq;
@@ -72,7 +72,7 @@ export class FenecHttp {
    * `db.withIdempotencyKey(k).from('orders').insert(order)`.
    */
   withIdempotencyKey(key) {
-    if (typeof key !== 'string' || !key) throw new FenecError('an idempotency key is a text, not empty');
+    if (typeof key !== 'string' || !key) throw new FennecError('an idempotency key is a text, not empty');
     const copy = new this.constructor(this.#url, {
       token: this.#token,
       fetch: this.#fetch,
@@ -87,13 +87,13 @@ export class FenecHttp {
   }
 
   /**
-   * Runs FenecQL. The return shape matches `run` on the wasm path; a write
+   * Runs FennecQL. The return shape matches `run` on the wasm path; a write
    * also says the change it left the database at (`seq`) and whether the
    * answer is the one kept for its key (`replayed`). `{ idempotencyKey }`
    * sends one with this statement. `{ wait: ms }` holds a `set` or a `del`
    * that writes nothing at the server until it can -- a job enqueued, a
    * delayed one come due, a lease lapsed -- or for that long, at most
-   * 30 000: a claim waiting for a job (`Fenec-Wait`). `{ signal }` gives
+   * 30 000: a claim waiting for a job (`Fennec-Wait`). `{ signal }` gives
    * it up, as any `fetch`. `{ read: true }`: the text only reads, and goes
    * near on a client reading near, as the builder's reads do; its answer's
    * `seq` is then where the copy that answered stood as it read -- maybe a
@@ -120,14 +120,14 @@ export class FenecHttp {
   /**
    * `POST /batch`: the statements in order under one write lock, as one
    * block -- their writes all land, or at the first error none of them do.
-   * Each is a builder query (a read), a FenecQL text, or `[text, params]`,
+   * Each is a builder query (a read), a FennecQL text, or `[text, params]`,
    * which a builder's `toInsert`, `toUpdate` and `toDelete` make. Answers
    * each statement's result in order as the server writes it -- `{rows}`
    * (and `facets`), `{affected}` or `{message}` -- with `seq` and
    * `replayed`. With `{ idempotencyKey }` a retry after a timeout is
    * answered as the first try was and writes nothing twice.
    *
-   * A statement that stops it throws a `FenecError` whose `at` is that
+   * A statement that stops it throws a `FennecError` whose `at` is that
    * statement's place (from 0), `status` the refusal's kind -- 412 a
    * write's `require` not met -- and `completed` how many stayed applied:
    * none, but for a batch holding a `compact`, whose statements run on
@@ -137,7 +137,7 @@ export class FenecHttp {
    */
   async batch(items, opts = {}) {
     if (!Array.isArray(items) || items.length === 0) {
-      throw new FenecError('batch takes a list of statements: queries, texts or [text, params]');
+      throw new FennecError('batch takes a list of statements: queries, texts or [text, params]');
     }
     const lines = items.map((item, i) => {
       const [sql, params] = statementOf(item, i);
@@ -178,7 +178,7 @@ export class FenecHttp {
     const headers = { 'content-type': type };
     if (this.#token) headers.authorization = `Bearer ${this.#token}`;
     if (key) headers['idempotency-key'] = key;
-    if (wait !== undefined && wait !== null) headers['fenec-wait'] = String(held(wait));
+    if (wait !== undefined && wait !== null) headers['fennec-wait'] = String(held(wait));
     // A read near: marked for the tenant's read replica in the router's
     // region, after the furthest position home named to this client, which
     // the replica waits for -- that change of that history; a live
@@ -187,15 +187,15 @@ export class FenecHttp {
     const of = after?.at && later(after.at, this.#last.at) ? after : this.#last;
     let at = of.at;
     const mark = () => {
-      headers['fenec-after'] = String(at.seq);
-      if (at.history) headers['fenec-history'] = at.history;
-      else delete headers['fenec-history'];
+      headers['fennec-after'] = String(at.seq);
+      if (at.history) headers['fennec-history'] = at.history;
+      else delete headers['fennec-history'];
       // A live run waits a second, not five: a replica later than home's
       // fsync and a link is behind, and home answers in a round trip.
-      if (after) headers['fenec-wait'] = '1000';
+      if (after) headers['fennec-wait'] = '1000';
     };
     if (near) {
-      headers['fenec-read'] = 'replica';
+      headers['fennec-read'] = 'replica';
       if (at) mark();
     }
     const init = { method: 'POST', headers, body: payload };
@@ -213,7 +213,7 @@ export class FenecHttp {
     // the name, which starts again at term 1: refused, every read near
     // waited its whole wait for good. Whichever the read was sent after,
     // the client's or a live query's, is the one set back.
-    if (near && res.status === 504 && headers['fenec-after']) {
+    if (near && res.status === 504 && headers['fennec-after']) {
       const told = await res.json().catch(() => null);
       let took = false;
       if (told && Number.isSafeInteger(told.seq)) {
@@ -228,10 +228,10 @@ export class FenecHttp {
         res = await this.#request(`${this.#url}${path}`, init);
       }
       if (res.status === 504) {
-        delete headers['fenec-read'];
-        delete headers['fenec-after'];
-        delete headers['fenec-history'];
-        if (after) delete headers['fenec-wait'];
+        delete headers['fennec-read'];
+        delete headers['fennec-after'];
+        delete headers['fennec-history'];
+        if (after) delete headers['fennec-wait'];
         res = await this.#request(`${this.#url}${path}`, init);
         near = false;
       }
@@ -241,7 +241,7 @@ export class FenecHttp {
     try {
       body = text ? JSON.parse(text) : null;
     } catch {
-      throw new FenecError(`server did not return JSON (${res.status}): ${text.slice(0, 200)}`);
+      throw new FennecError(`server did not return JSON (${res.status}): ${text.slice(0, 200)}`);
     }
     if (!res.ok && !also.includes(res.status)) {
       // The status is the refusal's kind: 412 a write's `require` not met,
@@ -251,13 +251,13 @@ export class FenecHttp {
       // (`completed`).
       throw refused(res, body);
     }
-    const got = res.headers?.get?.('fenec-seq');
+    const got = res.headers?.get?.('fennec-seq');
     const seq = got ? Number(got) : null;
     // A position from home moves the client's; a marked answer's, maybe a
     // replica's, a live run's own alone: its next run goes after the rows
     // it showed, which so never go back.
     if (seq !== null) {
-      const p = position(seq, res.headers?.get?.('fenec-history') ?? null);
+      const p = position(seq, res.headers?.get?.('fennec-history') ?? null);
       const to = near ? after : this.#last;
       if (!near) this.#last.seq = seq;
       if (to && later(p, to.at)) to.at = p;
@@ -294,9 +294,9 @@ export class FenecHttp {
   /**
    * Live query over the server: `cb` is handed the rows once the server
    * has opened a subscription to every collection the query reads, and
-   * again after every write to one of them -- `Fenec.live`'s contract, the
+   * again after every write to one of them -- `Fennec.live`'s contract, the
    * query run on the server each time. `query` is a builder `Query`, a
-   * FenecQL text or `[text, params]`; a text names what it reads with
+   * FennecQL text or `[text, params]`; a text names what it reads with
    * `{collections}`, since nothing here could know a write it may read.
    * Returns the function that stops it.
    *
@@ -318,7 +318,7 @@ export class FenecHttp {
    * @param {{onError?: Function, params?: Array, collections?: string[]}} opts
    */
   live(query, cb, opts = {}) {
-    if (typeof cb !== 'function') throw new FenecError('live(query, cb): cb must be a function');
+    if (typeof cb !== 'function') throw new FennecError('live(query, cb): cb must be a function');
     const near = this.#reads === 'nearest';
     // The furthest position the streams named, ordered as the client's:
     // a stream opened again after a failover names the later term, and
@@ -335,14 +335,14 @@ export class FenecHttp {
       reads = query.reads;
     } else {
       const [sql, params] = typeof query === 'string' ? [query, opts.params ?? []] : Array.isArray(query) ? query : [];
-      if (typeof sql !== 'string') throw new FenecError('live: a Query, a FenecQL text, or [text, params]');
+      if (typeof sql !== 'string') throw new FennecError('live: a Query, a FennecQL text, or [text, params]');
       rows = async () => rowsOf(await this.run(sql, params ?? [], marked));
       reads = null;
     }
     if (opts.poll !== undefined) return this.#poll(query, cb, opts);
     if (opts.collections) reads = opts.collections.map((c) => ident(c, 'collection'));
     if (!reads) {
-      throw new FenecError('live over HTTP: name the collections a text reads, { collections: [...] }');
+      throw new FennecError('live over HTTP: name the collections a text reads, { collections: [...] }');
     }
     const onError = opts.onError ?? this.onError;
     const stop = new AbortController();
@@ -385,8 +385,8 @@ export class FenecHttp {
           const res = await this.#request(url, { headers, signal: stop.signal });
           if (!res.ok || !res.body) throw await refusal(res, collection);
           // The history each event's `seq` is of, as the head names it;
-          // the seed's `seq` is at or past the head's `Fenec-Seq`.
-          const history = res.headers.get('fenec-history');
+          // the seed's `seq` is at or past the head's `Fennec-Seq`.
+          const history = res.headers.get('fennec-history');
           // None (a server from before, or no replica): term-0 positions
           // never pass the client's, so the runs go home -- until every
           // stream's head names one again, as after an upgrade.
@@ -427,7 +427,7 @@ export class FenecHttp {
    * which replaces what the caller held -- then `{ type: 'change', seq,
    * puts, dels, schema }` as each write lands. `shape` is the REST
    * surface's: a field's filter (`{ team: 'eq.design' }`), `where` (a
-   * FenecQL condition) and `select` (a list or a text); a scoped token's
+   * FennecQL condition) and `select` (a list or a text); a scoped token's
    * rules are ANDed in by the server. A stream that ends -- a tenant moved,
    * the network -- is opened again (250 ms, doubling to 15 s) and seeds
    * again; one refused or ended for its token (401, as the server ends one
@@ -442,11 +442,11 @@ export class FenecHttp {
    * @param {{onError?: Function, onState?: Function}} [opts]
    */
   subscribe(collection, shape, onEvent, opts = {}) {
-    if (typeof onEvent !== 'function') throw new FenecError('subscribe(collection, shape, onEvent): onEvent must be a function');
+    if (typeof onEvent !== 'function') throw new FennecError('subscribe(collection, shape, onEvent): onEvent must be a function');
     const c = ident(collection, 'collection');
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(shape ?? {})) {
-      if (k === 'since') throw new FenecError('subscribe: each stream seeds; `since` is not taken');
+      if (k === 'since') throw new FennecError('subscribe: each stream seeds; `since` is not taken');
       q.append(k, Array.isArray(v) ? v.join(',') : String(v));
     }
     const qs = q.toString();
@@ -502,9 +502,9 @@ export class FenecHttp {
    */
   #poll(query, cb, opts) {
     const [sql, params] =
-      query instanceof Query ? query.plain().toFenecQL() : typeof query === 'string' ? [query, opts.params ?? []] : query;
+      query instanceof Query ? query.plain().toFennecQL() : typeof query === 'string' ? [query, opts.params ?? []] : query;
     const every = whole(opts.poll, 'poll');
-    if (every < 100) throw new FenecError('live: poll is every 100 ms at the most often');
+    if (every < 100) throw new FennecError('live: poll is every 100 ms at the most often');
     const onError = opts.onError ?? this.onError;
     const stop = new AbortController();
     const headers = { 'content-type': 'application/json' };
@@ -575,13 +575,13 @@ async function refusal(res, collection) {
  * server says rather than by a guess.
  */
 function refused(res, body, message) {
-  const e = new FenecError(message ?? body?.error ?? `HTTP ${res.status}`);
+  const e = new FennecError(message ?? body?.error ?? `HTTP ${res.status}`);
   e.status = res.status;
   if (typeof body?.at === 'number') e.at = body.at;
   // What a `require n else '<reason>'` said: the statement's own words.
   if (typeof body?.reason === 'string') e.reason = body.reason;
   if (typeof body?.completed === 'number') e.completed = body.completed;
-  const quota = body?.quota ?? res.headers?.get?.('fenec-quota');
+  const quota = body?.quota ?? res.headers?.get?.('fennec-quota');
   if (quota) e.quota = quota;
   // The wait to the millisecond where the body says it: `Retry-After` is
   // whole seconds, and a bucket of 600 rows a second refills a row in 1.7 ms.
@@ -606,7 +606,7 @@ function streamError(data) {
   } catch {
     // an event that is not JSON
   }
-  const e = new FenecError(msg.error ?? 'subscription error');
+  const e = new FennecError(msg.error ?? 'subscription error');
   if (typeof msg.status === 'number') e.status = msg.status;
   return e;
 }
@@ -622,7 +622,7 @@ const AFTER = Symbol('after');
 
 /**
  * A position an answer named: its change, the history it is a change of
- * (`<term>-<id>`, `Fenec-History`; none for a database that never had a
+ * (`<term>-<id>`, `Fennec-History`; none for a database that never had a
  * replica), that history's term, one more at each promotion, and its
  * lineage: the id's top half, which every fork of the tenant keeps and a
  * tenant made again under its name does not.
@@ -647,12 +647,12 @@ function later(p, q) {
 }
 
 /**
- * Connects to a remote fenecdb HTTP endpoint (`fenec-server --http`). With
+ * Connects to a remote fennecdb HTTP endpoint (`fennec-server --http`). With
  * `schema`, a promise: the server's schema is checked against the code's,
  * and with `migrate` -- and the server's token -- brought to it.
  */
 export function connect(url, opts = {}) {
-  const http = new FenecHttp(url, opts);
+  const http = new FennecHttp(url, opts);
   return opts.schema ? checked(http, opts, opts.migrate ? 'apply' : 'follow') : http;
 }
 

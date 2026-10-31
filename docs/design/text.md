@@ -6,7 +6,7 @@ The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *Text*:
 
 **`collate und` and `collate tr` are ICU's orders, a query's or a field's.**
 The weights are ICU's own for every assigned code point --
-`crates/fenec-core/tools/collate/gen.py` reads ICU 76.1 out of macOS's libicucore into
+`crates/fennec-core/tools/collate/gen.py` reads ICU 76.1 out of macOS's libicucore into
 `collate/`: the root cut into twelve chunks by script and each tailoring as
 what it changes, with ICU's own contractions (a letter and a mark it
 composes with, a two-part vowel sign, a Thai or Lao vowel written before its
@@ -27,8 +27,8 @@ for `tr` and 35.2 for `und` now over a million Turkish names -- 41 while
 every letter went through the tailoring's table and the root's chunk. Held
 to ICU itself over 1 250 000 random pairs, five apart -- marks that compose
 with their letter across another mark or out of canonical order, which
-ICU's normalisation and discontiguous contractions find and fenecdb does
-not -- and to `Intl.Collator` in `web/fenec.test.js`.
+ICU's normalisation and discontiguous contractions find and fennecdb does
+not -- and to `Intl.Collator` in `web/fennec.test.js`.
 `order name collate und` names it for one key; a field declared `name text
 collate und` has it wherever its text compares -- `order` naming none, `<`
 and `>` in `where` (`RowAccess::text_order`), `min` and `max`, and a
@@ -38,12 +38,12 @@ fold's, below). The schema writes a collated field behind type tag 11 (`TAG_COLL
 2 `und`), which an older binary refuses rather than read the field in byte
 order. A native build carries every
 chunk. The browser module carries `latin` (9 KB) and is handed the rest
-(`fenec_add_chunk`), which `make wasm` puts in `web/collate/`: a comparison
+(`fennec_add_chunk`), which `make wasm` puts in `web/collate/`: a comparison
 that meets a script it has not got notes the chunk (`collate::take_missing`)
 and the statement is refused (`collate::refuse`) -- a read after it ran, a
 write before it changes anything (`put`, `update`'s pass of its own,
-`delete`'s filter), a load after it (`fenec_load`: its `@sorted` indexes
-were built without the chunk) -- and `Fenec.query`, the builder, `restore`
+`delete`'s filter), a load after it (`fennec_load`: its `@sorted` indexes
+were built without the chunk) -- and `Fennec.query`, the builder, `restore`
 and the sync layer fetch the chunks and run it again. So every stored
 collated value's chunks are there, which keeps a `@sorted` index in order.
 A chunk carries the tables' stamp, and another version's is refused. The
@@ -95,7 +95,7 @@ column against main's, in turns). Made `nocase` or no longer, a field is
 rebuilt -- the declared schema's `nocase_changed` refusal names
 `rebuild`, which a `@unique` refuses where two values become one. A
 text's alone: a list's elements meet `has`, an index each and a facet a
-value at a time. `fenec import` takes PostgreSQL's `citext` and SQLite's
+value at a time. `fennec import` takes PostgreSQL's `citext` and SQLite's
 `COLLATE NOCASE` as it. The browser module grew 11.5 KB, 3.7 KB brotli
 (the engine's paths 6.4 KB, `case` 2.1); its scans of a plain field moved
 within 2% of main's under load, once a `nocase` field's tests shared a

@@ -1,5 +1,5 @@
 <!--
-title: HTTP reference — fenecdb
+title: HTTP reference — fennecdb
 description: Every route of the HTTP endpoint, the filters of the query string, vector search and lookups over REST, the headers that hold a write or mark a read, the statuses a refusal answers with, subscriptions, polling and the change stream.
 -->
 
@@ -28,7 +28,7 @@ PATCH  /&lt;name&gt;/all              no filter — deliberately explicit
 DELETE /&lt;name&gt;/all
 POST   /&lt;name&gt;/near             body: {"vector":[...], "limit":10}
 GET    /&lt;name&gt;/changes?since=N  subscription (SSE): shape plus incremental diff
-POST   /query                   body: {"query":"&lt;FenecQL&gt;","params":[...]}
+POST   /query                   body: {"query":"&lt;FennecQL&gt;","params":[...]}
 POST   /batch                   one query body per line (NDJSON)
 GET    /_metrics                counters and gauges, Prometheus's text format
 GET    /_changes?since=N        every write on disk after N, a JSON line each (--cdc)
@@ -38,7 +38,7 @@ PATCH  /_changes/consumers/C    body: {"since": N} -- move C: commit what it rea
 GET    /_changes/consumers      each consumer, where it is and how far behind
 DELETE /_changes/consumers/C
 GET    /_whoami                 who the server takes the token for, the roles it read, and the rules that apply to it
-GET    /_schema                 the schema as a description (Schema in code); ?as=fenecql: as its statements
+GET    /_schema                 the schema as a description (Schema in code); ?as=fennecql: as its statements
 POST   /_schema/plan            body: a description -- what an apply would do; ?mode=follow: what the server lacks
 POST   /_schema/apply           body: a description -- migrations, then what only adds; the server's token
 POST   /mcp                     MCP for agents (--mcp): one JSON-RPC message a request
@@ -54,7 +54,7 @@ rather than <code>--http-token</code>, and a collection named
 <p><code>/_schema</code> compares a schema declared in code with the
 server's, in the engine every SDK's check goes through — see <a
 href="/docs/javascript#schema">Schema in code</a>. Its body is the
-description, <code>{"format": 1, "fenecql": "create collection ...",
+description, <code>{"format": 1, "fennecql": "create collection ...",
 "migrations": [...]}</code> or its collections as JSON. A plan answers
 <code>{"applied", "ran", "migrations", "statements", "refusals"}</code>, and
 writes nothing; with <code>?mode=follow</code> it says only what the code
@@ -84,7 +84,7 @@ collection called <code>_metrics</code> cannot be read over
 
 <p>Filter in the query string as <code>field=operator.value</code>, for example
 <code>?year=gte.2024</code>. For anything the pattern cannot say, use
-<code>?where=</code> with FenecQL.</p>
+<code>?where=</code> with FennecQL.</p>
 
 <div class="tbl">
 <table>
@@ -93,10 +93,10 @@ collection called <code>_metrics</code> cannot be read over
 <tr><td><b>Negation</b></td><td>the <code>not.</code> prefix — <code>?summary=not.is.null</code>, <code>?year=not.eq.1999</code></td></tr>
 <tr><td><b>Shorthand</b></td><td>an unrecognised prefix makes the whole value an equality: <code>?year=2024</code></td></tr>
 <tr><td><b>List</b></td><td><code>?year=in.(1999,2023)</code></td></tr>
-<tr><td><b>Paths</b></td><td>a path into a <code>json</code> field where a field goes: <code>?meta.lang=tr</code>, <code>?meta.source.rank=gte.2</code>, <code>?select=title,meta.source.site</code>, <code>?order=meta.source.rank.desc</code>; the value is read as JSON reads it — a number, <code>true</code>, <code>null</code>, a quoted string — and as the text it is otherwise. A body's object is a <code>json</code> field's value, every number in it as written, and <code>PATCH</code> with <code>{"meta.lang": "en"}</code> sets one key inside the field (<a href="fenecql-schema.html#json">Objects and paths</a>)</td></tr>
+<tr><td><b>Paths</b></td><td>a path into a <code>json</code> field where a field goes: <code>?meta.lang=tr</code>, <code>?meta.source.rank=gte.2</code>, <code>?select=title,meta.source.site</code>, <code>?order=meta.source.rank.desc</code>; the value is read as JSON reads it — a number, <code>true</code>, <code>null</code>, a quoted string — and as the text it is otherwise. A body's object is a <code>json</code> field's value, every number in it as written, and <code>PATCH</code> with <code>{"meta.lang": "en"}</code> sets one key inside the field (<a href="fennecql-schema.html#json">Objects and paths</a>)</td></tr>
 <tr><td><b>Clauses</b></td><td><code>select</code> <code>order</code> <code>limit</code> <code>offset</code> <code>count</code> <code>where</code> <code>lookup</code></td></tr>
-<tr><td><b>Ordering</b></td><td><code>?order=year.desc,title.asc</code>; a collation among the modifiers puts text in its order — <code>?order=name.und.desc</code> is <code>order name collate und desc</code>, <code>name.tr</code> Turkish (<a href="fenecql-schema.html#collation">Collation</a>)</td></tr>
-<tr><td><b>Free expression</b></td><td><code>?where=year >= 2024 and tags has "rust"</code> — full FenecQL</td></tr>
+<tr><td><b>Ordering</b></td><td><code>?order=year.desc,title.asc</code>; a collation among the modifiers puts text in its order — <code>?order=name.und.desc</code> is <code>order name collate und desc</code>, <code>name.tr</code> Turkish (<a href="fennecql-schema.html#collation">Collation</a>)</td></tr>
+<tr><td><b>Free expression</b></td><td><code>?where=year >= 2024 and tags has "rust"</code> — full FennecQL</td></tr>
 </tbody>
 </table>
 </div>
@@ -135,7 +135,7 @@ returns 404. <code>where=</code> exists for what the pattern cannot hold —
 <p><code>near</code> is a <code>POST</code> rather than a query parameter
 because a 768-dimension embedding does not fit in a query string. Squeezing it
 into the URL — base64, truncation — is unreadable and runs into proxy and
-server URL ceilings. PostgREST's model does not cover fenecdb's headline
+server URL ceilings. PostgREST's model does not cover fennecdb's headline
 feature, so <code>near</code> gets its own endpoint, and it takes a filter in
 the body.</p>
 
@@ -154,11 +154,11 @@ the one <code>f32</code> an <code>f64</code> would round away,
 
 <p>A <code>"match"</code> makes it hybrid: BM25 over the collection's
 <code>@text</code> field ranks the same request, and the two rankings are
-fused by reciprocal rank (<a href="fenecql-search.html#hybrid">fuse</a>).
+fused by reciprocal rank (<a href="fennecql-search.html#hybrid">fuse</a>).
 <code>match_field</code> names the text field when there are several;
 <code>match_fuzzy</code> (<code>true</code>, or 0 to 2 edits) and
 <code>match_prefix</code> read its words as <a
-href="fenecql-search.html#typos"><code>match ... fuzzy</code> and
+href="fennecql-search.html#typos"><code>match ... fuzzy</code> and
 <code>prefix</code></a> do; <code>fuse_k</code> and <code>candidates</code>
 are the rank offset and how many candidates each side ranks.</p>
 
@@ -186,7 +186,7 @@ each row, such as each product's latest reviews.</p>
     <code>reviews.on</code>, <code>reviews.limit</code>.</li>
   <li><b>Chain levels</b> with a comma: <code>lookup=orders,lines</code>.</li>
   <li><b>A key over several fields</b> lists a field of each side:
-    <code>lines.on=org,order&amp;lines.parent=org,id</code>, FenecQL's
+    <code>lines.on=org,order&amp;lines.parent=org,id</code>, FennecQL's
     <code>on (org, order) = (org, id)</code>.</li>
   <li><b>A level that folds</b> aggregates in its <code>select</code>, as
     the query's own does: <code>orders.select=count(*),sum(total)</code>,
@@ -205,7 +205,7 @@ holding the key), <code>parent</code>, <code>select</code>,
 <code>required</code>, <code>where</code>, and any field name as a condition,
 in the same <code>op.value</code> form the parent's filters use. Prefixing is
 what keeps the two sides apart in a query string, the way the clause's
-position does in FenecQL.</p>
+position does in FennecQL.</p>
 
 <pre data-lang="bash">curl 'http://127.0.0.1:8080/shops?limit=20&amp;select=name\
 &amp;lookup=orders,lines&amp;orders.on=shop_id&amp;orders.limit=3\
@@ -215,11 +215,11 @@ position does in FenecQL.</p>
 <p>A comma-separated list chains, read left to right, each name binding to the
 one before it and each level keeping its own prefix. A query string has no
 position to scope by, so the order is written out; the meaning is the same one
-FenecQL gets from position, up to the same 8 levels.</p>
+FennecQL gets from position, up to the same 8 levels.</p>
 
 <p><code>lookup</code> is a reserved key here, so a field named
-<code>lookup</code> cannot be filtered over the REST path — the FenecQL and
-<code>fenec-server</code> paths are unaffected, as with the other reserved
+<code>lookup</code> cannot be filtered over the REST path — the FennecQL and
+<code>fennec-server</code> paths are unaffected, as with the other reserved
 names.</p>
 
 <p>A query with a <code>lookup</code> answers with the children nested under
@@ -235,14 +235,14 @@ nothing matched, and a chain nests all the way down.</p>
 
 <h2 id="wait">Holding a write until it can write</h2>
 
-<p>Send <code>Fenec-Wait: &lt;ms&gt;</code> with a <code>set</code> or a
+<p>Send <code>Fennec-Wait: &lt;ms&gt;</code> with a <code>set</code> or a
 <code>del</code> on <code>/query</code> or <code>/batch</code>, and while it
 would write nothing the server holds it, answering the moment it writes —
 or at the end of the wait, 30 seconds at most, as it would have answered
 at once. A job queue's claim waits for a job that way (<a
 href="/docs/queues#wait">Waiting for a job</a>).</p>
 
-<pre data-lang="bash">curl -X POST http://127.0.0.1:8080/query -H 'Fenec-Wait: 30000' \
+<pre data-lang="bash">curl -X POST http://127.0.0.1:8080/query -H 'Fennec-Wait: 30000' \
   -d '{"query":"del tasks where run_at &lt;= now() order run_at limit 1 returning *"}'
 </pre>
 
@@ -254,18 +254,18 @@ href="/docs/queues#wait">Waiting for a job</a>).</p>
   <li><b>Wrote nothing</b> means no row written, or a
     <code>require</code> not met; any other refusal is answered at
     once.</li>
-  <li><b>With <code>Fenec-After</code></b> the header is that wait's, as
+  <li><b>With <code>Fennec-After</code></b> the header is that wait's, as
     below, and holds no write.</li>
 </ul>
 
 
 <h2 id="read">Marking a read</h2>
 
-<p>Send <code>Fenec-Read: replica</code> with a request that only reads, and
+<p>Send <code>Fennec-Read: replica</code> with a request that only reads, and
 a router standing in a region where the tenant has a read replica answers it
 there rather than from the tenant's home (<a
 href="sharding-read-replicas.html#read-replicas">Read replicas</a>); with
-<code>Fenec-After</code> and <code>Fenec-History</code>, as an answer from home
+<code>Fennec-After</code> and <code>Fennec-History</code>, as an answer from home
 named them, it is answered from nothing older than that change of that
 history (<a href="replication.html#read-your-writes">Reading your own
 writes</a>), a subscription and a <code>/_changes</code> page as much as
@@ -277,8 +277,8 @@ is refused with <code>403</code> and words that say why, never landed; a
 value but <code>replica</code> is a <code>400</code>. A copy that has not
 caught up with its primary yet answers it <code>503</code>.</p>
 
-<pre data-lang="bash">curl -X POST https://ap.example.com/t/acme/query -H 'Fenec-Read: replica' \
-  -H 'Fenec-After: 1043' -H 'Fenec-History: 2-6c1f0a9e44d7b2c8' \
+<pre data-lang="bash">curl -X POST https://ap.example.com/t/acme/query -H 'Fennec-Read: replica' \
+  -H 'Fennec-After: 1043' -H 'Fennec-History: 2-6c1f0a9e44d7b2c8' \
   -d '{"query":"get orders where customer = $1","params":["c-7"]}'
 </pre>
 
@@ -290,7 +290,7 @@ limit are refused with <code>507</code>. Reads, deletes and
 <code>compact</code> still work.</p>
 
 <details class="deep"><summary>What --max-memory refuses and allows</summary>
-<p>Inside <code>fenec-server</code> started with <code>--max-memory</code>, the
+<p>Inside <code>fennec-server</code> started with <code>--max-memory</code>, the
 listener holds its writes to that ceiling: above
 it, a statement that grows the data — a put, a patch, a <code>create
 index</code> — is refused with <code>507</code>, a batch stops there as at an
@@ -308,14 +308,14 @@ what to do about it; a <code>/batch</code> that stopped adds where
 <code>require</code> that said why gives the words (<code>reason</code>, the
 statement's own, on a lone statement and a <code>/batch</code> alike), a
 tenant's quota names itself (<code>quota</code>, and the
-<code>Fenec-Quota</code> header), and one to come back from says when
+<code>Fennec-Quota</code> header), and one to come back from says when
 (<code>retry_after</code>, the seconds of its <code>Retry-After</code>
 header: a page on another origin, or an app's replica, reads the body; a
 quota's 429 says it to the millisecond as well, <code>retry_after_ms</code>,
 which is the one to wait). A write whose outcome the server cannot know
 says so (<code>"outcome": "unknown"</code>, a 500), with where it left the
 database in the body (<code>seq</code>, <code>history</code>) rather than in
-<code>Fenec-Seq</code>, which a client takes as its own position. Every
+<code>Fennec-Seq</code>, which a client takes as its own position. Every
 SDK's error carries the rest; the outcome and its position are the Go,
 .NET, JavaScript and Python clients' (Go's and .NET's code
 <code>outcome_unknown</code>, JavaScript's and Python's
@@ -327,7 +327,7 @@ SDK's error carries the rest; the outcome and its position are the Go,
 <tbody>
 <tr><td class="n">400</td><td>a statement that does not parse or run, a bad parameter</td><td>fix the request</td></tr>
 <tr><td class="n">401</td><td>no token, or a wrong one</td><td>send the right token</td></tr>
-<tr><td class="n">403</td><td>outside the token's rules — a row, a field, a change no transition names, a <code>returning</code> row it may not read, the write put back whole — a write to a replica or a read-only server, or one marked <code>Fenec-Read</code></td><td>write where it is taken</td></tr>
+<tr><td class="n">403</td><td>outside the token's rules — a row, a field, a change no transition names, a <code>returning</code> row it may not read, the write put back whole — a write to a replica or a read-only server, or one marked <code>Fennec-Read</code></td><td>write where it is taken</td></tr>
 <tr><td class="n">404</td><td>a collection, field or tenant that is not there</td><td></td></tr>
 <tr><td class="n">409</td><td>an id or a <code>@unique</code> value taken, a collection that exists</td><td>a lost race for a value</td></tr>
 <tr><td class="n">410</td><td>a <code>/_changes</code> cursor the server no longer reaches</td><td>start again from the <code>since</code> it names</td></tr>
@@ -335,17 +335,17 @@ SDK's error carries the rest; the outcome and its position are the Go,
 <tr><td class="n">413</td><td>a body past the ceiling, 64 MB</td><td>send less at once</td></tr>
 <tr><td class="n">422</td><td>an <code>Idempotency-Key</code> sent with another request</td><td>a new key for a new request</td></tr>
 <tr><td class="n">429</td><td>a tenant's quota of <code>streams</code>, <code>held</code>, <code>requests</code>, <code>writes</code> or <code>write_bytes</code></td><td>come back after <code>retry_after_ms</code></td></tr>
-<tr><td class="n">500</td><td>outcome unknown (<code>"outcome": "unknown"</code>): a write a tenant's node landed and answered after its lease from the router lapsed — its tenant may have been failed over without it, or still be there with it; a <code>/batch</code> that ran a statement at a time says how far it got, its <code>seq</code> the last landed statement's</td><td>send it again with the same <code>Idempotency-Key</code>; without one, wait a lease and a tenth (<code>--auto-failover</code> × 1.1) after the answer — until the tenant settles the node answers reads with the write in them, one sent with <code>Fenec-After</code> too — then read it back, or send a read with <code>Fenec-After</code> and <code>Fenec-History</code> set to its <code>seq</code> and <code>history</code>, which a primary without it answers 504 (for a batch, a 504 does not say which earlier statements survived: read those back)</td></tr>
+<tr><td class="n">500</td><td>outcome unknown (<code>"outcome": "unknown"</code>): a write a tenant's node landed and answered after its lease from the router lapsed — its tenant may have been failed over without it, or still be there with it; a <code>/batch</code> that ran a statement at a time says how far it got, its <code>seq</code> the last landed statement's</td><td>send it again with the same <code>Idempotency-Key</code>; without one, wait a lease and a tenth (<code>--auto-failover</code> × 1.1) after the answer — until the tenant settles the node answers reads with the write in them, one sent with <code>Fennec-After</code> too — then read it back, or send a read with <code>Fennec-After</code> and <code>Fennec-History</code> set to its <code>seq</code> and <code>history</code>, which a primary without it answers 504 (for a batch, a 504 does not say which earlier statements survived: read those back)</td></tr>
 <tr><td class="n">500</td><td>an fsync that failed under <code>--sync always</code>: the write may or may not be on the disk, and the server takes no write until its file is opened again</td><td>restart the server, then read the write back, or send it again with the same <code>Idempotency-Key</code></td></tr>
-<tr><td class="n">503</td><td>too many connections or subscriptions; a connection the server could make no thread for, at its thread limit; a tenant being moved or failed over; a node going down. One written as the connection was taken, before the request was read, says so in <code>Fenec-Unserved</code> (<code>ceiling</code> or <code>no_thread</code>): the request never ran</td><td>come back after <code>Retry-After</code> seconds</td></tr>
-<tr><td class="n">504</td><td>a <code>Fenec-After</code> change, sent with a read, a subscription or a <code>/_changes</code> page, that did not reach a replica in the wait, or one a primary's history does not hold — lost in a failover; <code>seq</code> and <code>history</code> say where it stands</td><td>ask again, or ask the primary; take the primary's position as yours</td></tr>
+<tr><td class="n">503</td><td>too many connections or subscriptions; a connection the server could make no thread for, at its thread limit; a tenant being moved or failed over; a node going down. One written as the connection was taken, before the request was read, says so in <code>Fennec-Unserved</code> (<code>ceiling</code> or <code>no_thread</code>): the request never ran</td><td>come back after <code>Retry-After</code> seconds</td></tr>
+<tr><td class="n">504</td><td>a <code>Fennec-After</code> change, sent with a read, a subscription or a <code>/_changes</code> page, that did not reach a replica in the wait, or one a primary's history does not hold — lost in a failover; <code>seq</code> and <code>history</code> say where it stands</td><td>ask again, or ask the primary; take the primary's position as yours</td></tr>
 <tr><td class="n">507</td><td>past <code>--max-memory</code>, or a tenant's quota of <code>bytes</code> or <code>rows</code>; the write put back whole</td><td>delete, then write again: waiting does not help</td></tr>
 </tbody>
 </table>
 </div>
 
 <pre data-lang="bash">HTTP/1.1 429 Too Many Requests
-Fenec-Quota: writes
+Fennec-Quota: writes
 Retry-After: 1
 
 {"error":"the tenant writes past its quota of 100 rows a second","quota":"writes","retry_after":1,"retry_after_ms":10}
@@ -363,7 +363,7 @@ HTTP/1.1 500 Internal Server Error
 
 {"error":"the write landed on this node, but by the time it was answered ...","outcome":"unknown","seq":4182,"history":"2-6d1f0c2a9b3e4471"}</pre>
 
-<p>A quota is a tenant node's (<code>fenec-server --dir</code>): what each
+<p>A quota is a tenant node's (<code>fennec-server --dir</code>): what each
 bounds is under <a href="sharding-reference.html#quota-bounds">Sharding:
 reference</a>, how it is set under
 <a href="sharding-tenants.html#quotas">Sharding: tenants</a> and why the statuses
@@ -393,8 +393,8 @@ the rows matching your filter, then each change to them as it happens.</p>
   <li><b>A row reaching its <code>@ttl</code></b> is told as a deletion at
     its time, as a write would be, not when the sweep deletes it a minute
     and its grace later.</li>
-  <li><b>Sent after a write</b> (<code>Fenec-After</code>, and
-    <code>Fenec-History</code> as the write's answer named it), a stream
+  <li><b>Sent after a write</b> (<code>Fennec-After</code>, and
+    <code>Fennec-History</code> as the write's answer named it), a stream
     waits for it before its head, as a read does: its seed holds the write,
     or it is answered <code>504</code> with where the server stands (<a
     href="replication.html#read-your-writes">Reading your own
@@ -402,14 +402,14 @@ the rows matching your filter, then each change to them as it happens.</p>
     <code>since</code> is where the stream left off, not a write it must
     see.</li>
   <li><b>Its head says where the server stood</b> as it opened:
-    <code>Fenec-Seq</code>, the change its seed is at or after, and
-    <code>Fenec-History</code>, the history that change and every event's
+    <code>Fennec-Seq</code>, the change its seed is at or after, and
+    <code>Fennec-History</code>, the history that change and every event's
     <code>seq</code> are of, as a write's answer names it (none on a
     database that never had a replica). A read sent after an event's
     <code>seq</code> to another copy goes with both (<a
     href="replication.html#read-your-writes">Reading your own
     writes</a>): a number alone names no write across a failover.
-    <code>FenecHttp.live</code> on a client reading near sends its runs
+    <code>FennecHttp.live</code> on a client reading near sends its runs
     so.</li>
   <li><b>In the browser,</b> <a href="sync.html">Sync</a> builds on this
     stream.</li>
@@ -419,9 +419,9 @@ the rows matching your filter, then each change to them as it happens.</p>
 <p><code>GET /&lt;name&gt;/changes</code> is a server-sent events stream: a seed
 carrying the current shape, then incremental diffs. No driver needed.</p>
 
-<p>A subscription does not poll. <code>fenec-core</code> has no waiting
+<p>A subscription does not poll. <code>fennec-core</code> has no waiting
 primitive at all — there are no threads in wasm — it only reports that the
-change counter has reached a point, and <code>fenec-http</code> ties that to a
+change counter has reached a point, and <code>fennec-http</code> ties that to a
 <code>Condvar</code>. A 50 ms polling loop would take 20 read locks per second
 per subscriber and still add 50 ms of latency.</p>
 
@@ -442,13 +442,13 @@ the collection -- sleeps until then if no write comes first, and reads the
 rows that reached it since it last looked, the shape ANDed in, telling each
 as a deletion as the sweep's delete would be told: a scoped stream of the
 rows it was sent alone, a shape that holds nothing (what
-<code>FenecHttp.live</code> opens) that something changed. Heard at the
+<code>FennecHttp.live</code> opens) that something changed. Heard at the
 sweep, a courier whose phone went quiet stayed on a dispatcher's map 73 s
 after it had gone from every read; at its time, it is told about 10 ms after
 it. The sweep's delete comes after, a deletion of what is gone already.</p>
 
 <p>What a stream costs, measured on an M1 with streams of a shape that holds
-nothing (what <code>FenecHttp.live</code> opens): 45 to 57 KB of resident
+nothing (what <code>FennecHttp.live</code> opens): 45 to 57 KB of resident
 memory and a thread each, and every write wakes every stream, which reads
 what it changed: a write's p50 went from 0.26 ms with none to 0.94 with 60
 and 3.1 with 500. A page thousands view should not hold one a viewer; it
@@ -460,7 +460,7 @@ read, and of nothing else: the server follows the token's own filter, keeps
 the ids it selects and sends none, and a write to one of them, or one of
 them leaving the token's rows, is a <code>change</code> holding no rows.
 ANDed with the token's filter, the shape matched nothing and
-<code>FenecHttp.live</code> never ran again; told of every write, the
+<code>FennecHttp.live</code> never ran again; told of every write, the
 stream would hand the token the moments of other users' writes.</p>
 </details>
 
@@ -482,7 +482,7 @@ curl -si http://127.0.0.1:8080/query -H 'If-None-Match: "48211"' -d '...the same
 
 <ul>
   <li><b>Nothing is held between polls:</b> no stream, no thread, no wake-up
-    at a write. <code>FenecHttp.live(query, cb, { poll: 5000 })</code> polls
+    at a write. <code>FennecHttp.live(query, cb, { poll: 5000 })</code> polls
     so.</li>
   <li><b>Untagged</b>, and run each time: a read of a collection whose rows
     expire (<code>@ttl</code>), one calling <code>now()</code>, one holding an
@@ -504,11 +504,11 @@ keep-alive connection a 304 took 54 us at the median, against 55 for a read
 by key and 95 for a page of 24 run; the round trip is most of either. A
 browser keeps its connection between polls, so a public page polls through
 the site's own server or a proxy, which keeps few connections to
-fenec-server however many viewers it has.</p>
+fennec-server however many viewers it has.</p>
 <p>A tag is a change of the copy that answered. A read replica holding that
-change of its history (<code>Fenec-After</code>) judges it as home does, but
+change of its history (<code>Fennec-After</code>) judges it as home does, but
 only up to where it stands: behind home it answers 304 to a write home holds,
-so <code>FenecHttp.live</code> polls home on a client reading near (<a
+so <code>FennecHttp.live</code> polls home on a client reading near (<a
 href="sharding-read-replicas.html#read-replicas">Read replicas</a>).</p>
 </details>
 
@@ -519,12 +519,12 @@ href="sharding-read-replicas.html#read-replicas">Read replicas</a>).</p>
 or a read model — start the server with <code>--cdc</code> and read
 <code>GET /_changes</code>: one JSON line per write.</p>
 
-<pre data-lang="bash">fenec-server --file data.fenec --http 127.0.0.1:8080 --sync 250 --cdc
+<pre data-lang="bash">fennec-server --file data.fennec --http 127.0.0.1:8080 --sync 250 --cdc
 
 curl -i 'http://127.0.0.1:8080/_changes?since=0&amp;limit=1000&amp;wait=10000'
 # Content-Type: application/x-ndjson
-# Fenec-Next: 5
-# Fenec-Seq: 5
+# Fennec-Next: 5
+# Fennec-Seq: 5
 #
 # {"seq":1,"at":1790784252138,"collection":"a","op":"create"}
 # {"seq":2,"at":1790784252158,"collection":"a","op":"put","id":1,"doc":{"id":1,"n":1,"t":"x"}}
@@ -534,14 +534,14 @@ curl -i 'http://127.0.0.1:8080/_changes?since=0&amp;limit=1000&amp;wait=10000'
 </pre>
 
 <ul>
-  <li><b>Send <code>Fenec-Next</code> back as the next <code>since</code></b>
+  <li><b>Send <code>Fennec-Next</code> back as the next <code>since</code></b>
     and nothing is missed or seen twice.</li>
   <li><b>Only writes already on disk</b> are handed out.</li>
-  <li><b><code>Fenec-Seq</code> is the last write the database holds:</b>
-    when <code>Fenec-Next</code> has reached it, you have every write.</li>
-  <li><b>Sent with <code>Fenec-After</code></b>, a page waits until the
+  <li><b><code>Fennec-Seq</code> is the last write the database holds:</b>
+    when <code>Fennec-Next</code> has reached it, you have every write.</li>
+  <li><b>Sent with <code>Fennec-After</code></b>, a page waits until the
     server holds that change, as a read does, and its
-    <code>Fenec-Seq</code> is never behind it; a write not yet on the
+    <code>Fennec-Seq</code> is never behind it; a write not yet on the
     server's disk comes on a later page.</li>
 </ul>
 
@@ -554,19 +554,19 @@ all, one JSON object a line, from any write the server still keeps.</p>
 
 <ul>
   <li><code>seq</code> is the change counter's number for the write, and
-  <code>Fenec-Next</code> the last one in the answer: sent back as the next
+  <code>Fennec-Next</code> the last one in the answer: sent back as the next
   <code>since</code>, nothing is missed or had twice. Keep it where your
   consumer keeps its own state, and commit the two together.</li>
-  <li><code>Fenec-Seq</code> on every answer is the last write the database
+  <li><code>Fennec-Seq</code> on every answer is the last write the database
   holds, on disk or not yet, the writes the stream leaves out (a consumer's
   cursor, an idempotency key) among them. An answer whose
-  <code>Fenec-Next</code> is that has every write there is: a worker that
+  <code>Fennec-Next</code> is that has every write there is: a worker that
   catches up before it serves knows it at once, where an empty page alone
   could not tell it from one whose writes are not on disk yet under
   <code>--sync 250</code>, and waited out pages to be sure. A
-  <code>Fenec-Next</code> behind it has writes to come: read again with
-  <code>wait</code>. A client that notes <code>Fenec-Seq</code> for
-  <code>Fenec-After</code> reads a replica from there on.</li>
+  <code>Fennec-Next</code> behind it has writes to come: read again with
+  <code>wait</code>. A client that notes <code>Fennec-Seq</code> for
+  <code>Fennec-After</code> reads a replica from there on.</li>
   <li>A batch's writes are one record on disk and come together,
   numbered one by one; a cursor inside one goes on after the write it
   names.</li>
@@ -610,7 +610,7 @@ far it got.</p>
 
 <pre data-lang="bash">curl -X POST http://127.0.0.1:8080/_changes/consumers/search-index
 curl -i 'http://127.0.0.1:8080/_changes?consumer=search-index&amp;wait=10000'
-# Fenec-Next: 42 -- index the lines, then:
+# Fennec-Next: 42 -- index the lines, then:
 curl -X PATCH http://127.0.0.1:8080/_changes/consumers/search-index -d '{"since": 42}'
 </pre>
 
@@ -649,8 +649,8 @@ would read the same page forever. A program that must know it made the
 consumer reads the status. A <code>PATCH</code> of a consumer that is not
 there is 404 rather than making it: the <code>POST</code> is the one way to
 make one. Both answer with where the consumer stands afterwards and with
-<code>Fenec-Seq</code>, as a write does, so a read sent after it
-(<code>Fenec-After</code>), to a replica too, finds it there. A commit past
+<code>Fennec-Seq</code>, as a write does, so a read sent after it
+(<code>Fennec-After</code>), to a replica too, finds it there. A commit past
 nothing but other commits writes nothing and leaves the consumer where it
 was, which reads the same writes; its answer says so. A
 <code>since</code> past the last write the database holds is 409 for

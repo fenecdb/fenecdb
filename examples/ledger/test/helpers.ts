@@ -1,16 +1,16 @@
-// What the tests share. They run against a fenec-server tenant node
+// What the tests share. They run against a fennec-server tenant node
 // already started (scripts/ci.sh, or `npm run db`), each file in tenants of
 // its own, so the invariants it checks are its own writes'.
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { Fenec } from '@fenecdb/web';
-import { FENEC_URL, OPERATOR_TOKEN, SCHEMA, tenantUrl } from '../src/config.ts';
+import { Fennec } from '@fennecdb/web';
+import { FENNEC_URL, OPERATOR_TOKEN, SCHEMA, tenantUrl } from '../src/config.ts';
 import { Ledger } from '../src/ledger.ts';
 import { createTenant } from '../src/setup.ts';
 import { HttpStore, LocalStore } from '../src/store.ts';
 import { Tokens } from '../src/tokens.ts';
 
-export { FENEC_URL };
+export { FENNEC_URL };
 
 /** A tenant made for this test alone. */
 export async function freshTenant(
@@ -32,18 +32,18 @@ export async function freshTenant(
 
 /** The engine in this process, with the ledger's schema. */
 export async function localStore(): Promise<LocalStore> {
-  const wasm = readFileSync(createRequire(import.meta.url).resolve('@fenecdb/web/fenec.wasm'));
-  return new LocalStore(await Fenec.open(wasm, { schema: SCHEMA }));
+  const wasm = readFileSync(createRequire(import.meta.url).resolve('@fennecdb/web/fennec.wasm'));
+  return new LocalStore(await Fennec.open(wasm, { schema: SCHEMA }));
 }
 
-/** A request straight to fenec-server, with any token. */
+/** A request straight to fennec-server, with any token. */
 export async function raw(
   path: string,
   init: RequestInit & { token?: string } = {},
 ): Promise<{ status: number; body: unknown; headers: Headers }> {
   const headers = new Headers(init.headers);
   if (init.token !== undefined) headers.set('authorization', `Bearer ${init.token}`);
-  const res = await fetch(`${FENEC_URL}${path}`, { ...init, headers });
+  const res = await fetch(`${FENNEC_URL}${path}`, { ...init, headers });
   const text = await res.text();
   let body: unknown = text;
   try {

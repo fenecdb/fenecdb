@@ -1,6 +1,6 @@
 # Roadmap: the general-database gaps
 
-fenecdb is positioned as an embedded document database with full-text and
+fennecdb is positioned as an embedded document database with full-text and
 vector search built in. Against that, four gaps are worth closing, and three
 are not. This is the plan for the four; each phase ships on its own, with its
 measurements, as every feature here does.
@@ -13,12 +13,12 @@ measurements, as every feature here does.
 | 4 | TLS 1.3, our own, for HTTP | large | the security story ends at a terminator today |
 | 5 | Official SDKs over HTTP (Phase 53) -- **done** for Go and .NET | medium | every language reaches the server over HTTP since the pg wire went |
 | 6 | Embedded in mobile and native apps (Phase 56) -- **done** | large | the engine's best place after the page: a file on the device, offline |
-| 7 | An app's file synced with a server (Phase 57) | medium | what the page's `FenecSync` does, for an app |
-| 8 | A schema declared in code (Phase 58) -- **done** for TypeScript, FenecQL text, the server, Python, Go, .NET, Swift, Kotlin and Dart | medium | an app that makes its database declares it once, checked at every open |
+| 7 | An app's file synced with a server (Phase 57) | medium | what the page's `FennecSync` does, for an app |
+| 8 | A schema declared in code (Phase 58) -- **done** for TypeScript, FennecQL text, the server, Python, Go, .NET, Swift, Kotlin and Dart | medium | an app that makes its database declares it once, checked at every open |
 | 9 | Highlights and snippets (Phase 61) -- **done** | small | every search engine marks where the words matched; FTS5 and Turso have `highlight()` |
 | 10 | Facets (Phase 61) -- **done** | small | a filter sidebar's counts over every match, which a `group` a facet could not give beside the page |
 
-Not planned, on purpose: a general JOIN and full SQL (FenecQL and `lookup`
+Not planned, on purpose: a general JOIN and full SQL (FennecQL and `lookup`
 are the design), the PostgreSQL wire protocol (below), several
 writers to one file or MVCC (the single writer is what removes the WAL, the
 row headers and the visibility map; scale is a file per tenant), multi-writer
@@ -36,11 +36,11 @@ they do not truncate.
 evaluator (`fenec-catalog`), COPY, the extended protocol, pg transactions
 and savepoints, and the driver suite (Phase 52). The compatibility was about
 17 000 lines and a fifth of the commits since September, a long tail of what
-each driver and tool sends, and it pulled away from what sets fenecdb apart:
+each driver and tool sends, and it pulled away from what sets fennecdb apart:
 the engine in the browser, embedded use, HTTP and sync. Every language
 reaches the server over HTTP (`integrations/languages` runs the docs'
 example in eight), and official SDKs follow (Phase 53). Moving data in from
-PostgreSQL stays: `fenec import` and `--follow` are a migration path, and
+PostgreSQL stays: `fennec import` and `--follow` are a migration path, and
 speak PostgreSQL as a client.
 
 ---
@@ -53,7 +53,7 @@ Both shipped as designed below, with three changes the code asked for:
   document is read and written by, and the places dropped ones held are a
   list beside it (`Schema::dropped`), written into the schema as nameless
   fields of type tag 12. A tombstone field in `fields` would have had every
-  listing of a schema -- the catalog, `describe`, the HTTP schema, `fenec
+  listing of a schema -- the catalog, `describe`, the HTTP schema, `fennec
   types`, the sync layer -- learn to skip it. The store keeps the list and
   works a field's place out from its position; `read_fields` takes places,
   worked out once a query, since once a row took a scan of a million rows
@@ -65,7 +65,7 @@ Both shipped as designed below, with three changes the code asked for:
 - **A unique index is built by the first write's check after an open, not
   by the open.** The check asks the index, which builds it from the
   documents, so it is as exact, and an open that never writes -- a replica,
-  `fenec types` -- never pays for it.
+  `fennec types` -- never pays for it.
 
 Measured (in memory, a million rows): an add, a rename and a drop take
 0.025, 0.021 and 0.004 ms; five scans 1.7% slower to 1.7% faster (21.2 ->
@@ -201,7 +201,7 @@ integrations already flatten metadata into fields to get around it.
 - **Indexes on a path.** `@hash` and `@sorted` take a path; the index reads
   the value at the path. Text, vector and sparse indexes stay on top-level
   fields.
-- **Transports.** JSON is native; `fenec import` reads PostgreSQL's `jsonb`
+- **Transports.** JSON is native; `fennec import` reads PostgreSQL's `jsonb`
   into a `json` field.
 - **Integrations.** The LangChain and LlamaIndex stores move metadata into
   one `json` field and filter on paths; their framework suites are the test.
@@ -244,12 +244,12 @@ Both shipped as designed below, with these changes the code asked for:
   field has one index, so `IndexKind::Sorted { ttl }`, written as index
   kind 9 and the milliseconds behind it (`@unique` is kind 8 the same
   way); a timestamp field's alone. Durations are whole `ms`, `s`, `m`, `h`
-  or `d` -- FenecQL had none -- and print back so (`ttl_text`), a float
+  or `d` -- FennecQL had none -- and print back so (`ttl_text`), a float
   never: written out as one it brought 18.7 KB of the standard library's
   float formatting into the browser module.
 - **The sweep is the engine's, not a `del`.** A `del` leaves the rows past
   their time out, as every read does, and would find none. The sweeper
-  (`fenec_http::sweep`, beside the graph keeper) finds a batch under the
+  (`fennec_http::sweep`, beside the graph keeper) finds a batch under the
   read lock (`Database::expired`, the index's range where it is narrow)
   and deletes it under the write lock (`Database::sweep`, which tests each
   row's time again: one written since lives).
@@ -257,7 +257,7 @@ Both shipped as designed below, with these changes the code asked for:
   move and take off an expiry, the ordered index kept (field change 4).
   `_idempotency` follows `--idempotency-ttl` with it, and one from before,
   `at int @sorted`, is made again.
-- **The browser module is handed the time** as `fenec_query`'s last
+- **The browser module is handed the time** as `fennec_query`'s last
   argument (`db.now`, `Date.now` unless set), and refuses a read of an
   expiring collection without it rather than answer at a time it was not.
 
@@ -316,8 +316,8 @@ security should speak TLS itself -- and the zero-dependency rule means
 writing it. That is the largest and riskiest item here, so it is scoped
 tightly and gated hard.
 
-**Scope.** Server side only, TLS 1.3 only, on `fenec-server`'s HTTP
-listener (and `--metrics`'s, and `fenec-shard`'s); `fenec-wire` and the
+**Scope.** Server side only, TLS 1.3 only, on `fennec-server`'s HTTP
+listener (and `--metrics`'s, and `fennec-shard`'s); `fennec-wire` and the
 browser module carry none of it.
 
 - Key exchange: X25519 (RFC 7748), new.
@@ -354,8 +354,8 @@ a terminator instead.
 
 ## Phase 6: mobile and native apps (Phase 56) -- done
 
-`crates/fenec-ffi` is the engine as a native library, a C ABI with zero
-dependencies, its answers the browser module's (`fenec-abi`, shared), its
+`crates/fennec-ffi` is the engine as a native library, a C ABI with zero
+dependencies, its answers the browser module's (`fennec-abi`, shared), its
 handles numbers, its calls a code and JSON each, a panic caught at the
 boundary. Swift (SwiftPM, an XCFramework for macOS, iOS and the
 simulator), Kotlin (the JVM and an AAR for three Android ABIs, through JNI
@@ -369,21 +369,21 @@ x86_64 Linux; a buffered put 4.6 us against the server handler's 23.2, a
 
 ## Phase 7: an app's file synced with a server (Phase 57) -- done
 
-What `FenecSync` does in a page -- a replica of a server's collections that
+What `FennecSync` does in a page -- a replica of a server's collections that
 reads without the network and writes optimistically -- for an app's file,
-and `Fenec.connect(url)` in each native binding for an app that talks to a
+and `Fennec.connect(url)` in each native binding for an app that talks to a
 server without a file of its own. The sync is a state machine with no I/O
-in `fenec-abi` (`fenec_abi::sync`, behind a feature the browser module is
+in `fennec-abi` (`fennec_abi::sync`, behind a feature the browser module is
 built without), its network the platform's client -- `URLSession`,
 `HttpURLConnection`, `dart:io` -- for the TLS a device needs; its queue of
 unanswered writes, their idempotency keys and the cursors in the file, so a
-write made offline lands once after a restart. `Fenec.sync` in Swift and
-Kotlin, `Fenec.openSynced` in Dart, each held against a fenec-server its
+write made offline lands once after a restart. `Fennec.sync` in Swift and
+Kotlin, `Fennec.openSynced` in Dart, each held against a fennec-server its
 tests start, kill and start again. Measured: a one-row change 18.4 us
 against 7.1 for the put alone; the library +165 KB on Apple silicon (1.68
 MB), +198 KB on x86_64 Linux (1.88).
 
-Phase 59 held the page's `FenecSync` to the same behaviour rather than
+Phase 59 held the page's `FennecSync` to the same behaviour rather than
 port it (+21 KB brotli): `integrations/sync-scenarios.json`, 55 scripted
 scenarios the core's tests and the page's both run, CI failing unless each
 ran every one. The page now keeps a write through a network failure or a
@@ -392,15 +392,15 @@ replica across a reload, and sends every tab's writes through the leader.
 
 ## Phase 8: a schema declared in code (Phase 58) -- done, with what follows
 
-Tables declared in TypeScript Drizzle 1.0's way (`@fenecdb/web/schema`), or
+Tables declared in TypeScript Drizzle 1.0's way (`@fennecdb/web/schema`), or
 `create collection` text in any SDK, compiled to one description and
 compared with the database by the engine at every open: additions applied,
 everything else refused with its resolution, migrations run once and
-recorded (`fenec_core::declared`, `fenec_abi::schema`). Shipped: the
+recorded (`fennec_core::declared`, `fennec_abi::schema`). Shipped: the
 browser module, the native library, the server's `/_schema`, the JS client
-(`Fenec.open`, `restore`, `openFile`, `sync`, `connect`), `schema(...)` in
-the Python, Go, .NET, Swift, Kotlin and Dart clients, `fenec types` over a
-`.fenecql` and for Python, Go, C#, Swift, Kotlin and Dart, and
+(`Fennec.open`, `restore`, `openFile`, `sync`, `connect`), `schema(...)` in
+the Python, Go, .NET, Swift, Kotlin and Dart clients, `fennec types` over a
+`.fennecql` and for Python, Go, C#, Swift, Kotlin and Dart, and
 `integrations/schema-golden.json`.
 
 Still to do:
@@ -425,7 +425,7 @@ Still to do:
 
 ## Phase 9 and 10: highlights, snippets and facets (Phase 61) -- done
 
-The two gaps every search engine beside fenecdb closes -- Elasticsearch,
+The two gaps every search engine beside fennecdb closes -- Elasticsearch,
 OpenSearch, Meilisearch, Typesense, Atlas Search, Redis; FTS5 and Turso
 have `highlight()` -- shipped together. `highlight(body)` and `snippet(body,
 N)` are select-list items over a `match`, the row's text read again by the
@@ -448,7 +448,7 @@ Still to do:
 - Disjunctive facets -- a facet's counts ignoring its own filter, so a
   sidebar shows the other brands while one is picked -- are a second query
   today, in the same `/batch`.
-- Highlighting over a REST `GET` and the `/near` body: FenecQL alone
+- Highlighting over a REST `GET` and the `/near` body: FennecQL alone
   (`/query`) reaches it, since `match` is not in the query string.
 
 ---

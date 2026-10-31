@@ -1,6 +1,6 @@
 // Files in an object store (S3, R2 or anything that speaks S3), their metadata
-// in fenecdb: the app's small backend, docs/files. It holds no JWT library and
-// checks no token itself. Each request's `Authorization` goes to fenec-server
+// in fennecdb: the app's small backend, docs/files. It holds no JWT library and
+// checks no token itself. Each request's `Authorization` goes to fennec-server
 // as it came, and the server's rules (files-policy.txt) say whether this
 // person may add a file or read one; a presigned URL is made only after the
 // server has said yes -- to an insert for an upload, to a read for a download.
@@ -18,7 +18,7 @@
 import { createServer } from 'node:http';
 import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { connect } from '@fenecdb/web/client';
+import { connect } from '@fennecdb/web/client';
 import { keysOf } from './store.mjs';
 import { isMain } from './main.mjs';
 
@@ -42,8 +42,8 @@ export function disposition(name) {
  * `appToken` is `() => Promise<token>`: the backend's own, signed on demand
  * (service-token.mjs). `prefix` is the tenant on a `--dir` node.
  */
-export function backend({ fenec, appToken, s3, bucket, prefix = '', expiresIn = 300, log = console.error }) {
-  const as = (token) => connect(fenec, { token });
+export function backend({ fennec, appToken, s3, bucket, prefix = '', expiresIn = 300, log = console.error }) {
+  const as = (token) => connect(fennec, { token });
   const keys = keysOf(prefix);
 
   return createServer(async (req, res) => {
@@ -54,7 +54,7 @@ export function backend({ fenec, appToken, s3, bucket, prefix = '', expiresIn = 
     try {
       const token = (req.headers.authorization ?? '').replace(/^Bearer /, '');
       if (!token) return reply(401, { error: 'no token' });
-      const me = as(token); // fenec-server verifies it, and holds every query to its rules
+      const me = as(token); // fennec-server verifies it, and holds every query to its rules
       const [, route, rawId, verb] = new URL(req.url, 'http://x').pathname.split('/');
       if (route !== 'files') return reply(404, { error: 'not found' });
       const id = rawId === undefined ? undefined : Number(rawId);
@@ -180,7 +180,7 @@ if (isMain(import.meta.url)) {
   const { serviceTokens } = await import('./service-token.mjs');
   const env = process.env;
   const server = backend({
-    fenec: env.FENEC_URL,
+    fennec: env.FENNEC_URL,
     // The key as a PEM file, whose path is SERVICE_KEY_FILE (a Worker keeps its key
     // in a secret instead, as base64 of the DER: the two forms are not the same).
     appToken: serviceTokens({ pem: readFileSync(env.SERVICE_KEY_FILE), sub: 'files-backend' }),

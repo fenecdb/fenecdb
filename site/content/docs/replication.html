@@ -1,5 +1,5 @@
 <!--
-title: Replication — fenecdb
+title: Replication — fennecdb
 description: Read replicas that follow a primary's writes, promotion when the primary is gone, and backups you can restore to any moment.
 -->
 
@@ -11,15 +11,15 @@ moment.</p>
 <h2>Start a replica</h2>
 
 <p>Give the primary a replication token, then start a second
-<code>fenec-server</code> on its own file pointed at the primary. The replica
+<code>fennec-server</code> on its own file pointed at the primary. The replica
 serves reads; when the primary is gone, promote it to take writes.</p>
 
 <pre data-lang="bash"># the primary: replicas are fed over its HTTP listener
-fenec-server --file primary.fenec --http 0.0.0.0:8080 --http-token "$HTTP" \
+fennec-server --file primary.fennec --http 0.0.0.0:8080 --http-token "$HTTP" \
          --replication-token "$REPL" --sync always
 
 # a replica, over a file of its own
-fenec-server --file replica.fenec --http 0.0.0.0:8081 --http-token "$HTTP" \
+fennec-server --file replica.fennec --http 0.0.0.0:8081 --http-token "$HTTP" \
          --replication-token "$REPL" --replica-of http://primary:8080
 
 # the primary is gone: the replica takes writes from here on
@@ -38,7 +38,7 @@ curl -X POST replica:8081/_replication/promote -H "Authorization: Bearer $REPL"
 <p>A primary sends its replicas the writes that have reached its disk, and
 each applies them to a file of its own and serves reads from it.</p>
 
-<p>A replica is a whole <code>fenec-server</code>: every read works on it,
+<p>A replica is a whole <code>fennec-server</code>: every read works on it,
 subscriptions included, from its own copy in memory, and a write gets 403.
 <code>GET /_replication</code> says which role a server has, so a client or a
 load balancer can tell a replica from the primary.</p>
@@ -58,7 +58,7 @@ its own file. Only writes already on the primary's disk are sent.</p>
 </ul>
 
 <details class="deep"><summary>How records are sent and caught up</summary>
-<p>A fenecdb file is already a log: an image, then every write appended as a
+<p>A fennecdb file is already a log: an image, then every write appended as a
 record. A replica is sent those records, whole and in order, and applies each
 the way the write path made it — the document, and the upkeep of every index
 on it — and appends it to its own file. Its file therefore ends as the
@@ -125,45 +125,45 @@ own — the root history is every database's, so it names none.</p>
 
 <p>A replica can be a moment behind, so a read sent right after a write may
 miss it. Send the number a write's answer carries in
-<code>Fenec-Seq</code> as <code>Fenec-After</code>, and the replica waits
+<code>Fennec-Seq</code> as <code>Fennec-After</code>, and the replica waits
 until it has that write.</p>
 
 <pre data-lang="bash">curl -i -X POST http://primary:8080/query -d '{"query":"put carts {user: 7}"}'
-# Fenec-Seq: 1042
+# Fennec-Seq: 1042
 
-curl -H 'Fenec-After: 1042' -X POST http://replica:8080/query \
+curl -H 'Fennec-After: 1042' -X POST http://replica:8080/query \
   -d '{"query":"get carts where user = 7"}'
 </pre>
 
 <ul>
-  <li><b>It waits 5 seconds</b> unless <code>Fenec-Wait</code> says otherwise
+  <li><b>It waits 5 seconds</b> unless <code>Fennec-Wait</code> says otherwise
     (in milliseconds, 30 s at most), then answers 504.</li>
   <li><b>A subscription and <code>/_changes</code> wait too,</b> before
     their head: a stream sent with the header is seeded with the write, and
-    a change-stream page's <code>Fenec-Seq</code> is never behind it.</li>
-  <li><b>Across a failover, send <code>Fenec-History</code> too:</b> the
+    a change-stream page's <code>Fennec-Seq</code> is never behind it.</li>
+  <li><b>Across a failover, send <code>Fennec-History</code> too:</b> the
     answer names the history its change is of, which a promotion forks. A
     replica left on the old branch holds a change of that number of its
     own, and answers no read sent after the new one.</li>
   <li><b>Its token comes first:</b> a request the server refuses (401, or
     403 for another tenant's token) is answered at once, not after the
     wait, and learns nothing of where the replica stands.</li>
-  <li><b>A read marked <code>Fenec-Read: replica</code> names where it
-    read:</b> the answer carries the copy's <code>Fenec-Seq</code> and
-    <code>Fenec-History</code>, so a read sent after it never reads older
+  <li><b>A read marked <code>Fennec-Read: replica</code> names where it
+    read:</b> the answer carries the copy's <code>Fennec-Seq</code> and
+    <code>Fennec-History</code>, so a read sent after it never reads older
     (<a href="sharding-read-replicas.html#read-replicas">Read replicas</a>). A read nobody
     marked names nothing.</li>
   <li><b>The Python client</b> keeps the number for you:
     <code>client.seq</code>, sent with <code>query(..., after=...)</code>.</li>
 </ul>
 
-<details class="deep"><summary>How Fenec-Seq and Fenec-After work</summary>
+<details class="deep"><summary>How Fennec-Seq and Fennec-After work</summary>
 <p>A replica is behind its primary by the time a write takes to reach it —
 0.04 ms at the median under <code>--sync always</code>, up to the sync
 interval otherwise — so a client that writes on the primary and reads on a
 replica can read from before its own write. Over HTTP a write's answer
-names the change it left the database at, <code>Fenec-Seq</code>; a request
-sent to a replica with <code>Fenec-After: &lt;that number&gt;</code> is
+names the change it left the database at, <code>Fennec-Seq</code>; a request
+sent to a replica with <code>Fennec-After: &lt;that number&gt;</code> is
 served once the replica holds it, and answered 504 with where the replica
 stands if it does not within the wait — never from before the write.</p>
 
@@ -172,9 +172,9 @@ history where the replica promoted stood: a write the old primary answered
 and the replica never got is lost, the new primary's next write takes its
 number, and a replica still following the old primary holds a change of that
 number — the lost write. So an answer of a database that has had a replica
-also names its history, <code>Fenec-History: &lt;term&gt;-&lt;id&gt;</code>,
+also names its history, <code>Fennec-History: &lt;term&gt;-&lt;id&gt;</code>,
 the term one more at each promotion; a read sent with it beside
-<code>Fenec-After</code> is served once the replica holds that change of that
+<code>Fennec-After</code> is served once the replica holds that change of that
 history — a replica on the old branch waits until it follows the new primary
 and takes its image. A primary asked for a position its history does not
 hold — the write lost — answers 504 at once, with its own
@@ -186,7 +186,7 @@ restore keeps it, and a database made anew — a tenant deleted and made again
 under its name, starting again at term 1 — has another, whose position a
 client takes, its term lower or not.</p>
 
-<p>The wait is 5 seconds unless <code>Fenec-Wait</code> gives it in
+<p>The wait is 5 seconds unless <code>Fennec-Wait</code> gives it in
 milliseconds, 30 seconds at most, and a replica waits on the same
 <code>Condvar</code> its subscriptions do, so nothing polls. On a tenant node
 a wait takes one of the tenant's streams, but only once it must wait: a read
@@ -206,7 +206,7 @@ writes is up to you.</p>
 <details class="deep"><summary>What promotion forks, and the old primary's part</summary>
 <p>Either way forks the history where the replica stands and turns writes on.
 A replica's file does not open any other way — started with neither flag,
-<code>fenec-server</code> refuses and says which to give — because a replica
+<code>fennec-server</code> refuses and says which to give — because a replica
 taking writes without a fork would continue its primary's history with
 writes the primary never made.</p>
 
@@ -291,30 +291,30 @@ the other way on the two; everything else answers identically.</p>
 <h2>Backups and restoring to a moment</h2>
 
 <p>An archive is the replication stream written to a directory: base images
-and every write after them, timestamped. From it, <code>fenec restore</code>
+and every write after them, timestamped. From it, <code>fennec restore</code>
 rebuilds the database as it stood at any moment or change.</p>
 
 <pre data-lang="bash"># the running database, taken whole: a file that opens as a database of its own
-fenec backup http://primary:8080 nightly.fenec --token "$REPL"
+fennec backup http://primary:8080 nightly.fennec --token "$REPL"
 
 # every write that reaches the primary's disk, until interrupted; an image of
 # its own every hour, and what no restore to the last week needs let go of
-fenec archive http://primary:8080 /backups/archive --token "$REPL" --image-every 1h --keep 7d
+fennec archive http://primary:8080 /backups/archive --token "$REPL" --image-every 1h --keep 7d
 
 # what the archive can restore, read as a restore would; exits 1 if it cannot
-fenec verify /backups/archive
+fennec verify /backups/archive
 
 # the database as it stood just before the mistake
-fenec restore /backups/archive before.fenec --to 2026-09-22T10:14:59Z
-fenec restore /backups/archive before.fenec --to-change 41873
+fennec restore /backups/archive before.fennec --to 2026-09-22T10:14:59Z
+fennec restore /backups/archive before.fennec --to-change 41873
 </pre>
 
 <ul>
   <li><b><code>--to</code></b> stops at a moment; <b><code>--to-change</code></b>
     after a change number.</li>
-  <li><b><code>--keep</code></b> (or <code>fenec prune</code>) deletes what no
+  <li><b><code>--keep</code></b> (or <code>fennec prune</code>) deletes what no
     restore within that window needs.</li>
-  <li><b><code>fenec verify</code></b> says from when to when the archive can
+  <li><b><code>fennec verify</code></b> says from when to when the archive can
     restore.</li>
   <li>A <b>backup or a restore into a file</b> holds the file while it is
     written, as the shell does: one a running server has open is refused, its
@@ -325,10 +325,10 @@ fenec restore /backups/archive before.fenec --to-change 41873
 <details class="deep"><summary>How a restore to a moment works</summary>
 <p>The same stream written to a directory instead of applied is an archive:
 base images, and every write after them with the time the primary appended
-it. The <code>fenec</code> command line writes and reads one.</p>
+it. The <code>fennec</code> command line writes and reads one.</p>
 
 <p>A restore takes the latest image at or before the point asked for and
-appends the archived writes after it up to there — a fenecdb file is an image
+appends the archived writes after it up to there — a fennecdb file is an image
 and the writes after it, so that is the whole restore — then opens the result
 to check it, forks its history and checkpoints it. <code>--to</code> keeps
 every write the primary appended at or before that moment and stops at the
@@ -347,7 +347,7 @@ its 100 000 writes took 19.9 s, most of it building the graph for them, and the
 file then opened in 63 ms; to the load's middle, 7.8 s. A base image a day
 keeps a restore to a day of writes.</p>
 
-<pre data-lang="text">image-&lt;change&gt;-&lt;time&gt;.fenec   a base image: the database at that change
+<pre data-lang="text">image-&lt;change&gt;-&lt;time&gt;.fennec   a base image: the database at that change
 writes-&lt;first change&gt;.log      per record, the time it was appended and the record
 history                        the history the archive is on
 </pre>
@@ -362,9 +362,9 @@ segments of their own. A restore then replays at most that much. With
 each image: the images before the newest one taken by the window's start,
 which a restore to that moment starts from, and the segments whose writes
 all came before the oldest image kept — never the one being written.
-<code>fenec prune &lt;dir&gt; --keep 7d</code> does the same once.</p>
+<code>fennec prune &lt;dir&gt; --keep 7d</code> does the same once.</p>
 
-<p><code>fenec verify &lt;dir&gt;</code> reads the archive as a restore
+<p><code>fennec verify &lt;dir&gt;</code> reads the archive as a restore
 would: every image opens at the change its name says, the segments run on
 from the oldest image with no change missing, only the last segment may end
 in a record cut short, and a restore to the end opens. It prints from when
@@ -375,20 +375,20 @@ moment inside cannot — and exits 1 when no restore can be made.</p>
 
 <h2 id="node-archive">Archiving every tenant of a node</h2>
 
-<p>A node of tenants (<a href="/docs/sharding-reference#the-node-fenec-server-dir"><code>fenec-server --dir</code></a>)
+<p>A node of tenants (<a href="/docs/sharding-reference#the-node-fennec-server-dir"><code>fennec-server --dir</code></a>)
 is archived by one process over one connection: an archive a tenant under a
-root, each the archive above, which <code>fenec restore</code>,
+root, each the archive above, which <code>fennec restore</code>,
 <code>verify</code> and <code>prune</code> read as they read any.</p>
 
 <pre data-lang="bash"># every tenant of the node into /backups/n1/&lt;tenant&gt;/, until interrupted
-fenec archive --tenants http://n1:8081 /backups/n1 --token "$REPL" --image-every 1h --keep 7d
+fennec archive --tenants http://n1:8081 /backups/n1 --token "$REPL" --image-every 1h --keep 7d
 
 # every tenant's archive read as a restore would; exits 1 if any cannot
-fenec verify --tenants /backups/n1
+fennec verify --tenants /backups/n1
 
-# the node's directory as it stood at a moment: &lt;tenant&gt;.fenec for each tenant it held then
-fenec restore --tenants /backups/n1 /data/n1 --to 2026-09-22T10:14:59Z
-fenec-server --dir /data/n1 --replication-token "$REPL" ...
+# the node's directory as it stood at a moment: &lt;tenant&gt;.fennec for each tenant it held then
+fennec restore --tenants /backups/n1 /data/n1 --to 2026-09-22T10:14:59Z
+fennec-server --dir /data/n1 --replication-token "$REPL" ...
 </pre>
 
 <ul>
@@ -421,7 +421,7 @@ connection and a thread on the node for as long as it runs, one of
 <code>--max-connections</code>, and it holds its tenant open the while.
 Archived that way, a node of a thousand tenants holds a thousand of each and
 every tenant open for good — and at the default of 100 connections it
-cannot be archived at all. <code>fenec archive --tenants</code> asks the node
+cannot be archived at all. <code>fennec archive --tenants</code> asks the node
 for <code>POST /_replication/tenants</code> instead, with the replication
 token: every tenant's writes over one stream, each message led by its
 tenant's name. Its body says where each archive under the root stands; the
@@ -470,7 +470,7 @@ taken where it closed, since a holder of its database — the
 beside it, after the machine went down, is opened.</p>
 
 <p>A tenant's archive is <code>&lt;root&gt;/&lt;tenant&gt;/</code>, written
-as <code>fenec archive</code> writes one; its segment file is open only while
+as <code>fennec archive</code> writes one; its segment file is open only while
 the tenant writes, so the archiver holds a descriptor a writing tenant, not a
 tenant. When the node says a tenant is gone — deleted, or moved to another
 node, whose own archiver takes it up from its image on the same history —
@@ -490,14 +490,14 @@ place, at or before it — restored there to an earlier moment, or another
 tenant made under the name — would land its writes among changes of the same
 numbers: the line so far is moved aside to
 <code>&lt;root&gt;/&lt;tenant&gt;.&lt;history&gt;/</code> and a new one begins.
-(<code>fenec archive</code> of one database refuses such a primary instead,
+(<code>fennec archive</code> of one database refuses such a primary instead,
 and leaves its archive as it was.) A promotion's new history reaches the
 archive before the writes after it, so a promoted tenant's archive goes on
 without an image. <code>&lt;root&gt;/archiving.lock</code> keeps a second
 archiver off a root.</p>
 
-<p><code>fenec restore --tenants &lt;root&gt; &lt;dir&gt;</code> writes
-<code>&lt;dir&gt;/&lt;tenant&gt;.fenec</code> for each tenant the node held at
+<p><code>fennec restore --tenants &lt;root&gt; &lt;dir&gt;</code> writes
+<code>&lt;dir&gt;/&lt;tenant&gt;.fennec</code> for each tenant the node held at
 <code>--to</code> — from the line of its history that began last by then, so
 a line moved aside answers for the time before the next began — or at each
 archive's end. A tenant the node said was gone then, deleted or living on
@@ -505,7 +505,7 @@ another node, is passed over, and so is one archived only after it; one
 whose moment <code>--keep</code> let go of is refused, and the restore exits
 1 — each line knows when it began, which the prune that lets its first
 image go writes down first (<code>began</code>). <code>--to-change</code> names one database's change, and is
-refused. <code>fenec verify --tenants</code> and <code>fenec prune
+refused. <code>fennec verify --tenants</code> and <code>fennec prune
 --tenants</code> run on every line, those moved aside too, and verify names a
 gap an image alone ends.</p>
 
@@ -537,7 +537,7 @@ after, under <code>--sync always</code>, in turns, on this M1:</p>
 
 <p>The archiver's process runs the bench's writers as well, and the
 descriptors were counted before each open tenant held its
-<code>&lt;tenant&gt;.fenec.lock</code>: count one more an open tenant. A write's time
+<code>&lt;tenant&gt;.fennec.lock</code>: count one more an open tenant. A write's time
 under <code>--sync always</code> is the Mac's <code>F_FULLFSYNC</code>; a
 write waits for the node's stream as for a replica, and the stream sends
 within the fsync's noise. While the first images were taken no write
@@ -569,17 +569,17 @@ or a stream each as in the table.</p>
 <h2 id="object-storage">In object storage</h2>
 
 <p>To keep an archive in S3, R2 or GCS, run a sync tool beside the archiver;
-fenecdb has no object-storage client of its own.</p>
+fennecdb has no object-storage client of its own.</p>
 
 <pre data-lang="bash">rclone sync /backups/archive r2:backups/archive      # every few minutes
 aws s3 sync /backups/archive s3://backups/archive --delete
 
 # to restore: bring it back, check it, restore it
-rclone sync r2:backups/archive ./archive && fenec verify ./archive
-fenec restore ./archive before.fenec --to 2026-09-22T10:14:59Z</pre>
+rclone sync r2:backups/archive ./archive && fennec verify ./archive
+fennec restore ./archive before.fennec --to 2026-09-22T10:14:59Z</pre>
 
 <details class="deep"><summary>How a bucket copy stays consistent</summary>
-<p>fenecdb speaks no TLS, and S3, R2 and GCS speak only HTTPS, so an
+<p>fennecdb speaks no TLS, and S3, R2 and GCS speak only HTTPS, so an
 archive goes there the way any directory does: a sync tool beside the
 archiver.</p>
 
@@ -601,14 +601,14 @@ over to the copy; without it the copy keeps everything.</p>
 tamper-checked. Keep the key apart from the archive: without it nothing can
 be restored.</p>
 
-<pre data-lang="bash">fenec key /secrets/archive.key          # 64 hex digits, readable by its owner alone
-fenec archive http://primary:8080 /backups/archive --key-file /secrets/archive.key
-fenec verify /backups/archive --key-file /secrets/archive.key
-fenec restore /backups/archive before.fenec --to 2026-09-22T10:14:59Z \
+<pre data-lang="bash">fennec key /secrets/archive.key         # 64 hex digits, readable by its owner alone
+fennec archive http://primary:8080 /backups/archive --key-file /secrets/archive.key
+fennec verify /backups/archive --key-file /secrets/archive.key
+fennec restore /backups/archive before.fennec --to 2026-09-22T10:14:59Z \
   --key-file /secrets/archive.key
 
-fenec backup http://primary:8080 today.sealed --key-file /secrets/archive.key
-fenec restore today.sealed today.fenec --key-file /secrets/archive.key</pre>
+fennec backup http://primary:8080 today.sealed --key-file /secrets/archive.key
+fennec restore today.sealed today.fennec --key-file /secrets/archive.key</pre>
 
 <details class="deep"><summary>How archives and backups are sealed</summary>
 <p>A copy in a bucket or on another disk is out of reach of the machine's
@@ -623,7 +623,7 @@ primary sends, so a crash cuts off at most the frame being written, as it
 cut a record short before.</p>
 
 <p>An archive is sealed or it is not; a file of the other kind in
-it is refused. <code>FENEC_KEY_FILE</code> names the key file too. Sealing
+it is refused. <code>FENNEC_KEY_FILE</code> names the key file too. Sealing
 and opening run at about 400 MB/s on one core, where writing the archive
 waits on the network and the disk. The database file itself stays plain:
 it is mapped and read where it lies, which encryption would take away —
@@ -641,7 +641,7 @@ token, not the <code>--http-token</code>.</p>
 GET  /_replication/status                          role, position, replicas, lag
 POST /_replication/promote                         a replica's promotion
 POST /_replication/tenants                         on a --dir node: every tenant's writes
-                                                   over one stream (fenec archive --tenants)
+                                                   over one stream (fennec archive --tenants)
 </pre>
 
 <details class="deep"><summary>Which token the endpoints want, and the status</summary>
@@ -658,7 +658,7 @@ feeding and how far each has been sent.</p>
 <div class="tbl">
 <table>
 <tbody>
-<tr><td><code>--replication-token &lt;value&gt;</code></td><td>turns replication on; needs <code>--file</code>, and <code>--http</code> to feed replicas. Also read from <code>FENEC_REPLICATION_TOKEN</code></td></tr>
+<tr><td><code>--replication-token &lt;value&gt;</code></td><td>turns replication on; needs <code>--file</code>, and <code>--http</code> to feed replicas. Also read from <code>FENNEC_REPLICATION_TOKEN</code></td></tr>
 <tr><td><code>--replica-of http://host:port</code></td><td>follows that primary into <code>--file</code>; needs the token</td></tr>
 <tr><td><code>--promote</code></td><td>opens a replica's file to take writes, forking its history</td></tr>
 <tr><td><code>--replication-buffer &lt;MiB&gt;</code></td><td>writes kept for replicas that fall behind, and for <code>/_changes</code>; default 64</td></tr>

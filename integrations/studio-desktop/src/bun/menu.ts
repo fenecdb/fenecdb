@@ -10,8 +10,8 @@ export function refreshMenu() {
 	const recents = store.recents().slice(0, 10);
 	ApplicationMenu.setApplicationMenu([
 		{
-			label: "fenec studio",
-			submenu: [{ label: "About fenec studio", role: "about" } as any, { type: "separator" }, { role: "hide" } as any, { role: "quit" }],
+			label: "fennec studio",
+			submenu: [{ label: "About fennec studio", role: "about" } as any, { type: "separator" }, { role: "hide" } as any, { role: "quit" }],
 		},
 		{
 			label: "File",

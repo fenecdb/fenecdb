@@ -1,0 +1,18 @@
+name: fennecdb
+description: fennecdb embedded in a Dart or Flutter app -- a database in a file on the device, queried with FennecQL or a builder, with live queries as Streams.
+version: 0.1.12
+homepage: https://github.com/fennec-db/fennecdb
+repository: https://github.com/fennec-db/fennecdb/tree/main/integrations/dart/fennecdb
+topics: [database, vector, embedded, ffi]
+
+environment:
+  sdk: ^3.4.0
+
+dependencies:
+  # malloc and free for the buffers handed to the library, from the Dart
+  # team; nothing else.
+  ffi: ^2.1.0
+
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^4.0.0

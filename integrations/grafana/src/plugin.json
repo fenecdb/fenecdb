@@ -1,27 +1,27 @@
 {
   "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
   "type": "datasource",
-  "name": "fenecdb",
-  "id": "fenecdb-datasource",
+  "name": "fennecdb",
+  "id": "fennecdb-datasource",
   "metrics": true,
   "annotations": true,
   "alerting": true,
   "backend": true,
-  "executable": "gpx_fenecdb",
+  "executable": "gpx_fennecdb",
   "info": {
-    "description": "fenecdb's rows in Grafana: FenecQL with the time range and variables bound as parameters, alerting, annotations",
+    "description": "fennecdb's rows in Grafana: FennecQL with the time range and variables bound as parameters, alerting, annotations",
     "author": {
-      "name": "fenecdb",
+      "name": "fennecdb",
       "url": "https://fenecdb.com"
     },
-    "keywords": ["fenecdb", "database", "vector", "analytics", "fenecql"],
+    "keywords": ["fennecdb", "database", "vector", "analytics", "fennecql"],
     "logos": {
       "small": "img/logo.svg",
       "large": "img/logo.svg"
     },
     "links": [
       { "name": "Docs", "url": "https://fenecdb.com/docs/grafana" },
-      { "name": "Source", "url": "https://github.com/fenecdb/fenecdb/tree/main/integrations/grafana" }
+      { "name": "Source", "url": "https://github.com/fennec-db/fennecdb/tree/main/integrations/grafana" }
     ],
     "screenshots": [],
     "version": "%VERSION%",

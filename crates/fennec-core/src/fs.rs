@@ -1,0 +1,1402 @@
+//! Native file persistence layer.
+//!
+//! The file's contents are in *the same format* as the engine's in-memory
+//! byte image. A write = append to the file. Open = a single replay pass.
+//! No separate WAL + data file pair, no checkpoint, no buffer pool of its own.
+
+use crate::engine::{Database, Durability, ImageOut, Sink, MAGIC};
+use crate::error::Result;
+use std::fs::{File, OpenOptions};
+use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard};
+
+/// Write buffer. One `write` call per document meant one syscall per
+/// document; that was the dominant cost during bulk loading.
+const WRITE_BUF: usize = 1 << 20;
+
+/// What the buffer holds at most while a durability fsyncs the file: past
+/// [`WRITE_BUF`] an append writes it unless the disk is busy, and past this
+/// whether or not. A 60 ms fsync of a ledger's writes left 0.5 MB.
+const WRITE_HELD: usize = 8 << 20;
+
+/// What a write behind the database ([`Sink::write_behind`]) waits for the
+/// buffer to hold: a block or a few, a write each. On macOS a write that
+/// takes a file's dirty pages past each 8 MB waits for the disk -- 1.5 to
+/// 11 ms, the file mapped or not -- and under the write lock, a buffer
+/// written as it outgrew [`WRITE_BUF`] held four readers beside blocks of
+/// 1 000 writes up to 6 ms every 8 MB.
+#[cfg(not(target_arch = "wasm32"))]
+const BEHIND_AT: usize = 64 << 10;
+
+/// Appends collect in memory and reach the file only in `sync`, in the
+/// durability `flush` hands out, or when they outgrow `WRITE_BUF`.
+///
+/// Not a `BufWriter` over the file. `flush` runs under the database's
+/// exclusive lock, and a `write` there waits for the disk whenever an fsync
+/// of the same file is under way on another thread -- on macOS's APFS, 27%
+/// of them took 0.5-3.3 ms with eight writers under `--sync always`, the
+/// lock held all the while. The bytes are therefore written by whoever
+/// runs the fsync, outside the lock.
+///
+/// That is also where writes arriving together are made durable together.
+/// Each durability knows how many bytes had been appended when it was
+/// handed out; the first to take the disk writes and fsyncs everything
+/// pending, and the ones queued behind it find their bytes already durable
+/// and return without an fsync of their own.
+pub struct FileSink {
+    /// The appends not yet written.
+    pending: Arc<Mutex<Vec<u8>>>,
+    /// Bytes appended since the file was opened or rewritten.
+    appended: u64,
+    /// Held for every write and fsync, and taken before `pending` whenever
+    /// bytes leave it, so they reach the file in the order they came.
+    disk: Arc<Mutex<Disk>>,
+    path: PathBuf,
+    /// The file mapped with room past its end, which a mapped database's
+    /// stores read from and take the records appended since in from
+    /// ([`Sink::written_through`]). Let go of when a rewrite puts another
+    /// file in its place.
+    #[cfg(all(unix, target_pointer_width = "64"))]
+    mapping: Option<Arc<Mapping>>,
+    /// Whether a caller writes the buffer once it has let go of the
+    /// database ([`Sink::write_behind`]): an append then leaves it for that
+    /// until it holds [`WRITE_HELD`].
+    behind: bool,
+}
+
+struct Disk {
+    file: File,
+    /// Bytes appended that have been written, and that have been fsynced.
+    written: u64,
+    synced: u64,
+    /// fsyncs run, for the test that they are shared.
+    #[cfg(test)]
+    fsyncs: usize,
+    /// A failed write or fsync. The kernel may have dropped the pages it
+    /// could not write, so nothing is reported durable after one.
+    failed: Option<crate::error::Error>,
+    /// What a sync writes into the sync log rather than fsync the file.
+    #[cfg(unix)]
+    tail: Tail,
+}
+
+#[cfg(unix)]
+thread_local! {
+    static KEEP_LOG: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Has the files this thread opens keep a sync log ([`crate::synclog`])
+/// where the platform would not -- macOS, whose `F_FULLFSYNC` costs the
+/// same either way -- so that a test there goes through it.
+#[doc(hidden)]
+#[cfg(unix)]
+pub fn keep_sync_log(on: bool) {
+    KEEP_LOG.with(|k| k.set(on));
+}
+
+/// The bytes written since the last sync, which the next one puts into the
+/// sync log ([`crate::synclog`]) and syncs there, rather than fsync the
+/// file: on ext4 an fsync of a file that grew commits the journal, 356 us
+/// in Docker's VM where the log's takes 65.
+#[cfg(unix)]
+struct Tail {
+    /// Whether this sink keeps a log (`synclog::ENABLED`, or a test's).
+    keeps: bool,
+    log_path: PathBuf,
+    /// Opened at the first sync that begins a generation; `None` where it
+    /// could not be made, and every sync then fsyncs the file.
+    log: Option<crate::synclog::SyncLog>,
+    /// The log could not be made: not tried again until the next open,
+    /// since each try writes its 260 KB -- on a full disk, at every sync.
+    unmade: bool,
+    /// The file's length: where the next byte written goes.
+    end: u64,
+    /// The bytes written since the last sync and where they start, while
+    /// they fit an entry.
+    since: Vec<u8>,
+    since_at: u64,
+    /// The next sync fsyncs the file itself and begins a generation: what
+    /// was written since outgrew an entry, or the file is new to the sink
+    /// -- whose bytes an earlier process may have left unsynced.
+    direct: bool,
+}
+
+#[cfg(unix)]
+impl Tail {
+    fn new(path: &Path, end: u64) -> Tail {
+        Tail {
+            keeps: crate::synclog::ENABLED || KEEP_LOG.with(|k| k.get()),
+            log_path: crate::synclog::path_for(path),
+            log: None,
+            unmade: false,
+            end,
+            since: Vec::new(),
+            since_at: end,
+            direct: true,
+        }
+    }
+
+    /// `bytes` reached the file.
+    fn wrote(&mut self, bytes: &[u8]) {
+        self.end += bytes.len() as u64;
+        if !self.keeps || self.direct {
+            return;
+        }
+        if self.since.len() + bytes.len() > crate::synclog::ENTRY_MAX {
+            self.direct = true;
+            self.since = Vec::new();
+        } else {
+            self.since.extend_from_slice(bytes);
+        }
+    }
+
+    /// The file starts again at `end`, synced: a cut, a rewrite.
+    fn reset(&mut self, end: u64) {
+        self.end = end;
+        self.since.clear();
+        self.since_at = end;
+        self.direct = true;
+    }
+
+    /// Makes what was written since the last sync durable: through the log
+    /// while it fits there, else by an fsync of the file, after which the
+    /// log begins a generation from where the file now stands.
+    fn sync(&mut self, file: &File) -> std::io::Result<()> {
+        if self.keeps && !self.direct {
+            if self.since.is_empty() {
+                return Ok(());
+            }
+            if let Some(log) = self
+                .log
+                .as_mut()
+                .filter(|l| l.takes(self.since_at, self.since.len()))
+            {
+                log.append(self.since_at, &self.since)?;
+                self.since.clear();
+                self.since_at = self.end;
+                return Ok(());
+            }
+        }
+        file.sync_data()?;
+        self.since.clear();
+        self.since_at = self.end;
+        if self.keeps {
+            if self.log.is_none() && !self.unmade {
+                self.log = crate::synclog::SyncLog::open(&self.log_path).ok();
+                self.unmade = self.log.is_none();
+            }
+            if let Some(log) = &mut self.log {
+                log.begin(file, self.end)?;
+                self.direct = false;
+            }
+        }
+        Ok(())
+    }
+
+    /// Lets the log go before another file is renamed into this one's
+    /// place: the file is synced first, so that nothing is durable only in
+    /// the log, and the removal is made durable before the rename, so that
+    /// no crash leaves the log beside the file that replaced this one.
+    fn forget(&mut self, file: &File) -> std::io::Result<()> {
+        if self.log.is_none() && !self.log_path.is_file() {
+            return Ok(());
+        }
+        file.sync_data()?;
+        self.log = None;
+        remove_synced(&self.log_path)
+    }
+
+    /// The database closes: the file is synced and its log removed, so a
+    /// node keeps no 260 KB beside each tenant that has closed. A crash
+    /// leaves it, and the next open applies it.
+    fn close(&mut self, file: &File) {
+        let kept = self.log.take().is_some() || (self.keeps && self.log_path.is_file());
+        if kept && file.sync_data().is_ok() {
+            let _ = std::fs::remove_file(&self.log_path);
+        }
+    }
+}
+
+/// The file `path` names once a symbolic link in its place is followed,
+/// links to links too: what an open writes, a checkpoint or a compact
+/// renames over and `<file>.lock` is named after. Renamed over as given, a
+/// link was replaced by the new image -- a regular file of its own, beside
+/// which a shell through the link wrote while the server wrote the file
+/// the link had led to, and the file opened no more. A directory reached
+/// through a link needs nothing, since the files beside go through the
+/// same link to the same directory, so the path is resolved no further
+/// than its last name: one `lstat` where it is no link. `canonicalize`
+/// cost 20 us more an open, and fails for a file not made yet.
+pub fn resolved(path: &Path) -> PathBuf {
+    let mut real = path.to_path_buf();
+    // As many links as the system follows in one path before it gives up.
+    for _ in 0..40 {
+        match std::fs::symlink_metadata(&real) {
+            Ok(m) if m.file_type().is_symlink() => match std::fs::read_link(&real) {
+                Ok(to) if to.is_absolute() => real = to,
+                Ok(to) => {
+                    let dir = real.parent().map(Path::to_path_buf);
+                    real = dir.unwrap_or_default().join(to);
+                }
+                Err(_) => break,
+            },
+            _ => break,
+        }
+    }
+    real
+}
+
+/// `path` with `.suffix` after its whole name: the files a database keeps
+/// beside its own. Its extension replaced (`with_extension`), `x.db` and
+/// `x.fennec` would share them.
+pub fn beside(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(".");
+    name.push(suffix);
+    PathBuf::from(name)
+}
+
+/// Removes the file at `path`, if there is one, and makes its removal
+/// durable.
+#[cfg(unix)]
+fn remove_synced(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => sync_dir(path).map_err(|e| std::io::Error::other(e.to_string())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Removes the sync log beside `path` ([`crate::synclog`]), durably: what
+/// renames another file into a database's place -- a restore, a backup
+/// unsealed, a tenant's import -- does it first, so that the log of the
+/// file that was there is not applied to the new one. Nothing where the
+/// platform keeps no logs.
+pub fn forget_sync_log(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    return remove_synced(&crate::synclog::path_for(&resolved(path)));
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        Ok(())
+    }
+}
+
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+impl Disk {
+    /// Writes whatever is pending.
+    fn write_pending(&mut self, pending: &Mutex<Vec<u8>>) -> Result<()> {
+        if let Some(e) = &self.failed {
+            return Err(e.clone());
+        }
+        let bytes = std::mem::take(&mut *lock(pending));
+        if let Err(e) = self.file.write_all(&bytes) {
+            self.failed = Some(e.into());
+            return Err(self.failed.clone().unwrap());
+        }
+        self.written += bytes.len() as u64;
+        #[cfg(unix)]
+        self.tail.wrote(&bytes);
+        Ok(())
+    }
+
+    /// Writes whatever is pending and then `bytes`, which do not go through
+    /// the buffer.
+    fn write_through(&mut self, pending: &Mutex<Vec<u8>>, bytes: &[u8]) -> Result<()> {
+        self.write_pending(pending)?;
+        if let Err(e) = self.file.write_all(bytes) {
+            self.failed = Some(e.into());
+            return Err(self.failed.clone().unwrap());
+        }
+        self.written += bytes.len() as u64;
+        #[cfg(unix)]
+        self.tail.wrote(bytes);
+        Ok(())
+    }
+
+    /// Makes the first `upto` appended bytes durable, unless they are.
+    fn sync(&mut self, pending: &Mutex<Vec<u8>>, upto: u64) -> Result<()> {
+        if let Some(e) = &self.failed {
+            return Err(e.clone());
+        }
+        if self.synced >= upto {
+            return Ok(());
+        }
+        self.write_pending(pending)?;
+        #[cfg(unix)]
+        let synced = self.tail.sync(&self.file);
+        #[cfg(not(unix))]
+        let synced = self.file.sync_data();
+        if let Err(e) = synced {
+            self.failed = Some(e.into());
+            return Err(self.failed.clone().unwrap());
+        }
+        #[cfg(test)]
+        {
+            self.fsyncs += 1;
+        }
+        self.synced = self.written;
+        Ok(())
+    }
+}
+
+impl FileSink {
+    /// Renames `from`, a whole image fsynced, over the file and appends to
+    /// it from then on. Whatever was pending is in the image: written after
+    /// it, it would be there twice. A failure after the rename leaves the
+    /// sink failed, so nothing waiting is told its write is durable.
+    fn swap_in(&self, disk: &mut Disk, from: &Path) -> Result<()> {
+        let swapped = (|| -> Result<File> {
+            #[cfg(unix)]
+            disk.tail.forget(&disk.file)?;
+            std::fs::rename(from, &self.path)?;
+            sync_dir(&self.path)?;
+            let mut f = OpenOptions::new().read(true).write(true).open(&self.path)?;
+            f.seek(SeekFrom::End(0))?;
+            Ok(f)
+        })();
+        lock(&self.pending).clear();
+        match swapped {
+            Ok(f) => {
+                // Everything appended so far is in the image, and the image
+                // is on disk.
+                #[cfg(unix)]
+                disk.tail.reset(f.metadata().map_or(0, |m| m.len()));
+                disk.file = f;
+                disk.written = self.appended;
+                disk.synced = self.appended;
+                Ok(())
+            }
+            Err(e) => {
+                disk.failed = Some(e.clone());
+                Err(e)
+            }
+        }
+    }
+
+    pub fn open(path: impl AsRef<Path>) -> Result<(FileSink, Vec<u8>)> {
+        let (mut file, path) = FileSink::create(path)?;
+        let mut existing = Vec::new();
+        file.read_to_end(&mut existing)?;
+        file.seek(SeekFrom::End(0))?;
+        Ok((FileSink::over(file, path), existing))
+    }
+
+    /// Opens the file for reading and appending, creating it with the magic
+    /// alone when it is missing or empty.
+    fn create(path: impl AsRef<Path>) -> Result<(File, PathBuf)> {
+        // The file a link leads to, kept as the sink's path: every rewrite
+        // renames over it, leaving the link a link.
+        let path = resolved(path.as_ref());
+        // An existing file is the database: never truncated.
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&path)?;
+        if file.metadata()?.len() == 0 {
+            // A log left beside a file of that name is not this one's.
+            #[cfg(unix)]
+            let _ = std::fs::remove_file(crate::synclog::path_for(&path));
+            file.write_all(&MAGIC[..])?;
+            file.flush()?;
+            file.seek(SeekFrom::Start(0))?;
+        } else {
+            // What the last process made durable through the sync log and
+            // the machine lost from the file goes back before it is read.
+            #[cfg(unix)]
+            crate::synclog::recover(&file, &crate::synclog::path_for(&path))?;
+        }
+        Ok((file, path))
+    }
+
+    /// A sink appending to `file`, which is positioned at its end.
+    fn over(file: File, path: PathBuf) -> FileSink {
+        #[cfg(unix)]
+        let end = file.metadata().map_or(0, |m| m.len());
+        FileSink {
+            pending: Arc::new(Mutex::new(Vec::new())),
+            appended: 0,
+            disk: Arc::new(Mutex::new(Disk {
+                file,
+                written: 0,
+                synced: 0,
+                #[cfg(test)]
+                fsyncs: 0,
+                failed: None,
+                #[cfg(unix)]
+                tail: Tail::new(&path, end),
+            })),
+            path,
+            #[cfg(all(unix, target_pointer_width = "64"))]
+            mapping: None,
+            behind: false,
+        }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Cuts the file back to its first `len` bytes, before anything is
+    /// appended: past them is a record a crash left cut short (see
+    /// [`Database::load`]). Left there, it swallowed the first write
+    /// appended after it -- acknowledged, and gone on the next open.
+    pub fn cut(&mut self, len: usize) -> Result<()> {
+        let mut disk = lock(&self.disk);
+        disk.file.set_len(len as u64)?;
+        disk.file.sync_data()?;
+        disk.file.seek(SeekFrom::End(0))?;
+        #[cfg(unix)]
+        disk.tail.reset(len as u64);
+        Ok(())
+    }
+}
+
+impl Sink for FileSink {
+    fn append(&mut self, bytes: &[u8]) -> Result<()> {
+        self.appended += bytes.len() as u64;
+        // A record the buffer could not hold is written where it lies, as
+        // the buffer would have been once it held it: copied in first, a
+        // block of 50 000 768-dim rows was 154 MB more of heap for the
+        // time of the write, which macOS's allocator then kept.
+        if bytes.len() >= WRITE_BUF {
+            return lock(&self.disk).write_through(&self.pending, bytes);
+        }
+        let held = {
+            let mut pending = lock(&self.pending);
+            pending.extend_from_slice(bytes);
+            pending.len()
+        };
+        // Written behind the database: by the caller once it lets the lock
+        // go, unless that has fallen behind by `WRITE_HELD`.
+        if held >= WRITE_BUF && !(self.behind && held < WRITE_HELD) {
+            // Not while a durability fsyncs the file, whose writes wait for
+            // it: this runs under the database's lock, and every request
+            // would wait out the fsync too. The first append past the
+            // buffer once it is done writes them, or the next durability;
+            // past `WRITE_HELD` they wait it out here.
+            let disk = match self.disk.try_lock() {
+                Ok(disk) => Some(disk),
+                Err(std::sync::TryLockError::WouldBlock) if held < WRITE_HELD => None,
+                Err(std::sync::TryLockError::WouldBlock) => Some(lock(&self.disk)),
+                Err(std::sync::TryLockError::Poisoned(e)) => Some(e.into_inner()),
+            };
+            if let Some(mut disk) = disk {
+                disk.write_pending(&self.pending)?;
+            }
+        }
+        Ok(())
+    }
+    /// Pending until the durability runs, however large: written here, a
+    /// kept graph's record waited out any fsync under way as well.
+    fn append_deferred(&mut self, bytes: &[u8]) -> Result<()> {
+        self.appended += bytes.len() as u64;
+        lock(&self.pending).extend_from_slice(bytes);
+        Ok(())
+    }
+    fn rewrite(&mut self, bytes: &[u8]) -> Result<()> {
+        self.rewrite_with(&mut |out| out.write(bytes))
+    }
+
+    /// The image goes to a side file that is renamed over the database, so
+    /// until the rename the old file stands whole: an image that cannot be
+    /// written -- a full disk during `compact` -- leaves the appends still
+    /// pending there to reach the old file, and a durability waiting on them
+    /// finds them on disk. They were cleared before the image once, and a
+    /// failed one then let `--sync always` answer "durable" for a write in
+    /// neither file. From the rename on, the new file holds them; a failure
+    /// after it leaves the sink failed, so nothing waiting is told otherwise.
+    fn rewrite_with(
+        &mut self,
+        image: &mut dyn FnMut(&mut dyn ImageOut) -> Result<()>,
+    ) -> Result<()> {
+        let mut disk = lock(&self.disk);
+        if let Some(e) = &disk.failed {
+            return Err(e.clone());
+        }
+        let tmp = beside(&self.path, "compacting");
+        let written = (|| -> Result<()> {
+            let mut out = FileImage {
+                w: BufWriter::with_capacity(WRITE_BUF, File::create(&tmp)?),
+                at: 0,
+            };
+            image(&mut out)?;
+            out.w
+                .into_inner()
+                .map_err(|e| crate::error::Error::Io(e.to_string()))?
+                .sync_all()?;
+            Ok(())
+        })();
+        if let Err(e) = written {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e);
+        }
+        #[cfg(all(unix, target_pointer_width = "64"))]
+        {
+            self.mapping = None;
+        }
+        self.swap_in(&mut disk, &tmp)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn side(&self) -> Option<PathBuf> {
+        Some(beside(&self.path, "beside"))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn adopt(&mut self, side: &Path) -> Result<()> {
+        let mut disk = lock(&self.disk);
+        if let Some(e) = &disk.failed {
+            return Err(e.clone());
+        }
+        #[cfg(all(unix, target_pointer_width = "64"))]
+        {
+            self.mapping = None;
+        }
+        self.swap_in(&mut disk, side)
+    }
+    /// The file as it stands, mapped read-only, with room past its end:
+    /// what a mapped database points its stores at after a rewrite. The
+    /// mapping it had covers the file the rename replaced, which is
+    /// unlinked and goes when the last location pointing into it does.
+    #[cfg(all(unix, target_pointer_width = "64"))]
+    fn remapped(&mut self) -> Option<crate::store::Base> {
+        let disk = lock(&self.disk);
+        let len = disk.file.metadata().ok()?.len() as usize;
+        if len == 0 {
+            return None;
+        }
+        let m = Arc::new(Mapping::with_room(&disk.file, len).ok()?);
+        self.mapping = Some(m.clone());
+        Some(m)
+    }
+
+    /// Writes what is pending -- under the database's lock, where the
+    /// appends leave it to the durability, but only once a handover is due
+    /// -- and hands back the file mapped as far as it now goes: the mapping
+    /// the stores read from, grown over the appends, or where they outgrew
+    /// its room a new one.
+    #[cfg(all(unix, target_pointer_width = "64"))]
+    fn written_through(&mut self) -> Result<Option<crate::store::Base>> {
+        let mut disk = lock(&self.disk);
+        disk.write_pending(&self.pending)?;
+        let len = disk.file.metadata()?.len() as usize;
+        if let Some(m) = self.mapping.as_ref().filter(|m| m.cover(len)) {
+            return Ok(Some(m.clone()));
+        }
+        let m = Arc::new(Mapping::with_room(&disk.file, len)?);
+        self.mapping = Some(m.clone());
+        Ok(Some(m))
+    }
+
+    /// The disk is held by whoever writes or fsyncs the file, and nothing
+    /// but a durability takes it without the database's lock: held, one is
+    /// under way.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn syncing(&self) -> bool {
+        matches!(
+            self.disk.try_lock(),
+            Err(std::sync::TryLockError::WouldBlock)
+        )
+    }
+
+    /// Pushes the whole file to disk, the bytes an earlier process wrote
+    /// and never synced included. After a crash of the process alone they
+    /// are in the file but may be only in the kernel's cache: a primary
+    /// calls this before it tells a replica they exist.
+    /// The pending appends written, and no fsync: past the process's end,
+    /// in the kernel's cache.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn write_out(&mut self) -> Result<()> {
+        lock(&self.disk).write_pending(&self.pending)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn write_behind(&mut self, all: bool) -> Option<Durability> {
+        self.behind = true;
+        let held = lock(&self.pending).len();
+        if held == 0 || (held < BEHIND_AT && !all) {
+            return None;
+        }
+        let (disk, pending) = (Arc::clone(&self.disk), Arc::clone(&self.pending));
+        // Not while a durability fsyncs the file: it writes them itself, and
+        // the request this runs for, a buffered write, would wait out the
+        // fsync -- a ledger's transfer beside the syncer's waited 126 ms.
+        // Left, they are the next write behind's.
+        Some(Box::new(move || match disk.try_lock() {
+            Ok(mut disk) => disk.write_pending(&pending),
+            Err(std::sync::TryLockError::WouldBlock) => Ok(()),
+            Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner().write_pending(&pending),
+        }))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn written_all(&self) -> bool {
+        lock(&self.pending).is_empty()
+    }
+
+    fn sync_existing(&mut self) -> Result<()> {
+        let disk = lock(&self.disk);
+        disk.file.sync_data()?;
+        Ok(())
+    }
+
+    /// Writes the pending appends and pushes them to disk. Because of the
+    /// buffer, the last writes can be lost if the process dies before `sync`
+    /// is called; fennecdb never fsyncs every write anyway -- this buffer
+    /// extends that model.
+    fn sync(&mut self) -> Result<()> {
+        lock(&self.disk).sync(&self.pending, self.appended)
+    }
+    /// Touches no file: the write and the fsync are both the durability's,
+    /// which runs without the database's lock.
+    fn flush(&mut self) -> Result<Option<Durability>> {
+        let (disk, pending, upto) = (
+            Arc::clone(&self.disk),
+            Arc::clone(&self.pending),
+            self.appended,
+        );
+        Ok(Some(Box::new(move || lock(&disk).sync(&pending, upto))))
+    }
+}
+
+/// The image written straight into the side file a rewrite renames over the
+/// database: `at` counts what went in, and a patch seeks back to it.
+struct FileImage {
+    w: BufWriter<File>,
+    at: u64,
+}
+
+impl ImageOut for FileImage {
+    fn write(&mut self, bytes: &[u8]) -> Result<()> {
+        self.w.write_all(bytes)?;
+        self.at += bytes.len() as u64;
+        Ok(())
+    }
+
+    fn at(&self) -> u64 {
+        self.at
+    }
+
+    fn patch(&mut self, at: u64, bytes: &[u8]) -> Result<()> {
+        // What is buffered has to be in the file before the seek moves off
+        // its end.
+        self.w.flush()?;
+        let f = self.w.get_mut();
+        f.seek(SeekFrom::Start(at))?;
+        f.write_all(bytes)?;
+        f.seek(SeekFrom::End(0))?;
+        Ok(())
+    }
+}
+
+impl Drop for FileSink {
+    fn drop(&mut self) {
+        // Do not let buffered leftovers vanish silently.
+        let mut disk = lock(&self.disk);
+        let written = disk.write_pending(&self.pending);
+        #[cfg(unix)]
+        if written.is_ok() && disk.failed.is_none() {
+            let Disk { tail, file, .. } = &mut *disk;
+            tail.close(file);
+        }
+        let _ = written;
+    }
+}
+
+/// A file mapped read-only into the address space: its pages come in as
+/// they are read and can be dropped again by the operating system, which
+/// writes nothing back -- they are the file's. `mmap` is declared here
+/// rather than taken from a crate, as `signal` is in fennec-server.
+///
+/// The file is never truncated or written in place while mapped: writes
+/// append past the mapped length, and a rewrite (`compact`, `checkpoint`)
+/// renames a new file over it, so the mapping keeps the old one's pages
+/// until it is dropped.
+///
+/// A database's own file is mapped with room past its end (`with_room`),
+/// which the appends grow into: the pages a write adds to the file are the
+/// mapping's once the write is made, on Linux and on macOS alike, so the
+/// records written since the open are taken in where they lie
+/// ([`Database::hand_over`]) rather than through a new mapping, whose pages
+/// every reader would fault in again -- and the old one's torn down under
+/// the write lock.
+#[cfg(all(unix, target_pointer_width = "64"))]
+pub struct Mapping {
+    ptr: *mut u8,
+    /// What is mapped: the file's length when it was, and the room.
+    reserved: usize,
+    /// How much of it the file holds, as far as a reader looks.
+    len: std::sync::atomic::AtomicUsize,
+}
+
+/// The room a database's file is mapped with past its end: the file's own
+/// length, and a gigabyte at the least. It is address space alone, of which
+/// a 64-bit process has terabytes, and it is taken again, twice the file's
+/// length, only when the file outgrows it.
+#[cfg(all(unix, target_pointer_width = "64"))]
+const ROOM: usize = 1 << 30;
+
+// The pages are read-only and shared by nothing but readers.
+#[cfg(all(unix, target_pointer_width = "64"))]
+unsafe impl Send for Mapping {}
+#[cfg(all(unix, target_pointer_width = "64"))]
+unsafe impl Sync for Mapping {}
+
+#[cfg(all(unix, target_pointer_width = "64"))]
+extern "C" {
+    fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, offset: i64) -> *mut u8;
+    fn munmap(addr: *mut u8, len: usize) -> i32;
+    fn madvise(addr: *mut u8, len: usize, advice: i32) -> i32;
+}
+
+/// `madvise`'s "the pages will be needed": the kernel reads them in ahead
+/// of the faults. 3 on Linux and on macOS.
+#[cfg(all(unix, target_pointer_width = "64"))]
+const MADV_WILLNEED: i32 = 3;
+
+/// How much of a file [`touch`] asks for at a time.
+#[cfg(all(unix, target_pointer_width = "64"))]
+const TOUCH_STEP: usize = 16 << 20;
+
+#[cfg(all(unix, target_pointer_width = "64"))]
+impl Mapping {
+    /// The first `len` bytes of `file`. A mapping cannot be empty; a file
+    /// always holds at least the magic by then.
+    fn of(file: &File, len: usize) -> Result<Mapping> {
+        Mapping::reserving(file, len, len)
+    }
+
+    /// [`Self::of`], with room past the file's end for what is appended to
+    /// it ([`ROOM`]); the file alone where the system will not map that
+    /// much -- an address space limit -- and a handover then maps it anew.
+    fn with_room(file: &File, len: usize) -> Result<Mapping> {
+        Mapping::reserving(file, len, len + len.max(ROOM)).or_else(|_| Mapping::of(file, len))
+    }
+
+    fn reserving(file: &File, len: usize, reserved: usize) -> Result<Mapping> {
+        use std::os::fd::AsRawFd;
+        const PROT_READ: i32 = 1;
+        const MAP_SHARED: i32 = 1;
+        let ptr = unsafe {
+            mmap(
+                std::ptr::null_mut(),
+                reserved,
+                PROT_READ,
+                MAP_SHARED,
+                file.as_raw_fd(),
+                0,
+            )
+        };
+        if ptr as isize == -1 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(Mapping {
+            ptr,
+            reserved,
+            len: std::sync::atomic::AtomicUsize::new(len),
+        })
+    }
+
+    /// Takes the file as `len` bytes long, where the mapping reaches that
+    /// far. A reader never looks past what the file holds: a page past its
+    /// end is the process's end (`SIGBUS`).
+    fn cover(&self, len: usize) -> bool {
+        if len > self.reserved {
+            return false;
+        }
+        // Grown under the database's write lock, which is what orders it
+        // before the reads of what it covers.
+        self.len.store(len, std::sync::atomic::Ordering::Relaxed);
+        true
+    }
+}
+
+/// Brings every page of `m` into memory before anything waits on one: a
+/// step of it at a time asked for ahead ([`MADV_WILLNEED`]), then a byte of
+/// each of its pages read. Read a fault at a time, the pages came in a few
+/// at a time, and on this 8 GB Mac a compact's new 1.2 GB file took 3.0 to
+/// 3.3 s at about 400 MB/s -- the writer beside it at 11-15k updates a
+/// second, the file's old pages it read pushed out meanwhile, and the new
+/// ones gone again by the swap: the 2 s after it ran at 21-39k. Asked for
+/// first, the kernel reads a step in large requests: 0.6 to 0.8 s, and
+/// 90-150k a second after the swap (`make compact-bench`).
+#[cfg(all(unix, target_pointer_width = "64"))]
+pub fn touch(m: &crate::store::Base) {
+    let bytes: &[u8] = (**m).as_ref();
+    let mut sum = 0u8;
+    // A step starts a whole number of steps into the mapping, which starts
+    // on a page: what `madvise` asks of an address.
+    for from in (0..bytes.len()).step_by(TOUCH_STEP) {
+        let to = (from + TOUCH_STEP).min(bytes.len());
+        // Advice: a refusal leaves the reads below to fault the pages in.
+        unsafe {
+            madvise(
+                bytes.as_ptr().add(from) as *mut u8,
+                to - from,
+                MADV_WILLNEED,
+            )
+        };
+        for at in (from..to).step_by(4096) {
+            // Volatile, or the compiler drops reads whose result is unused.
+            sum ^= unsafe { std::ptr::read_volatile(bytes.as_ptr().add(at)) };
+        }
+    }
+    std::hint::black_box(sum);
+}
+
+#[cfg(all(unix, target_pointer_width = "64"))]
+impl AsRef<[u8]> for Mapping {
+    fn as_ref(&self) -> &[u8] {
+        let len = self.len.load(std::sync::atomic::Ordering::Relaxed);
+        unsafe { std::slice::from_raw_parts(self.ptr, len) }
+    }
+}
+
+#[cfg(all(unix, target_pointer_width = "64"))]
+impl Drop for Mapping {
+    fn drop(&mut self) {
+        unsafe { munmap(self.ptr, self.reserved) };
+    }
+}
+
+/// The file a rewrite beside the database writes (`compact` on a server):
+/// the image with no lock held, and then, under the write lock, the writes
+/// made meanwhile, before the sink takes it in place of the database's file
+/// ([`Sink::adopt`]). Removed when dropped unless it was adopted.
+#[cfg(all(unix, target_pointer_width = "64"))]
+pub struct SideFile {
+    path: PathBuf,
+    out: FileImage,
+    adopted: bool,
+    /// On Linux, whether the file is written past the page cache
+    /// ([`Self::past_cache`]), and how far it has been synced and its
+    /// pages let go of.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    past: bool,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    dropped: u64,
+}
+
+/// How much of a side file written past the cache is written before it is
+/// synced and its pages let go of, on Linux: the pages of a written file
+/// stay in the cache until they are on disk, so they go a stretch at a
+/// time rather than all at the end.
+#[cfg(all(
+    unix,
+    target_pointer_width = "64",
+    any(target_os = "linux", target_os = "android")
+))]
+const PAST_STEP: u64 = 64 << 20;
+
+#[cfg(all(unix, target_pointer_width = "64"))]
+extern "C" {
+    #[cfg(target_vendor = "apple")]
+    fn fcntl(fd: i32, cmd: i32, ...) -> i32;
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    fn posix_fadvise(fd: i32, offset: i64, len: i64, advice: i32) -> i32;
+}
+
+#[cfg(all(unix, target_pointer_width = "64"))]
+impl SideFile {
+    pub fn create(path: &Path) -> Result<SideFile> {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)?;
+        Ok(SideFile {
+            path: path.to_path_buf(),
+            out: FileImage {
+                w: BufWriter::with_capacity(WRITE_BUF, file),
+                at: 0,
+            },
+            adopted: false,
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            past: false,
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            dropped: 0,
+        })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Has what is written from here on kept out of the page cache, where
+    /// the system lets a file ask: a compact whose new file would not fit
+    /// in memory beside the old one ([`crate::cache::room`]). Written
+    /// through the cache, its pages pushed out the old file's, which every
+    /// read and update needs until the swap: a container held to 2 GB
+    /// compacting a 1.5 GB file into 1.1 ran its writer at 5 to 6k updates
+    /// a second through the compact, 8k with the pages dropped once the
+    /// image was written, and 18 to 25k with them dropped as it went.
+    /// macOS's `F_NOCACHE`; on Linux the file synced and its pages dropped
+    /// (`POSIX_FADV_DONTNEED`) every [`PAST_STEP`].
+    pub fn past_cache(&mut self) {
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        {
+            self.past = true;
+        }
+        #[cfg(target_vendor = "apple")]
+        {
+            use std::os::fd::AsRawFd;
+            const F_NOCACHE: i32 = 48;
+            // Advice: refused, the file is written through the cache.
+            unsafe { fcntl(self.out.w.get_ref().as_raw_fd(), F_NOCACHE, 1i32) };
+        }
+    }
+
+    /// Pushes what is written to disk: the image, before the lock is taken
+    /// for the rest, so that the fsync under it covers only that.
+    pub fn sync(&mut self) -> Result<()> {
+        self.out.w.flush()?;
+        self.out.w.get_ref().sync_data()?;
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        if self.past {
+            use std::os::fd::AsRawFd;
+            const POSIX_FADV_DONTNEED: i32 = 4;
+            // The pages are on disk now, and dropping them is advice too.
+            unsafe { posix_fadvise(self.out.w.get_ref().as_raw_fd(), 0, 0, POSIX_FADV_DONTNEED) };
+            self.dropped = self.out.at;
+        }
+        Ok(())
+    }
+
+    /// The file as written so far, mapped: where the stores of the image
+    /// read from once it is the database's file. Appends after it land past
+    /// the mapping, as a database's own do.
+    pub fn map(&mut self) -> Result<crate::store::Base> {
+        self.out.w.flush()?;
+        let m = Mapping::of(self.out.w.get_ref(), self.out.at as usize)?;
+        Ok(Arc::new(m))
+    }
+
+    /// Taken in place of the database's file: not to be removed.
+    pub fn adopted(&mut self) {
+        self.adopted = true;
+    }
+}
+
+#[cfg(all(unix, target_pointer_width = "64"))]
+impl ImageOut for SideFile {
+    fn write(&mut self, bytes: &[u8]) -> Result<()> {
+        self.out.write(bytes)?;
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        if self.past && self.out.at - self.dropped >= PAST_STEP {
+            self.sync()?;
+        }
+        Ok(())
+    }
+    fn at(&self) -> u64 {
+        self.out.at()
+    }
+    fn patch(&mut self, at: u64, bytes: &[u8]) -> Result<()> {
+        self.out.patch(at, bytes)
+    }
+}
+
+#[cfg(all(unix, target_pointer_width = "64"))]
+impl Drop for SideFile {
+    fn drop(&mut self) {
+        if !self.adopted {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+/// Makes a rename or a removal in `path`'s directory durable. The new name
+/// is an entry in the directory, and until the directory is synced a power
+/// loss can bring back the old one: the file from before a `compact`,
+/// without the writes the image had taken in. Public for the files a server
+/// keeps beside a database (fennec-http's `.follows`); nothing where the
+/// target is not unix, as the rest of this module.
+#[cfg(unix)]
+pub fn sync_dir(path: &Path) -> Result<()> {
+    let dir = match path.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d,
+        _ => Path::new("."),
+    };
+    File::open(dir)?.sync_all()?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+pub fn sync_dir(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+/// What wraps a file's sink before the database takes it: a primary's
+/// `Tee` (fennec-http) goes around it here, fsyncing what the file already
+/// holds before a replica can be sent any of it.
+pub type Wrap<'a> = dyn FnOnce(Box<dyn Sink>) -> Result<Box<dyn Sink>> + 'a;
+
+/// Opens a fennecdb file (creating it when missing): mapped where the target
+/// maps files, read into memory where it does not. A 1 GB file of 2.3
+/// million rows with a hash and an ordered index opened this way holds 188
+/// MB rather than 1 095, and its `compact` peaks at 236 MB rather than
+/// 2 012.
+pub fn open(path: impl AsRef<Path>) -> Result<Database> {
+    open_with(path, true, Box::new(Ok))
+}
+
+/// [`open`] -- or [`open_in_memory`] when `mapped` is false -- with the
+/// file's sink wrapped before the database takes it. The flag reaches
+/// every server path (`fennec-server --no-mmap`), replicated files and tenant
+/// directories included.
+pub fn open_with(path: impl AsRef<Path>, mapped: bool, wrap: Box<Wrap<'_>>) -> Result<Database> {
+    open_into(Database::new(), path, mapped, wrap)
+}
+
+/// [`open_with`] as a server opens its file: the vectors the open would
+/// link into a graph -- the writes after the last checkpoint, every vector
+/// of a graph it cannot restore -- are left for a thread beside the queries
+/// to link ([`Database::defer_linking`]), and the file opens in the time
+/// its documents take to read.
+pub fn open_serving(path: impl AsRef<Path>, mapped: bool, wrap: Box<Wrap<'_>>) -> Result<Database> {
+    let mut db = Database::new();
+    db.defer_linking();
+    open_into(db, path, mapped, wrap)
+}
+
+fn open_into(
+    db: Database,
+    path: impl AsRef<Path>,
+    mapped: bool,
+    wrap: Box<Wrap<'_>>,
+) -> Result<Database> {
+    #[cfg(all(unix, target_pointer_width = "64"))]
+    if mapped {
+        return open_mapped_into(db, path, wrap);
+    }
+    let _ = mapped;
+    open_in_memory_into(db, path, wrap)
+}
+
+/// Opens a fennecdb file (creating it when missing) and reads it into memory,
+/// records and all; a last record a crash cut short is cut off the file.
+/// What a network file system wants, whose read errors a mapping would turn
+/// into the process's death, and what has `--max-memory` count the data.
+pub fn open_in_memory(path: impl AsRef<Path>) -> Result<Database> {
+    open_in_memory_into(Database::new(), path, Box::new(Ok))
+}
+
+fn open_in_memory_into(
+    mut db: Database,
+    path: impl AsRef<Path>,
+    wrap: Box<Wrap<'_>>,
+) -> Result<Database> {
+    let (mut sink, existing) = FileSink::open(path)?;
+    // A new file is loaded too, as a mapped one is: it holds the magic by
+    // now, which the bytes the database counts as its file's must include.
+    if existing.len() >= MAGIC.len() {
+        let whole = db.load(&existing)?;
+        if whole < existing.len() {
+            sink.cut(whole)?;
+        }
+    }
+    db.set_sink(wrap(Box::new(sink))?);
+    Ok(db)
+}
+
+/// [`open_in_memory`], with the documents left in the file: it is mapped
+/// rather than read, and a document is decoded from its pages. What the
+/// process holds is what is derived from the documents -- the offset index,
+/// the hash, ordered and text indexes, the graph -- and the documents
+/// written since the open until they are handed over to the file
+/// ([`Database::hand_over`]). A rewrite (`checkpoint`, `compact`) writes the
+/// new file and the stores are pointed at it, so the old one is let go of.
+///
+/// This is what [`open`] does where the target maps files, which is every
+/// one fennecdb serves from.
+#[cfg(all(unix, target_pointer_width = "64"))]
+pub fn open_mapped(path: impl AsRef<Path>) -> Result<Database> {
+    open_mapped_into(Database::new(), path, Box::new(Ok))
+}
+
+#[cfg(all(unix, target_pointer_width = "64"))]
+fn open_mapped_into(
+    mut db: Database,
+    path: impl AsRef<Path>,
+    wrap: Box<Wrap<'_>>,
+) -> Result<Database> {
+    let (mut file, path) = FileSink::create(path)?;
+    let len = file.seek(SeekFrom::End(0))? as usize;
+    let mapping = Arc::new(Mapping::with_room(&file, len)?);
+    let mut sink = FileSink::over(file, path);
+    sink.mapping = Some(mapping.clone());
+    // A new file is loaded this way too -- it holds the magic by now -- so
+    // the database is a mapped one from the start, and its first rewrite
+    // points the stores at the file it wrote. Left out, a new file, a new
+    // tenant and a replica taking its first image kept everything in
+    // memory until the process restarted.
+    let whole = db.load_mapped(mapping)?;
+    if whole < len {
+        // The pages past the cut stay mapped and are never read: no record
+        // points there.
+        sink.cut(whole)?;
+    }
+    db.set_sink(wrap(Box::new(sink))?);
+    Ok(db)
+}
+
+/// Opens a file to read it, and leaves it as it is: nothing is created,
+/// cut, synced or written, and every write is refused. What a tool that
+/// only looks -- `fennec types` -- opens a file a server may be writing
+/// with: from outside, a record the server is in the middle of appending
+/// looks torn, and cutting it there destroyed that write, and the file with
+/// it once the server's next append landed past the cut.
+///
+/// Nor is the sync log beside it applied ([`crate::synclog`]): writing it
+/// back is a write. While the process that keeps the log runs, or after it
+/// ended on its own, the file holds those writes already; after the machine
+/// went down, they are in the log until the file is opened to be written
+/// -- so `fennec types`, or a raw copy of the file, taken then and before a
+/// server or the library opens it again, may lack the last durable writes.
+pub fn open_read_only(path: impl AsRef<Path>) -> Result<Database> {
+    let mut db = Database::new();
+    #[cfg(all(unix, target_pointer_width = "64"))]
+    {
+        let file = File::open(path)?;
+        let len = file.metadata()?.len() as usize;
+        if len < MAGIC.len() {
+            return Err(crate::error::Error::Corrupt(
+                "invalid fennecdb signature".into(),
+            ));
+        }
+        db.load_mapped(Arc::new(Mapping::of(&file, len)?))?;
+    }
+    #[cfg(not(all(unix, target_pointer_width = "64")))]
+    db.load(&std::fs::read(path)?)?;
+    db.set_sink(Box::new(ReadOnly));
+    Ok(db)
+}
+
+/// The sink of a database [`open_read_only`] opened.
+struct ReadOnly;
+
+impl Sink for ReadOnly {
+    fn append(&mut self, _bytes: &[u8]) -> Result<()> {
+        Err(crate::error::Error::ReadOnly(
+            "the file was opened to be read".into(),
+        ))
+    }
+    fn rewrite(&mut self, _bytes: &[u8]) -> Result<()> {
+        self.append(&[])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A durability finds its bytes on disk when a later one got there
+    /// first, and runs no fsync of its own; what it wrote is the file's
+    /// tail, in the order it was appended, rewrite or not.
+    #[test]
+    fn durabilities_share_an_fsync_and_keep_the_order() {
+        let dir = std::env::temp_dir().join(format!("fennecdb-fs-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("share.fennec");
+        let _ = std::fs::remove_file(&path);
+        let (mut sink, _) = FileSink::open(&path).unwrap();
+
+        sink.append(b"one ").unwrap();
+        let first = sink.flush().unwrap().unwrap();
+        sink.append(b"two ").unwrap();
+        let second = sink.flush().unwrap().unwrap();
+        // The later one writes both and fsyncs once; the earlier one then
+        // has nothing left to do.
+        second().unwrap();
+        first().unwrap();
+        assert_eq!(lock(&sink.disk).fsyncs, 1);
+
+        sink.append(b"three").unwrap();
+        sink.sync().unwrap();
+        assert_eq!(lock(&sink.disk).fsyncs, 2);
+        let on_disk = std::fs::read(&path).unwrap();
+        assert!(on_disk.ends_with(b"one two three"), "{on_disk:?}");
+
+        // A rewrite replaces the file with an image that already holds
+        // everything appended: what was pending is not written after it.
+        sink.append(b" lost").unwrap();
+        let before = sink.flush().unwrap().unwrap();
+        sink.rewrite(b"IMAGE").unwrap();
+        before().unwrap();
+        sink.append(b" after").unwrap();
+        sink.sync().unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"IMAGE after");
+
+        drop(sink);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    /// With a sync log, durabilities handed out together share one entry
+    /// as they share an fsync; and a log that cannot be written fails the
+    /// sink as a file that cannot be synced does -- nothing after it is
+    /// told it is durable.
+    #[cfg(unix)]
+    #[test]
+    fn durabilities_share_a_log_entry_and_a_failed_one_stops_the_sink() {
+        let dir = std::env::temp_dir().join(format!("fennecdb-fs-log-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("share.fennec");
+        keep_sync_log(true);
+        let (mut sink, _) = FileSink::open(&path).unwrap();
+        keep_sync_log(false);
+        let log = crate::synclog::path_for(&path);
+
+        sink.append(b"zero ").unwrap();
+        sink.sync().unwrap();
+        sink.append(b"one ").unwrap();
+        sink.sync().unwrap();
+        assert_eq!(crate::synclog::SyncLog::entries(&log), 1);
+        sink.append(b"two ").unwrap();
+        let first = sink.flush().unwrap().unwrap();
+        sink.append(b"three ").unwrap();
+        let second = sink.flush().unwrap().unwrap();
+        second().unwrap();
+        first().unwrap();
+        assert_eq!(crate::synclog::SyncLog::entries(&log), 2);
+        assert_eq!(lock(&sink.disk).fsyncs, 3);
+
+        if let Some(l) = lock(&sink.disk).tail.log.as_mut() {
+            l.break_writes(&log);
+        }
+        sink.append(b"four ").unwrap();
+        assert!(sink.sync().is_err());
+        sink.append(b"five ").unwrap();
+        assert!(sink.sync().is_err(), "the sink stays failed");
+        drop(sink);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A record appended for its durability waits for it, however far past
+    /// the buffer it goes, and the durability puts it on disk in its place;
+    /// a plain append that far past is written there and then.
+    #[test]
+    fn a_deferred_append_waits_for_its_durability() {
+        let dir = std::env::temp_dir().join(format!("fennecdb-fs-defer-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("defer.fennec");
+        let _ = std::fs::remove_file(&path);
+        let (mut sink, _) = FileSink::open(&path).unwrap();
+        let len = |p: &Path| std::fs::metadata(p).unwrap().len() as usize;
+
+        sink.append(b"head ").unwrap();
+        let before = len(&path);
+        let big = vec![7u8; 2 * WRITE_BUF];
+        sink.append_deferred(&big).unwrap();
+        assert_eq!(len(&path), before);
+        let durable = sink.flush().unwrap().unwrap();
+        durable().unwrap();
+        let on_disk = std::fs::read(&path).unwrap();
+        assert!(on_disk.ends_with(&big));
+        assert!(on_disk[..on_disk.len() - big.len()].ends_with(b"head "));
+
+        sink.append(&big).unwrap();
+        assert_eq!(len(&path), on_disk.len() + big.len());
+
+        drop(sink);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    /// An append past the buffer does not wait for a durability that holds
+    /// the disk -- it runs under the database's lock, and the fsync would
+    /// hold every request -- but keeps the bytes until it is done, up to
+    /// `WRITE_HELD`, past which it waits; the bytes reach the file in the
+    /// order they came. The disk is held here as an fsync holds it, and let
+    /// go once the buffer is past `WRITE_HELD`, an event, not a time.
+    #[test]
+    fn an_append_past_the_buffer_does_not_wait_out_an_fsync() {
+        let dir = std::env::temp_dir().join(format!("fennecdb-fs-busy-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("busy.fennec");
+        let _ = std::fs::remove_file(&path);
+        let (mut sink, _) = FileSink::open(&path).unwrap();
+        let len = |p: &Path| std::fs::metadata(p).unwrap().len() as usize;
+        let start = len(&path);
+        assert!(!sink.syncing());
+
+        let (disk, pending) = (Arc::clone(&sink.disk), Arc::clone(&sink.pending));
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let holder = std::thread::spawn(move || {
+            let guard = lock(&disk);
+            held_tx.send(()).unwrap();
+            while lock(&pending).len() < WRITE_HELD {
+                std::thread::yield_now();
+            }
+            drop(guard);
+        });
+        held_rx.recv().unwrap();
+        assert!(sink.syncing());
+        let chunk = vec![1u8; WRITE_BUF / 4];
+        let mut sent = Vec::new();
+        for i in 0..8 {
+            let chunk: Vec<u8> = chunk.iter().map(|b| b + i).collect();
+            sink.append(&chunk).unwrap();
+            sent.extend_from_slice(&chunk);
+        }
+        // Twice the buffer, and nothing written while the disk is held.
+        assert_eq!(len(&path), start);
+        while sent.len() < WRITE_HELD {
+            sink.append(&chunk).unwrap();
+            sent.extend_from_slice(&chunk);
+        }
+        // Past `WRITE_HELD` the append waited for the disk and wrote.
+        holder.join().unwrap();
+        assert_eq!(len(&path), start + sent.len());
+        assert!(!sink.syncing());
+        sink.append(b"tail").unwrap();
+        sink.sync().unwrap();
+        let on_disk = std::fs::read(&path).unwrap();
+        assert_eq!(&on_disk[start..start + sent.len()], &sent[..]);
+        assert!(on_disk.ends_with(b"tail"));
+
+        drop(sink);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    /// An image that cannot be written leaves the old file standing, and the
+    /// appends pending when it began still go to it: a durability handed out
+    /// before the rewrite finds its bytes on disk rather than being told
+    /// they are there when they are in neither file.
+    #[test]
+    fn a_failed_rewrite_leaves_the_pending_appends_to_the_old_file() {
+        let dir = std::env::temp_dir().join(format!("fennecdb-fs-fail-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("fail.fennec");
+        let _ = std::fs::remove_file(&path);
+        let (mut sink, _) = FileSink::open(&path).unwrap();
+
+        sink.append(b"kept").unwrap();
+        let durable = sink.flush().unwrap().unwrap();
+        let err = sink.rewrite_with(&mut |out| {
+            out.write(b"half an ima")?;
+            Err(crate::error::Error::Io("no space left on device".into()))
+        });
+        assert!(err.is_err());
+        durable().unwrap();
+        assert!(std::fs::read(&path).unwrap().ends_with(b"kept"));
+        assert!(!beside(&path, "compacting").exists());
+        // The sink is not failed: the next append and sync go on.
+        sink.append(b" more").unwrap();
+        sink.sync().unwrap();
+        assert!(std::fs::read(&path).unwrap().ends_with(b"kept more"));
+
+        drop(sink);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+}

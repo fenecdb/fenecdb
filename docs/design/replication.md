@@ -1,12 +1,12 @@
 # Replication and archives
 
-The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *Replication and archives*: replication, a node's tenants archived over one stream, `/_changes`, `Fenec-After`, sealed archives and `--follow`. Each section below is a paragraph moved word for word from CLAUDE.md, which keeps its rule in a few sentences and links here; "above" and "below" in them refer to the order the invariants had there, which [README.md](README.md#the-original-order) lists.
+The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *Replication and archives*: replication, a node's tenants archived over one stream, `/_changes`, `Fennec-After`, sealed archives and `--follow`. Each section below is a paragraph moved word for word from CLAUDE.md, which keeps its rule in a few sentences and links here; "above" and "below" in them refer to the order the invariants had there, which [README.md](README.md#the-original-order) lists.
 
 ## Replication
 
 **Replication ships only what is on disk, numbered by the change counter.**
 A primary (`--replication-token`) writes through a `Tee`
-(`fenec-http/src/replication.rs`): a write's record enters a bounded feed in
+(`fennec-http/src/replication.rs`): a write's record enters a bounded feed in
 memory as it is appended, and is sent once an fsync has covered it -- so a
 primary back from a crash holds every write any replica was sent. A replica
 applies them with `Database::apply`, which does the write path's index upkeep
@@ -21,7 +21,7 @@ the primary's history passed through and sent an image otherwise, and a
 following database refuses writes (`Error::ReadOnly`, 403). A promotion
 halts the follower before it forks, and a follower reconnecting to a
 primary that is gone walks away from the dial at the halt
-(`fenec_http::dial::connect_unless`: the lookup and the connect on a
+(`fennec_http::dial::connect_unless`: the lookup and the connect on a
 thread of their own, the stop flag looked at every 10 ms, the stream
 handed to `halt` before its request goes out): waited for, the halt took
 the connect's 5 s where the dead machine's address swallowed packets, and
@@ -41,25 +41,25 @@ a socket's bytes reach the replica after the process is killed, though
 not after the machine dies. Lag is 0.04 ms p50 under `--sync always`
 (0.14 before the wait) and at most 283 ms under `--sync 250`, durable
 writes 254 a second against 246; ten failovers under `always` lost no
-acknowledged write. An archive (`fenec archive`,
-`fenec-http/src/archive.rs`) is the same stream written to files, each write
-with the time the primary appended it; `fenec restore` is an image plus the
-archived writes up to a time or a change, forked -- a fenecdb file is exactly
+acknowledged write. An archive (`fennec archive`,
+`fennec-http/src/archive.rs`) is the same stream written to files, each write
+with the time the primary appended it; `fennec restore` is an image plus the
+archived writes up to a time or a change, forked -- a fennecdb file is exactly
 that, so a restore is a concatenation checked by opening it. An archive
 takes images of its own end (`Archive::consolidate`, `--image-every`, an
 hour): it kept its first image for good, and a restore replayed every write
 since. The segment being written ends at the next write after one, so
 `prune` (`--keep`) lets go of whole segments -- in the open segment the
-writes before an image stayed until it reached 64 MB. `fenec verify` reads
+writes before an image stayed until it reached 64 MB. `fennec verify` reads
 an archive as a restore would. A segment is closed and fsynced before the
 next begins and an image renamed into place, so a sync tool's copy, taken
 a file at a time while the archive writes, is the archive up to a moment:
-fenecdb speaks no TLS, and S3 and R2 are reached with `rclone sync`.
+fennecdb speaks no TLS, and S3 and R2 are reached with `rclone sync`.
 
 ## A node's archive
 
-**A node's tenants are archived over one stream** (`fenec archive
---tenants`, `fenec_http::node_stream` on the node, `node_archive` the
+**A node's tenants are archived over one stream** (`fennec archive
+--tenants`, `fennec_http::node_stream` on the node, `node_archive` the
 archiver). A tenant's own stream is a connection and a thread on the node
 for as long as it runs, one of `--max-connections`, and holds its tenant
 open: archived so, a node of 1 000 tenants of ten rows and one of 64 MB held
@@ -137,7 +137,7 @@ machine went down) is opened, the log holding durable writes the file lacks.
 The feed keeps the lineage the database last wrote, read off the history
 records `Tee::append` passes, and the stream sends it (`L`) before the
 writes after a promotion: a promoted standby's archive goes on with no
-image. The archiver keeps `<root>/<tenant>/` as `fenec archive` keeps one,
+image. The archiver keeps `<root>/<tenant>/` as `fennec archive` keeps one,
 through the same `archive::Writer` the single archiver now writes with; a
 segment file is open only while its tenant writes (a thousand would pass a
 macOS shell's 256 descriptors), the `history` file is written only when it
@@ -208,12 +208,12 @@ tenant's read straight to the node) stayed 21.5 us p50 against main's 21.6,
 eight turns a side, with the stream's handler out of line and cold (inlined
 into the connection loop, four turns a side read 21.5-22.0 against
 15.7-21.5: main ran in a 15-16 us mode three times in twelve, this build
-never). Nothing below `fenec-http` changed.
+never). Nothing below `fennec-http` changed.
 
 ## Change data capture
 
 **`/_changes` reads the writes on disk, documents and all** (`cdc.rs`,
-`fenec-server --cdc`; a primary's feed with `--replication-token`). A
+`fennec-server --cdc`; a primary's feed with `--replication-token`). A
 subscription keeps a query's rows and is reseeded past its ring of ids,
 which holds no documents; change data capture has to see every write once.
 So it reads the records the feed keeps for replicas (`Feed::changes_after`:
@@ -222,11 +222,11 @@ an image) and has the engine read them out a write at a time
 (`Database::changes_in`, native only): numbered as the counter numbered
 them, each document by its collection's schema as the database knows it or
 as a create among the records made it. `since` is the last write a
-consumer has and `Fenec-Next` the last one an answer holds; a cursor inside
-a block's record goes on after the write it names. `Fenec-Seq` on every
+consumer has and `Fennec-Next` the last one an answer holds; a cursor inside
+a block's record goes on after the write it names. `Fennec-Seq` on every
 answer is the last write the database holds (`Feed::seq`, read after the
 page, so never short of it), on disk or not and of the collections the
-stream leaves out: a `Fenec-Next` that has reached it has every write
+stream leaves out: a `Fennec-Next` that has reached it has every write
 there is, where an empty page alone could not tell a consumer that had
 caught up from one whose writes were not on disk yet, and Kestrel's
 worker waited out 600 ms of empty pages to be sure. Only what an fsync
@@ -266,8 +266,8 @@ another request made a moment before is not answered as there before its
 fsync. Each answers where the consumer stands after it -- a commit past
 nothing but cursors writes nothing and leaves it where it was, which
 reads the same writes, and answered as sent it named a place no list and
-no later `POST` found -- and `Fenec-Seq`, so a read sent after it
-(`Fenec-After`) to a replica finds the consumer as it left it. A `since`
+no later `POST` found -- and `Fennec-Seq`, so a read sent after it
+(`Fennec-After`) to a replica finds the consumer as it left it. A `since`
 is taken up to the last write the database holds (`change_seq` under the
 lock), as a read's cursor is (`Tail::Ahead`), not the last on disk: the
 feed drops chunks by size whether or not they are on disk, so a 410
@@ -292,14 +292,14 @@ token is an `Option`: an empty one matched an empty `Bearer`). Keeping it
 cost nothing measurable, 16 400 single puts a second over HTTP either way,
 and 9 000 rows of 128 dimensions read back at 283 000 a second.
 
-## Fenec-After
+## Fennec-After
 
 **A read can wait for a write on a replica** (`after` in `lib.rs`,
-`Hub::reached`). A write's answer carries `Fenec-Seq`, the change it left
+`Hub::reached`). A write's answer carries `Fennec-Seq`, the change it left
 the database at -- a field of `Response`, written into the head with no
-allocation -- and a request sent with `Fenec-After: <n>` is served once
+allocation -- and a request sent with `Fennec-After: <n>` is served once
 the database holds change `n`, or answered 504 with where it stands after
-`Fenec-Wait` (5 s, 30 at most): never from before the write. A replica's
+`Fennec-Wait` (5 s, 30 at most): never from before the write. A replica's
 applied records reach the hub through `Database::apply`'s watcher, so the
 wait is the subscriptions' `Condvar`. Held back, a replica answered a read
 without the header from before the write and with it after 300 ms, as the
@@ -316,7 +316,7 @@ where the database stood. Every other wait already came after its token
 -- a held claim is planned only past `authenticate`, `/_changes` and a
 subscription ask first, a replication stream its own token, `/_admin/` the
 admin token -- and the router forwards what the node refuses at once
-(`tests/token_first.rs`, fenec-shard's
+(`tests/token_first.rs`, fennec-shard's
 `a_refused_token_waits_for_nothing_through_the_router`: each refusal asks
 30 s for a write made only once it is in, so one that waited would be the
 wait's 504, never 401). A request without the header asks nothing more:
@@ -328,19 +328,19 @@ read -- a collection the client made may not be on the copy yet -- and
 before the head, so its 504 is a read's and a router's replica path sends
 it home; `/_changes` once its token, a scoped token's 403 and a feed are
 asked, holding a stream slot as its `wait` does. Both came before the
-wait: on a single server `GET /t/changes` sent `Fenec-After: 999999` and
-`Fenec-Wait: 300` was seeded at once where `/query` was 504 after 0.31 s,
+wait: on a single server `GET /t/changes` sent `Fennec-After: 999999` and
+`Fennec-Wait: 300` was seeded at once where `/query` was 504 after 0.31 s,
 and through a router a stream marked by Go's `Read()` or .NET's
 `AsRead()` -- a router sends a marked request near whatever its route --
 seeded from a read replica behind the client's own write, or left on the
-branch a failover abandoned, and a page's `Fenec-Seq` behind the write
+branch a failover abandoned, and a page's `Fennec-Seq` behind the write
 read as every write there is. A stream resumed with `since` waits too:
 `since` is the stream's cursor and the header the client's position, and
 `since` alone asks no wait -- a primary that lost writes in a failover
 never reaches a cursor of the old branch in its history, and reseeds as
 before. The server writes no `id:` line, so no client sends
 `Last-Event-ID`. A page waits for the change to be in the database, not
-on its disk: its `Fenec-Seq` is never behind the write, and the write
+on its disk: its `Fennec-Seq` is never behind the write, and the write
 comes on a later page once an fsync covers it (`/_changes`' own `wait`
 waits for writes after `since`). A marked stream on a copy that has not
 caught up, or refused another lineage's primary, is 503 before any of
@@ -355,7 +355,7 @@ on a replica whose follower is halted, each seen waiting, then served
 with the write, and 504 past the wait; `tests/token_first.rs` each refused
 at once with the header, and a good token's stream answered by the wait
 (its `ask` reads to the end its head names, so a stream served instead
-fails rather than hangs on its keep-alives); fenec-shard's
+fails rather than hangs on its keep-alives); fennec-shard's
 `a_marked_stream_after_a_write_waits_on_the_replica_or_goes_home` a
 stream and a page going home past the replica's wait, and a stream
 answered by the replica once it catches up, home cut off; Go's
@@ -364,8 +364,8 @@ answered by the replica once it catches up, home cut off; Go's
 write it cannot hold -- its link to the primary through a proxy the test
 cuts -- answered 504, and seeded with it once healed -- each failing with
 its wait taken out. A stream's head names where the database stood
-as it opened, as an answer does: `Fenec-Seq`, the change its seed is at
-or after, and `Fenec-History` where the database has a history of its
+as it opened, as an answer does: `Fennec-Seq`, the change its seed is at
+or after, and `Fennec-History` where the database has a history of its
 own -- read under the lock the shape is parsed under, no lock of its own
 -- so a client re-running its reads near while the stream stays home
 sends them after an event's `seq` of that history, which a number alone
@@ -386,7 +386,7 @@ database holds already 247.8-252.7.
 
 ## Sealed archives
 
-**An archive and a backup can be sealed** (`seal.rs`, `fenec key`,
+**An archive and a backup can be sealed** (`seal.rs`, `fennec key`,
 `--key-file`). A copy in a bucket is out of reach of the disk's
 encryption, so with a key every archive file and a backup file is
 ChaCha20-Poly1305 (`crypto.rs`, RFC 8439's vectors and 2 000 random cases
@@ -404,9 +404,9 @@ lock, and the browser has no hardware CRC.
 
 ## follow
 
-**`--follow` confirms nothing that is not on disk.** `fenec import --follow`
+**`--follow` confirms nothing that is not on disk.** `fennec import --follow`
 reads a logical replication slot through `pgoutput` and applies every change
-through the copy's own mapping (`fenec-import/src/follow.rs`). The slot's
+through the copy's own mapping (`fennec-import/src/follow.rs`). The slot's
 confirmed position only moves past a transaction an fsync has covered, and
 every write is a put or a delete by id, so a broken stream or a killed
 follower resumes from the slot and replays what it had applied without
@@ -418,12 +418,12 @@ which would lose the rows it never reached. An update arrives without its
 TOASTed columns -- a `vector(768)` is 3 KB, past the threshold -- so the
 follower takes them from its pending writes or the collection; flushing
 before each such read cost the batching, 5 900 rows/s against 17 100. Commit
-to visible: p50 0.16 ms (`make follow-bench`). `fenec-server --follow` runs the
+to visible: p50 0.16 ms (`make follow-bench`). `fennec-server --follow` runs the
 same follower on a thread of the server's, over the database it serves, so
 the mirror is served over HTTP and subscriptions with no second process
-over the file -- two corrupt it (`fenec-server/src/mirror.rs`). The
+over the file -- two corrupt it (`fennec-server/src/mirror.rs`). The
 importer's options come as `--follow-index` and the rest
-(`fenec_import::args`, which `fenec import` reads its own with too). The
+(`fennec_import::args`, which `fennec import` reads its own with too). The
 collection takes no write but the follower thread's (a write hook, 403):
 the next change from PostgreSQL would write over one, or a copy made again
 forget it. The follower stops at the server's shutdown flag, and the
@@ -432,16 +432,16 @@ copy still being made is left for the next start) before its checkpoint;
 an error it cannot wait out stops the server rather than leave it serving
 a mirror that no longer moves -- through the one shutdown, exit code 1
 (`durability::stop_with`, [durability.md](durability.md#the-one-shutdown)). This is why the PostgreSQL client is
-`fenec-wire`'s, below the importer: in the server it made the importer
+`fennec-wire`'s, below the importer: in the server it made the importer
 depend on the server, which could then not run it. A message's length is
 held to PostgreSQL's gigabyte (`proto::MAX_MESSAGE`, its MaxAllocSize)
 before anything is allocated, and under it the body's buffer is the
 length believed, allocated so its failure is an error (`proto::zeroed`,
 as the router's `zeroed`, and for its reasons: no copy at any size, a
 lying length costing the pages its bytes reach): a length from the
-server, or from anyone on the path (fenecdb speaks no TLS), that a system
+server, or from anyone on the path (fennecdb speaks no TLS), that a system
 refused -- one that does not overcommit, Linux's heuristic on a machine
-smaller than the gigabyte -- aborted `fenec import`, and `fenec-server
+smaller than the gigabyte -- aborted `fennec import`, and `fennec-server
 --follow` with everything it served, and is a broken stream now, which
 the follower connects again after. The counts a message carries are held
 to it too: a column count is an Int16 never negative, read unsigned
@@ -459,4 +459,4 @@ vector under HNSW 0.19 ms, p99 4.0 and 3.3 (`make mirror-bench`; the code
 before the pg wire went gave 3.7 and 3.7 the same day); a server killed
 while the table was written to held every row 370 ms after it started
 again. The
-follower adds 178 KB to `fenec-server`.
+follower adds 178 KB to `fennec-server`.

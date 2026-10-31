@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The packages as the registries would take them, installed where a user
-# would install them, and used: PyPI's `fenecdb`, npm's `@fenecdb/web`,
-# `@fenecdb/react`, `@fenecdb/cloudflare` and `@fenecdb/langchain`. Needs `make wasm`
+# would install them, and used: PyPI's `fennecdb`, npm's `@fennecdb/web`,
+# `@fennecdb/react`, `@fennecdb/cloudflare` and `@fennecdb/langchain`. Needs `make wasm`
 # first, since the web package carries the module. Run by `make packages`, by CI, and by
 # packages.yml before anything is published.
 set -euo pipefail
@@ -14,7 +14,7 @@ mkdir -p "$out"
 out="$(cd "$out" && pwd)"
 mkdir -p "$out/dist" "$out/npm"
 
-[ -f "$root/web/fenec.wasm" ] || { echo "web/fenec.wasm is missing: make wasm" >&2; exit 1; }
+[ -f "$root/web/fennec.wasm" ] || { echo "web/fennec.wasm is missing: make wasm" >&2; exit 1; }
 [ -d "$root/web/collate" ] || { echo "web/collate is missing: make wasm" >&2; exit 1; }
 
 # Every package says the workspace's version, or a release would publish
@@ -46,28 +46,28 @@ cd "$out/npm"
 npm init -y -q >/dev/null
 npm pkg set type=module >/dev/null
 npm install -q --no-audit --no-fund \
-  "$out/dist/fenecdb-web-$version.tgz" \
-  "$out/dist/fenecdb-react-$version.tgz" \
-  "$out/dist/fenecdb-cloudflare-$version.tgz" \
-  "$out/dist/fenecdb-langchain-$version.tgz" \
+  "$out/dist/fennecdb-web-$version.tgz" \
+  "$out/dist/fennecdb-react-$version.tgz" \
+  "$out/dist/fennecdb-cloudflare-$version.tgz" \
+  "$out/dist/fennecdb-langchain-$version.tgz" \
   @langchain/core@1 react@19 >/dev/null
 # The modules built without the indexes (`make wasm-lite`) and without
 # anything (`make wasm-min`) are tests of the files the builds hand each
 # other, not something a user is offered.
-for test_build in fenec-lite.wasm fenec-min.wasm; do
-  if [ -e "node_modules/@fenecdb/web/$test_build" ]; then
-    echo "@fenecdb/web carries $test_build, a test build" >&2
+for test_build in fennec-lite.wasm fennec-min.wasm; do
+  if [ -e "node_modules/@fennecdb/web/$test_build" ]; then
+    echo "@fennecdb/web carries $test_build, a test build" >&2
     exit 1
   fi
 done
 cat > smoke.mjs <<'EOF'
 import { readFile } from 'node:fs/promises';
-import { Fenec } from '@fenecdb/web';
-import { useLiveQuery, FenecProvider } from '@fenecdb/react';
+import { Fennec } from '@fennecdb/web';
+import { useLiveQuery, FennecProvider } from '@fennecdb/react';
 
-const file = (path) => readFile(new URL(import.meta.resolve(`@fenecdb/web/${path}`)));
+const file = (path) => readFile(new URL(import.meta.resolve(`@fennecdb/web/${path}`)));
 {
-  const db = await Fenec.open(await file('fenec.wasm'), {
+  const db = await Fennec.open(await file('fennec.wasm'), {
     collation: (name) => file(`collate/${name}.bin`),
   });
   db.run('create collection people (name text)');
@@ -75,40 +75,40 @@ const file = (path) => readFile(new URL(import.meta.resolve(`@fenecdb/web/${path
   // Greek and Cyrillic are not in the module: ordering them fetches their chunks.
   const rows = (await db.query('get people order name collate und')).rows.map((r) => r.name);
   const want = ['Ali', 'Çağla', 'Ömer', 'Zeynep', 'Ωμέγα', 'Жанна'];
-  if (JSON.stringify(rows) !== JSON.stringify(want)) throw new Error(`fenec.wasm: ${rows}`);
-  console.log(`@fenecdb/web fenec.wasm: ${db.version}, ${rows.length} rows in order`);
+  if (JSON.stringify(rows) !== JSON.stringify(want)) throw new Error(`fennec.wasm: ${rows}`);
+  console.log(`@fennecdb/web fennec.wasm: ${db.version}, ${rows.length} rows in order`);
 }
 // A schema declared in code, from its own entry point: an open makes it,
 // and a second open with a field more adds the field.
-const { fenecTable, text, integer, index } = await import('@fenecdb/web/schema');
-const notes = fenecTable('notes', { title: text().notNull(), n: integer() }, (t) => [index('notes_n').using('hash', t.n)]);
-const declared = await Fenec.open(await file('fenec.wasm'), { schema: { notes } });
+const { fennecTable, text, integer, index } = await import('@fennecdb/web/schema');
+const notes = fennecTable('notes', { title: text().notNull(), n: integer() }, (t) => [index('notes_n').using('hash', t.n)]);
+const declared = await Fennec.open(await file('fennec.wasm'), { schema: { notes } });
 declared.run('put notes {title: "a", n: 1}');
-const more = fenecTable('notes', { title: text().notNull(), n: integer(), tag: text() }, (t) => [index().using('hash', t.n)]);
-const out = declared.checkSchema({ format: 1, fenecql: more.toFenecQL() }, 'apply');
+const more = fennecTable('notes', { title: text().notNull(), n: integer(), tag: text() }, (t) => [index().using('hash', t.n)]);
+const out = declared.checkSchema({ format: 1, fennecql: more.toFennecQL() }, 'apply');
 if (!out.applied || out.statements[0] !== 'alter collection notes add field tag text') {
-  throw new Error(`@fenecdb/web/schema: ${JSON.stringify(out)}`);
+  throw new Error(`@fennecdb/web/schema: ${JSON.stringify(out)}`);
 }
-console.log('@fenecdb/web/schema declares and checks a schema');
+console.log('@fennecdb/web/schema declares and checks a schema');
 // The client alone, from its own entry point: no engine among its exports,
 // and the builder the package's own.
-const client = await import('@fenecdb/web/client');
-const web = await import('@fenecdb/web');
-if (typeof client.connect !== 'function' || 'Fenec' in client || 'sync' in client || client.from !== web.from) {
-  throw new Error(`@fenecdb/web/client exports ${Object.keys(client)}`);
+const client = await import('@fennecdb/web/client');
+const web = await import('@fennecdb/web');
+if (typeof client.connect !== 'function' || 'Fennec' in client || 'sync' in client || client.from !== web.from) {
+  throw new Error(`@fennecdb/web/client exports ${Object.keys(client)}`);
 }
-if (client.from('docs').where('year', 2024).toFenecQL()[0] !== 'get docs where year = $1') {
-  throw new Error('@fenecdb/web/client builds another text');
+if (client.from('docs').where('year', 2024).toFennecQL()[0] !== 'get docs where year = $1') {
+  throw new Error('@fennecdb/web/client builds another text');
 }
-console.log('@fenecdb/web/client imports, with no engine');
-if (typeof useLiveQuery !== 'function' || typeof FenecProvider !== 'function') {
-  throw new Error('@fenecdb/react exports are missing');
+console.log('@fennecdb/web/client imports, with no engine');
+if (typeof useLiveQuery !== 'function' || typeof FennecProvider !== 'function') {
+  throw new Error('@fennecdb/react exports are missing');
 }
-console.log('@fenecdb/react imports');
+console.log('@fennecdb/react imports');
 
 // A key-value backed Durable Object's storage kept in a Map: the database
 // there and back.
-const { persist, restore } = await import('@fenecdb/cloudflare');
+const { persist, restore } = await import('@fennecdb/cloudflare');
 const map = new Map();
 const storage = {
   get: async (k) => map.get(k),
@@ -117,25 +117,25 @@ const storage = {
   list: async ({ prefix, start = '', limit = Infinity }) =>
     new Map([...map].filter(([k]) => k.startsWith(prefix) && k >= start).sort().slice(0, limit)),
 };
-const kept = await Fenec.open(await file('fenec.wasm'));
+const kept = await Fennec.open(await file('fennec.wasm'));
 kept.run('create collection t (n int)');
 kept.run('put t [{n: 1}, {n: 2}]');
 await persist(kept, storage);
-const back = await Fenec.open(await file('fenec.wasm'));
+const back = await Fennec.open(await file('fennec.wasm'));
 if (!(await restore(back, storage)) || back.rows('get t count')[0].count !== 2) {
-  throw new Error('@fenecdb/cloudflare did not bring the database back');
+  throw new Error('@fennecdb/cloudflare did not bring the database back');
 }
-console.log('@fenecdb/cloudflare keeps a database');
+console.log('@fennecdb/cloudflare keeps a database');
 
 // The LangChain.js store over the database in the page.
-const { FenecVectorStore } = await import('@fenecdb/langchain');
+const { FennecVectorStore } = await import('@fennecdb/langchain');
 const { SyntheticEmbeddings } = await import('@langchain/core/utils/testing');
-const store = new FenecVectorStore(new SyntheticEmbeddings({ vectorSize: 8 }), { client: back, collection: 'lc' });
+const store = new FennecVectorStore(new SyntheticEmbeddings({ vectorSize: 8 }), { client: back, collection: 'lc' });
 await store.addDocuments([{ pageContent: 'a fox', metadata: {} }, { pageContent: 'a dog', metadata: {} }]);
 if ((await store.similaritySearch('a fox', 1))[0].pageContent !== 'a fox') {
-  throw new Error('@fenecdb/langchain did not find the document');
+  throw new Error('@fennecdb/langchain did not find the document');
 }
-console.log('@fenecdb/langchain finds a document');
+console.log('@fennecdb/langchain finds a document');
 EOF
 node smoke.mjs
 
@@ -146,12 +146,12 @@ node smoke.mjs
 "$out/build/bin/pip" install -q build
 "$out/build/bin/python" -m build -q --outdir "$out/dist" "$root/integrations/python"
 "$python" -m venv "$out/py"
-"$out/py/bin/pip" install -q "$out/dist/fenecdb-$version-py3-none-any.whl"
+"$out/py/bin/pip" install -q "$out/dist/fennecdb-$version-py3-none-any.whl"
 "$out/py/bin/python" -c "
-import fenecdb
-c = fenecdb.Client('http://127.0.0.1:9')
+import fennecdb
+c = fennecdb.Client('http://127.0.0.1:9')
 assert c.url == 'http://127.0.0.1:9'
-print('fenecdb imports')
+print('fennecdb imports')
 "
 
 ls -1 "$out/dist"

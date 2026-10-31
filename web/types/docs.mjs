@@ -1,17 +1,17 @@
 // The docs' TypeScript examples type-checked: `make docs-types`, which
 // `make types-check` runs too. Every `<pre data-lang="ts">` under
 // site/content is written out as a file of its own and run through tsc
-// under --strict against web/fenec.d.ts, integrations/react/index.d.ts and
+// under --strict against web/fennec.d.ts, integrations/react/index.d.ts and
 // integrations/cloudflare/index.d.ts, so a change to the API that breaks
 // an example fails here rather than in a reader's editor.
 //
 // An example that leans on something it does not show -- the `db` a page
 // opened above it, a vector, a DOM element -- finds it declared in
 // docs/prelude/<page>.d.ts, one file a page, global declarations alone. The
-// collections the examples use are docs/fenec-schema.d.ts, what `fenec
-// types` makes of docs/schema.fenecql, made again by
+// collections the examples use are docs/fennec-schema.d.ts, what `fennec
+// types` makes of docs/schema.fennecql, made again by
 //
-//   node docs.mjs --schema     # with target/debug/fenec, or FENEC=<binary>
+//   node docs.mjs --schema     # with target/debug/fennec, or FENNEC=<binary>
 //
 // Each example is a module of its own (`export {}` appended), so two may
 // both declare `db`; the pages' examples are compiled a page at a time, so
@@ -28,14 +28,14 @@ const content = join(root, 'site/content');
 const out = join(here, 'docs/out');
 
 if (process.argv.includes('--schema')) {
-  const fenec = process.env.FENEC ?? join(root, 'target/debug/fenec');
-  const dir = mkdtempSync(join(tmpdir(), 'fenec-docs-'));
+  const fennec = process.env.FENNEC ?? join(root, 'target/debug/fennec');
+  const dir = mkdtempSync(join(tmpdir(), 'fennec-docs-'));
   try {
-    for (const line of readFileSync(join(here, 'docs/schema.fenecql'), 'utf8').split('\n')) {
-      if (line.trim() && !line.startsWith('--')) execFileSync(fenec, ['docs.fenec', '-c', line], { cwd: dir });
+    for (const line of readFileSync(join(here, 'docs/schema.fennecql'), 'utf8').split('\n')) {
+      if (line.trim() && !line.startsWith('--')) execFileSync(fennec, ['docs.fennec', '-c', line], { cwd: dir });
     }
-    const types = execFileSync(fenec, ['types', 'docs.fenec'], { cwd: dir, encoding: 'utf8' });
-    writeFileSync(join(here, 'docs/fenec-schema.d.ts'), types);
+    const types = execFileSync(fennec, ['types', 'docs.fennec'], { cwd: dir, encoding: 'utf8' });
+    writeFileSync(join(here, 'docs/fennec-schema.d.ts'), types);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -81,14 +81,14 @@ for (const page of found) {
   const dir = join(out, page.name);
   mkdirSync(dir, { recursive: true });
   // What an example imports by a relative path, as a page beside the module
-  // would: './fenec.js', './schema.js', './client.js' and the schema `fenec types` wrote
+  // would: './fennec.js', './schema.js', './client.js' and the schema `fennec types` wrote
   // beside it.
-  writeFileSync(join(dir, 'fenec.d.ts'), `export * from '${up(dir, join(root, 'web/fenec.js'))}';\n`);
+  writeFileSync(join(dir, 'fennec.d.ts'), `export * from '${up(dir, join(root, 'web/fennec.js'))}';\n`);
   writeFileSync(join(dir, 'schema.d.ts'), `export * from '${up(dir, join(root, 'web/schema.js'))}';\n`);
   writeFileSync(join(dir, 'client.d.ts'), `export * from '${up(dir, join(root, 'web/client.js'))}';\n`);
   // The tables an example declared above it, as the app keeps them in a module of its own.
   writeFileSync(join(dir, 'tables.d.ts'), `export * from '${up(dir, join(here, 'docs/tables.js'))}';\n`);
-  writeFileSync(join(dir, 'fenec-schema.d.ts'), `export * from '${up(dir, join(here, 'docs/fenec-schema.js'))}';\n`);
+  writeFileSync(join(dir, 'fennec-schema.d.ts'), `export * from '${up(dir, join(here, 'docs/fennec-schema.js'))}';\n`);
 
   const files = [];
   page.blocks.forEach((b, i) => {
@@ -115,11 +115,11 @@ for (const page of found) {
       typeRoots: [up(dir, modules)],
       types: workers ? ['@cloudflare/workers-types'] : [],
       paths: {
-        '@fenecdb/web': [up(dir, join(root, 'web/fenec.d.ts'))],
-        '@fenecdb/web/schema': [up(dir, join(root, 'web/schema.d.ts'))],
-        '@fenecdb/web/client': [up(dir, join(root, 'web/client.d.ts'))],
-        '@fenecdb/react': [up(dir, join(root, 'integrations/react/index.d.ts'))],
-        '@fenecdb/cloudflare': [up(dir, join(root, 'integrations/cloudflare/index.d.ts'))],
+        '@fennecdb/web': [up(dir, join(root, 'web/fennec.d.ts'))],
+        '@fennecdb/web/schema': [up(dir, join(root, 'web/schema.d.ts'))],
+        '@fennecdb/web/client': [up(dir, join(root, 'web/client.d.ts'))],
+        '@fennecdb/react': [up(dir, join(root, 'integrations/react/index.d.ts'))],
+        '@fennecdb/cloudflare': [up(dir, join(root, 'integrations/cloudflare/index.d.ts'))],
         react: [up(dir, join(modules, '@types/react/index.d.ts'))],
         'react/jsx-runtime': [up(dir, join(modules, '@types/react/jsx-runtime.d.ts'))],
       },

@@ -1,3 +1,3 @@
-module github.com/fenecdb/fenecdb/integrations/go
+module github.com/fennec-db/fennecdb/integrations/go
 
 go 1.22

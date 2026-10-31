@@ -1,6 +1,6 @@
 // A node of the measurement's own (scripts/db.sh over a new directory) and,
 // when asked, a Kestrel server in front of it, so a measurement neither
-// reads nor writes the demo's data. Set FENEC_URL before anything reads
+// reads nor writes the demo's data. Set FENNEC_URL before anything reads
 // src/config.ts: import this first, then the rest dynamically.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -11,7 +11,7 @@ const here = new URL('..', import.meta.url).pathname;
 export const benchPort = Number(process.env.BENCH_PORT ?? 18690);
 export const appPort = benchPort + 1;
 export const dir = process.env.BENCH_DIR ?? mkdtempSync(join(tmpdir(), 'kestrel-bench-'));
-process.env.FENEC_URL = `http://127.0.0.1:${benchPort}`;
+process.env.FENNEC_URL = `http://127.0.0.1:${benchPort}`;
 process.env.KESTREL_URL = `http://127.0.0.1:${appPort}`;
 
 const children: ChildProcess[] = [];
@@ -29,14 +29,14 @@ async function until(url: string, what: string) {
   throw new Error(`${what} did not start`);
 }
 
-/** fenec-server over `dir`, as scripts/db.sh starts it. */
+/** fennec-server over `dir`, as scripts/db.sh starts it. */
 export async function startNode(): Promise<ChildProcess> {
   const p = spawn('sh', [join(here, 'scripts/db.sh')], {
-    env: { ...process.env, FENEC_PORT: String(benchPort), FENEC_DIR: join(dir, 'tenants'), FENEC_AUDIT: join(dir, 'audit.log') },
+    env: { ...process.env, FENNEC_PORT: String(benchPort), FENNEC_DIR: join(dir, 'tenants'), FENNEC_AUDIT: join(dir, 'audit.log') },
     stdio: ['ignore', 'ignore', 'inherit'],
   });
   children.push(p);
-  await until(`http://127.0.0.1:${benchPort}/_health`, 'fenec-server');
+  await until(`http://127.0.0.1:${benchPort}/_health`, 'fennec-server');
   return p;
 }
 

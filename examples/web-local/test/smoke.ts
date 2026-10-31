@@ -10,7 +10,7 @@ const check = (step: string, ok: boolean) => {
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${step}`);
   if (!ok) process.exit(1);
 };
-const wasm = readFileSync(fileURLToPath(import.meta.resolve('@fenecdb/web/fenec.wasm')));
+const wasm = readFileSync(fileURLToPath(import.meta.resolve('@fennecdb/web/fennec.wasm')));
 
 const db = await open(wasm);
 check('seeded 4 notes', (await db.from(notes).count()) === 4);

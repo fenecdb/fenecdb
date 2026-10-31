@@ -1,6 +1,6 @@
-# Kestrel: product analytics on fenecdb
+# Kestrel: product analytics on fennecdb
 
-A real-world example of event analytics on fenecdb. Kestrel counts the
+A real-world example of event analytics on fennecdb. Kestrel counts the
 visits to a customer's sites and shows them on a dashboard. It has:
 
 - a tracker of 572 bytes (brotli) that a site puts on its pages, batching
@@ -14,7 +14,7 @@ visits to a customer's sites and shows them on a dashboard. It has:
   pages and referrers with `count(distinct user)`, a three-step funnel,
   weekly retention cohorts, a live "now", and filters with disjunctive
   facets, reading the raw events for a day or less and the rollups past it;
-- a site a tenant on a `fenec-server --dir` node, with tokens bound to it:
+- a site a tenant on a `fennec-server --dir` node, with tokens bound to it:
   a site's dashboard token reads its own site only, and the ingest token
   can only insert;
 - a market data view: ticks for 50 invented symbols from a seeded random
@@ -30,10 +30,10 @@ The stack:
 
 - TypeScript on Node, with a plain `node:http` server rendering HTML and
   SVG as strings;
-- `fenec-server` as the only database, a tenant node with one file per site;
-- `@fenecdb/web/client` (the HTTP client, no WebAssembly) for every query,
+- `fennec-server` as the only database, a tenant node with one file per site;
+- `@fennecdb/web/client` (the HTTP client, no WebAssembly) for every query,
   `db.batch` with an `Idempotency-Key` for every beacon, and
-  `FenecHttp.live` with `{ poll }` for the live parts.
+  `FennecHttp.live` with `{ poll }` for the live parts.
 
 **Why no framework.** A dashboard's first paint is its numbers. Rendered on
 the server as HTML and SVG, a page paints whole with no script at all;
@@ -56,7 +56,7 @@ Every site, visitor, symbol and number is invented.
 ## Architecture
 
 ```
- a customer's site                Kestrel (src/server.ts)                          fenec-server --dir (tenant node)
+ a customer's site                Kestrel (src/server.ts)                          fennec-server --dir (tenant node)
  ─────────────────                ───────────────────────                          ────────────────────────────────
  <script src="/k.js"  ── beacon ─▶ POST /e: parse and check, the site's     ─────▶ /t/fieldnotes/  events (@ttl 30d,
   data-site="key">     (text/plain, origin and rate limit, one block a beacon       append-only), the rollups,
@@ -66,7 +66,7 @@ Every site, visitor, symbol and number is invented.
  the dashboard  ◀──── HTML + SVG ─── GET /s/<site>: questions side by side
  (sign-in cookie)                    under the site's viewer JWT; raw events       /t/markets/     ticks (@ttl 1d,
    polls /s/<site>/now.json ───────▶ for a day or less, rollups past it            append-only), quotes
-   (ETag, 304)                       one FenecHttp.live({poll}) a site, shared
+   (ETag, 304)                       one FennecHttp.live({poll}) a site, shared
                                                                                    /t/kestrel/     sites, users
  the market page ◀─── HTML + SVG ─── GET /markets: bars and the window, one
    polls quotes.json, bars.json      statement each; one live poll of quotes       policy.txt: a JWT's grants;
@@ -88,10 +88,10 @@ Every site, visitor, symbol and number is invented.
 ## Run it
 
 ```sh
-cargo build --release -p fenec-server   # from the repository's root
+cargo build --release -p fennec-server   # from the repository's root
 cd examples/analytics
 npm install
-npm run db        # fenec-server --dir data/tenants on :8080, policy.txt, the change stream kept
+npm run db        # fennec-server --dir data/tenants on :8080, policy.txt, the change stream kept
 npm run setup     # the tenants, two sites with 90 days of history, two hours of ticks
 npm run build     # the browser's script and the tracker, the font
 npm start         # http://127.0.0.1:3000, with the rollup workers, the market feed and demo traffic
@@ -108,9 +108,9 @@ add:
 
 | Variable | Default | For |
 | --- | --- | --- |
-| `FENEC_URL` | `http://127.0.0.1:8080` | the tenant node |
-| `FENEC_JWT_SECRET` | a dev value | signs the JWTs the node checks |
-| `FENEC_TOKEN`, `FENEC_ADMIN_TOKEN` | dev values | the node's own tokens: setup and the rollup workers |
+| `FENNEC_URL` | `http://127.0.0.1:8080` | the tenant node |
+| `FENNEC_JWT_SECRET` | a dev value | signs the JWTs the node checks |
+| `FENNEC_TOKEN`, `FENNEC_ADMIN_TOKEN` | dev values | the node's own tokens: setup and the rollup workers |
 | `KESTREL_SESSION_SECRET` | a dev value | signs the dashboard's cookie |
 | `KESTREL_COUNTRY_HEADER` | none | the header a CDN in front sets with the visitor's country (`cf-ipcountry`); without it, the region of the browser's language |
 | `KESTREL_ROLLUPS`, `KESTREL_FEED`, `KESTREL_DEMO_TRAFFIC` | on | `0` runs the server without the workers, the market feed or the demo's beacons |
@@ -128,7 +128,7 @@ npm run bench:queries   # the dashboard at a million and ten million events (BEN
 
 From the repository's root, `examples/run-tests.sh analytics` runs `npm run
 ci` on this checkout's packages and binary. CI's `examples (analytics)` job
-runs it against a release `fenec-server`, with Lighthouse.
+runs it against a release `fennec-server`, with Lighthouse.
 
 | File | What it holds |
 | --- | --- |
@@ -186,7 +186,7 @@ the raw events each time.
 
 A worker catching up (`catchUp`, before the server serves, and in the
 tests) reads until its cursor reaches the last write the node holds,
-which every answer of `/_changes` names (`Fenec-Seq`); before that header,
+which every answer of `/_changes` names (`Fennec-Seq`); before that header,
 an empty page could not tell the end from writes not on disk yet under
 `--sync 250`, and it waited out 600 ms of empty pages to be sure.
 
@@ -268,7 +268,7 @@ the page says it is an estimate.
 
 ### Live by polling, twice
 
-The server holds one `FenecHttp.live(text, cb, { poll: 1000 })` a site for
+The server holds one `FennecHttp.live(text, cb, { poll: 1000 })` a site for
 its "now", and one for the market's quotes. `pulse` and `quotes` have no
 `@ttl`, so a poll is answered 304 by the node, the query not run, while
 nothing they read was written; the rollup worker writes `pulse` only when
@@ -284,7 +284,7 @@ and a hash index would answer an equality on them. A bucket of a few
 values holds a fifth of the rows: when a row left one by a walk of the
 bucket, the `@ttl` sweep held the write lock 370 to 500 ms for every 1 000
 rows it deleted and every dashboard question waited behind it (Gaps, 1).
-fenecdb keeps a bucket's ids in order now, a removal a binary search, and
+fennecdb keeps a bucket's ids in order now, a removal a binary search, and
 the sweep holds the lock under a millisecond a thousand rows -- the
 rollups' `name @hash` beside `@ttl(35d)` on `minutes` is swept so. The
 events stay unindexed for another reason, measured once the sweep was
@@ -310,7 +310,7 @@ before the first paint, and the charts keep their labels the size of text.
 
 On an Apple M1 laptop with 8 cores, which other agents were using at the
 same time (load average 2 to 8), with this checkout's release
-`fenec-server` under `--sync 250`. Each figure is one run; take them as
+`fennec-server` under `--sync 250`. Each figure is one run; take them as
 indicative.
 
 ### Ingest
@@ -459,20 +459,20 @@ HTML; it sends 7.5 to 9.
 
 ## What each part uses
 
-| Part | fenecdb |
+| Part | fennecdb |
 | --- | --- |
 | Raw events | `eid text @unique`, `at timestamp @ttl(30d)`, a `json` field for properties; `put events $1 if absent`, a beacon's events one parameter; `events append-only` and an `insert`-only grant in `policy.txt` |
 | Ingest | `db.batch([...], { idempotencyKey })` (`POST /batch` with `Idempotency-Key`), its 422 for a key sent with another request |
-| Rollups | `/_changes` with `since` and `wait`, and `Fenec-Seq` to know it is caught up; a `/batch` guarded by `set ... require 1`; `put <c> $1 if absent else set {n: n + new.n}`, a page's keys one upsert; `least`, `greatest`; a read `/batch` for a rebuild's snapshot and its `Fenec-Seq` |
+| Rollups | `/_changes` with `since` and `wait`, and `Fennec-Seq` to know it is caught up; a `/batch` guarded by `set ... require 1`; `put <c> $1 if absent else set {n: n + new.n}`, a page's keys one upsert; `least`, `greatest`; a read `/batch` for a rebuild's snapshot and its `Fennec-Seq` |
 | Visitors over time | `bucket(at, 1m | 30m)` with `count(distinct user)` and `sum(case when ... end)`; past a day, `bucket` over the rollups, and the day's visitors by `count(*)` over `day_users`, which reads the `@sorted` index alone |
 | Top pages and referrers | `group path` with `count(*)` and `count(distinct user)` -- `approx_count_distinct(user)` past a million -- `order ... desc limit 10` |
 | Filters | `facet country top 12 disjunctive, device disjunctive, browser top 8 disjunctive` with `country in [...]`; past a day, `group dim, value` over `day_dims` |
 | Funnel | `group user` with `min(case when name = $k then at end)`, `name in [...]`, `having b >= a count` |
 | Retention | `cohorts`, counters kept by the worker; `weekly` with `user @hash` for a visitor whose cohort moves |
 | Visitors of a range | `count(*) where last >= $1` over `visitors.last @sorted` |
-| Live "now" | `FenecHttp.live(text, cb, { poll })` and its 304s; a row without `@ttl` |
+| Live "now" | `FennecHttp.live(text, cb, { poll })` and its 304s; a row without `@ttl` |
 | Market data | `first(px by at)`, `last(px by at)`, `max`, `min`, `sum(qty)`, `sum(px * qty) / sum(qty)` by `bucket(at, 1m)`; `@ttl(1d)` on ticks; quotes kept with `greatest`, `least` and `case` in the block that writes the ticks |
-| Tenants and tokens | `fenec-server --dir`, `PUT /_admin/tenants/<t>`, `POST /t/<t>/_schema/apply`; JWTs with `tenant`, `role` and `exp`; per-operation grants; `--audit` |
+| Tenants and tokens | `fennec-server --dir`, `PUT /_admin/tenants/<t>`, `POST /t/<t>/_schema/apply`; JWTs with `tenant`, `role` and `exp`; per-operation grants; `--audit` |
 | Warm start | `--warm all`: a site's indexes built as it opens, not in the first dashboard request |
 
 ## Limits, and honest notes
@@ -507,7 +507,7 @@ HTML; it sends 7.5 to 9.
 ## Gaps this example hit, and how they closed
 
 Each with the statement that showed it, the smallest feature that would
-close it, and the one fenecdb made, which Kestrel now uses.
+close it, and the one fennecdb made, which Kestrel now uses.
 
 1. **Taking a row out of a `@hash` bucket walks the bucket.**
    `HashIndex::remove` is `bucket.retain(|d| *d != id)`. With `country`,
@@ -557,9 +557,9 @@ close it, and the one fenecdb made, which Kestrel now uses.
    page cannot tell a worker that has caught up from one whose writes are
    not on disk yet: `catchUp` waits out 600 ms of an empty page before it
    believes it. Smallest: the database's change counter beside
-   `Fenec-Next` (`Fenec-Seq` on the answer), so a reader knows what is
+   `Fennec-Next` (`Fennec-Seq` on the answer), so a reader knows what is
    still to come.
-   **Closed:** every answer carries `Fenec-Seq`; `catchUp` reads until its
+   **Closed:** every answer carries `Fennec-Seq`; `catchUp` reads until its
    cursor reaches it -- 4.7 ms when caught up already, against 609, and
    505 ms after a beacon (two fsyncs under `--sync 250`) against 932.
 5. **A distinct count stops at a million, and has no mergeable form.**
@@ -569,7 +569,7 @@ close it, and the one fenecdb made, which Kestrel now uses.
    filter`: the month had 2.4 million visitors. The rollups count a
    range's visitors as `last >= day` instead, which only works for a range
    that ends now; a raw range wide enough says so on the page. Days'
-   distinct counts cannot be added, and fenecdb keeps no sketch a day
+   distinct counts cannot be added, and fennecdb keeps no sketch a day
    could hold. Smallest (M): `approx_count_distinct(user)` folding
    HyperLogLog registers, mergeable across a rollup's rows.
    **Closed:** `approx_count_distinct(e)`, 2^14 registers, a standard
@@ -596,9 +596,9 @@ close it, and the one fenecdb made, which Kestrel now uses.
 ## Files
 
 ```
-schema.fenecql      a site's collections: raw events and every rollup
-markets.fenecql     ticks and quotes
-control.fenecql     the sites and who signs in
+schema.fennecql     a site's collections: raw events and every rollup
+markets.fennecql    ticks and quotes
+control.fennecql    the sites and who signs in
 policy.txt          what each token may read and write
 client/
   tracker.ts        the tracker a site loads (public/k.js)

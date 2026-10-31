@@ -1,13 +1,13 @@
-# Plover: courier dispatch on fenecdb
+# Plover: courier dispatch on fennecdb
 
-A real-world example of a multi-tenant dispatch product on fenecdb. Plover
+A real-world example of a multi-tenant dispatch product on fennecdb. Plover
 is what a delivery company runs its couriers with: customers place orders
 from merchants, and each order goes to a courier near its pickup, who
 rides it to the door. It has:
 
 - **orders as jobs**: a courier's phone claims the nearest ready order
   within 3 km under a lease, or waits at the server until one is placed
-  (`Fenec-Wait`); the lease is extended with every position the phone
+  (`Fennec-Wait`); the lease is extended with every position the phone
   sends, so a courier who goes quiet -- a dead phone, a killed app -- holds
   the order until it lapses and not a moment longer, and the next courier
   is handed it with nothing written to say so; a delivery is the ack, an
@@ -20,8 +20,8 @@ rides it to the door. It has:
   couriers (`near loc`) and who is within 1, 2 or 3 km of its pickup
   (`distance(loc, $1) <= $2`), each a live query run again as positions
   land;
-- **a company a tenant**, `fenec-server --dir` on two nodes behind
-  `fenec-shard`, each placed with its schema and its plan's quota: a
+- **a company a tenant**, `fennec-server --dir` on two nodes behind
+  `fennec-shard`, each placed with its schema and its plan's quota: a
   Starter company writing ten times its plan is refused (429) while a Pro
   one on the same node is answered as before;
 - **people** in a platform tenant: one account per email whatever its
@@ -37,7 +37,7 @@ rides it to the door. It has:
   their own orders and follows their courier on them;
 - **analytics**: deliveries an hour on time and late, the day's waves,
   order-to-door time, kilometres ridden, the busiest couriers -- an
-  Insights page, and a Grafana dashboard through the fenecdb data source;
+  Insights page, and a Grafana dashboard through the fennecdb data source;
 - **a courier's phone** as a responsive page, and a customer's tracking
   page.
 
@@ -57,13 +57,13 @@ the city.
 - **Next.js App Router and TypeScript**, as the shop: pages rendered on the
   server under the signed-in person's own token, route handlers for the
   courier's phone and the customer's orders, the schema declared in code
-  (`lib/schema.ts`) and handed to each tenant as FenecQL when the router
+  (`lib/schema.ts`) and handed to each tenant as FennecQL when the router
   places it.
-- **`@fenecdb/web/client`** for every statement, and for the live parts in
+- **`@fennecdb/web/client`** for every statement, and for the live parts in
   the browser: the dispatcher's map and the customer's tracking page talk
   to the router themselves with a five-minute token the server mints, so
   the database decides what each page may see.
-- **`fenec-server --dir` and `fenec-shard`**, nothing else: a tenant for the
+- **`fennec-server --dir` and `fennec-shard`**, nothing else: a tenant for the
   platform's accounts and one a company.
 - **A map drawn from a generated city, not map tiles.** Merrow is a street
   graph made from a seed -- a grid bent out of true, a river with bridges,
@@ -77,13 +77,13 @@ the city.
   `node:http` with a keep-alive agent. Under Node 26.7, ten loops each
   sending a `/batch` every 50 ms through Node's own `fetch` had 60 of 150
   requests take about 450 ms -- against a plain `node:http` server as much
-  as against fenec-server, where Node 22's took 1.7 ms p50 and none past
+  as against fennec-server, where Node 22's took 1.7 ms p50 and none past
   100 ms. Over `node:http` the same loops took 0.55 ms p50.
 
 ## Architecture
 
 ```
- browser / phone                 Plover (Next.js)                       fenec-shard :8090         fenec-server --dir
+ browser / phone                 Plover (Next.js)                       fennec-shard :8090         fennec-server --dir
  ───────────────                 ────────────────                       ─────────────────         ──────────────────
  sign in (email, any case) ─────▶ /api/signin: users where email = $1  ─▶ /t/plover/ ──────────▶ n1  plover:   companies, users
                                   (nocase @unique), scrypt, a cookie                                         (the app's token)
@@ -96,7 +96,7 @@ the city.
                                                                                                  --http-cors <site>,
  courier's phone ── /api/courier/claim ─▶ set orders ... order distance(pickup, $4) limit 1    ─▶      a quota a company (the router
    (on shift)       {at}                  returning *, the courier's token, sent with              sends it with the tenant)
-                                          Fenec-Wait: held at the node while none is ready
+                                          Fennec-Wait: held at the node while none is ready
                  ── /api/courier/beat ──▶ /batch: put positions ... if absent else set,
                     every 2.5 s            set orders {run_at: now() + lease, courier_loc}
                  ── pickup, deliver ────▶ set orders ... where id = $1 and claim = $2 require 1
@@ -106,7 +106,7 @@ the city.
    tracking page ── subscribe orders id=eq.<n> (customer's token) ─────▶ the order row, its courier_loc moving
 
  npm run simulate: 59 + 19 couriers riding Merrow's streets, each through its own token; orders in the day's waves
- Grafana (grafana/): fenecdb-datasource a company, role app; every panel FenecQL
+ Grafana (grafana/): fennecdb-datasource a company, role app; every panel FennecQL
 ```
 
 Tokens, each with one job (HS256, `lib/tokens.ts`; every token names its
@@ -124,11 +124,11 @@ tenant and an `exp`):
 ## Run it
 
 ```sh
-cargo build --release -p fenec-server -p fenec-shard   # from the repository's root
+cargo build --release -p fennec-server -p fennec-shard   # from the repository's root
 cd examples/dispatch
 npm install
 mkdir -p data && (cd ../../web && npm pack -q --pack-destination ../examples/dispatch/data)
-npm install --no-save ./data/fenecdb-web-*.tgz   # this checkout's client: 0.1.10 on npm has no geo or Fenec-Wait yet
+npm install --no-save ./data/fennecdb-web-*.tgz  # this checkout's client: 0.1.10 on npm has no geo or Fennec-Wait yet
 npm run cluster &                 # two nodes and the router over data/dev
 npm run setup                     # the tenants, people, merchants and 14 days of deliveries
 npm run simulate &                # the city moving, six times the clock (PLOVER_SPEED, PLOVER_BUSY)
@@ -154,7 +154,7 @@ npm run shots       # screenshots of the running site
 
 **Grafana.** `npm run grafana-token`, then `docker compose -f
 grafana/docker-compose.yml up -d --build` builds Grafana 13.2 with the
-fenecdb data source from this checkout and provisions a data source a
+fennecdb data source from this checkout and provisions a data source a
 company -- the router's prefix for its tenant and a token of role `app` --
 and the dashboard `grafana/plover.json`: deliveries on time and late by
 `bucket(delivered_at, $__interval_ms)`, the open orders, kilometres
@@ -163,21 +163,21 @@ takes) and the busiest couriers, at http://127.0.0.1:3001/d/plover-dispatch.
 `test/grafana.test.ts` runs every panel's statement under that token with
 Grafana's built-ins bound as the plugin binds them.
 
-## What fenecdb does here
+## What fennecdb does here
 
-| Part | fenecdb feature |
+| Part | fennecdb feature |
 | --- | --- |
-| A company a tenant, with its schema | `PUT /_shard/tenants/co-<slug> {schema}` (FenecQL from `toFenecQL(company)`); an existing tenant brought up to the code's schema with `connect(url, { schema, migrate: true })` through the router (the merchants' `@geo` was added so) |
+| A company a tenant, with its schema | `PUT /_shard/tenants/co-<slug> {schema}` (FennecQL from `toFennecQL(company)`); an existing tenant brought up to the code's schema with `connect(url, { schema, migrate: true })` through the router (the merchants' `@geo` was added so) |
 | A plan's quota | `PUT /_shard/tenants/<t>/quota {bytes, rows, streams, requests, writes, write_bytes}` after the seed's load; the router keeps it and sends it with the tenant |
 | One account per email | `users.email text nocase @unique`: `Sami.Lindqvist@Tandem.example` signs in as `sami.lindqvist@tandem.example`, and a sign-up with either is a 409 |
 | Staff codes per company | `@unique(company, code)` on `users`: Tandem and Hopper both have a `C-001` |
 | An order sent twice is one | `@unique(merchant, ref)`: the second insert is a 409, answered with the order already there |
 | A courier's latest deliveries | `get orders where courier = $1 and delivered_at is not null order delivered_at desc limit 10`, a run of `@sorted(courier, delivered_at desc)` |
 | Couriers on the map | `positions`: `loc geo @geo`, `seen @ttl(2m)`, `courier @unique`; `put positions {...} if absent else set {loc: new.loc, ...}` |
-| The ten nearest idle couriers | `get positions select courier, state, loc, distance(loc, $1) as m where state = "idle" near loc $1 limit 10`, live (`FenecHttp.live`, `collections: ['positions']`) |
+| The ten nearest idle couriers | `get positions select courier, state, loc, distance(loc, $1) as m where state = "idle" near loc $1 limit 10`, live (`FennecHttp.live`, `collections: ['positions']`) |
 | Who is within reach | `get positions select state, count(*) as n where distance(loc, $1) <= $2 group state`, live |
 | A claim | `set orders {status: "assigned", courier: $1, claim: $2, run_at: now() + $3, attempts: attempts + 1} where run_at <= now() and distance(pickup, $4) <= $5 order distance(pickup, $4) limit 1 returning *`: the nearest ready order within 3 km, one statement (below) |
-| Waiting for an order | the same `set`, in a `/batch` sent with `Fenec-Wait: 25000`: run at once, held only while it writes nothing, and taking the nearest ready once one is |
+| Waiting for an order | the same `set`, in a `/batch` sent with `Fennec-Wait: 25000`: run at once, held only while it writes nothing, and taking the nearest ready once one is |
 | An order's id | `insert orders {...} returning id`, the customer's read rules held to the row as written |
 | The lease | every beat: `set orders {run_at: now() + $3, courier_loc: $4} where id = $1 and claim = $2` beside the position, one `/batch`; a lapsed lease is `run_at <= now()` again, and a waiting claim is woken at that moment |
 | Ack, give back, dead letter | `set ... where id = $1 and claim = $2 require 1`: a courier whose lease lapsed finds out (412); backoff `now() + 1000 * attempts * attempts`; `case when attempts >= 5 then "dead"` |
@@ -185,7 +185,7 @@ Grafana's built-ins bound as the plugin binds them.
 | An order's steps | each a transition, `new.` the order as the write leaves it: a claim `where run_at <= now() and new.status = "assigned" and new.courier = $jwt.sub and new.attempts = attempts + 1`, a delivery `where courier = $jwt.sub and (status = "assigned" or status = "picked") and new.status = "delivered" and new.run_at is null`, a customer's cancel `where ... status = "ready" and new.status = "cancelled" and new.run_at is null`: a claim for another courier, an order delivered unclaimed, a cancelled one taken back or one moved up the queue are 403 |
 | Customers follow their courier | a subscription to their own order row (`{ id: 'eq.<n>' }`), the courier's point written onto it with each beat; who the courier is, a rule reading `orders`: `couriers read(user, name, vehicle) where user in (get orders select courier where customer = $jwt.sub and ...)` |
 | Deliveries an hour, on time | `bucket(delivered_at, 3600000)`, `sum(case when delivered_at <= promised then 1 else 0 end)`, `avg(delivered_at - created)` over `@sorted(delivered_at)` |
-| Grafana | fenecdb-datasource over `/t/co-<slug>`, `$__from`, `$__to`, `$__interval_ms` bound as parameters |
+| Grafana | fennecdb-datasource over `/t/co-<slug>`, `$__from`, `$__to`, `$__interval_ms` bound as parameters |
 
 ## Claiming the nearest order
 
@@ -202,7 +202,7 @@ The ready orders within 3 km are walked nearest first through the
 pickup's point index, the first one taken under the node's one write
 lock, and answered as claimed -- under the courier's own token, whose read
 rules are asked of the order as the claim leaves it. The phone sends it
-in a `/batch` with `Fenec-Wait`: it runs at once, and with none near and
+in a `/batch` with `Fennec-Wait`: it runs at once, and with none near and
 ready it is held at the node until an order is placed, a lease lapses or
 a backoff ends, and then takes the nearest one ready -- one write request
 a claim either way.
@@ -305,7 +305,7 @@ From the tests, on the same machine:
 
 ## Gaps found
 
-What fenecdb made awkward, slow or impossible here, the most important
+What fennecdb made awkward, slow or impossible here, the most important
 first, each with the statement that showed it and what Plover does
 instead. None was fixed in the example's own change; 1 to 14 are fixed
 since, and say how.
@@ -348,7 +348,7 @@ since, and say how.
    The point is valid; the message is wrong about why. A list of numbers is
    read into a vector's `f32`s by every reader without a schema, and read
    again as written where `Database::exactly` names it
-   (`crates/fenec-core/src/engine.rs`, `exactly` and `exactly_for`): that
+   (`crates/fennec-core/src/engine.rs`, `exactly` and `exactly_for`): that
    walks the statement's own filter, its select list and each `lookup`
    level, but not an `Expr::InSelect`'s inner `get`, so the inner point
    stays a vector and `geo::point_of` refuses it. Now the walk reaches every
@@ -383,7 +383,7 @@ since, and say how.
    time, of 50 2 to 4%, of 100 0 to 1%; the courier who took it was a
    median of 1.9 to 2.6 km further from the pickup than the nearest (`npm
    run bench`). A dispatcher would send the nearest. And `Waits::wrote`
-   (`crates/fenec-http/src/waits.rs`) notifies every group's head on every
+   (`crates/fennec-http/src/waits.rs`) notifies every group's head on every
    write, of any collection: 150 couriers waiting on `orders` took a
    position beat, which writes `positions`, from 0.16 to 0.29 ms p50 and
    0.67 to 4.3 ms p99 straight to the node. Smallest: wake only the groups
@@ -405,7 +405,7 @@ since, and say how.
    -- {"affected":1}
    ```
 
-   `Scope::returning` (`crates/fenec-http/src/access.rs`) ANDed the read
+   `Scope::returning` (`crates/fennec-http/src/access.rs`) ANDed the read
    rules into the write's filter, so they judged the row as it was, and
    Plover claimed without `returning`, reading the row back by its claim
    token in the same `/batch`. Now a `set`'s answer is held to the read
@@ -519,7 +519,7 @@ since, and say how.
    502 {"error":"node `n1` (127.0.0.1:8091) did not answer: Invalid argument (os error 22)"}
    ```
 
-   `Pool::send_held` (`crates/fenec-shard/src/upstream.rs`) retried a
+   `Pool::send_held` (`crates/fennec-shard/src/upstream.rs`) retried a
    pooled connection the node closed while idle (`--idle-timeout`, 60 s)
    when the first read saw EOF, a broken pipe or a reset; on macOS
    `setsockopt` refuses a socket its peer closed with EINVAL, which

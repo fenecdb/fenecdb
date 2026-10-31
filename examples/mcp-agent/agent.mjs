@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // An agent whose memory outlives its conversations: Claude, given
-// fenecdb's MCP tools over stdio -- `fenec mcp --file agent.fenec --memory
+// fennecdb's MCP tools over stdio -- `fennec mcp --file agent.fennec --memory
 // memories` -- recalls what it was told in an earlier run before it
 // answers, and remembers what is worth keeping.
 //
@@ -27,11 +27,11 @@ if (!check && !question) {
   process.exit(2);
 }
 
-const mcp = new Client({ name: 'fenecdb-example-agent', version: '1.0.0' });
+const mcp = new Client({ name: 'fennecdb-example-agent', version: '1.0.0' });
 await mcp.connect(
   new StdioClientTransport({
-    command: process.env.FENEC_BIN ?? 'fenec',
-    args: ['mcp', '--file', process.env.FENEC_FILE ?? 'agent.fenec', '--memory', 'memories'],
+    command: process.env.FENNEC_BIN ?? 'fennec',
+    args: ['mcp', '--file', process.env.FENNEC_FILE ?? 'agent.fennec', '--memory', 'memories'],
     stderr: 'ignore',
   }),
 );

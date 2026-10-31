@@ -1,6 +1,6 @@
 <!--
-title: Instead of Redis — fenecdb
-description: Counters, rate limits, locks with fencing tokens, sessions, caches, leaderboards, sets, unique visitors, queues, delayed jobs, streams, pub/sub, idempotency keys and geo, in the database you already run — each a recipe a test runs, with what it guarantees, what it costs, and what fenecdb does not do that Redis does.
+title: Instead of Redis — fennecdb
+description: Counters, rate limits, locks with fencing tokens, sessions, caches, leaderboards, sets, unique visitors, queues, delayed jobs, streams, pub/sub, idempotency keys and geo, in the database you already run — each a recipe a test runs, with what it guarantees, what it costs, and what fennecdb does not do that Redis does.
 -->
 
 <h1>Instead of Redis</h1>
@@ -9,7 +9,7 @@ locks, sessions, queues — done by the database it already has, each a
 statement or two.</p>
 
 <p>The job most apps add Redis for first is a cache in front of the
-database. <code>fenec-server</code> usually does not need one: the file is
+database. <code>fennec-server</code> usually does not need one: the file is
 mapped, the operating system keeps the pages in use in memory, and a read
 decodes the row from them. Measured against Redis 7.4 on YCSB in Docker, the
 same durability mode against the same, Redis does more operations a second in
@@ -25,11 +25,11 @@ found it, and <code>require</code> makes that count a condition of its
 its place the moment it does. And every write can be watched: a
 subscription is sent the rows of a shape as they change, and
 <code>/_changes</code> every write on disk. See <a
-href="/docs/fenecql-writing#writes">Writes that read the row</a> for the
+href="/docs/fennecql-writing#writes">Writes that read the row</a> for the
 rules.</p>
 
-<p>Every FenecQL block on this page is run, statement by statement, by a
-test (<code>crates/fenec-core/tests/redis_docs.rs</code>), and each
+<p>Every FennecQL block on this page is run, statement by statement, by a
+test (<code>crates/fennec-core/tests/redis_docs.rs</code>), and each
 <code>-- → x</code> is the answer it checks: a write's count, or the first
 value of the first row a read answered. A line <code>-- 20 s later</code>
 moves the test's clock, and <code>$1</code> is the rows the read before it
@@ -38,19 +38,19 @@ counters-bench</code> on an M1 Air, in process unless said otherwise; over
 HTTP a request adds its round trip. Where another bench measured a recipe,
 it is named.</p>
 
-<h2 id="cache-in-front">A cache in front of fenec-server</h2>
+<h2 id="cache-in-front">A cache in front of fennec-server</h2>
 
-<p>fenecdb has no buffer pool of its own: the file is mapped, the operating
+<p>fennecdb has no buffer pool of its own: the file is mapped, the operating
 system keeps the pages in use in memory, and a read decodes the row straight
 from them (<a href="/docs/concepts#no-buffer-pool">How it works</a>). A row
 read often is in memory with nothing to warm, size or keep in step, so a
-separate cache in front of <code>fenec-server</code> is usually unnecessary
+separate cache in front of <code>fennec-server</code> is usually unnecessary
 while the working set fits in memory. YCSB's workloads against Redis 7.4, in
 Docker, each durability mode against the same mode of the other:</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>1 000 000 records of 1 KB</th><th class="n">fenec-server</th><th class="n">Redis 7.4</th></tr></thead>
+<thead><tr><th>1 000 000 records of 1 KB</th><th class="n">fennec-server</th><th class="n">Redis 7.4</th></tr></thead>
 <tbody>
 <tr><td>C: 100% read, 16 clients, buffered</td><td class="n"><b>18.4 k</b><br><small>p99 2.9 ms</small></td><td class="n">14.0 k<br><small>p99 4.0 ms</small></td></tr>
 <tr><td>B: 95% read, 5% update, 16 clients, durable</td><td class="n"><b>18.2 k</b><br><small>p99 6.0 ms</small></td><td class="n">9.25 k<br><small>p99 8.8 ms</small></td></tr>
@@ -60,10 +60,10 @@ Docker, each durability mode against the same mode of the other:</p>
 
 <p>Operations a second, and under each the p99 of the workload's slowest
 operation, as the benchmark page gives them. Redis does more operations a
-second than fenec-server in none of the 33 cells measured both ways:
+second than fennec-server in none of the 33 cells measured both ways:
 workloads A to F at 1, 4 and 16 clients, durable and buffered (C, which
 writes nothing, buffered alone). Nor does Redis with its snapshots alone, no
-append-only file, which keeps no log: it is behind fenec-server buffered in
+append-only file, which keeps no log: it is behind fennec-server buffered in
 none of the 15 cells measured that way (A, B, D, E and F at 1, 4 and 16
 clients). <a href="/docs/benchmarks-ycsb#ycsb-redis">Every cell</a>, and the
 method.</p>
@@ -73,7 +73,7 @@ read spends inside the server, and a hop to it is no shorter than a hop to
 the database. In Docker a
 read by key spends 0.023 ms inside the server of a 0.288 ms round trip, and the
 rest is the network (<a href="/docs/benchmarks-requests#round-trip">taken apart</a>);
-one client's read of a record takes 0.29 ms at the median from fenec-server
+one client's read of a record takes 0.29 ms at the median from fennec-server
 (C, buffered) and 0.32 ms from Redis. What a cache adds is an invalidation to
 keep right: a write must reach it, or a read is answered from before it.</p>
 
@@ -85,7 +85,7 @@ keep right: a write must reach it, or a read is answered from before it.</p>
     as in any database. The server compacts a file before it outgrows what
     the system has for it (<a href="/docs/server#compaction">Compaction</a>,
     before the file outgrows the page cache).</li>
-  <li><b>One node, Docker's network, YCSB's records.</b> fenec-server and Redis
+  <li><b>One node, Docker's network, YCSB's records.</b> fennec-server and Redis
     are each a container, on one machine, and a record is ten fields of 100
     characters. A cache nearer the app than the database is, in the app's own
     process or on its host while the database is across a network, takes the
@@ -93,7 +93,7 @@ keep right: a write must reach it, or a read is answered from before it.</p>
     nothing of a nearer one.</li>
   <li><b>The database's reads.</b> It is not about an HTTP or CDN response cache,
     which saves a request reaching the server at all
-    (<a href="/docs/limits#fenec-http">responses are not marked
+    (<a href="/docs/limits#fennec-http">responses are not marked
     cacheable</a>), nor a cache that must stay inside a memory budget by
     dropping what is used least, which is Redis's (<a
     href="#not-covered">below</a>).</li>
@@ -121,7 +121,7 @@ keep right: a write must reach it, or a read is answered from before it.</p>
 <tr><td>Leaderboard</td><td><code>ZADD</code>, <code>ZINCRBY</code>, <code>ZREVRANGE</code>, <code>ZRANGEBYSCORE</code>, <code>ZREVRANK</code></td><td><a href="#leaderboard"><code>@sorted</code>, <code>order … limit</code>, <code>count</code></a></td></tr>
 <tr><td>Sets, deduplication</td><td><code>SADD</code>, <code>SISMEMBER</code>, <code>SREM</code>, <code>SCARD</code>, <code>SINTER</code></td><td><a href="#sets"><code>@unique</code> and <code>if absent</code></a></td></tr>
 <tr><td>Unique visitors</td><td><code>PFADD</code>, <code>PFCOUNT</code>, <code>PFMERGE</code></td><td><a href="#unique-visitors"><code>approx_count_distinct</code>, sketches kept as bytes</a></td></tr>
-<tr><td>Job queue</td><td><code>LPUSH</code>, <code>BRPOP</code>, <code>BLMOVE</code></td><td><a href="#queue">a claim: <code>set … order … limit … returning</code>, <code>Fenec-Wait</code></a></td></tr>
+<tr><td>Job queue</td><td><code>LPUSH</code>, <code>BRPOP</code>, <code>BLMOVE</code></td><td><a href="#queue">a claim: <code>set … order … limit … returning</code>, <code>Fennec-Wait</code></a></td></tr>
 <tr><td>Delayed jobs</td><td><code>ZADD</code> by time, <code>ZRANGEBYSCORE</code> polled</td><td><a href="#delayed">a <code>run_at</code> ahead, the claim woken at it</a></td></tr>
 <tr><td>Streams, consumer groups</td><td><code>XADD</code>, <code>XRANGE</code>, <code>XREADGROUP</code>, <code>XACK</code></td><td><a href="#streams">a collection, <code>/_changes</code> and its consumers</a></td></tr>
 <tr><td>Pub/sub, keyspace notifications</td><td><code>PUBLISH</code>, <code>SUBSCRIBE</code>, <code>notify-keyspace-events</code></td><td><a href="#notification">a row with a short <code>@ttl</code>, a subscription</a></td></tr>
@@ -150,7 +150,7 @@ keep right: a write must reach it, or a read is answered from before it.</p>
     wrote it — a counter's new value, never <code>n + 1</code> — once it
     is on the primary's disk, in the primary's order. It refuses writes
     (403), so increments, locks and claims go to the primary; a read sent
-    there with <code>Fenec-After</code> waits for the write it names
+    there with <code>Fennec-After</code> waits for the write it names
     (<a href="/docs/replication">Replication</a>). A row past its
     <code>@ttl</code> is out of a replica's reads as it is out of the
     primary's, and deleted when the primary's sweep is sent.</li>
@@ -160,7 +160,7 @@ keep right: a write must reach it, or a read is answered from before it.</p>
 
 <p>An increment is a <code>set</code> that reads the field it writes.</p>
 
-<pre data-lang="fenecql">create collection counters (name text @unique, n int)
+<pre data-lang="fennecql">create collection counters (name text @unique, n int)
 put counters {name: "visits", n: 0}
 set counters {n: n + 1} where name = "visits"     -- → 1
 get counters select n where name = "visits"       -- → 1
@@ -173,7 +173,7 @@ get counters select n where name = "signups"      -- → 2
 <ul>
   <li><b>None is lost.</b> Sixteen HTTP clients each incrementing one key
     10 000 times ended at 160 000, 102 000 increments a second against
-    <code>fenec-server</code>; sixteen threads in process, 320 000 a
+    <code>fennec-server</code>; sixteen threads in process, 320 000 a
     second.</li>
   <li><b>An increment costs</b> 1.36 us in process.</li>
   <li><b>From nothing:</b> <code>coalesce(n, 0) + 1</code> counts a row
@@ -187,13 +187,13 @@ get counters select n where name = "signups"      -- → 2
 <p>In JavaScript, <code>inc()</code> writes the <code>coalesce</code> for
 you:</p>
 
-<pre data-lang="ts">import { connect, inc } from '@fenecdb/web/client';
+<pre data-lang="ts">import { connect, inc } from '@fennecdb/web/client';
 
 const db = connect('http://127.0.0.1:8080');
 await db.from('counters').where('name', 'visits').update({ n: inc(1) });
 </pre>
 
-<p>Python's <code>inc(1)</code>, Go's <code>fenecdb.Inc(1)</code>, .NET's
+<p>Python's <code>inc(1)</code>, Go's <code>fennecdb.Inc(1)</code>, .NET's
 <code>Computed.Inc(1)</code>, and Swift's, Kotlin's and Dart's builders
 render the same text.</p>
 
@@ -208,7 +208,7 @@ a burst through up to its size and then a steady rate.</p>
 <p>A row a client and window, made if absent and expiring after the window;
 the increment names the limit, so its answer is the decision.</p>
 
-<pre data-lang="fenecql">create collection hits (key text @unique, n int, at timestamp @ttl(2m))
+<pre data-lang="fennecql">create collection hits (key text @unique, n int, at timestamp @ttl(2m))
 put hits {key: "ip1:29630000", n: 0, at: now()} if absent    -- → 1: the window's row
 put hits {key: "ip1:29630000", n: 0, at: now()} if absent    -- → 0: there already
 set hits {n: n + 1} where key = "ip1:29630000" and n &lt; 2     -- → 1: allowed
@@ -236,7 +236,7 @@ third row is there, so it allows three a minute. Sent as one
 <code>/batch</code> with the request's row, the read refuses the batch (412)
 once three are, and the row is not written.</p>
 
-<pre data-lang="fenecql">create collection calls (key text @hash, at timestamp @ttl(1m))
+<pre data-lang="fennecql">create collection calls (key text @hash, at timestamp @ttl(1m))
 get calls where key = "ip1" offset 2 limit 1 require 0    -- → no row: allowed
 put calls {key: "ip1", at: now()}                          -- → 1
 get calls where key = "ip1" offset 2 limit 1 require 0    -- → no row: allowed
@@ -267,7 +267,7 @@ one. The row keeps the tokens and when they were counted, and one
 timestamps apart are milliseconds — and takes a token only where there is
 one:</p>
 
-<pre data-lang="fenecql">create collection buckets (key text @unique, tokens float, at timestamp @ttl(1h))
+<pre data-lang="fennecql">create collection buckets (key text @unique, tokens float, at timestamp @ttl(1h))
 put buckets {key: "ip1", tokens: 2.0, at: now()} if absent   -- → 1: a full bucket
 set buckets {tokens: least(2.0, tokens + (now() - at) / 1000.0) - 1, at: now()} where key = "ip1" and tokens + (now() - at) / 1000.0 &gt;= 1   -- → 1: allowed
 set buckets {tokens: least(2.0, tokens + (now() - at) / 1000.0) - 1, at: now()} where key = "ip1" and tokens + (now() - at) / 1000.0 &gt;= 1   -- → 1: allowed, empty now
@@ -290,7 +290,7 @@ set buckets {tokens: least(2.0, tokens + (now() - at) / 1000.0) - 1, at: now()} 
 <p>From a client, the two statements go as one <code>/batch</code>, with
 <code>require 1</code> on the take so that a refusal is a 412:</p>
 
-<pre data-lang="ts">import { connect, FenecError } from '@fenecdb/web/client';
+<pre data-lang="ts">import { connect, FennecError } from '@fennecdb/web/client';
 
 const db = connect('http://127.0.0.1:8080');
 
@@ -304,7 +304,7 @@ async function allow(key: string): Promise&lt;boolean&gt; {
     ]);
     return true;
   } catch (e) {
-    if (e instanceof FenecError &amp;&amp; e.status === 412) return false;
+    if (e instanceof FennecError &amp;&amp; e.status === 412) return false;
     throw e;
   }
 }
@@ -316,7 +316,7 @@ async function allow(key: string): Promise&lt;boolean&gt; {
 and free again once its time passes, so a holder that dies cannot keep
 it.</p>
 
-<pre data-lang="fenecql">create collection locks (name text @unique, owner text, at timestamp @ttl(30s))
+<pre data-lang="fennecql">create collection locks (name text @unique, owner text, at timestamp @ttl(30s))
 put locks {name: "nightly", owner: "w1", at: now()} if absent      -- → 1: w1 holds it
 put locks {name: "nightly", owner: "w2", at: now()} if absent      -- → 0: w2 does not
 set locks {at: now()} where name = "nightly" and owner = "w1"      -- → 1: renewed
@@ -327,7 +327,7 @@ del locks where name = "nightly" and owner = "w1"                  -- → 1: rel
 <ul>
   <li><b>Exactly one wins.</b> The write lock decides: of any number of
     clients racing, one is answered 1 and the rest 0 — sixteen threads are
-    raced for it in <code>crates/fenec-core/tests/writes.rs</code>, and again
+    raced for it in <code>crates/fennec-core/tests/writes.rs</code>, and again
     once its time has passed.</li>
   <li><b>Thirty seconds after its last renewal</b> the row is out of every
     read, the renewal's answer is 0 — the holder has lost it — and the next
@@ -366,7 +366,7 @@ acquisition, which the work it guards carries and the resource checks. Here
 the lock's row keeps it, so the lock is a row that stays, and the lease is
 its <code>until</code>:</p>
 
-<pre data-lang="fenecql">create collection leases (name text @unique, owner text, until timestamp, fence int)
+<pre data-lang="fennecql">create collection leases (name text @unique, owner text, until timestamp, fence int)
 put leases {name: "report", fence: 0} if absent        -- → 1: the lock's row, made once
 set leases {owner: "w1", until: now() + 30000, fence: fence + 1} where name = "report" and (owner is null or until &lt;= now()) returning fence   -- → 1: w1 holds it, token 1
 set leases {owner: "w2", until: now() + 30000, fence: fence + 1} where name = "report" and (owner is null or until &lt;= now()) returning fence   -- → no row: held
@@ -378,7 +378,7 @@ set leases {until: now() + 30000} where name = "report" and owner = "w2" and fen
 <p>The resource keeps the highest token it has been written with, and
 takes a write only from that token or a newer one:</p>
 
-<pre data-lang="fenecql">create collection reports (day text @unique, body text, fence int)
+<pre data-lang="fennecql">create collection reports (day text @unique, body text, fence int)
 put reports {day: "2026-05-03", fence: 0} if absent    -- → 1
 set reports {body: "by w2", fence: 2} where day = "2026-05-03" and fence &lt;= 2 require 1   -- → 1: token 2 is the newest
 set reports {body: "by w1", fence: 1} where day = "2026-05-03" and fence &lt;= 1 require 1   -- → refused: w1 woke late, with token 1
@@ -394,11 +394,11 @@ set leases {owner: null, until: null} where name = "report" and owner = "w2" and
     would be deleted when it lapsed, its count with it. A lapsed lease is
     <code>until &lt;= now()</code>, which the next acquisition reads.</li>
   <li><b>Waiting for it:</b> sent over HTTP with
-    <code>Fenec-Wait</code>, an acquisition that takes nothing is held at
+    <code>Fennec-Wait</code>, an acquisition that takes nothing is held at
     the server until the holder releases it or its lease lapses, whichever
     comes first — both are a write or a time the server knows of (<a
     href="/docs/http-reference#wait">Holding a write until it can write</a>).</li>
-  <li><b>A resource in fenecdb</b> checks the token in the write itself,
+  <li><b>A resource in fennecdb</b> checks the token in the write itself,
     as above. One elsewhere — a file store, another service — needs a
     check of its own; the token is a number it can keep.</li>
 </ul>
@@ -409,7 +409,7 @@ set leases {owner: null, until: null} where name = "report" and owner = "w2" and
 still the one read, and move the version on in the same statement — what
 Redis's <code>WATCH</code> and <code>MULTI</code> are for.</p>
 
-<pre data-lang="fenecql">create collection docs (body text, version int)
+<pre data-lang="fennecql">create collection docs (body text, version int)
 put docs {id: 7, body: "draft", version: 1}
 get docs select body, version where id = 7                                   -- → "draft"
 set docs {body: "final", version: version + 1} where id = 7 and version = 1   -- → 1: written
@@ -423,10 +423,10 @@ set docs {body: "other", version: version + 1} where id = 7 and version = 1 requ
   <li><b>In a <code>/batch</code>, add <code>require 1</code>:</b> a 0
     would let the statements after it go on, where a lost race should stop
     them. With it the write that found another version is refused (412) and
-    the batch is put back whole (<a href="/docs/fenecql-writing#require">Writes that
+    the batch is put back whole (<a href="/docs/fennecql-writing#require">Writes that
     must find their rows</a>). A <code>get … require 1</code> guards a
     batch on a value it does not write (<a
-    href="/docs/fenecql-writing#read-require">A read that must find its
+    href="/docs/fennecql-writing#read-require">A read that must find its
     rows</a>).</li>
   <li><b>Costs:</b> a write that wins 1.13 us, one that loses
     0.66.</li>
@@ -437,7 +437,7 @@ set docs {body: "other", version: version + 1} where id = 7 and version = 1 requ
 <p>A session is a row that lives while it is used: <code>@ttl</code> on the
 time it was last seen, a <code>@unique</code> token to find it by.</p>
 
-<pre data-lang="fenecql">create collection sessions (token text @unique, user text, data json, seen timestamp @ttl(30m))
+<pre data-lang="fennecql">create collection sessions (token text @unique, user text, data json, seen timestamp @ttl(30m))
 put sessions {token: "s-81f2", user: "ada", data: {"cart": 2}, seen: now()}
 get sessions select user where token = "s-81f2"            -- → "ada"
 set sessions {seen: now()} where token = "s-81f2"           -- → 1: seen again
@@ -448,7 +448,7 @@ del sessions where token = "s-81f2"                         -- → 1: signed out
 <ul>
   <li><b>An idle session is gone at once</b> for every read, thirty
     minutes after it was last seen, and the server's sweeper deletes it
-    one to two minutes later (<a href="/docs/fenecql-indexes#ttl">Rows that
+    one to two minutes later (<a href="/docs/fennecql-indexes#ttl">Rows that
     expire</a>).</li>
   <li><b>Read and renewed in one</b> by <code>set … returning</code>: the
     row as written comes back, and a session already gone answers no
@@ -463,7 +463,7 @@ del sessions where token = "s-81f2"                         -- → 1: signed out
 by its key, and on a miss work it out and keep it. The upsert writes a key
 that is there and one that is not alike, and starts its time again.</p>
 
-<pre data-lang="fenecql">create collection cache (key text @unique, value json, at timestamp @ttl(5m))
+<pre data-lang="fennecql">create collection cache (key text @unique, value json, at timestamp @ttl(5m))
 get cache select value.name where key = "user:7"      -- → no row: a miss
 put cache {key: "user:7", value: {"name": "Ada"}, at: now()} if absent else set {value: new.value, at: now()}   -- → 1: kept for five minutes
 get cache select value.name where key = "user:7"      -- → "Ada": a hit
@@ -510,7 +510,7 @@ get cache select value.name where key = "user:7"      -- → no row: five minute
 <p>A score field with <code>@sorted</code>: the top of the board is a walk
 of the index from its end, and a player's rank is a count.</p>
 
-<pre data-lang="fenecql">create collection scores (player text @unique, score int @sorted)
+<pre data-lang="fennecql">create collection scores (player text @unique, score int @sorted)
 put scores [{player: "ada", score: 0}, {player: "bo", score: 90}, {player: "cy", score: 40}]
 set scores {score: score + 120} where player = "ada"            -- → 1: ZINCRBY
 get scores select player, score order score desc limit 10       -- → "ada": ZREVRANGE 0 9
@@ -539,7 +539,7 @@ get scores select player where score &gt;= 40 and score &lt;= 100 order score de
 keeps it there once: <code>if absent</code> adds it and answers whether it
 was new.</p>
 
-<pre data-lang="fenecql">create collection members (list text @hash, member text, @unique(list, member))
+<pre data-lang="fennecql">create collection members (list text @hash, member text, @unique(list, member))
 put members {list: "tags:7", member: "rust"} if absent      -- → 1: SADD, new
 put members {list: "tags:7", member: "rust"} if absent      -- → 0: there already
 put members [{list: "tags:7", member: "db"}, {list: "tags:8", member: "rust"}] if absent   -- → 2
@@ -568,7 +568,7 @@ registers — Redis's register count, so its standard error, 0.81% —
 counted over the visits as they were written. <code>count(distinct)</code>
 is the exact count, up to a million values a query.</p>
 
-<pre data-lang="fenecql">create collection visits (user text, page text @hash, at timestamp @sorted)
+<pre data-lang="fennecql">create collection visits (user text, page text @hash, at timestamp @sorted)
 put visits [{user: "ada", page: "/", at: "2026-05-03T09:00:00Z"}, {user: "bo", page: "/", at: "2026-05-03T09:05:00Z"}, {user: "ada", page: "/docs", at: "2026-05-03T10:00:00Z"}, {user: "cy", page: "/", at: "2026-05-04T08:00:00Z"}]   -- → 4: PFADD, a row a visit
 get visits select approx_count_distinct(user) as users                   -- → 3: PFCOUNT
 get visits select approx_count_distinct(user) as users, bucket(at, 1d) as day group day   -- → 2: on the 3rd
@@ -580,7 +580,7 @@ with <code>hll_accumulate</code>, put back as a client sends rows, and
 merged — <code>PFMERGE</code> — by <code>hll_combine</code>, each visitor
 of two days counted once:</p>
 
-<pre data-lang="fenecql">create collection daily (day timestamp @unique, users bytes)
+<pre data-lang="fennecql">create collection daily (day timestamp @unique, users bytes)
 get visits select bucket(at, 1d) as day, hll_accumulate(user) as users group day   -- → "2026-05-03T00:00:00Z"
 put daily $1                                                                       -- → 2: the rows above
 get daily select hll_estimate(hll_combine(users)) as users                        -- → 3: both days, ada once
@@ -603,7 +603,7 @@ get daily select hll_estimate(users) as users where day = "2026-05-03"          
 the oldest ready jobs and makes each its own for a lease, and acks a job by
 deleting it.</p>
 
-<pre data-lang="fenecql">create collection jobs (payload json, run_at timestamp @sorted, owner text, attempts int)
+<pre data-lang="fennecql">create collection jobs (payload json, run_at timestamp @sorted, owner text, attempts int)
 put jobs [{payload: {"to": "ada"}, run_at: now(), attempts: 0}, {payload: {"to": "bo"}, run_at: now(), attempts: 0}]
 set jobs {owner: "w1", run_at: now() + 30000, attempts: attempts + 1} where run_at &lt;= now() order run_at limit 10 returning id   -- → 1: both, w1's for 30 s
 del jobs where id = 1 and owner = "w1" require 1                       -- → 1: done
@@ -619,7 +619,7 @@ del jobs where id = 1 and owner = "w1" require 1                       -- → 1:
     and sixteen HTTP clients at 138 500 (<code>make
     queue-bench</code>).</li>
   <li><b><code>BLPOP</code>:</b> sent over HTTP with
-    <code>Fenec-Wait</code>, a claim that finds no job is held at the
+    <code>Fennec-Wait</code>, a claim that finds no job is held at the
     server until one is enqueued, a delayed one comes due or a lease
     lapses, and handed to the worker that has waited longest: a job
     enqueued reached a waiting worker in 0.38 ms at the median (<a
@@ -633,7 +633,7 @@ del jobs where id = 1 and owner = "w1" require 1                       -- → 1:
 <p>A job delayed is one whose <code>run_at</code> is ahead: no claim takes
 it before then, and the claim that would take it is the same one.</p>
 
-<pre data-lang="fenecql">create collection reminders (payload json, run_at timestamp @sorted, owner text, attempts int)
+<pre data-lang="fennecql">create collection reminders (payload json, run_at timestamp @sorted, owner text, attempts int)
 put reminders {payload: {"to": "ada"}, run_at: now() + 60000, attempts: 0}   -- → 1: due in a minute
 set reminders {owner: "w1", run_at: now() + 30000, attempts: attempts + 1} where run_at &lt;= now() order run_at limit 10 returning id   -- → no row: not yet
 -- 60 s later
@@ -641,7 +641,7 @@ set reminders {owner: "w1", run_at: now() + 30000, attempts: attempts + 1} where
 </pre>
 
 <ul>
-  <li><b>No poll:</b> a claim held with <code>Fenec-Wait</code> is woken
+  <li><b>No poll:</b> a claim held with <code>Fennec-Wait</code> is woken
     at the moment the next job comes due, which the server works out from
     the <code>@sorted</code> index: 0.04 ms after its time at the median
     and 1.9 at p99, against 1.2 and 8.4 polling every 10 ms (<a
@@ -656,7 +656,7 @@ set reminders {owner: "w1", run_at: now() + 30000, attempts: attempts + 1} where
 row, its <code>id</code> counted up as it is added. A range is a walk of
 the ids from the last one read, and old entries go by <code>@ttl</code>.</p>
 
-<pre data-lang="fenecql">create collection activity (kind text @hash, user text, at timestamp @ttl(7d))
+<pre data-lang="fennecql">create collection activity (kind text @hash, user text, at timestamp @ttl(7d))
 put activity {kind: "signup", user: "ada", at: now()}                                         -- → 1: XADD
 put activity [{kind: "order", user: "ada", at: now()}, {kind: "order", user: "bo", at: now()}]   -- → 2
 get activity select id, kind where id &gt; 1 limit 100      -- → 2: XRANGE, after entry 1
@@ -668,11 +668,11 @@ reads the server's change stream: every write on disk, a JSON line each.
 Started with <code>--cdc</code>, a named consumer keeps its place on the
 server, as a consumer group's last delivered id does:</p>
 
-<pre data-lang="bash">fenec-server --file data.fenec --http 127.0.0.1:8080 --cdc
+<pre data-lang="bash">fennec-server --file data.fennec --http 127.0.0.1:8080 --cdc
 
 curl -X POST http://127.0.0.1:8080/_changes/consumers/mailer                  # XGROUP CREATE … $
 curl -i 'http://127.0.0.1:8080/_changes?consumer=mailer&amp;wait=10000'          # XREADGROUP … BLOCK 10000
-# Fenec-Next: 42 -- handle the lines, then XACK up to there
+# Fennec-Next: 42 -- handle the lines, then XACK up to there
 # (an earlier since goes back, as XGROUP SETID does):
 curl -X PATCH http://127.0.0.1:8080/_changes/consumers/mailer -d '{"since": 42}'
 </pre>
@@ -687,7 +687,7 @@ where it is, so a worker can create its consumer every time it starts. A
   <li><b>At least once</b> where the server keeps the place: a consumer
     that crashes between reading and committing is handed those writes
     again (<a href="/docs/http-reference#consumers">Consumers</a>). One that keeps
-    <code>Fenec-Next</code> beside its own state, committed with it, has
+    <code>Fennec-Next</code> beside its own state, committed with it, has
     each write once (<a href="/docs/http-reference#changes">Change data
     capture</a>).</li>
   <li><b>Only what is on disk:</b> a write is handed out once an fsync
@@ -711,7 +711,7 @@ where it is, so a worker can create its consumer every time it starts. A
 see it, and a subscription is sent the rows of a shape — first those there
 are, then each change as it lands.</p>
 
-<pre data-lang="fenecql">create collection messages (room text @hash, body text, at timestamp @ttl(1m))
+<pre data-lang="fennecql">create collection messages (room text @hash, body text, at timestamp @ttl(1m))
 put messages {room: "lobby", body: "hello", at: now()}     -- → 1: PUBLISH
 </pre>
 
@@ -722,7 +722,7 @@ curl -N 'http://127.0.0.1:8080/messages/changes?room=eq.lobby'
 curl 'http://127.0.0.1:8080/_changes?consumer=mailer&amp;wait=10000'
 </pre>
 
-<pre data-lang="ts">import { connect } from '@fenecdb/web/client';
+<pre data-lang="ts">import { connect } from '@fennecdb/web/client';
 
 const db = connect('http://127.0.0.1:8080');
 const stop = db.subscribe('messages', { room: 'eq.lobby' }, (ev) =&gt; {
@@ -784,7 +784,7 @@ repeat is handed the first answer.</p>
 replayed — is told apart by its own id: a row of it, made if absent, and
 the work done only where it was.</p>
 
-<pre data-lang="fenecql">create collection deliveries (event text @unique, at timestamp @ttl(1d))
+<pre data-lang="fennecql">create collection deliveries (event text @unique, at timestamp @ttl(1d))
 put deliveries {event: "evt_1J8", at: now()} if absent             -- → 1: first time, handle it
 put deliveries {event: "evt_1J8", at: now()} if absent             -- → 0: a repeat, already handled
 put deliveries {event: "evt_1J8", at: now()} if absent require 1   -- → refused: in a /batch, its work put back with it
@@ -804,7 +804,7 @@ field with <code>@geo</code>: the metres between two points, the rows
 within a radius or a box, the nearest first — see
 <a href="/docs/geo">Points and distances</a>.</p>
 
-<pre data-lang="fenecql">create collection sicily (name text, loc geo @geo)
+<pre data-lang="fennecql">create collection sicily (name text, loc geo @geo)
 put sicily [{name: "Palermo", loc: [13.361389, 38.115556]}, {name: "Catania", loc: [15.087269, 37.502669]}]   -- → 2
 get sicily select name where distance(loc, [15, 37]) &lt;= 200000 near loc [15, 37] limit 10   -- → "Catania"
 </pre>
@@ -817,7 +817,7 @@ get sicily select name where distance(loc, [15, 37]) &lt;= 200000 near loc [15, 
     href="/docs/geo#costs">What it costs</a>).</li>
 </ul>
 
-<h2 id="not-covered">What fenecdb does not do</h2>
+<h2 id="not-covered">What fennecdb does not do</h2>
 
 <ul>
   <li><b>Evict.</b> No LRU or LFU, no <code>maxmemory</code> policy: a row

@@ -1,4 +1,4 @@
-// The short tokens a backend calls fenec-server with. The server verifies them
+// The short tokens a backend calls fennec-server with. The server verifies them
 // against the keys file like any other, so the public half of this key is in
 // that file beside the provider's (refresh-jwks.sh's third argument), and its
 // `kid` is what a token names to be checked against it alone.
@@ -16,7 +16,7 @@
 // project's owner picks the uid of a custom token, and a `sub` named
 // `files-backend` from a provider would be this service to a rule that asked for
 // the `sub` alone. So every rule that means a service asks for the issuer too
-// (`$jwt.sub = 'files-backend' and $jwt.iss = 'urn:fenec:services'`), which no
+// (`$jwt.sub = 'files-backend' and $jwt.iss = 'urn:fennec:services'`), which no
 // provider's token carries. Name the `sub` so that no provider's form
 // (`user_...`, `auth0|...`, a UUID) is it, as well.
 //
@@ -27,7 +27,7 @@
 // each service so that one can be dropped alone, and rotate it by adding the
 // new key to the file, deploying the service with it and taking the old out.
 // Binding a key to an issuer is not something the server does.
-export const SERVICES = 'urn:fenec:services';
+export const SERVICES = 'urn:fennec:services';
 
 import { createPrivateKey, createSign } from 'node:crypto';
 

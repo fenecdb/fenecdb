@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- What `dotnet new console` writes on the Quickstart, with the FenecDb SDK
-       as this checkout holds it in place of `dotnet add package FenecDb`.
+  <!-- What `dotnet new console` writes on the Quickstart, with the FennecDb SDK
+       as this checkout holds it in place of `dotnet add package FennecDb`.
        Run by ../../run-tests.sh. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -10,6 +10,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../../dotnet/FenecDb/FenecDb.csproj" />
+    <ProjectReference Include="../../../dotnet/FennecDb/FennecDb.csproj" />
   </ItemGroup>
 </Project>

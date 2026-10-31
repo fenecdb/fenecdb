@@ -1,4 +1,4 @@
-/* fenecdb — the dune field.
+/* fennecdb — the dune field.
    Everything here is either the real engine running or a real measurement
    being drawn. No framework, no build step: the same constraint the database
    keeps. Motion is skipped wholesale when the visitor asks for less of it. */
@@ -65,7 +65,7 @@ if (header && menuBtn && menu) {
 if (side) {
   addEventListener('pagehide', () => {
     if (narrowNav.matches) return;
-    try { sessionStorage.setItem('fenec-side', String(side.scrollTop)); } catch {}
+    try { sessionStorage.setItem('fennec-side', String(side.scrollTop)); } catch {}
   });
 }
 
@@ -682,13 +682,13 @@ if (motions.length) {
    example shows, one under another, each under its name. A set of tabs that
    are not languages (the Quickstart's ways to install) names what they are,
    `data-tabs`, and the key to keep the choice under, `data-key`: the
-   languages share `fenec-lang`, and a choice of Docker is not a language.
+   languages share `fennec-lang`, and a choice of Docker is not a language.
    A panel that is not a language of the key's (the HTTP page's curl, in the
    languages' box) says `data-keep="false"`: choosing it keeps nothing, or
    the reader's language, which Your language reads back, would be gone. */
 for (const box of document.querySelectorAll('[data-langs]')) {
   const panels = [...box.querySelectorAll(':scope > .lang')];
-  const key = box.dataset.key || 'fenec-lang';
+  const key = box.dataset.key || 'fennec-lang';
   const bar = document.createElement('div');
   bar.className = 'lang-tabs';
   bar.setAttribute('role', 'tablist');
@@ -722,13 +722,13 @@ for (const box of document.querySelectorAll('[data-langs]')) {
 
 /* A button on every code block, copying its text. A prompt is not code:
    where a block has lines that begin with one (`$ ` or the shell's
-   `fenec> `), only those lines are copied, minus the prompt and with the
+   `fennec> `), only those lines are copied, minus the prompt and with the
    lines a trailing backslash goes on to -- the answers between them are
    not commands. A block with no prompt is copied whole. The button sits
    over the block's corner and takes no room, so adding it moves nothing;
    it says "Copied" in its own label and, for a screen reader, in one polite
    status the page keeps. */
-const PROMPT = /^(?:\$|fenec>) /;
+const PROMPT = /^(?:\$|fennec>) /;
 const codeToCopy = (text) => {
   const lines = text.split('\n');
   if (!lines.some((l) => PROMPT.test(l))) return text;

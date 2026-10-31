@@ -1,7 +1,7 @@
 // persist and restore: `npm test` here. Against stand-ins for a Durable
 // Object's storage (fakes.js) that hold to its limits and can be made to
 // fail part way: a SQLite-backed object's `sql` over node:sqlite, and a
-// key-value backed object's values. Needs web/fenec.wasm (make wasm), and
+// key-value backed object's values. Needs web/fennec.wasm (make wasm), and
 // skips without it.
 
 import { test } from 'node:test';
@@ -10,9 +10,9 @@ import { readFile } from 'node:fs/promises';
 import { checkpoint, due, maintain, persist, release, restore, schedule, PIECE, ROW } from './index.js';
 import { Rows, Values } from './fakes.js';
 
-const wasm = await readFile(new URL('../../web/fenec.wasm', import.meta.url)).catch(() => null);
-const skip = wasm ? false : 'no web/fenec.wasm (make wasm)';
-const { Fenec } = await import('../../web/fenec.js');
+const wasm = await readFile(new URL('../../web/fennec.wasm', import.meta.url)).catch(() => null);
+const skip = wasm ? false : 'no web/fennec.wasm (make wasm)';
+const { Fennec } = await import('../../web/fennec.js');
 const sqlite = await import('node:sqlite').catch(() => null);
 
 /** Each storage a test runs over: `sql` skipped where node:sqlite is missing. */
@@ -27,7 +27,7 @@ function each(name, fn) {
 }
 
 async function open() {
-  return Fenec.open(wasm);
+  return Fennec.open(wasm);
 }
 
 /** Every row of `t`, as the database answers them. */
@@ -123,7 +123,7 @@ each('a new image lets the one before go', async (make, kind) => {
   db.run('create collection t (n int, s text, e vector<8>)');
   db.run(many(200, 0, 'a'));
   await persist(db, storage);
-  const first = kind === 'sql' ? storage.tables() : (await storage.get('fenec:meta')).gen;
+  const first = kind === 'sql' ? storage.tables() : (await storage.get('fennec:meta')).gen;
   // Writes past half the image, and past 64 KiB, fold into a new one.
   for (let i = 0; i < 20; i++) {
     db.run(many(20, 1000 + 20 * i, 'y', 300));
@@ -134,9 +134,9 @@ each('a new image lets the one before go', async (make, kind) => {
     assert.equal(tables.length, 1, 'one generation kept');
     assert.notDeepEqual(tables, first);
   } else {
-    const gen = (await storage.get('fenec:meta')).gen;
+    const gen = (await storage.get('fennec:meta')).gen;
     assert.ok(gen > first);
-    const gens = new Set([...storage.map.keys()].filter((k) => k !== 'fenec:meta').map((k) => k.split(':')[1]));
+    const gens = new Set([...storage.map.keys()].filter((k) => k !== 'fennec:meta').map((k) => k.split(':')[1]));
     assert.deepEqual([...gens], [String(gen)], 'only the last generation is kept');
   }
   assert.deepEqual(rows(await back(storage)), rows(db));
@@ -229,11 +229,11 @@ each('a checkpoint writes the writes since into a new image', async (make, kind)
   rowsBefore = storage.rows;
   assert.equal(await checkpoint(db, storage), 0);
   assert.equal(storage.rows, rowsBefore);
-  const gen = () => (kind === 'sql' ? storage.tables()[0] : storage.get('fenec:meta').then((m) => m.gen));
+  const gen = () => (kind === 'sql' ? storage.tables()[0] : storage.get('fennec:meta').then((m) => m.gen));
   const before = await gen();
   assert.ok((await checkpoint(db, storage, { min: 1 })) > 0);
   assert.notEqual(await gen(), before);
-  if (kind === 'values') assert.deepEqual((await storage.get('fenec:meta')).log, [0, 0], 'nothing after the new image');
+  if (kind === 'values') assert.deepEqual((await storage.get('fennec:meta')).log, [0, 0], 'nothing after the new image');
   assert.deepEqual(rows(await back(storage)), rows(db));
   // And writes after it are kept after it.
   db.run('put t {n: 901, s: "c", e: [0, 0, 0, 1, 0, 0, 0, 0]}');
@@ -278,7 +278,7 @@ async function backAt(storage, clock) {
 
 /** The generation storage holds: an image written is a new one. */
 const generation = async (storage, kind) =>
-  kind === 'sql' ? storage.tables().join() : (await storage.get('fenec:meta')).gen;
+  kind === 'sql' ? storage.tables().join() : (await storage.get('fennec:meta')).gen;
 
 const expired = (db) => db.rows('get s where expired() count')[0].count;
 

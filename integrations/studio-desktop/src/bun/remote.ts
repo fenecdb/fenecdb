@@ -9,7 +9,7 @@
 //   /_whoami    401: the token is refused (or none was given and one is needed)
 //
 // The token goes out last and only to a server that has shown it is one: it is
-// asked for `/_whoami` without it first and sent only when fenecdb's own 401
+// asked for `/_whoami` without it first and sent only when fennecdb's own 401
 // (a JSON body naming an error) comes back; and no request follows a redirect,
 // since an `Authorization` header is sent wherever the redirect says, and a
 // proxy in front of a server (a sign-in page, a moved address) would be told
@@ -104,7 +104,7 @@ export async function probeRemote(
 			const body = (await res.json()) as { error?: unknown };
 			if (typeof body?.error === "string") error = body.error;
 		} catch {
-			// Not JSON: not fenecdb's own answer.
+			// Not JSON: not fennecdb's own answer.
 		}
 		return { status: res.status, error, redirect: null };
 	};
@@ -120,7 +120,7 @@ export async function probeRemote(
 	if (page.status >= 300 && page.status < 400) return { kind: "redirected", status: page.status, to: redirectTo(page) };
 	if (!(page.ok && (page.headers.get("content-type") ?? "").includes("html"))) return { kind: "no-studio", status: page.status };
 
-	/** `path` asked without the token, and with it only if fenecdb's own 401 says one is needed. */
+	/** `path` asked without the token, and with it only if fennecdb's own 401 says one is needed. */
 	const gate = async (path: string): Promise<Probe | Answer> => {
 		const anon = await ask(path, false);
 		if (anon.redirect !== null) return { kind: "redirected", status: anon.status, to: anon.redirect };

@@ -1,13 +1,13 @@
-# Scrapes fenec-server's /_metrics. The path carries an underscore because a
-# collection may be called `metrics`; the token is the one fenec-server takes as
+# Scrapes fennec-server's /_metrics. The path carries an underscore because a
+# collection may be called `metrics`; the token is the one fennec-server takes as
 # --admin-token or --http-token, which docker-compose.yml writes to the file.
 global:
   scrape_interval: 15s
 
 scrape_configs:
-  - job_name: fenecdb
+  - job_name: fennecdb
     metrics_path: /_metrics
     authorization:
       credentials_file: /prometheus/token
     static_configs:
-      - targets: ["fenecdb:9464"]
+      - targets: ["fennecdb:9464"]

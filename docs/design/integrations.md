@@ -12,15 +12,15 @@ language's docs example to a real server (`integrations/languages`: the
 same flow over HTTP in Python, JavaScript, Go, C#, Java, PHP, Ruby and
 Rust, each with its own HTTP client) -- `make python-test` runs LangChain's
 standard suite and the tests LlamaIndex's integrations run from a
-`python:3.13` container against a fenec-server started here, `make
+`python:3.13` container against a fennec-server started here, `make
 languages-test` the eight examples (Python, Java, PHP and Ruby from their
 images, the others with the toolchain on the machine), `make react-test`
 runs the hook against a real replica, and CI runs all three
 (`integrations`). The Go and .NET SDKs (`integrations/go`, module
-`github.com/fenecdb/fenecdb/integrations/go`, package `fenecdb`;
-`integrations/dotnet`, NuGet's `FenecDb`, `net8.0`) are the standard
+`github.com/fennec-db/fennecdb/integrations/go`, package `fennecdb`;
+`integrations/dotnet`, NuGet's `FennecDb`, `net8.0`) are the standard
 library alone, the Python client's surface -- a statement and its rows,
-typed rows, writes with their `Fenec-Seq`, `/batch`, an idempotency key,
+typed rows, writes with their `Fennec-Seq`, `/batch`, an idempotency key,
 `After` for a replica, a subscription, `/_changes`, a tenant, `/_health`,
 a typed error -- and write a `float32` as the shortest text that reads back
 as it through an `f64`, which is how the server reads a number, but for
@@ -28,17 +28,17 @@ as it through an `f64`, which is how the server reads a number, but for
 shortest `f32` text and the server stored the float above. A request is
 bounded through its context or token, never the HTTP client's timeout,
 which would cut a subscription short. `make go-test` and `make
-dotnet-test` start the servers they need (`FENEC_SERVER`, else
-`target/debug/fenec-server`), CI runs both, and `make languages-test`
+dotnet-test` start the servers they need (`FENNEC_SERVER`, else
+`target/debug/fennec-server`), CI runs both, and `make languages-test`
 runs the docs' Go and C# examples through each SDK too (`go-sdk`,
 `dotnet-sdk`). Python, Go and .NET have the JS builder too
-(`fenecdb/builder.py`'s `db.collection(...)`, Go's `db.From(...)` and
+(`fennecdb/builder.py`'s `db.collection(...)`, Go's `db.From(...)` and
 .NET's `db.From(...)`), and all four make the same text of the same chain,
 to the byte, refusals by the same message: `integrations/builder-golden.json`
 holds the chains (`{op, args}`, the JS builder's names, what JSON has no
 word for an object of one `$` key) and what the JS builder made of each --
 `web/golden.mjs` holds the chains and writes the file (`make
-builder-golden`), `web/fenec.test.js` runs every case through the JS
+builder-golden`), `web/fennec.test.js` runs every case through the JS
 builder again so the file cannot drift, and `make python-test`, `go-test`
 and `dotnet-test` run every case through their own builder, the
 endpoints' statements read off a recording transport. A builder change
@@ -48,13 +48,13 @@ follow, and the Swift, Kotlin and Dart builders with them. Go's object condition
 is the text's; its options are functional, since a struct cannot tell
 `limit 0` from none. CI also builds the five packages as a release
 publishes them and installs and uses them (`integrations/packages.sh`):
-PyPI's `fenecdb`, npm's `@fenecdb/web` -- the client, the module and
-`collate/`, `web/package.json`, and no test build -- `@fenecdb/react`,
-`@fenecdb/cloudflare` and `@fenecdb/langchain`. They go out when a
+PyPI's `fennecdb`, npm's `@fennecdb/web` -- the client, the module and
+`collate/`, `web/package.json`, and no test build -- `@fennecdb/react`,
+`@fennecdb/cloudflare` and `@fennecdb/langchain`. They go out when a
 release's draft is published (`packages.yml`), only after that same check,
 with a token where the registry's secret holds one (`NPM_TOKEN`,
 `PYPI_API_TOKEN`), with the workflow's OIDC identity (trusted publishing)
-where it does not (RELEASING.md). NuGet's `FenecDb` is packed, installed
+where it does not (RELEASING.md). NuGet's `FennecDb` is packed, installed
 into a fresh console app and used against a server
 (`integrations/dotnet/package.sh`) and only then pushed with
 `NUGET_API_KEY`, its job skipped with a notice without the secret; the Go
@@ -65,23 +65,23 @@ the words (`match`) or by the words and the vector fused (`fuse`):
 LlamaIndex's `TEXT_SEARCH` and `HYBRID`, LangChain's `mode="text"` and
 `"hybrid"`. `alpha` is not read, since `fuse` adds ranks; `quant` passes
 `int8` or `bit` codes to `@hnsw`. The same store for LangChain.js
-(`integrations/langchain`, `@fenecdb/langchain`) runs over anything with
-`run(sql, params)` -- a `Fenec` keeps a RAG index in the page -- and is
+(`integrations/langchain`, `@fennecdb/langchain`) runs over anything with
+`run(sql, params)` -- a `Fennec` keeps a RAG index in the page -- and is
 held, LangChain.js publishing no standard suite, to what its own vector
 store integrations are tested for, over a database in the page and over a
-fenec-server's HTTP endpoint (`make langchain-test`); the Vercel AI SDK has no
+fennec-server's HTTP endpoint (`make langchain-test`); the Vercel AI SDK has no
 store interface, so `integrations/ai-sdk/rag.js` is three functions to copy,
-held to the SDK's mock models (`make ai-sdk-test`). `web/fenec.d.ts` is
-held to `web/fenec.js` by `make types-check`: every export and class method
+held to the SDK's mock models (`make ai-sdk-test`). `web/fennec.d.ts` is
+held to `web/fennec.js` by `make types-check`: every export and class method
 read at run time and touched from a generated file, and a caller's code with
 the lines the types must refuse, under `tsc --strict` -- the module stays
 JS with no build step. A store names
 its collection and metadata columns in the statement's text, so both are
-checked against FenecQL's name pattern; values always go in as parameters,
+checked against FennecQL's name pattern; values always go in as parameters,
 and `in` takes one per element (`in [$2, $3]`), since a parameter binds a
 value and not a list.
 
-The FenecQL reference pages show an example's statement beside the same
+The FennecQL reference pages show an example's statement beside the same
 query in each builder, in tabs, and Your language's builder section is a
 tour in the same tabs. The tabs are written from golden cases by
 `site/builder_tabs.py`, from `{{builder "case" ...}}` above the page's
@@ -91,7 +91,7 @@ from a case can be held to it.
 
 - **A page's statement is the one the builders send.** The build holds
   each case's statement to the page's: the text, each parameter written in
-  as FenecQL writes the value or matched to a `$n` the page has there. So
+  as FennecQL writes the value or matched to a `$n` the page has there. So
   only an example the builders make byte for byte gets tabs. Where the
   builders' order reads as well, the page took it: `order x asc` with its
   direction written, `facet` after `limit` and `order`, `select` before
@@ -107,13 +107,13 @@ from a case can be held to it.
   inner query, and the golden file has no word for one), an `order` key
   that is an expression, `explain` with its plan, and a block holding any
   of these, which is not split to tab the rest.
-- **A placeholder over no block writes its FenecQL tab.** languages.html's
+- **A placeholder over no block writes its FennecQL tab.** languages.html's
   tour of the builder has no statement of its own in the prose, so
-  `{{builder ...}}` alone on its line makes the FenecQL tab of the cases:
-  each statement with its parameters written in as FenecQL writes them (an
+  `{{builder ...}}` alone on its line makes the FennecQL tab of the cases:
+  each statement with its parameters written in as FennecQL writes them (an
   object's key bare where it is a name, quoted otherwise), broken before a
   clause where it passes 72 characters, never before the first, and before
-  every `lookup` level. FenecQL's strings escape `\n`, `\t`, `\r` and `\0`
+  every `lookup` level. FennecQL's strings escape `\n`, `\t`, `\r` and `\0`
   and have no `\u`, so a parameter text holding any other C0 control,
   U+0085, U+2028 or U+2029 fails the build: the block is the page's to
   write. `selftest` holds the refusal, the escapes, the quoted keys and the
@@ -143,11 +143,11 @@ from a case can be held to it.
   `count`, `update` ...), since an app runs its query. The tab shows that
   call on `db` (and Go's `ctx`), under a label naming its import. The
   statement it sends is written once under the panels; the widget leaves
-  it showing under every language's tab and CSS hides it under FenecQL's.
+  it showing under every language's tab and CSS hides it under FennecQL's.
   A copy under each tab put six more of 3.2 KB of statements into the
   page text, its search sections and `llms-full.txt`: 19.4 KB.
 - **One language name site-wide.** The tabs share the reader's remembered
-  language (`fenec-lang`) with the Quickstart's and Your language's, so
+  language (`fennec-lang`) with the Quickstart's and Your language's, so
   each names JavaScript one way: "JavaScript". Your language's tab still
   shows TypeScript code; its file labels say so.
 - **A one-off sweep.** When the renderer was written, every golden case it
@@ -158,13 +158,13 @@ from a case can be held to it.
 ## Grafana
 
 **Grafana's data source binds a dashboard's values; it never splices them**
-(`integrations/grafana`, plugin id `fenecdb-datasource`). The Infinity
+(`integrations/grafana`, plugin id `fennecdb-datasource`). The Infinity
 plugin wrote variables into a body's text, sorted a frame's columns by name
 and alerted on nothing a browser fills in, so a backend plugin (Go,
 grafana-plugin-sdk-go 0.297, the Go SDK through `replace ../go`) and a
 TypeScript frontend in `@grafana/create-plugin` 7.12.2's layout run the
 queries server side. The backend reads a statement only where it must agree
-with fenec-ql's lexer -- strings, comments, words, a `$` (`fenecql.go`) --
+with fennec-ql's lexer -- strings, comments, words, a `$` (`fennecql.go`) --
 and makes each name a `$n` after the editor's parameter list: `$__from`,
 `$__to`, `$__interval_ms`, `$__max_data_points` from the request, which an
 alert rule has too, and `$sym` or `${n:int}` from the values the browser
@@ -182,21 +182,21 @@ stack, `monitoring/grafana/bench.mjs`); several are one read-only `/batch`.
 The client follows no redirect and sends the token alone, to the configured
 URL and the plugin's paths. `monitoring/` builds Grafana with it
 (`integrations/grafana/Dockerfile`), and `make grafana-check` holds every
-panel's, variable's and annotation's frame to fenec-server's own answer, in
+panel's, variable's and annotation's frame to fennec-server's own answer, in
 the select list's order, and the provisioned rule's firing instances to the
 server's rows. A jest test importing `datasource.ts` -- `@grafana/runtime`
 and `@grafana/ui` with it -- sat at 0% CPU for ten minutes, so the logic
 jest runs lives in modules importing types alone. `site/build.py` writes
-the editor's FenecQL colours into `src/fenecql/highlight.js` as it writes
+the editor's FennecQL colours into `src/fennecql/highlight.js` as it writes
 the studio's.
 
 ## Studio desktop
 
-**The desktop app is a window on a studio a `fenec-server` serves, one server
+**The desktop app is a window on a studio a `fennec-server` serves, one server
 per file** (`integrations/studio-desktop`, Electrobun 2.0.4, macOS on Apple
-silicon, beta). The app bundles `fenec-server` and starts `fenec-server
+silicon, beta). The app bundles `fennec-server` and starts `fennec-server
 --file <path> --studio --http 127.0.0.1:0` for each open file, with a random
-32-byte token in `FENEC_HTTP_TOKEN` (the environment: `ps` shows every user's
+32-byte token in `FENNEC_HTTP_TOKEN` (the environment: `ps` shows every user's
 arguments), finds it by the `listening on:` line on stderr, as every harness
 of this repository finds a server on port 0, and opens a window on its own
 `/_studio/`; closing the window sends SIGTERM, which syncs and writes the
@@ -228,10 +228,10 @@ The exit codes (server.html: 0 stopped as asked, 1 could not start, 2 a flag
 refused) are the notices': a held lock is "open in another program", 2 is "out of
 step", the rest "could not open", and `get-server.sh` refuses a server without
 both flags (the first release with `--studio` is 0.1.11, with both 0.1.12). The
-session is a frozen `window.fenecHost` that the studio reads before storage,
+session is a frozen `window.fennecHost` that the studio reads before storage,
 defined by the preload only where `location.origin` is the server's (a preload
 runs in every page the window loads, and a page of another origin that found
-`fenecHost` would read the token) and never stored: `test/session.test.ts` runs
+`fennecHost` would read the token) and never stored: `test/session.test.ts` runs
 the script and then the studio's own `connect.js` on what it made,
 `checks/sandbox.mjs` asks the running window (Electrobun's preload runs in the
 page's world: an isolated one would show the studio no session).
@@ -239,7 +239,7 @@ page's world: an isolated one would show the studio no session).
 The server's environment is an allowlist (`HOME`, `PATH`, `TMPDIR`, `LANG`,
 `LC_*`, `USER`, `LOGNAME`, `TZ`, and the token), not "everything but ours": the
 server reads `OTEL_EXPORTER_OTLP_*` (which turns trace export on) and
-`FENEC_JWT_SECRET`, and an app started from a shell must not hand a database it
+`FENNEC_JWT_SECRET`, and an app started from a shell must not hand a database it
 opens whatever that shell exported (`env.ts`; `checks/environment.mjs` starts
 the app with such variables and reads the server's own environment back through
 a wrapper script). A quit waits for every server, one being started and one whose
@@ -309,7 +309,7 @@ it at the removal or not. Two saved servers on one address do not share, a saved
 server's survives its window, the page is the window's size and has focus.
 
 The saved server. The probe asks `/_studio/` (served before any token), then
-`/_whoami` **without** the token and sends it only if fenecdb's own 401 (a JSON
+`/_whoami` **without** the token and sends it only if fennecdb's own 401 (a JSON
 body naming an error) comes back, and follows no redirect (`redirect: "manual"`,
 a message that says where, as an origin): an `Authorization` header goes wherever
 a redirect says, and a proxy's sign-in page or a moved address would be told the
@@ -335,20 +335,20 @@ argv.
 New database. Electrobun 2.0.4 has no save dialog, so the window takes a folder
 from the folder dialog and a name, and `createDatabase` makes the file with
 `open(path, "wx")`, which refuses a name that exists whatever its case (APFS),
-and then starts a server on it: `fenec-server` takes a zero-length file as a
+and then starts a server on it: `fennec-server` takes a zero-length file as a
 new database (an 8-byte head). It does not truncate or otherwise write to a file
-that is not one: the signature is read first and refused (`invalid fenecdb
+that is not one: the signature is read first and refused (`invalid fennecdb
 signature`), and the app says so and nothing changed (a check holds it). A server
 that then fails to start does not leave the empty file behind. Open looks first
-(`dbfile.ts`): `fenec-server` makes an empty file into a database and leaves
+(`dbfile.ts`): `fennec-server` makes an empty file into a database and leaves
 `<file>.lock` beside any file it opens, so a file that is empty (and not one New
 database just made) or does not start with `FENECDB` is a message and a server
-is never started on it; the panel is limited to `.fenec`.
+is never started on it; the panel is limited to `.fennec`.
 
 The test variant. The checks drive the app through a control file and read its
 reports, which a shipped app must not read: `build.bun.define` makes
 `__TESTABLE__` a constant, `testhooks.ts` is imported only behind it, and
-`FENEC_DESKTOP_TEST_BUILD=1` builds the same app with it true under its own
+`FENNEC_DESKTOP_TEST_BUILD=1` builds the same app with it true under its own
 identifier (so its `userData` and Keychain service are its own: a run never
 touches an install's recent files or saved servers), into `build-test/`.
 `checks/release.mjs` reads the shipped app's main bundle (out of the
@@ -399,13 +399,13 @@ its own, and the first process stays in its event loop, so quitting the app
 leaves it alive (seen unsigned, from `open` and from a harness). The checks do
 one launch first (`warmup`) and end the helper. Not verified, for want of a
 Developer ID certificate: that an in-place unpacking leaves a signed and
-notarized bundle's seal whole, and that Hutch gives the bundled `fenec-server`
+notarized bundle's seal whole, and that Hutch gives the bundled `fennec-server`
 the hardened runtime (`desktop.yml`'s signing job fails if `codesign` says
 otherwise).
 
 Signing. `desktop.yml` builds and checks on every pull request and push to the
-paths the app is made from (the studio, `fenec-server`, `fenec-http`,
-`fenec-core`, the app), and signs only when a maintainer starts it by hand from
+paths the app is made from (the studio, `fennec-server`, `fennec-http`,
+`fennec-core`, the app), and signs only when a maintainer starts it by hand from
 `main`, in the Environment `desktop-signing` that holds the six secrets (the
 Developer ID's name, the `.p12` and its password, the App Store Connect key's id,
 issuer and `.p8`): a pull request's or another branch's code never meets one, and
@@ -434,7 +434,7 @@ in 5 s and ignored SIGTERM; nothing in JavaScript can supervise the server while
 a window is open, and it has no menus, no file dialog and one process per
 window. Tauri is the better long-term shell (a save panel, a signing and
 installing story on all three systems, `keyring`, an updater, single-instance,
-and `fenec-http` could run in the app's own process: no child, no orphan, no
+and `fennec-http` could run in the app's own process: no child, no orphan, no
 stderr parsing, the process's own `fcntl` lock) and a larger rewrite in Rust
 outside the zero-dependency set (allowed under `integrations/`) at 3-10 MB for
 the shell instead of Bun's 63; re-decide before Windows. No server at all, the
@@ -457,13 +457,13 @@ variant after its first launch, five runs each, warm page cache (not a reboot):
 | | 50 rows | 100 000 rows (8.7 MB) |
 |---|---|---|
 | studio showing the collections, from launching the executable | 436-529 ms, median 443 | 443-452 ms, median 445 |
-| `fenec-server` listening | 138-211 ms | 142-204 ms |
+| `fennec-server` listening | 138-211 ms | 142-204 ms |
 | idle RSS, the app's processes and WebKit's | 250-251 MB | 274-276 MB |
 | ... of which Bun and the launcher, WebKit, the server | 139, 106-107, 5 | 139, 107-110, 27 |
 | quit, with the server's checkpoint | 183-449 ms | 326-449 ms |
 
 The DMG is 23.6 MB (the update archive 22.6 MB), the unpacked app 74.7 MB (Bun
-63.6, `fenec-server` 4.4), against 23.0 MB and 71 MB for the spike: the icon,
+63.6, `fennec-server` 4.4), against 23.0 MB and 71 MB for the spike: the icon,
 three pages and the failure wording. RSS counts a shared page in every process
 that maps it, so a total is an upper bound, and a window is a server process:
 the server's share is per open file. Not taken again: the first launch from the
@@ -483,17 +483,17 @@ more, which is why it is removed.
 **`deploy/` is the kit for running regions, held to the binaries by two
 checks** (`deploy/RUNBOOK.md`). systemd units for a tenant node, a region's
 router and its standby, the global router and its standby, a node's
-archiver (`fenec-archive@<node>`) and its rclone copy to a bucket, and
+archiver (`fennec-archive@<node>`) and its rclone copy to a bucket, and
 cloudflared; their environment files (`deploy/env/`), alert rules for
 Prometheus and Grafana (`deploy/alerts/`) and the runbook. A token goes in
 an environment file systemd reads as root (`EnvironmentFile=`, 0600), the
 archive key and the tunnel's and rclone's credentials through
 `LoadCredential=`, and never on a command line, which `ps` shows every user
 (every token has a variable, and an empty one is none: An empty token is
-no token, above). Each role runs as a user of its own (`fenec-node`,
-`fenec-router`, `fenec-archive`, `fenec-sync`): a process reads
+no token, above). Each role runs as a user of its own (`fennec-node`,
+`fennec-router`, `fennec-archive`, `fennec-sync`): a process reads
 `/proc/<pid>/environ` of its own user's processes, which `ProtectProc=`
-hides only from other users, so one `fenec` user let rclone read the
+hides only from other users, so one `fennec` user let rclone read the
 archiver's replication token. No `ProcSubset=pid`: it hid `/proc/meminfo`,
 and with it `cache::room`, the compact before a file outgrows the page
 cache. The tunnel's hostname is public, so `cloudflared/config.yml` sends a
@@ -508,7 +508,7 @@ in front says who: the entry sends a service token
 drops `CF-Access-Client-*` before a node (`forwarded_headers`, which
 `forward` now shares with `forward_near`: its own copy of the filter kept
 the token once only the shared one dropped it). The bucket copy is
-`deploy/bin/fenec-archive-sync`, `rclone copy` (never `sync`: a lost
+`deploy/bin/fennec-archive-sync`, `rclone copy` (never `sync`: a lost
 archive takes nothing from the bucket, whose lifecycle rule expires what
 `--keep` let go of) with `--local-no-check-updated` -- rclone refused a
 segment growing as it read it, so a busy tenant's newest segment never
@@ -519,24 +519,24 @@ bucket holds a file the disk does not, since a rebuilt machine's new
 archive rewrote the bucket's `history`, `began` and `presence` within the
 timer's first five minutes; and writes each success into node_exporter's
 textfile collector 0644 -- under the unit's `UMask` it was 0600,
-node_exporter read nothing and `FenecArchiveSyncStale` could never fire,
-so the test scrapes a real node_exporter (`FenecTextfileUnread`,
-`FenecArchiveSyncUnreported` over the absent case). Access outside strict
+node_exporter read nothing and `FennecArchiveSyncStale` could never fire,
+so the test scrapes a real node_exporter (`FennecTextfileUnread`,
+`FennecArchiveSyncUnreported` over the absent case). Access outside strict
 service token authentication answers a service token's request with a
 `CF_Authorization` cookie for the hostname, so the entry drops `Set-Cookie`
 from every answer (no router or node sets one), the router drops every
 `Cf-Access-*` header (the JWT Access adds too), and the entry refuses an
-`http://` router with a token set. `FenecAutoFailoverIncomplete` is read
-off the directory -- `fenec_router_tenants > 0` on a node
-`fenec_router_node_failed_over` -- since the count of failed failovers,
+`http://` router with a token set. `FennecAutoFailoverIncomplete` is read
+off the directory -- `fennec_router_tenants > 0` on a node
+`fennec_router_node_failed_over` -- since the count of failed failovers,
 reset only by a restart, held it after the fix and paged again at the next
-node failed over whole; `FenecLeaseRenewalLate` passes over a node failed
+node failed over whole; `FennecLeaseRenewalLate` passes over a node failed
 over in the last ten minutes (its five-minute window held the outage
 after the node came back) and holds a minute (the scrape before a failover
 marks its node). The rules read
 Prometheus's `up` by job for processes that export nothing because they
 are down, a router's role (primary, standby) taken from its last
-`fenec_router_following`; `tests/datadog.rs` passes over `job` and
+`fennec_router_following`; `tests/datadog.rs` passes over `job` and
 `instance` matchers, holds the jobs to the rules' scrape config and the
 textfile metric to the unit writing it. A standby router's
 unit carries its primary's flags and the same directory file and conflicts
@@ -553,7 +553,7 @@ real rclone into a `local` remote while a tenant takes 64 KB rows as fast
 as it can, the copy verified as an archive; every role's user refused
 every other role's environment; `/proc/meminfo` read in the node's mount
 namespace);
-fenec-shard's `tests/datadog.rs` holds every metric and label value the
+fennec-shard's `tests/datadog.rs` holds every metric and label value the
 rules read to a scrape of every kind of process, a leasing router and a
 replicated node among them, and Grafana's rules to Prometheus's. `make
 drill` (`deploy/drill/drill.py`, the standard library and the Docker CLI)
@@ -584,7 +584,7 @@ numbered, 1.02, 0.83 and 1.00 s and 0.42-0.48, the node killed failed over
 acknowledged and 0 lost (three runs of this kit's drill). The writers' figure
 was the upstream timeout's, not the failover's: a writer's request in
 flight to the dead node waited there until the router let it go, which at
-fenec-shard's 60 s was the writer's own 5 s client timeout, every run's
+fennec-shard's 60 s was the writer's own 5 s client timeout, every run's
 4.86-4.92 s -- quoted at first as a promotion waiting out the replica's
 reconnect. The failover answers it now (the paragraph on what a failover
 ends, above): in two runs a side in turns, the writers wrote again 2.52 and
@@ -595,22 +595,22 @@ region's healthy nodes unrenewed and failed over, 26.5-31.4 s to write again
 and 12-18 s without a write for a tenant on a healthy node, the repair
 missing its 60 s in four of six runs -- which #340 fixed (the lease
 paragraph above). The kit's routers run `--upstream-timeout` at 10 s
-(`FENEC_UPSTREAM_TIMEOUT`), the drill's at twice its lease: chosen at twice
+(`FENNEC_UPSTREAM_TIMEOUT`), the drill's at twice its lease: chosen at twice
 the lease so a failed-over node's requests were let go of, it now bounds
 only what no failover ends -- a node not failed over, a relay to a router
 gone, a standby's forwards -- and need not follow the lease; past it a
 slow statement is a 502 while the node finishes it, and a request
-carrying `Fenec-Wait` is allowed the timeout plus its wait. When
+carrying `Fennec-Wait` is allowed the timeout plus its wait. When
 the drill fails it prints the last 300 lines of every router's and node's
 log (`DRILL_LOG_LINES`), since the cleanup takes the containers and CI
 leaves nothing else to read. CI's `deploy` job runs both checks.
 
 ## Install channels
 
-**A release is installed from its own files, each checked before it is used.** Three ways to install `fenec` and `fenec-server` other than a registry or the image -- Homebrew's formula, `https://fenecdb.com/install.sh`, and a `.deb` and an `.rpm` -- all take the tarballs `release.yml` built (the musl ones for Linux, which are static, and the two macOS ones) and build nothing themselves. Each names what it installs by a SHA-256, which is what holds them to one source: the formula carries the four sums of `SHA256SUMS`, the installer checks the tarball against the sum of the release it came from, and the packages are made from those tarballs and listed in `SHA256SUMS` with the rest. Because all three name the release's files by checksum, a published release's assets are never replaced: re-running `release.yml` for a tag whose release is public (`publish`) uploads only the files the release has no asset of, with a warning that its `SHA256SUMS` does not list them, where a draft's are replaced as before. A rebuild is not byte for byte the first build (the Rust toolchain, the runner image), so a replaced tarball would have failed every `brew install` and every sum already taken from the old `SHA256SUMS`. The image jobs still push `:X.Y.Z` and `:latest` again on a re-run; the image is not named by a checksum anywhere here.
+**A release is installed from its own files, each checked before it is used.** Three ways to install `fennec` and `fennec-server` other than a registry or the image -- Homebrew's formula, `https://fenecdb.com/install.sh`, and a `.deb` and an `.rpm` -- all take the tarballs `release.yml` built (the musl ones for Linux, which are static, and the two macOS ones) and build nothing themselves. Each names what it installs by a SHA-256, which is what holds them to one source: the formula carries the four sums of `SHA256SUMS`, the installer checks the tarball against the sum of the release it came from, and the packages are made from those tarballs and listed in `SHA256SUMS` with the rest. Because all three name the release's files by checksum, a published release's assets are never replaced: re-running `release.yml` for a tag whose release is public (`publish`) uploads only the files the release has no asset of, with a warning that its `SHA256SUMS` does not list them, where a draft's are replaced as before. A rebuild is not byte for byte the first build (the Rust toolchain, the runner image), so a replaced tarball would have failed every `brew install` and every sum already taken from the old `SHA256SUMS`. The image jobs still push `:X.Y.Z` and `:latest` again on a re-run; the image is not named by a checksum anywhere here.
 
-The formula is `tools/homebrew-formula.py`'s output and nobody's text. The release job and a maintainer by hand run the same script on the release's `SHA256SUMS`. Two checks hold a copy, and neither is enough alone. `--check` writes the formula again from the version and sums the file holds, for `fenecdb/fenecdb`, and fails on any difference, so a hand edit of the text or of the repository is found by CI (the `packaging` job), as is a template change not followed by a new formula; it cannot find a sum edited to another value, since the sums are the file's own input, and a repository edited in the header and the urls together passes unless the repository must be this one, which it must (`--repo`). `--verify` downloads the four tarballs from the repository's own releases and holds them to the sums, which is what `brew install` will do and what finds that sum; CI runs both on the committed copy, which is the one a maintainer puts in the tap, and the release job runs both on what it is about to push. The formula is pushed by `packages.yml` (`homebrew`) once the release is published, not by `release.yml` at the tag, because it names the release's download URLs and a draft's are not public: a tap updated at the tag would send `brew install` to a 404 until someone published the notes, where a tap a few minutes behind sends it nowhere. A draft or a pre-release is not offered (the event says it, and a dispatch asks the release), since `brew upgrade` would hand a pre-release to everyone, and neither is a version older than the formula the tap holds (`sort -V` on the version in its url), so that a dispatch for an old tag, or two releases published close together and finished out of order, cannot move the tap back; the older run says so in a warning and in the summary and ends green. One run pushes at a time (`concurrency: homebrew-tap`, never cancelling one under way). The push takes `HOMEBREW_TAP_TOKEN`, a fine-grained token with Contents read and write on the tap alone, kept as a secret of the `homebrew` environment, which only `main` and `v*` tags may use (RELEASING.md has the commands), so a workflow on any other branch cannot read it; the repository-level secret of that name is deleted, because a repository secret is every workflow's. The job hands the token to `git` as an `http.extraheader` in `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/`GIT_CONFIG_VALUE_0`, which is in no URL, no argument and no `.git/config`, and the encoded form is masked as well as the token. A job with the secret set and a push that fails fails: a tap that silently stays a release behind is the failure nobody sees, so only the secret's absence is a notice. The formula's `test do` asks each binary for its version and runs a three-line script through the shell in memory. From 0.1.13 that is `fenec --version` and `fenec-server --version`, each held to `<name> <version>` on stdout and an exit of 0 (`shell_output`). A release before it has no version flag -- `fenec` rejects `--version`, and `fenec-server` names its version only on the first line of `--help`, on stderr -- so its formula asserts that line instead: the renderer picks the form by the version it writes (`VERSION_FLAG`), and the formula of a release from before the flag -- whichever one the tap holds, or one written again for an older tag -- comes out byte for byte as it did before, which `--check` on the committed 0.1.11 copy holds. Cutting over by version rather than by asking a binary keeps the script from downloading anything to write a formula. `tools/linux-packages-check.sh` makes the same choice by the binaries' version (`FENEC_BINARY_VERSION`, else the package's), since CI runs it on the latest release, which may be one from before the flag. `brew audit --strict --online`, `brew style`, `brew livecheck` and `brew test` were run on it from a throwaway local tap (Homebrew installs no formula from a bare path), and `brew test` was seen to fail on a wrong version. The `--version` form was held to `brew style` and `brew test` the same way, on this code built as 0.1.13, and the packages check to both forms: 0.1.11's packages took the `--help` path, packages of binaries built as 0.1.13 the flag's, and 0.1.11's binaries named 0.1.13 failed it on `fenec --version`.
+The formula is `tools/homebrew-formula.py`'s output and nobody's text. The release job and a maintainer by hand run the same script on the release's `SHA256SUMS`. Two checks hold a copy, and neither is enough alone. `--check` writes the formula again from the version and sums the file holds, for `fennec-db/fennecdb`, and fails on any difference, so a hand edit of the text or of the repository is found by CI (the `packaging` job), as is a template change not followed by a new formula; it cannot find a sum edited to another value, since the sums are the file's own input, and a repository edited in the header and the urls together passes unless the repository must be this one, which it must (`--repo`). `--verify` downloads the four tarballs from the repository's own releases and holds them to the sums, which is what `brew install` will do and what finds that sum; CI runs both on the committed copy, which is the one a maintainer puts in the tap, and the release job runs both on what it is about to push. The formula is pushed by `packages.yml` (`homebrew`) once the release is published, not by `release.yml` at the tag, because it names the release's download URLs and a draft's are not public: a tap updated at the tag would send `brew install` to a 404 until someone published the notes, where a tap a few minutes behind sends it nowhere. A draft or a pre-release is not offered (the event says it, and a dispatch asks the release), since `brew upgrade` would hand a pre-release to everyone, and neither is a version older than the formula the tap holds (`sort -V` on the version in its url), so that a dispatch for an old tag, or two releases published close together and finished out of order, cannot move the tap back; the older run says so in a warning and in the summary and ends green. One run pushes at a time (`concurrency: homebrew-tap`, never cancelling one under way). The push takes `HOMEBREW_TAP_TOKEN`, a fine-grained token with Contents read and write on the tap alone, kept as a secret of the `homebrew` environment, which only `main` and `v*` tags may use (RELEASING.md has the commands), so a workflow on any other branch cannot read it; the repository-level secret of that name is deleted, because a repository secret is every workflow's. The job hands the token to `git` as an `http.extraheader` in `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/`GIT_CONFIG_VALUE_0`, which is in no URL, no argument and no `.git/config`, and the encoded form is masked as well as the token. A job with the secret set and a push that fails fails: a tap that silently stays a release behind is the failure nobody sees, so only the secret's absence is a notice. The formula's `test do` asks each binary for its version and runs a three-line script through the shell in memory. From 0.1.13 that is `fennec --version` and `fennec-server --version`, each held to `<name> <version>` on stdout and an exit of 0 (`shell_output`). A release before it has no version flag -- `fennec` rejects `--version`, and `fennec-server` names its version only on the first line of `--help`, on stderr -- so its formula asserts that line instead: the renderer picks the form by the version it writes (`VERSION_FLAG`), and the formula of a release from before the flag -- whichever one the tap holds, or one written again for an older tag -- comes out byte for byte as it did before, which `--check` on the committed 0.1.11 copy holds. Cutting over by version rather than by asking a binary keeps the script from downloading anything to write a formula. `tools/linux-packages-check.sh` makes the same choice by the binaries' version (`FENNEC_BINARY_VERSION`, else the package's), since CI runs it on the latest release, which may be one from before the flag. `brew audit --strict --online`, `brew style`, `brew livecheck` and `brew test` were run on it from a throwaway local tap (Homebrew installs no formula from a bare path), and `brew test` was seen to fail on a wrong version. The `--version` form was held to `brew style` and `brew test` the same way, on this code built as 0.1.13, and the packages check to both forms: 0.1.11's packages took the `--help` path, packages of binaries built as 0.1.13 the flag's, and 0.1.11's binaries named 0.1.13 failed it on `fennec --version`.
 
-`site/install.sh` is served by the site's worker as a static asset (`site/build.py` copies it to `dist/install.sh`, and `_headers` serves it as `text/plain` so a browser shows it, cached five minutes so a fix reaches the next install). It is POSIX `sh`, and outside its functions there is nothing but `set -eu`, comments and plain assignments before `main "$@"` on the last line, so a copy cut short stops at a syntax error or before the call and runs nothing: `build.py` refuses a script that is not that, and `site/test_install.sh` cuts it at some 300 points and asserts none runs anything. It works the platform out (a Rosetta shell on an Apple silicon Mac gets the native build; Windows is refused, Docker or WSL named), finds the latest release by the tarball names in `releases/latest/download/SHA256SUMS` or takes `FENEC_VERSION`, downloads over https, checks the sum before it unpacks, and puts the two files in `~/.fenecdb/bin` or `$FENEC_INSTALL/bin` (made absolute, so the `PATH` line it prints is good from anywhere) by writing beside and renaming over, so a running server's file is not overwritten in place and a copy that fails leaves no staged file. It edits no shell file and prints the `PATH` line instead; it evals nothing, and a version is held to `[0-9A-Za-z.+-]` before it goes into a URL. The downloader is curl (`--proto =https --tlsv1.2`) or a wget that checks certificates: GNU's, run with `--https-only --secure-protocol=TLSv1_2`, and BusyBox's only where it hands the connection to `ssl_client`, which Alpine's does (it refused a self-signed certificate) and upstream's own TLS does not -- that one checks nothing, so a BusyBox wget without `ssl_client`, or one that says "certificate validation not implemented", is refused with the instruction to install curl, and any other wget is refused as unknown. `FENEC_BASE_URL` moves the releases to a mirror, https or `http://localhost` and `http://127.0.0.1` with an optional port alone (matched whole, with any `@`, so `http://localhost:x@example.com`, a request to example.com, is refused, as is a space), which is how the test serves a release of its own. The sum is the same release's, so it catches a damaged or truncated download and not a release someone replaced, which the docs say. It was run for real on macOS (arm64, and under Rosetta) and in `alpine` (busybox `wget` and `sha256sum`; arm64, and x86_64 under emulation) and `debian`.
+`site/install.sh` is served by the site's worker as a static asset (`site/build.py` copies it to `dist/install.sh`, and `_headers` serves it as `text/plain` so a browser shows it, cached five minutes so a fix reaches the next install). It is POSIX `sh`, and outside its functions there is nothing but `set -eu`, comments and plain assignments before `main "$@"` on the last line, so a copy cut short stops at a syntax error or before the call and runs nothing: `build.py` refuses a script that is not that, and `site/test_install.sh` cuts it at some 300 points and asserts none runs anything. It works the platform out (a Rosetta shell on an Apple silicon Mac gets the native build; Windows is refused, Docker or WSL named), finds the latest release by the tarball names in `releases/latest/download/SHA256SUMS` or takes `FENNEC_VERSION`, downloads over https, checks the sum before it unpacks, and puts the two files in `~/.fennecdb/bin` or `$FENNEC_INSTALL/bin` (made absolute, so the `PATH` line it prints is good from anywhere) by writing beside and renaming over, so a running server's file is not overwritten in place and a copy that fails leaves no staged file. It edits no shell file and prints the `PATH` line instead; it evals nothing, and a version is held to `[0-9A-Za-z.+-]` before it goes into a URL. The downloader is curl (`--proto =https --tlsv1.2`) or a wget that checks certificates: GNU's, run with `--https-only --secure-protocol=TLSv1_2`, and BusyBox's only where it hands the connection to `ssl_client`, which Alpine's does (it refused a self-signed certificate) and upstream's own TLS does not -- that one checks nothing, so a BusyBox wget without `ssl_client`, or one that says "certificate validation not implemented", is refused with the instruction to install curl, and any other wget is refused as unknown. `FENNEC_BASE_URL` moves the releases to a mirror, https or `http://localhost` and `http://127.0.0.1` with an optional port alone (matched whole, with any `@`, so `http://localhost:x@example.com`, a request to example.com, is refused, as is a space), which is how the test serves a release of its own. The sum is the same release's, so it catches a damaged or truncated download and not a release someone replaced, which the docs say. It was run for real on macOS (arm64, and under Rosetta) and in `alpine` (busybox `wget` and `sha256sum`; arm64, and x86_64 under emulation) and `debian`.
 
-The packages are nfpm's (`packaging/nfpm.yaml`): one description makes both formats on a runner of either architecture with no dpkg or rpmbuild, where `rpmbuild` would have wanted a spec, a build root per architecture and its strip and requires scripts turned off for a prebuilt static binary. nfpm itself is the release binary `tools/install-nfpm.sh` pins by checksum (copied from the release's `checksums.txt`), shared by `release.yml` and CI. The deb's version carries nfpm's `release: 1` as its Debian revision (`0.1.11-1`, in the file's name too), `version_schema: semver` turns a pre-release's `-rc1` into `~rc1` in the package's version (`0.2.0~rc1-1`, an rpm's `0.2.0~rc1`; the file's name keeps the `-`), which sorts before `0.2.0` as a pre-release must, and `tools/linux-packages-check.sh` holds both packages to that form and to the ordering (`dpkg --compare-versions`, `rpm.vercmp`). `SOURCE_DATE_EPOCH` fixes the files' times: the same tarballs gave the same `.deb`, byte for byte, from nfpm on a Mac and on Linux, but the `.rpm` records the build host's name, so two machines' rpms differ by that and by nothing else. The files are `/usr/bin/fenec`, `/usr/bin/fenec-server` and the licence where each distribution looks. Each architecture is packed on a runner of its own (with `contents: read` and no stored credentials), and `tools/linux-packages-check.sh` installs the packages in `debian:12-slim` and `fedora:42` of that architecture, asserts their metadata and that they depend on nothing -- every assertion printing what it found and what it wanted -- runs both binaries, removes the package and checks the files are gone, before the artifact is kept: a package that does not install stops the release. CI's `packaging` job does the same with the latest release's tarball and again with it named as a pre-release. The job's checkout is the workflow's own commit and not a dispatched tag, which may be from before the packaging files. There is no apt or yum repository, only files on the release.
+The packages are nfpm's (`packaging/nfpm.yaml`): one description makes both formats on a runner of either architecture with no dpkg or rpmbuild, where `rpmbuild` would have wanted a spec, a build root per architecture and its strip and requires scripts turned off for a prebuilt static binary. nfpm itself is the release binary `tools/install-nfpm.sh` pins by checksum (copied from the release's `checksums.txt`), shared by `release.yml` and CI. The deb's version carries nfpm's `release: 1` as its Debian revision (`0.1.11-1`, in the file's name too), `version_schema: semver` turns a pre-release's `-rc1` into `~rc1` in the package's version (`0.2.0~rc1-1`, an rpm's `0.2.0~rc1`; the file's name keeps the `-`), which sorts before `0.2.0` as a pre-release must, and `tools/linux-packages-check.sh` holds both packages to that form and to the ordering (`dpkg --compare-versions`, `rpm.vercmp`). `SOURCE_DATE_EPOCH` fixes the files' times: the same tarballs gave the same `.deb`, byte for byte, from nfpm on a Mac and on Linux, but the `.rpm` records the build host's name, so two machines' rpms differ by that and by nothing else. The files are `/usr/bin/fennec`, `/usr/bin/fennec-server` and the licence where each distribution looks. Each architecture is packed on a runner of its own (with `contents: read` and no stored credentials), and `tools/linux-packages-check.sh` installs the packages in `debian:12-slim` and `fedora:42` of that architecture, asserts their metadata and that they depend on nothing -- every assertion printing what it found and what it wanted -- runs both binaries, removes the package and checks the files are gone, before the artifact is kept: a package that does not install stops the release. CI's `packaging` job does the same with the latest release's tarball and again with it named as a pre-release. The job's checkout is the workflow's own commit and not a dispatched tag, which may be from before the packaging files. There is no apt or yum repository, only files on the release.

@@ -1,6 +1,6 @@
 // What a file the user picked is, before a server is started on it.
 //
-// `fenec-server --file` makes any file it is given into a database if it is
+// `fennec-server --file` makes any file it is given into a database if it is
 // empty (it writes the signature into it) and leaves `<file>.lock` beside any
 // file it opens, so a stray pick (a text file, an empty one) would have a lock
 // file, or a head, written next to it. The app looks first and starts a server
@@ -11,7 +11,7 @@ import { closeSync, openSync, readSync, statSync } from "node:fs";
 
 /**
  * The first seven bytes of a database file: `FENECDB`. The eighth is the
- * format's version (`MAGIC` in fenec-core's engine.rs, `FENECDB\x01`), which
+ * format's version (`MAGIC` in fennec-core's engine.rs, `FENECDB\x01`), which
  * the server judges, so a file from a newer format reaches it and is refused
  * there in its own words.
  */

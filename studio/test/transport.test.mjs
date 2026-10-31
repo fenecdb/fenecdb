@@ -1,4 +1,4 @@
-// The studio's two ways to a database answer alike: a fenec-server over
+// The studio's two ways to a database answer alike: a fennec-server over
 // HTTP, and the browser module in the page (engine.js, which the
 // playground's worker runs). The same statements go to both, from the same
 // empty database, and every answer -- status, body and the change a write
@@ -7,8 +7,8 @@
 //
 //   node --test studio/test/transport.test.mjs       (make test-js)
 //
-// Needs web/fenec.wasm (`make wasm`) and the debug fenec-server (`cargo
-// build -p fenec-server`); skipped without them, and under CI a failure.
+// Needs web/fennec.wasm (`make wasm`) and the debug fennec-server (`cargo
+// build -p fennec-server`); skipped without them, and under CI a failure.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,13 +17,13 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const WASM = join(ROOT, 'web', 'fenec.wasm');
-const SERVER = process.env.FENEC_SERVER ?? join(ROOT, 'target', 'debug', 'fenec-server');
-const missing = !existsSync(WASM) ? 'web/fenec.wasm: make wasm' : !existsSync(SERVER) ? 'the debug fenec-server: cargo build -p fenec-server' : null;
+const WASM = join(ROOT, 'web', 'fennec.wasm');
+const SERVER = process.env.FENNEC_SERVER ?? join(ROOT, 'target', 'debug', 'fennec-server');
+const missing = !existsSync(WASM) ? 'web/fennec.wasm: make wasm' : !existsSync(SERVER) ? 'the debug fennec-server: cargo build -p fennec-server' : null;
 if (missing && process.env.CI) throw new Error(`the transport test needs ${missing}`);
 
 const { Engine } = await import('../engine.js');
-const { Fenec, connect } = await import('../../web/fenec.js');
+const { Fennec, connect } = await import('../../web/fennec.js');
 
 let server;
 let engine;
@@ -34,7 +34,7 @@ test.before(async () => {
   const harness = await import('./harness.mjs');
   token = harness.TOKEN;
   server = await harness.startServer({ studio: false });
-  engine = new Engine(await Fenec.open(readFileSync(WASM)));
+  engine = new Engine(await Fennec.open(readFileSync(WASM)));
 });
 
 test.after(() => server?.stop());
@@ -45,7 +45,7 @@ async function remote(method, path, body = null, type = 'application/json') {
   if (body !== null) headers['content-type'] = type;
   const res = await fetch(`${server.url}${path}`, { method, headers, body });
   const text = await res.text();
-  const seq = res.headers.get('fenec-seq');
+  const seq = res.headers.get('fennec-seq');
   return { status: res.status, json: text ? JSON.parse(text) : null, seq: seq === null ? null : Number(seq) };
 }
 
@@ -157,10 +157,10 @@ test('batches: each answer, and the statement that stops one', { skip }, async (
   assert.equal(compacted.json.completed, 2);
 });
 
-test('the schema: described, as FenecQL, and the plan of a change', { skip }, async () => {
+test('the schema: described, as FennecQL, and the plan of a change', { skip }, async () => {
   const described = (await same('GET', '/_schema')).json;
   assert.ok(described.collections.some((c) => c.name === 'docs'));
-  assert.match((await same('GET', '/_schema?as=fenecql')).json.fenecql, /create collection docs \(title text required @text/);
+  assert.match((await same('GET', '/_schema?as=fennecql')).json.fennecql, /create collection docs \(title text required @text/);
   const docs = described.collections.find((c) => c.name === 'docs');
   const changed = structuredClone(docs);
   changed.fields.find((f) => f.name === 'lang').index = { kind: 'sorted' };

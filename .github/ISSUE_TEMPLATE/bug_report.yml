@@ -15,11 +15,11 @@ body:
     attributes:
       label: Which surface?
       options:
-        - FenecQL (parser / query execution)
-        - Server (fenec-server: HTTP / JSON / SSE, replication, tenants)
-        - Browser / WASM (web/fenec.js, fenec-wasm)
-        - CLI (fenec shell, fenec types)
-        - Import (fenec import, SQLite or PostgreSQL)
+        - FennecQL (parser / query execution)
+        - Server (fennec-server: HTTP / JSON / SSE, replication, tenants)
+        - Browser / WASM (web/fennec.js, fennec-wasm)
+        - CLI (fennec shell, fennec types)
+        - Import (fennec import, SQLite or PostgreSQL)
         - Storage / file format / recovery
         - Vector index (HNSW, recall, distance)
         - Something else

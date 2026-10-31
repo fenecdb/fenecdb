@@ -1,0 +1,89 @@
+# The global router: every tenant's name and home region, and each
+# region's routers (deploy/RUNBOOK.md).
+# Its addresses are in /etc/fennecdb/global.env, its tokens too: read by
+# systemd as root, 0600, and on no command line, which `ps` shows every user.
+#
+#   install -m 0644 fennec-global.service /etc/systemd/system/
+#   install -m 0600 ../env/global.env /etc/fennecdb/global.env   # then edit it
+#   systemctl enable --now fennec-global
+
+[Unit]
+Description=fennecdb global router (fennec-shard)
+Documentation=https://fenecdb.com/docs/sharding-reference#deploying file:/usr/local/share/doc/fennecdb/RUNBOOK.md
+After=network-online.target
+Wants=network-online.target
+# One process on the directory file at a time: two corrupt it.
+Conflicts=fennec-global-standby.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=fennec-router
+Group=fennec-router
+EnvironmentFile=/etc/fennecdb/global.env
+# No --region: this directory is the global one. Its regions keep their
+# own (PUT /_shard/regions/<r>), so it leases no node: what it takes are
+# the changes every region must agree on -- a tenant's name made or given
+# back, a move between regions.
+ExecStart=/usr/local/bin/fennec-shard \
+    --listen ${FENNEC_LISTEN} \
+    --directory /var/lib/fennecdb/global/directory.fennec \
+    --max-connections 1000 \
+    --upstream-timeout ${FENNEC_UPSTREAM_TIMEOUT} \
+    --audit /var/log/fennecdb/global/audit.log \
+    $FENNEC_GLOBAL_FLAGS
+Restart=on-failure
+RestartSec=2s
+
+# The router writes and syncs each change of its directory before it acts
+# on it, so SIGTERM's default action loses nothing: it holds no write. What
+# it ends are the requests it was forwarding, which a client sends again.
+KillSignal=SIGTERM
+TimeoutStopSec=10s
+
+# Descriptors: a client's connection each (--max-connections 1000) and a
+# pooled one to a node for each in flight, the directory's replication and
+# its standbys' streams, and the refused connections held open while their
+# requests are read off (512 at most) -- 2 x 1000 + 512, with room. Raise
+# with them.
+LimitNOFILE=8192
+# Threads: a connection each, under systemd's DefaultTasksMax unless set.
+TasksMax=4096
+# A core dump would hold the router's tokens.
+LimitCORE=0
+
+StateDirectory=fennecdb/global
+StateDirectoryMode=0700
+LogsDirectory=fennecdb/global
+ReadWritePaths=/var/lib/fennecdb/global
+UMask=0077
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

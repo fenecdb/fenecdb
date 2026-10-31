@@ -1,4 +1,4 @@
-package fenecdb_test
+package fennecdb_test
 
 // The query builder: held to integrations/builder-golden.json -- the text and
 // parameters the JavaScript builder makes of every chain there -- and run
@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	fenecdb "github.com/fenecdb/fenecdb/integrations/go"
+	fennecdb "github.com/fennec-db/fennecdb/integrations/go"
 )
 
 // ------------------------------------------------------------ the golden file
@@ -167,7 +167,7 @@ func value(x any) any {
 			return out
 		}
 		if n, ok := v.get("$inc"); ok {
-			return fenecdb.Inc(value(n))
+			return fennecdb.Inc(value(n))
 		}
 		if e, ok := v.get("$expr"); ok {
 			list := e.([]any)
@@ -175,30 +175,30 @@ func value(x any) any {
 			for i, p := range list[1:] {
 				params[i] = value(p)
 			}
-			return fenecdb.Expr(list[0].(string), params...)
+			return fennecdb.Expr(list[0].(string), params...)
 		}
 		if b, ok := v.get("$bucket"); ok {
 			list := strs(b)
-			return fenecdb.Bucket(list[0], list[1], list[2:]...)
+			return fennecdb.Bucket(list[0], list[1], list[2:]...)
 		}
 		if f, ok := v.get("$countDistinct"); ok {
-			return fenecdb.CountDistinct(f.(string))
+			return fennecdb.CountDistinct(f.(string))
 		}
 		if d, ok := v.get("$distance"); ok {
 			list := d.([]any)
-			return fenecdb.Distance(list[0].(string), value(list[1]))
+			return fennecdb.Distance(list[0].(string), value(list[1]))
 		}
 		if f, ok := v.get("$first"); ok {
 			list := strs(f)
-			return fenecdb.First(list[0], list[1:]...)
+			return fennecdb.First(list[0], list[1:]...)
 		}
 		if f, ok := v.get("$last"); ok {
 			list := strs(f)
-			return fenecdb.Last(list[0], list[1:]...)
+			return fennecdb.Last(list[0], list[1:]...)
 		}
 		if a, ok := v.get("$as"); ok {
 			list := a.([]any)
-			return value(list[0]).(fenecdb.Computed).As(list[1].(string))
+			return value(list[0]).(fennecdb.Computed).As(list[1].(string))
 		}
 		if len(v.keys) == 1 && strings.HasPrefix(v.keys[0], "$") {
 			panic("a condition where a value goes: " + v.keys[0])
@@ -233,16 +233,16 @@ func isPlain(o object) bool {
 
 // cond is a condition argument: an object of fields -- Fields, in order --
 // or what Or, And, Not and Raw make.
-func cond(x any) fenecdb.Cond {
+func cond(x any) fennecdb.Cond {
 	o := x.(object)
 	if v, ok := o.get("$or"); ok {
-		return fenecdb.Or(conds(v)...)
+		return fennecdb.Or(conds(v)...)
 	}
 	if v, ok := o.get("$and"); ok {
-		return fenecdb.And(conds(v)...)
+		return fennecdb.And(conds(v)...)
 	}
 	if v, ok := o.get("$not"); ok {
-		return fenecdb.Not(cond(v))
+		return fennecdb.Not(cond(v))
 	}
 	if v, ok := o.get("$raw"); ok {
 		list := v.([]any)
@@ -250,17 +250,17 @@ func cond(x any) fenecdb.Cond {
 		for i, p := range list[1:] {
 			params[i] = value(p)
 		}
-		return fenecdb.Raw(list[0].(string), params...)
+		return fennecdb.Raw(list[0].(string), params...)
 	}
 	pairs := make([]any, 0, 2*len(o.keys))
 	for i, k := range o.keys {
 		pairs = append(pairs, k, spec(o.vals[i]))
 	}
-	return fenecdb.Fields(pairs...)
+	return fennecdb.Fields(pairs...)
 }
 
-func conds(x any) []fenecdb.Cond {
-	var out []fenecdb.Cond
+func conds(x any) []fennecdb.Cond {
+	var out []fennecdb.Cond
 	for _, c := range x.([]any) {
 		out = append(out, cond(c))
 	}
@@ -283,7 +283,7 @@ func spec(x any) any {
 			pairs = append(pairs, k, value(o.vals[i]))
 		}
 	}
-	return fenecdb.Ops(pairs...)
+	return fennecdb.Ops(pairs...)
 }
 
 // insertOpts is an insert's options, among its documents as Insert takes them.
@@ -291,13 +291,13 @@ func insertOpts(o object) []any {
 	var out []any
 	for i, k := range o.keys {
 		if k == "ifAbsent" && o.vals[i].(bool) {
-			out = append(out, fenecdb.IfAbsent())
+			out = append(out, fennecdb.IfAbsent())
 		}
 		if k == "require" {
-			out = append(out, fenecdb.Require(o.vals[i].(int)))
+			out = append(out, fennecdb.Require(o.vals[i].(int)))
 		}
 		if k == "reason" {
-			out = append(out, fenecdb.Reason(o.vals[i].(string)))
+			out = append(out, fennecdb.Reason(o.vals[i].(string)))
 		}
 		// As an update's: JavaScript's true is every field.
 		if k == "returning" {
@@ -316,78 +316,78 @@ func optsOf(x []any, at int) object {
 	return object{}
 }
 
-func options(o object) []fenecdb.Opt {
-	var out []fenecdb.Opt
+func options(o object) []fennecdb.Opt {
+	var out []fennecdb.Opt
 	for i, k := range o.keys {
 		v := o.vals[i]
 		switch k {
 		case "ef":
-			out = append(out, fenecdb.Ef(v.(int)))
+			out = append(out, fennecdb.Ef(v.(int)))
 		case "exact":
 			if v.(bool) {
-				out = append(out, fenecdb.Exact())
+				out = append(out, fennecdb.Exact())
 			}
 		// JavaScript's true is 2 edits, false none written.
 		case "fuzzy":
 			if b, ok := v.(bool); ok {
 				if b {
-					out = append(out, fenecdb.Fuzzy(2))
+					out = append(out, fennecdb.Fuzzy(2))
 				}
 			} else {
-				out = append(out, fenecdb.Fuzzy(v.(int)))
+				out = append(out, fennecdb.Fuzzy(v.(int)))
 			}
 		case "prefix":
 			if v.(bool) {
-				out = append(out, fenecdb.Prefix())
+				out = append(out, fennecdb.Prefix())
 			}
 		case "k":
-			out = append(out, fenecdb.K(v.(int)))
+			out = append(out, fennecdb.K(v.(int)))
 		case "candidates":
-			out = append(out, fenecdb.Candidates(v.(int)))
+			out = append(out, fennecdb.Candidates(v.(int)))
 		case "collate":
-			out = append(out, fenecdb.Collate(v.(string)))
+			out = append(out, fennecdb.Collate(v.(string)))
 		case "all":
 			if v.(bool) {
-				out = append(out, fenecdb.All())
+				out = append(out, fennecdb.All())
 			}
 		case "require":
-			out = append(out, fenecdb.Require(v.(int)))
+			out = append(out, fennecdb.Require(v.(int)))
 		case "reason":
-			out = append(out, fenecdb.Reason(v.(string)))
+			out = append(out, fennecdb.Reason(v.(string)))
 		case "returning":
 			// JavaScript's true is every field, "*" here.
 			if b, ok := v.(bool); ok {
 				if b {
-					out = append(out, fenecdb.Returning("*"))
+					out = append(out, fennecdb.Returning("*"))
 				}
 			} else {
-				out = append(out, fenecdb.Returning(strs(v)...))
+				out = append(out, fennecdb.Returning(strs(v)...))
 			}
 		// A field, or a list of them: a key over several fields.
 		case "on":
 			if s, ok := v.(string); ok {
-				out = append(out, fenecdb.On(s))
+				out = append(out, fennecdb.On(s))
 			} else {
-				out = append(out, fenecdb.On(strs(v)...))
+				out = append(out, fennecdb.On(strs(v)...))
 			}
 		case "parentKey":
 			if s, ok := v.(string); ok {
-				out = append(out, fenecdb.ParentKey(s))
+				out = append(out, fennecdb.ParentKey(s))
 			} else {
-				out = append(out, fenecdb.ParentKey(strs(v)...))
+				out = append(out, fennecdb.ParentKey(strs(v)...))
 			}
 		case "required":
 			if v.(bool) {
-				out = append(out, fenecdb.Required())
+				out = append(out, fennecdb.Required())
 			}
 		case "limit":
-			out = append(out, fenecdb.Limit(v.(int)))
+			out = append(out, fennecdb.Limit(v.(int)))
 		case "offset":
-			out = append(out, fenecdb.Offset(v.(int)))
+			out = append(out, fennecdb.Offset(v.(int)))
 		case "where":
-			out = append(out, fenecdb.Where(cond(v)))
+			out = append(out, fennecdb.Where(cond(v)))
 		case "top":
-			out = append(out, fenecdb.Top(v.(int)))
+			out = append(out, fennecdb.Top(v.(int)))
 		case "ranges":
 			var bounds []float64
 			for _, b := range v.([]any) {
@@ -398,37 +398,37 @@ func options(o object) []fenecdb.Opt {
 					bounds = append(bounds, n.(float64))
 				}
 			}
-			out = append(out, fenecdb.Ranges(bounds...))
+			out = append(out, fennecdb.Ranges(bounds...))
 		case "disjunctive":
 			if v.(bool) {
-				out = append(out, fenecdb.Disjunctive())
+				out = append(out, fennecdb.Disjunctive())
 			}
 		case "pre":
-			out = append(out, fenecdb.Pre(v))
+			out = append(out, fennecdb.Pre(v))
 		case "post":
-			out = append(out, fenecdb.Post(v))
+			out = append(out, fennecdb.Post(v))
 		case "ellipsis":
-			out = append(out, fenecdb.Ellipsis(v))
+			out = append(out, fennecdb.Ellipsis(v))
 		case "select":
 			if s, ok := v.(string); ok {
-				out = append(out, fenecdb.Select(s))
+				out = append(out, fennecdb.Select(s))
 			} else {
-				out = append(out, fenecdb.Select(value(v).([]any)...))
+				out = append(out, fennecdb.Select(value(v).([]any)...))
 			}
 		case "group":
 			if s, ok := v.(string); ok {
-				out = append(out, fenecdb.Group(s))
+				out = append(out, fennecdb.Group(s))
 			} else {
-				out = append(out, fenecdb.Group(value(v).([]any)...))
+				out = append(out, fennecdb.Group(value(v).([]any)...))
 			}
 		case "order":
 			if s, ok := v.(string); ok {
-				out = append(out, fenecdb.Sort(s, "asc"))
+				out = append(out, fennecdb.Sort(s, "asc"))
 				continue
 			}
 			for _, key := range v.([]any) {
 				if s, ok := key.(string); ok {
-					out = append(out, fenecdb.Sort(s, "asc"))
+					out = append(out, fennecdb.Sort(s, "asc"))
 					continue
 				}
 				parts := key.([]any)
@@ -436,7 +436,7 @@ func options(o object) []fenecdb.Opt {
 				if len(parts) > 1 {
 					dir = parts[1].(string)
 				}
-				out = append(out, fenecdb.Sort(parts[0].(string), dir, options(optsOf(parts, 2))...))
+				out = append(out, fennecdb.Sort(parts[0].(string), dir, options(optsOf(parts, 2))...))
 			}
 		default:
 			panic("no option " + k)
@@ -464,16 +464,16 @@ func docs(x any) []any {
 	return []any{doc(x)}
 }
 
-func doc(x any) fenecdb.Doc {
+func doc(x any) fennecdb.Doc {
 	o := x.(object)
-	d := fenecdb.Doc{}
+	d := fennecdb.Doc{}
 	for i, k := range o.keys {
-		d = append(d, fenecdb.DocField{Name: k, Value: value(o.vals[i])})
+		d = append(d, fennecdb.DocField{Name: k, Value: value(o.vals[i])})
 	}
 	return d
 }
 
-// recorder is a server that answers as fenec-server would and keeps the
+// recorder is a server that answers as fennec-server would and keeps the
 // last body it was sent.
 type recorder struct {
 	mu   sync.Mutex
@@ -505,7 +505,7 @@ type outcome struct {
 	err    string
 }
 
-func runChain(t *testing.T, db *fenecdb.Client, rec *recorder, steps []object) outcome {
+func runChain(t *testing.T, db *fennecdb.Client, rec *recorder, steps []object) outcome {
 	ctx := context.Background()
 	args := func(s object) []any {
 		a, _ := s.get("args")
@@ -537,12 +537,12 @@ func runChain(t *testing.T, db *fenecdb.Client, rec *recorder, steps []object) o
 		case "select":
 			q = q.Select(value(a).([]any)...)
 		case "where", "orWhere":
-			var c fenecdb.Cond
+			var c fennecdb.Cond
 			switch len(a) {
 			case 3:
-				c = fenecdb.Cmp(a[0].(string), a[1].(string), value(a[2]))
+				c = fennecdb.Cmp(a[0].(string), a[1].(string), value(a[2]))
 			case 2:
-				c = fenecdb.Fields(a[0].(string), spec(a[1]))
+				c = fennecdb.Fields(a[0].(string), spec(a[1]))
 			default:
 				c = cond(a[0])
 			}
@@ -589,8 +589,8 @@ func runChain(t *testing.T, db *fenecdb.Client, rec *recorder, steps []object) o
 			var params []any
 			var err error
 			switch op {
-			case "toFenecQL":
-				text, params, err = q.ToFenecQL()
+			case "toFennecQL":
+				text, params, err = q.ToFennecQL()
 			case "toInsert":
 				text, params, err = q.ToInsert(append(docs(a[0]), insertOpts(optsOf(a, 1))...)...)
 			case "toUpdate":
@@ -644,7 +644,7 @@ func runChain(t *testing.T, db *fenecdb.Client, rec *recorder, steps []object) o
 }
 
 func refused(t *testing.T, err error) outcome {
-	var e *fenecdb.QueryError
+	var e *fennecdb.QueryError
 	if !errors.As(err, &e) {
 		t.Fatalf("not a refusal of the builder's: %v", err)
 	}
@@ -693,7 +693,7 @@ func TestBuilderMakesWhatTheGoldenFileSays(t *testing.T) {
 	rec := &recorder{}
 	srv := httptest.NewServer(rec)
 	defer srv.Close()
-	db := fenecdb.New(srv.URL)
+	db := fennecdb.New(srv.URL)
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			if why, ok := untypable[c.name]; ok {
@@ -720,12 +720,12 @@ func TestBuilderMakesWhatTheGoldenFileSays(t *testing.T) {
 }
 
 func TestBuilderIsImmutable(t *testing.T) {
-	base := fenecdb.From("articles").Where("year", ">=", 2024)
+	base := fennecdb.From("articles").Where("year", ">=", 2024)
 	a := base.Where("tags", "has", "rust")
 	b := base.Limit(3)
 	c := base.Where("lang", "=", "tr")
 	for _, w := range []struct {
-		q    *fenecdb.Builder
+		q    *fennecdb.Builder
 		text string
 	}{
 		{base, "get articles where year >= $1"},
@@ -733,7 +733,7 @@ func TestBuilderIsImmutable(t *testing.T) {
 		{b, "get articles where year >= $1 limit $2"},
 		{c, "get articles where year >= $1 and lang = $2"},
 	} {
-		text, _, err := w.q.ToFenecQL()
+		text, _, err := w.q.ToFennecQL()
 		if err != nil || text != w.text {
 			t.Fatalf("%q, %v; want %q", text, err, w.text)
 		}
@@ -741,10 +741,10 @@ func TestBuilderIsImmutable(t *testing.T) {
 	// The first refusal is the one that comes back, and a step after it
 	// changes nothing.
 	bad := base.Where("a b", "=", 1).Limit(-1)
-	if _, _, err := bad.ToFenecQL(); err == nil || !strings.Contains(err.Error(), `invalid field name: "a b"`) {
+	if _, _, err := bad.ToFennecQL(); err == nil || !strings.Contains(err.Error(), `invalid field name: "a b"`) {
 		t.Fatalf("%v", err)
 	}
-	if _, err := fenecdb.From("t").Rows(context.Background()); err == nil || !strings.Contains(err.Error(), "not bound") {
+	if _, err := fennecdb.From("t").Rows(context.Background()); err == nil || !strings.Contains(err.Error(), "not bound") {
 		t.Fatalf("an unbound query ran: %v", err)
 	}
 }
@@ -753,11 +753,11 @@ func TestBuilderIsImmutable(t *testing.T) {
 // byte as U+FFFD, three bytes, so its length is not the text's.
 func TestAReasonNotUTF8IsRefused(t *testing.T) {
 	for _, reason := range []string{"\xff", "a\xc3b", "\xed\xa0\x80"} {
-		_, _, err := fenecdb.From("t").Where("id", "=", 1).ToDelete(fenecdb.Require(1), fenecdb.Reason(reason))
+		_, _, err := fennecdb.From("t").Where("id", "=", 1).ToDelete(fennecdb.Require(1), fennecdb.Reason(reason))
 		if err == nil || !strings.Contains(err.Error(), "a text of 1 to 200 bytes") {
 			t.Fatalf("%q: %v", reason, err)
 		}
-		_, _, err = fenecdb.From("t").Require(1, fenecdb.Reason(reason)).ToFenecQL()
+		_, _, err = fennecdb.From("t").Require(1, fennecdb.Reason(reason)).ToFennecQL()
 		if err == nil || !strings.Contains(err.Error(), "a text of 1 to 200 bytes") {
 			t.Fatalf("%q read: %v", reason, err)
 		}
@@ -770,10 +770,10 @@ func TestBuilderTakesMapsAndStructs(t *testing.T) {
 		Stars int       `json:"stars,omitempty"`
 		Embed []float32 `json:"embed"`
 	}
-	text, params, err := fenecdb.From("notes").ToInsert(
+	text, params, err := fennecdb.From("notes").ToInsert(
 		note{Title: "a", Embed: []float32{0.5}},
 		map[string]any{"title": "b", "stars": 3},
-		fenecdb.D("title", "c", "stars", 4),
+		fennecdb.D("title", "c", "stars", 4),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -784,12 +784,12 @@ func TestBuilderTakesMapsAndStructs(t *testing.T) {
 	if len(params) != 6 {
 		t.Fatalf("%v", params)
 	}
-	text, _, err = fenecdb.From("notes").WhereCond(fenecdb.Fields("year", map[string]any{"lt": 2030, "gte": 2020})).ToFenecQL()
+	text, _, err = fennecdb.From("notes").WhereCond(fennecdb.Fields("year", map[string]any{"lt": 2030, "gte": 2020})).ToFennecQL()
 	if err != nil || text != "get notes where year >= $1 and year < $2" {
 		t.Fatalf("%q %v", text, err)
 	}
 	when := time.Date(2026, 1, 2, 3, 4, 5, 678_000_000, time.FixedZone("x", 3600))
-	_, params, _ = fenecdb.From("notes").Where("at", ">=", when).Where("n", "in", []int{1, 2}).ToFenecQL()
+	_, params, _ = fennecdb.From("notes").Where("at", ">=", when).Where("n", "in", []int{1, 2}).ToFennecQL()
 	if !reflect.DeepEqual(params, []any{"2026-01-02T02:04:05.678Z", 1, 2}) {
 		t.Fatalf("%v", params)
 	}
@@ -812,9 +812,9 @@ func TestBuilderAnswersAreTheTextsAnswers(t *testing.T) {
 
 	shelf := db.From(name)
 	w := must(shelf.Insert(ctx,
-		fenecdb.D("title", "Night at the oasis", "year", 2024, "lang", "en", "tags", []string{"desert"}, "body", "a night under the stars at the oasis", "embed", []float32{0.1, 0.2, 0.3}),
-		fenecdb.D("title", "Dunes", "year", 2021, "lang", "en", "tags", []string{"desert", "sand"}, "body", "dunes move with the wind", "embed", []float32{0.9, 0.1, 0}),
-		fenecdb.D("title", "Kum", "year", 2023, "lang", "tr", "tags", []string{"sand"}, "body", "kum ve rüzgar", "embed", []float32{0.2, 0.8, 0.1}),
+		fennecdb.D("title", "Night at the oasis", "year", 2024, "lang", "en", "tags", []string{"desert"}, "body", "a night under the stars at the oasis", "embed", []float32{0.1, 0.2, 0.3}),
+		fennecdb.D("title", "Dunes", "year", 2021, "lang", "en", "tags", []string{"desert", "sand"}, "body", "dunes move with the wind", "embed", []float32{0.9, 0.1, 0}),
+		fennecdb.D("title", "Kum", "year", 2023, "lang", "tr", "tags", []string{"sand"}, "body", "kum ve rüzgar", "embed", []float32{0.2, 0.8, 0.1}),
 	)).of(t)
 	if w.Affected != 3 || w.Seq == 0 {
 		t.Fatalf("%+v", w)
@@ -823,26 +823,26 @@ func TestBuilderAnswersAreTheTextsAnswers(t *testing.T) {
 
 	v := []float32{0.1, 0.2, 0.3}
 	for _, p := range []struct {
-		q      *fenecdb.Builder
+		q      *fennecdb.Builder
 		text   string
 		params []any
 	}{
 		{shelf.Select("title").Where("year", ">=", 2022).Order("year", "desc"),
 			"get " + name + " select title where year >= $1 order year desc", []any{2022}},
-		{shelf.Select("title").WhereCond(fenecdb.Fields("lang", "en", "tags", fenecdb.Ops("has", "sand"))),
+		{shelf.Select("title").WhereCond(fennecdb.Fields("lang", "en", "tags", fennecdb.Ops("has", "sand"))),
 			"get " + name + " select title where lang = $1 and tags has $2", []any{"en", "sand"}},
-		{shelf.Select("title").WhereCond(fenecdb.Or(fenecdb.Cmp("lang", "=", "tr"), fenecdb.Cmp("year", "<", 2022))).Order("title", "asc"),
+		{shelf.Select("title").WhereCond(fennecdb.Or(fennecdb.Cmp("lang", "=", "tr"), fennecdb.Cmp("year", "<", 2022))).Order("title", "asc"),
 			"get " + name + " select title where lang = $1 or year < $2 order title asc", []any{"tr", 2022}},
 		{shelf.Select("title").Near("embed", v).Limit(2),
 			"get " + name + " select title near embed $1 limit $2", []any{v, 2}},
 		{shelf.Select("title").Match("body", "oasis stars"),
 			"get " + name + " select title match body $1", []any{"oasis stars"}},
-		{shelf.Select("title").Where("id", "in", []int{1, 3}).Lookup(notes, fenecdb.On("doc_id"), fenecdb.Select("stars"), fenecdb.Sort("stars", "desc")),
+		{shelf.Select("title").Where("id", "in", []int{1, 3}).Lookup(notes, fennecdb.On("doc_id"), fennecdb.Select("stars"), fennecdb.Sort("stars", "desc")),
 			"get " + name + " select title where id in [$1, $2] lookup " + notes + " on doc_id select stars order stars desc", []any{1, 3}},
 		{shelf.Select("lang", "count(*)").Group("lang").Order("lang", "asc"),
 			"get " + name + " select lang, count(*) group lang order lang asc", nil},
 	} {
-		text, params, err := p.q.ToFenecQL()
+		text, params, err := p.q.ToFennecQL()
 		if err != nil || text != p.text {
 			t.Fatalf("%q %v; want %q", text, err, p.text)
 		}
@@ -853,7 +853,7 @@ func TestBuilderAnswersAreTheTextsAnswers(t *testing.T) {
 		}
 		_ = params
 	}
-	titles := must(fenecdb.RowsAs[shelfRow](ctx, shelf.Select("title").Order("year", "asc"))).of(t)
+	titles := must(fennecdb.RowsAs[shelfRow](ctx, shelf.Select("title").Order("year", "asc"))).of(t)
 	if len(titles) != 3 || titles[0].Title != "Dunes" {
 		t.Fatalf("%v", titles)
 	}
@@ -879,7 +879,7 @@ func TestBuilderAnswersAreTheTextsAnswers(t *testing.T) {
 	if d := must(shelf.Where("year", "<", 2022).Delete(ctx)).of(t); d.Affected != 1 {
 		t.Fatalf("%+v", d)
 	}
-	if d := must(shelf.Delete(ctx, fenecdb.All())).of(t); d.Affected != 2 {
+	if d := must(shelf.Delete(ctx, fennecdb.All())).of(t); d.Affected != 2 {
 		t.Fatalf("%+v", d)
 	}
 	if n := must(shelf.Count(ctx)).of(t); n != 0 {
@@ -897,19 +897,19 @@ func TestHighlightsAndFacets(t *testing.T) {
 	defer db.Exec(ctx, "drop collection if exists "+name)
 	docs := db.From(name)
 	must(docs.Insert(ctx,
-		fenecdb.D("kind", "note", "body", "rust is fast"),
-		fenecdb.D("kind", "note", "body", "rust and go"),
-		fenecdb.D("kind", "memo", "body", "rust"),
-		fenecdb.D("kind", nil, "body", "go only"),
-		fenecdb.D("kind", nil, "body", "go again"),
-		fenecdb.D("kind", "note", "body", "notes again"),
+		fennecdb.D("kind", "note", "body", "rust is fast"),
+		fennecdb.D("kind", "note", "body", "rust and go"),
+		fennecdb.D("kind", "memo", "body", "rust"),
+		fennecdb.D("kind", nil, "body", "go only"),
+		fennecdb.D("kind", nil, "body", "go again"),
+		fennecdb.D("kind", "note", "body", "notes again"),
 	)).of(t)
 
 	rows := must(docs.Select("kind").Highlight("body").Match("body", "rust").Where("kind", "=", "memo").Rows(ctx)).of(t)
 	if len(rows) != 1 || !reflect.DeepEqual(rows[0]["highlight(body)"], []any{[]any{0.0, 4.0}}) {
 		t.Fatalf("%v", rows)
 	}
-	tagged := must(docs.Highlight("body", fenecdb.Tags("<b>", "</b>")).Snippet("body", 2).Match("body", "fast").First(ctx)).of(t)
+	tagged := must(docs.Highlight("body", fennecdb.Tags("<b>", "</b>")).Snippet("body", 2).Match("body", "fast").First(ctx)).of(t)
 	if tagged["highlight(body)"] != "rust is <b>fast</b>" {
 		t.Fatalf("%v", tagged)
 	}
@@ -919,7 +919,7 @@ func TestHighlightsAndFacets(t *testing.T) {
 
 	q := docs.Select("body").Facet("kind").Order("body", "asc").Limit(1)
 	a := must(q.Answer(ctx)).of(t)
-	want := fenecdb.Facets{{Field: "kind", Counts: []fenecdb.FacetCount{{"note", 3}, {nil, 2}, {"memo", 1}}}}
+	want := fennecdb.Facets{{Field: "kind", Counts: []fennecdb.FacetCount{{"note", 3}, {nil, 2}, {"memo", 1}}}}
 	if len(a.Rows) != 1 || !reflect.DeepEqual(a.Facets, want) {
 		t.Fatalf("%+v", a)
 	}
@@ -930,10 +930,10 @@ func TestHighlightsAndFacets(t *testing.T) {
 	if r := must(q.Rows(ctx)).of(t); len(r) != 1 || r[0]["body"] != "go again" {
 		t.Fatalf("%v", r)
 	}
-	if r := must(fenecdb.RowsAs[map[string]string](ctx, q)).of(t); len(r) != 1 {
+	if r := must(fennecdb.RowsAs[map[string]string](ctx, q)).of(t); len(r) != 1 {
 		t.Fatalf("%v", r)
 	}
-	text, params, _ := q.ToFenecQL()
+	text, params, _ := q.ToFennecQL()
 	if r := must(db.Query(ctx, text, params...)).of(t); len(r) != 1 {
 		t.Fatalf("%v", r)
 	}
@@ -947,7 +947,7 @@ func TestHighlightsAndFacets(t *testing.T) {
 	if n := must(docs.Where("kind", "=", "note").Facet("kind").Count(ctx)).of(t); n != 3 {
 		t.Fatalf("count %d", n)
 	}
-	out := must(db.Batch(ctx, fenecdb.Stmt(text, params...), fenecdb.Stmt("get "+name+" limit 1"))).of(t)
+	out := must(db.Batch(ctx, fennecdb.Stmt(text, params...), fennecdb.Stmt("get "+name+" limit 1"))).of(t)
 	if len(out.Results) != 2 || !reflect.DeepEqual(out.Results[0].Facets, want) || len(out.Results[0].Rows) != 1 ||
 		out.Results[1].Facets != nil || len(out.Results[1].Rows) != 1 {
 		t.Fatalf("%+v", out)

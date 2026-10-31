@@ -8,7 +8,7 @@ assertClean('before');
 const SMALL = data('small', 50);
 const KEY = `file:${SMALL}`;
 
-const app = startApp('server-dies', { FENEC_DESKTOP_OPEN: SMALL });
+const app = startApp('server-dies', { FENNEC_DESKTOP_OPEN: SMALL });
 const started = await waitFor((l) => l.what === 'server-started', 60000, 'the server started');
 await waitStudio(KEY);
 
@@ -18,7 +18,7 @@ const died = await waitFor((l) => l.what === 'server-died', 10000, 'server-died'
 log('exit reported as', died.code);
 assert.ok(died.code === null || died.code === 137, `killed by SIGKILL, not a clean exit: ${died.code}`);
 const notice = await waitNotice('The database server stopped');
-assert.match(notice.message, /small\.fenec/);
+assert.match(notice.message, /small\.fennec/);
 assert.match(notice.message, /killed by a signal|code 137/);
 assert.match(notice.hint, /Nothing written before it stopped is lost/);
 assert.deepEqual(notice.actions, ['retry']);

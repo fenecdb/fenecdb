@@ -6,7 +6,7 @@ import asyncio
 import pytest
 
 from conftest import TOKEN, URL, fresh
-from fenecdb import AsyncClient, FenecError
+from fennecdb import AsyncClient, FennecError
 
 
 def run(coro):
@@ -40,10 +40,10 @@ def test_a_statement_and_a_batch():
 def test_a_refusal_says_why():
     async def go():
         async with AsyncClient(URL, TOKEN) as db:
-            with pytest.raises(FenecError) as e:
+            with pytest.raises(FennecError) as e:
                 await db.query("get no_such_collection_here")
             assert e.value.status == 404
-            with pytest.raises(FenecError) as e:
+            with pytest.raises(FennecError) as e:
                 await db.query("get x wher")
             assert e.value.status == 400
             # The connection goes on after a refusal.
@@ -68,7 +68,7 @@ def test_an_idempotency_key_and_where_a_batch_stopped():
                 await db.query(put, ["c"], idempotency_key=f"{name}-2")
                 assert await db.query(f"get {name} count") == [{"count": 3}]
                 unmet = f"del {name} where t = $1 require 1 else 'no such t'"
-                with pytest.raises(FenecError) as e:
+                with pytest.raises(FennecError) as e:
                     await db.batch([(put, ["d"]), (unmet, ["none"])])
                 assert (e.value.status, e.value.at, e.value.completed) == (412, 1, 0)
                 assert e.value.reason == "no such t"

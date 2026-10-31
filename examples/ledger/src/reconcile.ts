@@ -1,8 +1,8 @@
 // Reconciliation: the balances against the journal, at one moment.
 //
-// fenecdb has one writer and no snapshots of its own, so "one moment" is a
+// fennecdb has one writer and no snapshots of its own, so "one moment" is a
 // lock: the reads go as one /batch, which runs under the write lock -- no
-// write lands between the first read and the last -- and its `Fenec-Seq`
+// write lands between the first read and the last -- and its `Fennec-Seq`
 // names the change the database stood at. A read holds the lock only while
 // it runs, so the job's cost to writers is its own time (README,
 // "Measured"). The change stream gives the other way: a consumer that

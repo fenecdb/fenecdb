@@ -27,7 +27,7 @@ const OTHER = data('held', 10);
 const keychainHas = (id) => spawnSync('security', ['find-generic-password', '-s', IDENTIFIER, '-a', `connection:${id}`], { stdio: 'ignore' }).status === 0;
 const state = () => JSON.parse(readFileSync(`${USER_DATA}/state.json`, 'utf8'));
 
-const app = startApp('remote', { FENEC_DESKTOP_LAUNCHER: '1' });
+const app = startApp('remote', { FENNEC_DESKTOP_LAUNCHER: '1' });
 await waitFor((l) => l.what === 'ready', 60000, 'ready');
 const launcherText = await waitFor((l) => l.what === 'page-text' && l.key === 'launcher' && /Open file/.test(l.text), 20000, 'the launcher drawn');
 assert.match(launcherText.text, /New database/);
@@ -53,7 +53,7 @@ const windowsOpen = async () => {
 
 step('a server with a studio, and its token');
 const TOKEN = `remote-${randomBytes(12).toString('hex')}`;
-const remote = await startServer(['--file', REMOTE, '--studio', '--http', '127.0.0.1:0'], { FENEC_HTTP_TOKEN: TOKEN });
+const remote = await startServer(['--file', REMOTE, '--studio', '--http', '127.0.0.1:0'], { FENNEC_HTTP_TOKEN: TOKEN });
 const id = await save('remote check', remote.origin, TOKEN);
 let n = lines().length;
 cmd({ cmd: 'secret', id });
@@ -109,7 +109,7 @@ await waitStudio(`remote:${bad}`, n);
 
 step('a saved server pointed at another address, with no token typed, forgets its token: it is not sent to a new place');
 const THIRD = data('third', 10);
-const third = await startServer(['--file', THIRD, '--studio', '--http', '127.0.0.1:0'], { FENEC_HTTP_TOKEN: 'third-token' });
+const third = await startServer(['--file', THIRD, '--studio', '--http', '127.0.0.1:0'], { FENNEC_HTTP_TOKEN: 'third-token' });
 const mover = await save('mover', remote.origin, TOKEN);
 n = lines().length;
 cmd({ cmd: 'addconn', id: mover, name: 'mover', url: third.origin, token: '', tenant: '' });
@@ -197,7 +197,7 @@ const needs = await waitNotice('This server asks for a token', 10000, n);
 assert.match(needs.message, /none is saved/);
 
 step('a server with the studio off: told so, with the flag to start it with');
-const off = await startServer(['--file', OTHER, '--http', '127.0.0.1:0'], { FENEC_HTTP_TOKEN: 'x' });
+const off = await startServer(['--file', OTHER, '--http', '127.0.0.1:0'], { FENNEC_HTTP_TOKEN: 'x' });
 const nostudio = await save('studio off', off.origin, 'x');
 n = lines().length;
 assert.equal((await open(nostudio)).ok, false);

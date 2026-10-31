@@ -1,10 +1,10 @@
 """`reads="nearest"`: the builder's reads, and a statement given
-`read=True`, marked for a read replica near the client (`Fenec-Read:
+`read=True`, marked for a read replica near the client (`Fennec-Read:
 replica`) and sent after the furthest position home named to it
-(`Fenec-After`, `Fenec-History`), which a 504 from home lowers to where
+(`Fennec-After`, `Fennec-History`), which a 504 from home lowers to where
 home stands; writes, and every request of a client reading home, sent as
 before. Against a scripted server: what a router does with the mark is
-fenec-shard's to test, and the JavaScript client's against real routers."""
+fennec-shard's to test, and the JavaScript client's against real routers."""
 
 import asyncio
 import json
@@ -13,7 +13,7 @@ import threading
 
 import pytest
 
-from fenecdb import AsyncClient, Client
+from fennecdb import AsyncClient, Client
 
 
 def _scripted(answers):
@@ -70,13 +70,13 @@ H1, H2 = "1-00000000000000aa", "2-00000000000000bb"
 
 def _script():
     return [
-        (200, {"affected": 1}, {"Fenec-Seq": "9", "Fenec-History": H1}),
-        (200, {"affected": 1}, {"Fenec-Seq": "12", "Fenec-History": H1}),
+        (200, {"affected": 1}, {"Fennec-Seq": "9", "Fennec-History": H1}),
+        (200, {"affected": 1}, {"Fennec-Seq": "12", "Fennec-History": H1}),
         (200, [{"n": 1}], {}),
         (200, [{"count": 2}], {}),
         (200, [{"count": 2}], {}),
         # A read near's answer moves nothing: it may be a replica's.
-        (200, {"ok": 1, "results": []}, {"Fenec-Seq": "15", "Fenec-History": H1}),
+        (200, {"ok": 1, "results": []}, {"Fennec-Seq": "15", "Fennec-History": H1}),
         # The lost write: no copy holds it, home either, which says where
         # it stands: the client's position from here on.
         (504, {"error": "change 12 is not in this copy's history", "seq": 10, "history": H2}, {}),
@@ -88,19 +88,19 @@ def _script():
 def _check(seen):
     put, insert, rows, count, text, batch, near, home, after = seen
     for w in (put, insert):
-        assert "fenec-read" not in w and "fenec-after" not in w
+        assert "fennec-read" not in w and "fennec-after" not in w
     # The furthest position, not the last answered.
     for r in (rows, count, batch, near):
-        assert r["fenec-read"] == "replica"
-        assert r["fenec-after"] == "12"
-        assert r["fenec-history"] == H1
+        assert r["fennec-read"] == "replica"
+        assert r["fennec-after"] == "12"
+        assert r["fennec-history"] == H1
     # A text not marked goes home.
-    assert "fenec-read" not in text
-    assert "fenec-read" not in home and "fenec-after" not in home
-    assert "fenec-history" not in home
+    assert "fennec-read" not in text
+    assert "fennec-read" not in home and "fennec-after" not in home
+    assert "fennec-history" not in home
     # Home's position taken, lower and of the history after the failover.
-    assert after["fenec-after"] == "10"
-    assert after["fenec-history"] == H2
+    assert after["fennec-after"] == "10"
+    assert after["fennec-history"] == H2
 
 
 def test_a_client_reading_near_marks_its_reads_and_sends_its_writes_after():
@@ -141,13 +141,13 @@ def test_a_client_reads_home_unless_it_asks_for_nearest():
     db = Client(f"http://127.0.0.1:{port}")
     db.collection("t").rows()
     db.query("get t count", read=True)
-    assert all("fenec-read" not in r for r in seen)
+    assert all("fennec-read" not in r for r in seen)
     with pytest.raises(ValueError):
         Client("http://127.0.0.1:1", reads="anywhere")
 
 
 def test_a_504_sets_the_position_back_over_its_own_alone_never_to_an_earlier_term():
-    from fenecdb import _Shared
+    from fennecdb import _Shared
 
     s = _Shared()
     s.answered(100, H2)
@@ -167,7 +167,7 @@ def test_a_504_sets_the_position_back_over_its_own_alone_never_to_an_earlier_ter
 
 
 def test_a_tenant_made_again_has_its_position_taken_its_term_lower():
-    from fenecdb import _Shared
+    from fennecdb import _Shared
 
     # A tenant failed over twice: term 3 of its lineage, aaaaaaaa. Deleted
     # and made again, home names term 1 of another lineage: refused as an
@@ -189,7 +189,7 @@ def test_a_tenant_made_again_has_its_position_taken_its_term_lower():
 def test_a_change_the_caller_names_is_not_taken_from_its_504():
     port, seen = _scripted(
         [
-            (200, {"affected": 1}, {"Fenec-Seq": "9", "Fenec-History": H1}),
+            (200, {"affected": 1}, {"Fennec-Seq": "9", "Fennec-History": H1}),
             (504, {"error": "not in the wait", "seq": 3, "history": H2}, {}),
             (200, [], {}),
             (200, [], {}),
@@ -199,5 +199,5 @@ def test_a_change_the_caller_names_is_not_taken_from_its_504():
     db.query("put t {n: 1}")
     db.query("get t count", read=True, after=50)
     db.collection("t").rows()
-    assert seen[1]["fenec-after"] == "50"
-    assert seen[3]["fenec-after"] == "9" and seen[3]["fenec-history"] == H1
+    assert seen[1]["fennec-after"] == "50"
+    assert seen[3]["fennec-after"] == "9" and seen[3]["fennec-history"] == H1

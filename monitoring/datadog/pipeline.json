@@ -1,8 +1,8 @@
 {
-  "name": "fenecdb",
+  "name": "fennecdb",
   "is_enabled": true,
   "filter": {
-    "query": "source:fenecdb"
+    "query": "source:fennecdb"
   },
   "processors": [
     {

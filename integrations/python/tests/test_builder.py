@@ -13,10 +13,10 @@ from pathlib import Path
 import pytest
 
 from conftest import TOKEN, URL, fresh
-from fenecdb import (
+from fennecdb import (
     AsyncClient,
     FacetCount,
-    FenecError,
+    FennecError,
     Query,
     and_,
     bucket,
@@ -33,7 +33,7 @@ from fenecdb import (
 )
 
 # run-tests.sh mounts the file beside the package in its container.
-GOLDEN = Path(os.environ.get("FENEC_GOLDEN") or Path(__file__).parents[2] / "builder-golden.json")
+GOLDEN = Path(os.environ.get("FENNEC_GOLDEN") or Path(__file__).parents[2] / "builder-golden.json")
 CASES = json.loads(GOLDEN.read_text(encoding="utf-8"))
 
 
@@ -106,8 +106,8 @@ def run(steps):
         for i, step in enumerate(rest):
             op, args = step["op"], step.get("args", [])
             last = i == len(rest) - 1
-            if op == "toFenecQL":
-                text, params = q.to_fenecql()
+            if op == "toFennecQL":
+                text, params = q.to_fennecql()
             elif op in ("toInsert", "insert"):
                 fn = q.to_insert if op == "toInsert" else q.insert
                 out = fn(arg(args[0]), **kwargs(args[1] if len(args) > 1 else None))
@@ -134,7 +134,7 @@ def run(steps):
             assert len(rec.sent) <= 1
             return {"text": text, "params": json.loads(json.dumps(params))}
         raise AssertionError("a chain ends with a statement")
-    except FenecError as e:
+    except FennecError as e:
         assert e.status == 0, e
         return {"error": str(e)}
 
@@ -184,25 +184,25 @@ def test_a_query_is_immutable_and_can_be_branched():
     base = collection("articles").where("year", ">=", 2024)
     a = base.where("tags", "has", "rust")
     b = base.limit(3)
-    assert base.to_fenecql() == ("get articles where year >= $1", [2024])
-    assert a.to_fenecql()[0] == "get articles where year >= $1 and tags has $2"
-    assert b.to_fenecql() == ("get articles where year >= $1 limit $2", [2024, 3])
+    assert base.to_fennecql() == ("get articles where year >= $1", [2024])
+    assert a.to_fennecql()[0] == "get articles where year >= $1 and tags has $2"
+    assert b.to_fennecql() == ("get articles where year >= $1 limit $2", [2024, 3])
 
 
 def test_a_reason_that_utf8_cannot_send_is_refused_as_the_builder_s():
     # A lone surrogate is a str to Python and no text to UTF-8: refused as
-    # a reason of no bytes, a FenecError, never the UnicodeEncodeError.
+    # a reason of no bytes, a FennecError, never the UnicodeEncodeError.
     for reason in ["\ud800", "a\udfffb"]:
-        with pytest.raises(FenecError, match="a text of 1 to 200 bytes"):
+        with pytest.raises(FennecError, match="a text of 1 to 200 bytes"):
             collection("t").where("id", 1).to_delete(require=1, reason=reason)
-        with pytest.raises(FenecError, match="a text of 1 to 200 bytes"):
+        with pytest.raises(FennecError, match="a text of 1 to 200 bytes"):
             collection("t").require(1, reason=reason)
 
 
 def test_an_unbound_query_has_text_but_cannot_run():
     q = collection("t")
-    assert q.to_fenecql() == ("get t", [])
-    with pytest.raises(FenecError, match="not bound"):
+    assert q.to_fennecql() == ("get t", [])
+    with pytest.raises(FennecError, match="not bound"):
         q.rows()
 
 
@@ -213,9 +213,9 @@ def test_a_tuple_a_numpy_like_list_and_a_naive_datetime_are_values():
 
     q = collection("t").where("v", "=", Vec()).where("t", "in", ("a", "b"))
     q = q.where("at", ">=", datetime(2026, 1, 2, 3, 4, 5, 678000))
-    assert q.to_fenecql()[1] == [[0.5, 0.25], "a", "b", "2026-01-02T03:04:05.678Z"]
-    with pytest.raises(FenecError, match="cannot be used as a fenecdb value"):
-        collection("t").where("v", "=", object()).to_fenecql()
+    assert q.to_fennecql()[1] == [[0.5, 0.25], "a", "b", "2026-01-02T03:04:05.678Z"]
+    with pytest.raises(FennecError, match="cannot be used as a fennecdb value"):
+        collection("t").where("v", "=", object()).to_fennecql()
 
 
 # ---------------------------------------------------------- against the server
@@ -273,7 +273,7 @@ def test_builder_answers_are_the_texts_answers(client, shelf):
          f"get {name} select lang, count(*) group lang order lang asc", []),
     ]
     for q, text, params in pairs:
-        assert q.to_fenecql() == (text, params)
+        assert q.to_fennecql() == (text, params)
         assert q.rows() == client.query(text, params)
         assert q.rows()  # an answer worth comparing
     assert docs.where("lang", "en").count() == client.query(f"get {name} where lang = $1 count", ["en"])[0]["count"] == 2
@@ -287,7 +287,7 @@ def test_builder_writes_are_the_texts_writes(client, shelf):
     docs = client.collection(name)
     assert docs.where("lang", "tr").update({"year": 2025}) == 1
     assert client.query(f"get {name} select year where lang = $1", ["tr"]) == [{"year": 2025}]
-    with pytest.raises(FenecError) as e:
+    with pytest.raises(FennecError) as e:
         docs.delete()
     assert e.value.status == 0
     assert docs.where("year", "<", 2022).delete() == 1
@@ -303,7 +303,7 @@ def test_the_async_builder_awaits_the_same_answers(client, shelf):
         async with AsyncClient(URL, TOKEN) as db:
             docs = db.collection(name)
             q = docs.select("title").where("year", ">=", 2022).order("year", "desc")
-            assert await q.rows() == client.query(*q.to_fenecql())
+            assert await q.rows() == client.query(*q.to_fennecql())
             assert await docs.where("lang", "en").count() == 2
             assert (await docs.order("year").first())["title"] == "Dunes"
             assert await db.collection(notes).where("doc_id", 3).update({"stars": 1}) == 1

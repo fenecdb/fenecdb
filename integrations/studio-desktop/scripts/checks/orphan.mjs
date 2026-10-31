@@ -72,7 +72,7 @@ const A = data('small', 50);
 const B = data('second', 20);
 const C = data('served-one', 10);
 
-const app = startApp('orphan', { FENEC_DESKTOP_OPEN: `${A}:${B}` });
+const app = startApp('orphan', { FENNEC_DESKTOP_OPEN: `${A}:${B}` });
 const a = await waitFor((l) => l.what === 'server-started' && l.path === A, 60000, 'the first server started');
 const b = await waitFor((l) => l.what === 'server-started' && l.path === B, 60000, 'the second server started');
 await waitStudio(`file:${A}`);
@@ -82,7 +82,7 @@ cmd({ cmd: 'serve', path: C });
 const c = await waitFor((l) => l.what === 'served' && l.path === C, 60000, 'the served one started');
 
 step('the write end of each server\'s stdin is held by the app, and by no server');
-const appPids = mine().filter((p) => !p.command.includes('fenec-server')).map((p) => p.pid);
+const appPids = mine().filter((p) => !p.command.includes('fennec-server')).map((p) => p.pid);
 assert.ok(appPids.length > 0, 'the app\'s own processes');
 const table = ends([a.pid, b.pid, c.pid, ...appPids]);
 for (const [name, server] of [['A', a], ['B', b], ['C, served', c]]) {
@@ -106,7 +106,7 @@ log('all gone');
 
 step('and each file is free: another program opens it');
 for (const file of [A, B, C]) {
-  const probe = await startServer(['--file', file, '--http', '127.0.0.1:0'], { FENEC_HTTP_TOKEN: 'x' });
+  const probe = await startServer(['--file', file, '--http', '127.0.0.1:0'], { FENNEC_HTTP_TOKEN: 'x' });
   await probe.stop();
 }
 assert.equal(mine().length, 0, `nothing left:\n${describe(mine())}`);

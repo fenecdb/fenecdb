@@ -4,7 +4,7 @@
 import type { DataFrame } from '@grafana/data';
 import type { TemplateSrv } from '@grafana/runtime';
 
-import { lineTokens } from './fenecql/language';
+import { lineTokens } from './fennecql/language';
 import { valuesOf, variableValues } from './values';
 
 // A dashboard's variables as Grafana's template service holds them: `sym`

@@ -1,6 +1,6 @@
-# Trellis: a multi-tenant team workspace on fenecdb
+# Trellis: a multi-tenant team workspace on fennecdb
 
-A real-world example of authentication and tenancy on fenecdb. Trellis is a
+A real-world example of authentication and tenancy on fennecdb. Trellis is a
 small team workspace -- organisations, teams, people in four roles, task
 boards, comments, invitations -- with the parts a product like it has to
 get right:
@@ -15,8 +15,8 @@ get right:
 - single sign-on through an OpenID Connect provider (a mock one runs beside
   the app), its ID tokens verified with the provider's published RS256 keys;
 - a tenant per organisation, a file of its own on one of three nodes
-  behind `fenec-shard`, each with a replica on another node;
-- roles and teams that fenec-server enforces on every request a person's
+  behind `fennec-shard`, each with a replica on another node;
+- roles and teams that fennec-server enforces on every request a person's
   own token makes, straight from the browser: a guest reads and comments,
   a member edits tasks but not the team they belong to, an admin manages
   people and teams;
@@ -38,14 +38,14 @@ Every person, company and address in it is invented.
 - TypeScript on Node, with a plain `node:http` server and no framework.
   The server's job is small on purpose: it holds the signing key and the
   credentials, and everything else -- every read and write of an
-  organisation's data -- goes to fenecdb under a scoped token. Next.js
+  organisation's data -- goes to fennecdb under a scoped token. Next.js
   would have put server actions between the page and the database, which
   hides the one thing this example shows: the browser holding its own
   token, and the database deciding what it may do.
 - The page is one ES module (`public/app.js`), served as written, drawn
   with DOM calls (never `innerHTML` over data) under a strict CSP. It reads
-  and writes through `@fenecdb/web/client`, served from `node_modules`.
-- `fenec-server --dir` on three nodes and `fenec-shard --replicas
+  and writes through `@fennecdb/web/client`, served from `node_modules`.
+- `fennec-server --dir` on three nodes and `fennec-shard --replicas
   --auto-failover` in front: a tenant per organisation and one for
   accounts, each with a replica on another node, failed over by the router
   on a lease.
@@ -53,7 +53,7 @@ Every person, company and address in it is invented.
 ## Architecture
 
 ```
- browser                        Trellis (src/)                          fenec-shard :8090        fenec-server --dir
+ browser                        Trellis (src/)                          fennec-shard :8090        fennec-server --dir
  ───────                        ──────────────                          ─────────────────        ───────────────────
  sign-in form ── POST /api/auth/signin ─▶ rate limits + the account's  ─┐                     n1 :8091  accounts (+replica on n2)
                                          row in one /batch, scrypt      │  /t/accounts/*  ──▶ n2 :8092  o-lumen   (+replica on n3)
@@ -83,7 +83,7 @@ Tokens, each with one job:
 | Who | Credential | May |
 | --- | --- | --- |
 | A person, in an organisation | an access token: `sub`, `tenant` (the organisation's), `role` (their role and every role below it), `teams` (a list claim), `exp` five minutes on | what policy.txt grants their role, over the rows of their teams: from the browser, straight to the database |
-| A person, signed in | a refresh token, 32 random bytes in an HttpOnly cookie, stored as its SHA-256; and an API token naming no tenant | get access tokens; call this app's API. fenec-server refuses the API token everywhere (403: no tenant) |
+| A person, signed in | a refresh token, 32 random bytes in an HttpOnly cookie, stored as its SHA-256; and an API token naming no tenant | get access tokens; call this app's API. fennec-server refuses the API token everywhere (403: no tenant) |
 | This app | its own access token per tenant (`role: app`) | the auth flows: accounts, sessions, links, limits, the first owner of an organisation, invitations taken up. Never rewrite a log |
 | This app, provisioning | the router's token | place a new organisation's tenant with its schema, which the router applies on the node. No request handler uses it |
 | The operator | `--http-token`, `--admin-token`, the router's token | everything, including corrections to append-only logs |
@@ -95,7 +95,7 @@ A node, its disk or a backup cannot mint a token.
 ## Run it
 
 ```sh
-cargo build --release -p fenec-server -p fenec-shard   # from the repository's root
+cargo build --release -p fennec-server -p fennec-shard   # from the repository's root
 cd examples/saas
 npm install
 npm install --no-save ../../web   # this checkout's client: 0.1.10 on npm has no db.batch yet
@@ -119,11 +119,11 @@ npm run bench    # the measurements below
 
 From the repository's root, `examples/run-tests.sh saas` runs `scripts/ci.sh`
 on this checkout's packages and binaries; CI's `examples (saas)` job runs
-it against release builds of `fenec-server` and `fenec-shard`.
+it against release builds of `fennec-server` and `fennec-shard`.
 
-## What fenecdb does here
+## What fennecdb does here
 
-| Part | fenecdb feature |
+| Part | fennecdb feature |
 | --- | --- |
 | One account per email | `users.email text @unique`, after the app normalises the email (NFC, trim, lowercase): `@unique` compares bytes |
 | Sign-up that tells nobody whether an email exists | `put users {...} if absent`: affected 0 for a taken email, no 409 to tell apart, and the inbox told instead |
@@ -132,7 +132,7 @@ it against release builds of `fenec-server` and `fenec-shard`.
 | Sessions, links and invitations that lapse | `@ttl(14d)`, `@ttl(30m)`, `@ttl(24h)`, `@ttl(72h)`: a row past its time is out of every read and delete at once, the sweeper removes it later |
 | Links that work once | `del resets where hash = $1 require 1` in the block that sets the password and revokes every session |
 | Invitations used once | `insert redemptions {invite: $1, ...} if absent require 1`: the second use writes nothing and its block -- the member, the audit row -- is put back |
-| Tenant per organisation | `fenec-server --dir`, `fenec-shard`; the tenant comes from the path, never the query |
+| Tenant per organisation | `fennec-server --dir`, `fennec-shard`; the tenant comes from the path, never the query |
 | A token for one organisation only | the `tenant` claim: a token reaches `/t/<t>/` only when it names `<t>` (403 elsewhere, by every route) |
 | Tokens the nodes cannot mint | `--jwt-keys` with the app's RSA public key; `exp` required (the default) |
 | Roles | rules `for <role>` and a role claim that is a list holding the roles below it |
@@ -149,8 +149,8 @@ it against release builds of `fenec-server` and `fenec-shard`.
 | Refused tokens | `--audit` logs every 401, and a refusal waits 100 ms, doubled for each more from its address -- at the router, by the client's address |
 
 The whole policy is [`policy.txt`](policy.txt); the schemas are
-[`schema/accounts.fenecql`](schema/accounts.fenecql) and
-[`schema/org.fenecql`](schema/org.fenecql).
+[`schema/accounts.fennecql`](schema/accounts.fennecql) and
+[`schema/org.fennecql`](schema/org.fennecql).
 
 ## Threat model
 
@@ -158,13 +158,13 @@ The whole policy is [`policy.txt`](policy.txt); the schemas are
 
 | Threat | Defence | Test |
 | --- | --- | --- |
-| A password database leaks | scrypt (N = 2^15, r = 8, p = 1, 16-byte salt) in the app; fenecdb stores the result. Refresh tokens and link codes are stored as SHA-256, so the file signs nobody in | `auth`: hashes and salts, the stored row holds no password, no refresh token as itself |
+| A password database leaks | scrypt (N = 2^15, r = 8, p = 1, 16-byte salt) in the app; fennecdb stores the result. Refresh tokens and link codes are stored as SHA-256, so the file signs nobody in | `auth`: hashes and salts, the stored row holds no password, no refresh token as itself |
 | Account enumeration | the same status and body for an unknown email and a wrong password, a dummy scrypt for the unknown one (medians 20.25 against 20.82 ms over 40 attempts each); sign-up and forgot answer the same either way; rate limits key on the normalised email whether it exists or not | `auth` |
 | Online guessing | 8 attempts per account and 30 per address in ten minutes, each counted under the write lock (`require 1`), 16 concurrent attempts letting exactly 8 through; a right password after the limit is refused too | `auth` |
 | Duplicate accounts by case or Unicode form | normalisation before `@unique` | `auth`: `Alice@X.io` and `alice@x.io`, `José` composed and decomposed |
 | A stolen refresh token | rotation on every use, conditional and in one block; reuse revokes the family and is logged; HttpOnly, SameSite=Strict, Path=/api/auth | `auth`: reuse revokes the victim's current token too; 8 tabs racing with one token, at most one wins and the family ends |
 | A stolen access token | lives five minutes, names one tenant, holds only the person's role and teams | `tokens`, `tenancy` |
-| Forged tokens | RS256 against the app's public key: a forged signature, `alg: none`, HS256 signed with the public key (PEM or modulus), an unknown `kid`, a body changed after signing, no `exp`, `nbf` ahead, an expired one: 401. No tenant, another tenant: 403 | `tokens`, on fenec-server and on the app's API |
+| Forged tokens | RS256 against the app's public key: a forged signature, `alg: none`, HS256 signed with the public key (PEM or modulus), an unknown `kid`, a body changed after signing, no `exp`, `nbf` ahead, an expired one: 401. No tenant, another tenant: 403 | `tokens`, on fennec-server and on the app's API |
 | One organisation reading another | a tenant each, a token bound to its tenant: REST, `/query`, `/batch`, subscriptions, `/_changes` | `tokens`, `tenancy` |
 | A user reading another team | `in $jwt.teams` on every read, write and stream | `tenancy`, `realtime` |
 | Privilege escalation inside an organisation | per-operation and per-field grants; admin rules filtered on `role != "owner"` before and after a write; comments pinned to their author | `tenancy`: the 29 x 5 matrix, each refusal checked to have written nothing |
@@ -177,7 +177,7 @@ The whole policy is [`policy.txt`](policy.txt); the schemas are
 
 ### Out of scope, or the operator's
 
-- **TLS.** fenec-server and this app speak plain HTTP; both go behind a TLS
+- **TLS.** fennec-server and this app speak plain HTTP; both go behind a TLS
   terminator, which `Secure` cookies then need (`TRELLIS_ORIGIN=https://…`).
 - **The app's process.** It holds the signing key and the router's token
   (for provisioning). Compromised, it can do
@@ -205,7 +205,7 @@ The whole policy is [`policy.txt`](policy.txt); the schemas are
 | File | What |
 | --- | --- |
 | `auth.test.ts` (21) | hashing, normalisation, the same answer and time for an unknown email, both rate limits under 16 and 40 concurrent attempts, rotation, reuse revoking the family, a race of 8, sign-out, cross-origin, verification once, a reset once and not after 30 minutes (a row 31 minutes old), forgot's same answer, the security log append-only |
-| `tokens.test.ts` (23) | 14 tokens against fenec-server, every route of another tenant, admin routes, the app's API, refusal waits doubling, ID token attacks, single sign-on end to end and a callback in another browser |
+| `tokens.test.ts` (23) | 14 tokens against fennec-server, every route of another tenant, admin routes, the app's API, refusal waits doubling, ID token attacks, single sign-on end to end and a callback in another browser |
 | `tenancy.test.ts` (6) | the role matrix below, a member's team change by `/query`, REST `PATCH` and `/batch` (put back whole), the author pinned, invitations once, for their address and not after 72 hours, a role change and a removal counting from the next refresh |
 | `realtime.test.ts` (10) | a subscription hears its teams only, a task leaving the team is a deletion then silence, a shape naming another team, another tenant's stream, the `/db/` pipe, scoped BM25 and facets, comments, a live query under a person's token, the client's `subscribe`, a preflight through the router |
 | `operations.test.ts` (2) | a tenant moved under 8 writers, a node killed under 8 writers |
@@ -283,7 +283,7 @@ cores and disk.
 
 ## Gaps found, and closed
 
-Six fenecdb gaps this example hit, each closed in fenecdb since, and what
+Six fennecdb gaps this example hit, each closed in fennecdb since, and what
 Trellis does now:
 
 1. **A CORS preflight was refused whenever the server had a token.**
@@ -296,7 +296,7 @@ Trellis does now:
    the router kept off the public network. Behind it the router counts
    refusals by the app's address (gap 5), so a deployment that wants its
    per-client waits points the page at the router, which now answers it.
-2. **`FenecHttp.live` never fired under a scoped token.** Its stream's
+2. **`FennecHttp.live` never fired under a scoped token.** Its stream's
    shape, `where=false`, was ANDed with the token's filter, and a scoped
    stream hears only of rows it was sent. Such a stream is now told of the
    writes to rows the token may read, naming none, and of nothing else;
@@ -320,7 +320,7 @@ Trellis does now:
    its admin token): an attacker's forged tokens slow the attacker, and a
    good token clears only its own address's count.
 6. **A new tenant's schema needed the operator's token.** `PUT
-   /_shard/tenants/<t>` takes `{"schema": "<FenecQL>"}` and applies it on
+   /_shard/tenants/<t>` takes `{"schema": "<FennecQL>"}` and applies it on
    the node with the admin token the router holds: provisioning sends the
    router's token alone (`src/trellis.ts`), and no request this app makes
    carries the nodes' `--http-token`.
@@ -336,7 +336,7 @@ and per-field grants, `append-only`, scoped `@unique` clashes, scoped BM25,
 | Path | What |
 | --- | --- |
 | `policy.txt` | every rule a token is held to |
-| `schema/*.fenecql` | the accounts tenant and an organisation's |
+| `schema/*.fennecql` | the accounts tenant and an organisation's |
 | `src/trellis.ts` | accounts, sessions, links, organisations, invitations, members |
 | `src/server.ts` | the HTTP server, the API, the `/db/` pipe, the security headers |
 | `src/tokens.ts`, `src/jwt.ts` | RS256 tokens: the app's, a person's; verifying |

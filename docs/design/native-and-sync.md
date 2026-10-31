@@ -1,19 +1,19 @@
 # The native library and sync
 
-The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *The native library and sync*: `fenec-ffi`, the sans-IO sync core and the scenario file both sync runners are held to. Each section below is a paragraph moved word for word from CLAUDE.md, which keeps its rule in a few sentences and links here; "above" and "below" in them refer to the order the invariants had there, which [README.md](README.md#the-original-order) lists.
+The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *The native library and sync*: `fennec-ffi`, the sans-IO sync core and the scenario file both sync runners are held to. Each section below is a paragraph moved word for word from CLAUDE.md, which keeps its rule in a few sentences and links here; "above" and "below" in them refer to the order the invariants had there, which [README.md](README.md#the-original-order) lists.
 
 ## The native library
 
-**An app keeps its database through `fenec-ffi`.** The engine as a native
+**An app keeps its database through `fennec-ffi`.** The engine as a native
 library -- a cdylib and a staticlib, zero dependencies, its header
-`include/fenec.h` written by hand and held to the exports by a test -- for
+`include/fennec.h` written by hand and held to the exports by a test -- for
 the Swift (`integrations/swift`, `Package.swift` at the root since SwiftPM
 fetches a package by its repository), Kotlin (`integrations/kotlin`) and
 Dart/Flutter (`integrations/dart`) bindings -- Maven Central's
-`com.fenecdb:fenecdb` and `com.fenecdb:fenecdb-android`, Kotlin package
-`com.fenecdb`, the JNI symbols `Java_com_fenecdb_FenecNative_*` with it.
+`com.fennecdb:fennecdb` and `com.fennecdb:fennecdb-android`, Kotlin package
+`com.fennecdb`, the JNI symbols `Java_com_fennecdb_FennecNative_*` with it.
 A text is answered through
-`fenec-abi`, the code the browser module answers through too -- prepare,
+`fennec-abi`, the code the browser module answers through too -- prepare,
 the exact pass, the block, the answer's JSON, the change notice -- so a page
 and an app get the same bytes; out of the module's crate the optimizer at
 `opt-level = "z"` kept those functions out of line (+762 bytes), and
@@ -27,8 +27,8 @@ index` or `compact` runs beside the database (`Database::maintain`), and a
 write's fsync runs once the lock is let go (`Database::flush`'s
 `Durability`, a failure to `Database::fail`), as a server's do. Every call
 runs under `catch_unwind` and returns a code -- an `Error`'s kind 1-10, 14
-(`FENEC_UNMET`) or 15 (`FENEC_QUOTA`), or `FENEC_PANIC`, `FENEC_MISUSE`,
-`FENEC_LOCKED` -- with the error's JSON, so
+(`FENNEC_UNMET`) or 15 (`FENNEC_QUOTA`), or `FENNEC_PANIC`, `FENNEC_MISUSE`,
+`FENNEC_LOCKED` -- with the error's JSON, so
 the library is built in the `ffi` profile, which unwinds. `<file>.lock` is
 held while a file is open (a checkpoint renames a new file over the
 database, which a lock on it would not survive): a second open, here or in
@@ -38,8 +38,8 @@ file's, which a child spawned meanwhile shares until its exec: a close and
 an open again beside a thread spawning children were refused 48-66 times
 in 3 000, and once in CI's `swift test`, whose servers start beside the
 other tests. Every write is fsynced unless
-`FENEC_OPEN_NO_SYNC`; `fenec_flush` is `Database::write_out`, the buffer
-written with no fsync; `fenec_close` saves a graph once the file grew three
+`FENNEC_OPEN_NO_SYNC`; `fennec_flush` is `Database::write_out`, the buffer
+written with no fsync; `fennec_close` saves a graph once the file grew three
 times its record since its last save, and syncs. A handle opened so writes
 its buffer behind the lock as a server does (`Native::after`, `behind`):
 `Database::write_behind` is asked after every write no fsync follows --
@@ -80,9 +80,9 @@ against 151.4 (`make ffi-bench`). The XCFramework is assembled by hand
 (`build-xcframework.sh`), so the Command Line Tools build every slice; a
 release's zip is built before its tag (`swift-binary.yml`), since the tag's
 `Package.swift` must name its checksum. Swift links a static library; the
-Flutter plugin vendors a dynamic `FenecFFI.xcframework` (`--dynamic`,
-`FenecFFI.framework` a slice, install name `@rpath/FenecFFI.framework/...`)
-and Dart opens `FenecFFI.framework/FenecFFI`: a static one kept whole with
+Flutter plugin vendors a dynamic `FennecFFI.xcframework` (`--dynamic`,
+`FennecFFI.framework` a slice, install name `@rpath/FennecFFI.framework/...`)
+and Dart opens `FennecFFI.framework/FennecFFI`: a static one kept whole with
 `-force_load` had the Runner link a file CocoaPods' "Copy XCFrameworks"
 phase makes with no order declared against it, and `flutter build ios`
 failed on it.
@@ -91,24 +91,24 @@ failed on it.
 
 **A replica's sync is a state machine; the network is the binding's.**
 iOS (ATS) and Android refuse cleartext HTTP by default and a server sits
-behind TLS, which fenecdb's own client does not speak and should not: the
+behind TLS, which fennecdb's own client does not speak and should not: the
 platform's client has the trust store, proxies, pinning and power
-management. So `fenec_abi::sync` does no I/O -- a binding feeds it events
+management. So `fennec_abi::sync` does no I/O -- a binding feeds it events
 (`Sync::response`, `opened`, `bytes`, `closed`, `timer`, `signal`; FFI
-`fenec_sync_feed`) and performs the JSON actions it hands back (`request`,
+`fennec_sync_feed`) and performs the JSON actions it hands back (`request`,
 `stream`, `cancel`, `wait`, `token`, `changed`, `refused`, `status`) with
 `URLSession`, `HttpURLConnection` (Android's and the JVM's, one loop for
 both) or `dart:io`'s `HttpClient`, every event handed to the core in turn on
 one serial queue so a stream's bytes stay in order and no action outruns
-its cancel. Porting `FenecSync` would have been three more copies of the
+its cancel. Porting `FennecSync` would have been three more copies of the
 optimistic writes, the key reconciliation and the cursors, tested apiece;
 here the logic is once, held to the scenario file (below), and each
 binding's loop is a page. A write
-through `fenec_query` to a shape's collection is the sync's
+through `fennec_query` to a shape's collection is the sync's
 (`Sync::claims`, `write`): applied to the replica with what puts it back,
 and queued with an `Idempotency-Key`, in one block; DDL over a synced
 collection is refused, a collection with no shape is the app's own. What
-`FenecSync` holds in memory is in the file, written in the blocks it
+`FennecSync` holds in memory is in the file, written in the blocks it
 describes: `_sync_shapes` (cursors), `_sync_queue` (unanswered writes, their
 keys and undo), `_sync_temps` (rows under temporary ids). Writes go one at
 a time in order; 0/408/429/5xx retry with backoff (250 ms doubling to 15 s,
@@ -117,10 +117,10 @@ a token, a 507 naming a tenant's quota and any other 4xx are a refusal put
 back (below). A
 replica reopened sends its queue before opening its streams. An update of
 an unanswered insert reaches the server's copy by its key as well
-(`fenec_ql::spans` keeps each statement's own text for the `/batch` lines,
+(`fennec_ql::spans` keeps each statement's own text for the `/batch` lines,
 an insert rendered as the builders render it, every value a parameter); an
 insert the shape does not hold loses its temporary row once a stream passes
-the write's `Fenec-Seq`; a seed writes over and deletes the rest, keeping
+the write's `Fennec-Seq`; a seed writes over and deletes the rest, keeping
 unanswered writes' rows, rather than clearing first (a row that stayed
 keeps its vector's node). A change with `"schema": true`, or rows naming a
 field the replica has not got, has the collection made again from `GET
@@ -132,16 +132,16 @@ costs 18.4 us against 7.1 for the same put alone, rows in changes of 100
 000 rows 72 ms against 44 (`make sync-bench`). It adds about 165 KB to the
 native library -- 1.51 -> 1.68 MB on aarch64-apple-darwin, 1.68 -> 1.88 on
 x86_64 Linux, about 77 KB of it the sync's own code -- and the browser module is built without it:
-`fenec-abi`'s `sync` feature, which only `fenec-ffi` turns on. Compiled
+`fennec-abi`'s `sync` feature, which only `fennec-ffi` turns on. Compiled
 in as dead code, it still moved LLVM's inlining and left the module 155
 bytes larger; off, the module is the size it was, 512 400 bytes. Dart's is
-`Fenec.openSynced`, since a static `sync` cannot sit beside the instance's
+`Fennec.openSynced`, since a static `sync` cannot sit beside the instance's
 fsync `sync()`.
 
 ## Sync scenarios
 
 **The browser's sync and the native core are held to one scenario file.**
-Moving `FenecSync` onto `fenec_abi::sync` was measured at +21 KB brotli of
+Moving `FennecSync` onto `fennec_abi::sync` was measured at +21 KB brotli of
 the browser module, so the two are written apart, and
 `integrations/sync-scenarios.json` says what both do: 71 scenarios, each a
 script of shapes, app writes and server events -- a seed, a change, a
@@ -149,14 +149,14 @@ stream dropped, the status each write's request is answered with, a seed
 past the horizon, the network's signal, a token -- with what the replica,
 the queue, the requests sent (method, path, body, the idempotency key
 reused or new), the timers and the refusals are after every step.
-`crates/fenec-abi/tests/scenarios.rs` drives the sans-IO core through it,
-and `web/fenec.sync.scenarios.test.js` drives `FenecSync` through a fetch
+`crates/fennec-abi/tests/scenarios.rs` drives the sans-IO core through it,
+and `web/fennec.sync.scenarios.test.js` drives `FennecSync` through a fetch
 and a clock the script plays, its replica persisted over an in-memory
 IndexedDB so a restart is a page opened again; each writes the names that
 passed to `target/sync-scenarios/`, and `make sync-scenarios-check` (in
 `make test` where the module is built, and its own CI step) fails unless
 both ran every one -- under `CI` the JS runner fails rather than skip
-without `web/fenec.wasm`. A behaviour of either changes in the file first.
+without `web/fennec.wasm`. A behaviour of either changes in the file first.
 A step's values are the builders' texts, so a write's fields are written
 in alphabetical order (the native runner's JSON sorts them, JavaScript
 keeps them as given); `<name>` binds a value made at run time -- a key, an
@@ -178,8 +178,8 @@ writes. Its state is now the core's, in the replica: `_sync_shapes`,
 tab applies its write and hands it to the leader, which keeps it in its
 own queue and tells every tab the answer, and a tab taking the lead reads
 the queue its predecessor stored (`#lead`, through a `sibling` database).
-`fenec-http`'s CORS allows `Idempotency-Key` and exposes `Fenec-Seq`,
+`fennec-http`'s CORS allows `Idempotency-Key` and exposes `Fennec-Seq`,
 without which a page on another origin could not send the one or read the
-other. `fenec.js` grew 113.3 -> 132.5 KB, 31.1 -> 35.8 KB brotli -- 3.1 KB
+other. `fennec.js` grew 113.3 -> 132.5 KB, 31.1 -> 35.8 KB brotli -- 3.1 KB
 of it code, the rest the comments -- and the browser module did not change
 by a byte.

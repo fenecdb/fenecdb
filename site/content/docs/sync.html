@@ -1,5 +1,5 @@
 <!--
-title: Sync — fenecdb
+title: Sync — fennecdb
 description: A local replica that reads without the network, writes optimistically and catches up from the server's change stream.
 -->
 
@@ -12,10 +12,10 @@ the network, writes instantly and stays up to date with the server.</p>
 <p>Call <code>sync</code> with the server and the rows you want. Then query it
 with the same builder you use anywhere else.</p>
 
-<pre data-lang="ts">import { sync } from './fenec.js';
-import type { FenecSchema } from './fenec-schema.js';   // fenec types, over the server's file
+<pre data-lang="ts">import { sync } from './fennec.js';
+import type { FennecSchema } from './fennec-schema.js';   // fennec types, over the server's file
 
-const db = await sync<FenecSchema>({
+const db = await sync<FennecSchema>({
   url: 'http://127.0.0.1:8080',
   shapes: [{ collection: 'tasks', where: { status: 'open' }, key: 'key' }],
 });
@@ -31,22 +31,22 @@ const stop = db.live(db.from('tasks').order('priority', 'desc'), draw);
 await db.from('tasks').insert({ title: 'new', status: 'open' });
 </pre>
 
-<p><b>The replica loads <code>fenec.wasm</code></b>, the full module,
+<p><b>The replica loads <code>fennec.wasm</code></b>, the full module,
 unless given another, so its <code>near</code> walks a graph.</p>
 
 <details class="deep"><summary>What sync opens, and where a query binds</summary>
 <p>A copy on the client, changes streaming from the server, optimistic
-writes. In fenecdb that is not a library — it is an endpoint and a transport,
+writes. In fennecdb that is not a library — it is an endpoint and a transport,
 because the same engine already runs on both sides.</p>
 
 <p>With no module given, <code>sync</code> opens
-<code>./fenec.wasm</code> beside the page, its collation data from
+<code>./fennec.wasm</code> beside the page, its collation data from
 <code>collate/</code> beside it; <code>wasm</code> takes another URL, the
 bytes or a compiled module, and <code>local</code> a database already
 open.</p>
 
 <p>The query code does not change. <code>db.from(...)</code> is the same
-builder producing the same FenecQL; the only difference is where it is
+builder producing the same FennecQL; the only difference is where it is
 bound.</p>
 </details>
 
@@ -57,7 +57,7 @@ declares its tables (<a href="javascript.html#schema">Schema in code</a>)
 hands them over too, and they are checked against the server's, never
 applied:</p>
 
-<pre data-lang="ts">import { sync } from './fenec.js';
+<pre data-lang="ts">import { sync } from './fennec.js';
 import { todos } from './tables.js';
 
 const db = await sync({
@@ -70,7 +70,7 @@ const db = await sync({
 <ul>
   <li><b>What the code declares must be there.</b> A collection, a field
     or an index the server lacks, or one of another type, refuses the open:
-    a <code>FenecError</code> naming each difference.</li>
+    a <code>FennecError</code> naming each difference.</li>
   <li><b>What the server holds beside it is its own.</b> A field or a
     collection the code does not declare is fine: an older app keeps
     working while the server moves ahead.</li>
@@ -94,7 +94,7 @@ not on the server could not be decoded either way.</p>
 device, with the same shapes, the same optimistic writes and the same
 catching up -- and its writes wait in the file while the server cannot be
 reached. Opening the file as a replica is the one line that changes:
-<code>Fenec.sync</code> in Swift and Kotlin, <code>Fenec.openSynced</code>
+<code>Fennec.sync</code> in Swift and Kotlin, <code>Fennec.openSynced</code>
 in Dart (<a href="mobile.html#sync">Sync with a server</a>).</p>
 
 <h2>The stream carries state, not transactions</h2>
@@ -104,7 +104,7 @@ every write. That is what a replica needs; it is not an audit log.</p>
 
 <details class="deep"><summary>Why the stream is a clock, not a log</summary>
 <p>The classic route is a transaction log: every write is an event and the
-subscriber replays them. fenecdb sends the current state of what changed
+subscriber replays them. fennecdb sends the current state of what changed
 instead — the stream is a <i>clock</i>, not a record. That is right for a
 replica and wrong for anyone who wanted an audit log.</p>
 </details>
@@ -192,7 +192,7 @@ reaches a row the server has not sent yet is sent a second way as well, by
 that key -- <code>set tasks {..} where key in [..]</code> beside the
 statement -- since the temporary id is the page's alone. An insert the shape
 does not hold leaves its temporary row once the stream is past the change
-the server answered it at (<code>Fenec-Seq</code>).</p>
+the server answered it at (<code>Fennec-Seq</code>).</p>
 
 <div class="note">
   <p><b>An insert into a keyless shape is not applied optimistically</b>,
@@ -226,7 +226,7 @@ once, whatever the network did meanwhile.</p>
 </table>
 </div>
 
-<pre data-lang="ts">import { sync } from './fenec.js';
+<pre data-lang="ts">import { sync } from './fennec.js';
 
 const db = await sync({
   url: 'https://api.example.com',
@@ -245,7 +245,7 @@ await db.pushed();                                 // every write answered
 whose <code>reason</code> is that text (undefined where the write gave none).
 A write the replica finds unmet itself, a <code>delete</code> of a row it
 does not hold under <code>require: 1</code>, is refused there with the same
-<code>reason</code>, and nothing is sent (<a href="fenecql-writing.html#require-reason">A
+<code>reason</code>, and nothing is sent (<a href="fennecql-writing.html#require-reason">A
 reason for the refusal</a>).</p>
 
 <details class="deep"><summary>Offline, reload, backoff, quota and failover</summary>
@@ -329,13 +329,13 @@ collection requires buys nothing here.</p>
 <p>It would not even be <i>correct</i> for <code>near</code>. A single insert
 can change the entire top-k ordering, and there is no incremental HNSW
 maintenance that is both cheap and correct — the machinery would have to be
-disabled for fenecdb's headline feature.</p>
+disabled for fennecdb's headline feature.</p>
 
 <p>Invalidation is at collection granularity: the change stream says which
 collections changed, the live queries bound to them re-run, and all of it
 coalesces into one frame. Anything finer, like intersecting id sets, would cost
 more than the local query itself. A query built with <code>db.from</code>
-knows the collections it reads, each <code>lookup</code>'s included; a FenecQL
+knows the collections it reads, each <code>lookup</code>'s included; a FennecQL
 text names them with <code>{ collections }</code>, or runs again after every
 write.</p>
 
@@ -495,10 +495,10 @@ expect.</p>
 writes the server has not answered in IndexedDB, so a reopened tab starts from
 there instead of downloading everything again, and sends what it had not.</p>
 
-<pre data-lang="ts">import { sync } from './fenec.js';
-import type { FenecSchema } from './fenec-schema.js';
+<pre data-lang="ts">import { sync } from './fennec.js';
+import type { FennecSchema } from './fennec-schema.js';
 
-const db = await sync<FenecSchema>({
+const db = await sync<FennecSchema>({
   url: 'https://api.example.com',
   shapes: [{ collection: 'tasks', where: { status: 'open' }, key: 'key' }],
   persist: 'tasks',           // the replica, its cursors and its unsent writes

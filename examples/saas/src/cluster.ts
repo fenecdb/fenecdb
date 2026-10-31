@@ -1,5 +1,5 @@
-// The database side of Trellis on one machine: three fenec-server tenant
-// nodes (`--dir`) and fenec-shard in front of them, each tenant with a
+// The database side of Trellis on one machine: three fennec-server tenant
+// nodes (`--dir`) and fennec-shard in front of them, each tenant with a
 // replica on another node (`--replicas`). `npm run cluster` runs it for
 // development; the tests start one of their own and kill nodes in it.
 //
@@ -18,8 +18,8 @@ import { loadOrMakeKey } from './jwt.ts';
 
 const root = fileURLToPath(new URL('../../..', import.meta.url));
 
-function binary(name: 'fenec-server' | 'fenec-shard'): string {
-  const envName = name === 'fenec-server' ? 'FENEC_SERVER' : 'FENEC_SHARD';
+function binary(name: 'fennec-server' | 'fennec-shard'): string {
+  const envName = name === 'fennec-server' ? 'FENNEC_SERVER' : 'FENNEC_SHARD';
   const found = [process.env[envName], join(root, 'target/release', name), join(root, 'target/debug', name)].find(
     (b) => b && existsSync(b),
   );
@@ -100,16 +100,16 @@ export class Cluster {
   async start(): Promise<void> {
     loadOrMakeKey(this.opts.keysDir, 'app', 'trellis-app-1');
     for (const n of this.nodeNames) await this.startNode(n);
-    await this.#run('router', binary('fenec-shard'), [
+    await this.#run('router', binary('fennec-shard'), [
       '--listen',
       this.#listen('router'),
       '--directory',
-      join(this.opts.dir, 'shard.fenec'),
+      join(this.opts.dir, 'shard.fennec'),
       '--replicas',
       '--audit',
       join(this.opts.dir, 'router-audit.log'),
       ...(this.opts.lease ? ['--auto-failover', String(this.opts.lease)] : []),
-    ], { FENEC_SHARD_TOKEN: this.opts.shardToken });
+    ], { FENNEC_SHARD_TOKEN: this.opts.shardToken });
     for (const n of this.nodeNames) {
       const res = await fetch(`${this.routerUrl}/_shard/nodes/${n}`, {
         method: 'PUT',
@@ -125,7 +125,7 @@ export class Cluster {
   async startNode(name: string): Promise<void> {
     const dir = join(this.opts.dir, name);
     mkdirSync(dir, { recursive: true });
-    await this.#run(name, binary('fenec-server'), [
+    await this.#run(name, binary('fennec-server'), [
       '--dir',
       dir,
       '--http',
@@ -145,7 +145,7 @@ export class Cluster {
       ...(this.opts.cors ? ['--http-cors', this.opts.cors] : []),
       ...(this.opts.lease ? ['--lease'] : []),
       ...(this.opts.nodeFlags ?? []),
-    ], { FENEC_HTTP_TOKEN: this.opts.operatorToken });
+    ], { FENNEC_HTTP_TOKEN: this.opts.operatorToken });
   }
 
   /** SIGKILL: the node is gone, mid-write, as a machine lost would be. */
@@ -174,7 +174,7 @@ export class Cluster {
     child.stderr!.on('data', keep);
     const exited = new Promise<void>((r) => child.on('exit', () => r()));
     this.#procs.set(name, { child, out, exited });
-    // Up once it says where it listens: fenec-server's and fenec-shard's
+    // Up once it says where it listens: fennec-server's and fennec-shard's
     // `listening on: http://<address>  [...]` line names the port it bound,
     // the one the system picked for `:0` -- read to the space after it, so
     // a line that came in two pieces is not read short.

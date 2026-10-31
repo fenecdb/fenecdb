@@ -1,5 +1,5 @@
 <!--
-title: Job queues — fenecdb
+title: Job queues — fennecdb
 description: Workers taking jobs from a collection: claimed by one worker each under a lease, acked, extended, retried with a backoff and dead-lettered, delayed and by priority — a statement each, with what it costs over a million jobs.
 -->
 
@@ -23,7 +23,7 @@ lock, so two workers never take the same one — what PostgreSQL's
 later for a delayed one, and while a worker holds it, the end of its lease.
 So a worker that dies holds nothing for long: its lease lapses, the job is
 ready again, and the next claim takes it. See
-<a href="/docs/fenecql-writing#pick">Writes that pick their rows</a> for the
+<a href="/docs/fennecql-writing#pick">Writes that pick their rows</a> for the
 rules.</p>
 
 <p>The job written in the same <code>/batch</code> as the row it is about, and
@@ -36,8 +36,8 @@ Redis for — locks, rate limits, caches, <a
 href="/docs/redis#streams">streams</a>, pub/sub — are recipes of
 <a href="/docs/redis">Instead of Redis</a>.</p>
 
-<p>Every FenecQL block on this page is run, statement by statement, by a
-test (<code>crates/fenec-core/tests/queues_docs.rs</code>), and each
+<p>Every FennecQL block on this page is run, statement by statement, by a
+test (<code>crates/fennec-core/tests/queues_docs.rs</code>), and each
 <code>-- → x</code> is the answer it checks: a write's count, or the first
 value of the first row it answered. A line <code>-- 20 s later</code> moves
 the test's clock. The costs are <code>make queue-bench</code> on an M1 Air,
@@ -48,7 +48,7 @@ over a million jobs.</p>
 <p>A collection a queue. <code>run_at</code> takes <code>@sorted</code>, so
 a claim walks the ready jobs from the oldest and stops at its page.</p>
 
-<pre data-lang="fenecql">create collection jobs (payload json, run_at timestamp @sorted, owner text, attempts int, error text)
+<pre data-lang="fennecql">create collection jobs (payload json, run_at timestamp @sorted, owner text, attempts int, error text)
 put jobs {payload: {"to": "ada@example.com"}, run_at: now(), attempts: 0}
 put jobs [{payload: {"to": "bo@example.com"}, run_at: now(), attempts: 0}, {payload: {"to": "cy@example.com"}, run_at: now(), attempts: 0}]
 put jobs {payload: {"to": "di@example.com"}, run_at: now() + 3600000, attempts: 0}     -- → 1: delayed an hour
@@ -70,7 +70,7 @@ put jobs {payload: {"to": "di@example.com"}, run_at: now() + 3600000, attempts: 
 <p>Each worker claims a batch, the oldest ready jobs, each its own for 30
 seconds:</p>
 
-<pre data-lang="fenecql">set jobs {owner: "w1", run_at: now() + 30000, attempts: attempts + 1} where run_at &lt;= now() order run_at limit 2 returning id, payload.to   -- → 1: jobs 1 and 2
+<pre data-lang="fennecql">set jobs {owner: "w1", run_at: now() + 30000, attempts: attempts + 1} where run_at &lt;= now() order run_at limit 2 returning id, payload.to   -- → 1: jobs 1 and 2
 set jobs {owner: "w2", run_at: now() + 30000, attempts: attempts + 1} where run_at &lt;= now() order run_at limit 2 returning id, payload.to   -- → 3: the one left ready
 set jobs {owner: "w3", run_at: now() + 30000, attempts: attempts + 1} where run_at &lt;= now() order run_at limit 2 returning id   -- → no row: none ready
 </pre>
@@ -80,27 +80,27 @@ set jobs {owner: "w3", run_at: now() + 30000, attempts: attempts + 1} where run_
     under the write lock. Sixteen threads claiming batches of ten from
     6 000 jobs, and eight HTTP clients from 2 000, never handed a job to
     two of them, and every job was acked
-    (<code>crates/fenec-core/tests/claims.rs</code>,
-    <code>crates/fenec-http/tests/claims.rs</code>).</li>
+    (<code>crates/fennec-core/tests/claims.rs</code>,
+    <code>crates/fennec-http/tests/claims.rs</code>).</li>
   <li><b><code>returning *</code></b> answers every field; a list answers
     those, paths into a <code>json</code> field among them. Without
     <code>returning</code> the answer is the count.</li>
   <li><b><code>limit 1 require 1</code></b> is one job or a refusal (412):
     <code>require</code> counts the rows the claim answers.</li>
   <li><b>An empty queue answers no rows</b> at once — or, sent over HTTP
-    with <code>Fenec-Wait</code>, holds the claim at the server until a job
+    with <code>Fennec-Wait</code>, holds the claim at the server until a job
     comes (<a href="#wait">Waiting for a job</a>).</li>
 </ul>
 
 <h2 id="wait">Waiting for a job</h2>
 
 <p>A worker whose claim finds nothing need not sleep and claim again. Sent
-with <code>Fenec-Wait</code>, milliseconds, the claim is held at the server
+with <code>Fennec-Wait</code>, milliseconds, the claim is held at the server
 while it would take nothing, and answered the moment it takes a job — one
 enqueued, a delayed one come due, a lease lapsed — or at the end of the
 wait with no row: Redis's <code>BLPOP</code>, SQS's long poll.</p>
 
-<pre data-lang="bash">curl -X POST http://127.0.0.1:8080/query -H 'Fenec-Wait: 30000' \
+<pre data-lang="bash">curl -X POST http://127.0.0.1:8080/query -H 'Fennec-Wait: 30000' \
   -d '{"query": "set jobs {owner: $1, run_at: now() + 30000, attempts: attempts + 1} where run_at &lt;= now() order run_at limit 10 returning *", "params": ["w1:1842"]}'
 </pre>
 
@@ -292,7 +292,7 @@ moment it would write something, or the end of the wait.</p>
     with the nothing it found, before the server syncs and exits.</li>
   <li><b>A replica</b> refuses a claim as it refuses every write (403),
     held or not.</li>
-  <li><b>With <code>Fenec-After</code></b> the header is that read's wait,
+  <li><b>With <code>Fennec-After</code></b> the header is that read's wait,
     as before, and holds no write.</li>
   <li><b>Not in a page or an app's library.</b> A database in the page,
     or one an app opens through the native library, has no other worker to
@@ -309,7 +309,7 @@ moving its lease on. Each names the owner it was claimed by and requires
 its row, so a worker whose lease lapsed, and whose job another worker
 claimed meanwhile, finds out:</p>
 
-<pre data-lang="fenecql">del jobs where id = 1 and owner = "w1" require 1 else 'not your job'    -- → 1: done
+<pre data-lang="fennecql">del jobs where id = 1 and owner = "w1" require 1 else 'not your job'    -- → 1: done
 -- 20 s later
 set jobs {run_at: now() + 30000} where id = 2 and owner = "w1" require 1 else 'not your job'   -- → 1: 30 s more
 -- 15 s later
@@ -327,7 +327,7 @@ del jobs where id = 3 and owner = "w3" require 1 else 'not your job'    -- → 1
     the request it sends.</li>
   <li><b>A refused ack says why.</b> The 412 carries the
     <code>else</code>'s words as <code>reason</code>
-    (<a href="/docs/fenecql-writing#require-reason">A reason for the refusal</a>),
+    (<a href="/docs/fennecql-writing#require-reason">A reason for the refusal</a>),
     so a worker tells a lost lease from a failure of its own by what it
     reads, not by the place of a statement.</li>
   <li><b>A token a claim</b> rather than the worker's name as the owner —
@@ -344,7 +344,7 @@ del jobs where id = 3 and owner = "w3" require 1 else 'not your job'    -- → 1
 and after the fifth it has no ready time — a dead letter, which no claim
 takes and a read finds:</p>
 
-<pre data-lang="fenecql">set jobs {owner: null, error: "smtp timeout", run_at: case when attempts &gt;= 5 then null else now() + 1000 * attempts * attempts end} where id = 2 and owner = "w1" require 1   -- → 1: again in 1 s
+<pre data-lang="fennecql">set jobs {owner: null, error: "smtp timeout", run_at: case when attempts &gt;= 5 then null else now() + 1000 * attempts * attempts end} where id = 2 and owner = "w1" require 1   -- → 1: again in 1 s
 -- 2 s later
 set jobs {owner: "w1", run_at: now() + 30000, attempts: attempts + 1} where run_at &lt;= now() order run_at limit 1 returning id, attempts   -- → 2: its second attempt
 set jobs {attempts: 5} where id = 2                         -- three failures on
@@ -368,7 +368,7 @@ set jobs {run_at: now(), attempts: 0, error: null} where id = 2 and run_at is nu
 <p>With a priority, a claim takes the highest first, and among jobs of one
 priority those written first:</p>
 
-<pre data-lang="fenecql">create collection tasks (payload json, run_at timestamp @sorted, priority int @sorted, owner text, attempts int)
+<pre data-lang="fennecql">create collection tasks (payload json, run_at timestamp @sorted, priority int @sorted, owner text, attempts int)
 put tasks [{payload: {"n": 1}, run_at: now(), priority: 0, attempts: 0}, {payload: {"n": 2}, run_at: now(), priority: 9, attempts: 0}]
 set tasks {owner: "w1", run_at: now() + 30000, attempts: attempts + 1} where run_at &lt;= now() order priority desc limit 1 returning payload.n   -- → 2: the higher priority
 </pre>
@@ -390,7 +390,7 @@ the same one statement: a key of <code>order</code> may be an expression,
 and the distance from a point is walked to the page by a <code>@geo</code>
 index (<a href="/docs/geo#dispatch">The nearest job</a>):</p>
 
-<pre data-lang="fenecql">create collection rides (pickup geo @geo, run_at timestamp @sorted, owner text, attempts int)
+<pre data-lang="fennecql">create collection rides (pickup geo @geo, run_at timestamp @sorted, owner text, attempts int)
 put rides [{pickup: [29.0100, 41.0400], run_at: now(), attempts: 0}, {pickup: [29.0300, 41.0500], run_at: now(), attempts: 0}]
 set rides {owner: "w1", run_at: now() + 30000, attempts: attempts + 1} where run_at &lt;= now() order distance(pickup, [29.0290, 41.0490]) limit 1 returning id   -- → 2: the nearer
 set rides {owner: "w2", run_at: now() + 30000, attempts: attempts + 1} where run_at &lt;= now() order distance(pickup, [29.0290, 41.0490]) limit 1 returning id   -- → 1: the one left
@@ -404,7 +404,7 @@ set rides {owner: "w2", run_at: now() + 30000, attempts: attempts + 1} where run
     <code>@sorted</code> field are walked to the page.</li>
   <li><b>The nearest worker to each job, where they wait.</b> A claim
     takes the job nearest the worker that asks; claims held at the server
-    for a job (<code>Fenec-Wait</code>) hand a job placed to the waiting
+    for a job (<code>Fennec-Wait</code>) hand a job placed to the waiting
     worker nearest it, each claim's own distance its rank
     (<a href="#fairness">Who gets the job</a>).</li>
 </ul>
@@ -414,7 +414,7 @@ set rides {owner: "w2", run_at: now() + 30000, attempts: attempts + 1} where run
 <p>Where a job may be lost but never run twice — Redis's
 <code>LPOP</code> — a <code>del</code> takes and answers it at once:</p>
 
-<pre data-lang="fenecql">del tasks where run_at &lt;= now() order priority desc limit 10 returning id, payload   -- → 1: taken and gone
+<pre data-lang="fennecql">del tasks where run_at &lt;= now() order priority desc limit 10 returning id, payload   -- → 1: taken and gone
 </pre>
 
 <h2 id="workers">A worker</h2>
@@ -422,7 +422,7 @@ set rides {owner: "w2", run_at: now() + 30000, attempts: attempts + 1} where run
 <p>The loop, in JavaScript over HTTP: claim a batch — held at the server
 until there is one — run each job, and ack it or fail it.</p>
 
-<pre data-lang="ts">import { connect, expr, inc, raw } from '@fenecdb/web/client';
+<pre data-lang="ts">import { connect, expr, inc, raw } from '@fennecdb/web/client';
 
 const db = connect('http://127.0.0.1:8080', { token: 'a worker token' });
 const jobs = db.from('jobs');
@@ -460,7 +460,7 @@ for (;;) {
 <ul>
   <li><b>Every builder writes the claim</b> — Python's
     <code>.update(patch, returning=True)</code>, Go's
-    <code>Update(ctx, patch, fenecdb.Returning("*"))</code> and its
+    <code>Update(ctx, patch, fennecdb.Returning("*"))</code> and its
     <code>Result.Rows</code>, .NET's <code>UpdateAsync(patch, returning:
     ["*"])</code>, and Swift's, Kotlin's and Dart's
     <code>updateReturning</code> — held to the same text.</li>

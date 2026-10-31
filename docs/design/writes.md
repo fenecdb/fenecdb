@@ -62,7 +62,7 @@ render `inc(n)` as `f: coalesce(f, 0) + $k` and `expr(text, ...)` with its
 `?`s bound, every SDK to the golden file. The browser module grew
 7.9 KB, 2.7 KB brotli: the parser's arithmetic, the binding, `if
 absent` and the expired row's place. `site/content/docs/redis.html` is the
-recipes, each FenecQL block run by `tests/redis_docs.rs`.
+recipes, each FennecQL block run by `tests/redis_docs.rs`.
 
 ## require
 
@@ -84,11 +84,11 @@ read to race or to scope, and a scoped token's count is of the rows its
 filter let it write. 412 over HTTP (`api::status_of`), apart from 409 so a
 client tells a lost race from a value taken, and a `/batch` that stops says
 which statement did (`"at"`, from 0, `render_batch_stop`), and so does
-a text of several through `fenec-abi` (`Refused::Error`'s third field,
-`"at"` in the module's and the native library's error, `FenecError.at`
-from `Fenec.run`): a ledger's debit and credit are both `set accounts`,
+a text of several through `fennec-abi` (`Refused::Error`'s third field,
+`"at"` in the module's and the native library's error, `FennecError.at`
+from `Fennec.run`): a ledger's debit and credit are both `set accounts`,
 and a page ran a text's prefixes again to tell which had stopped it --
-202 bytes of the browser module, 8 brotli; `FENEC_UNMET` 14
+202 bytes of the browser module, 8 brotli; `FENNEC_UNMET` 14
 over the native library, after the boundary's own 11-13; `unmet` in each
 SDK's errors, and `{ require: n }` in every builder, held to the golden
 file. A replica's sync sends it with the write and holds it locally too,
@@ -131,7 +131,7 @@ and shell line, refused rather than cut as every limit is. So is a
 backtick, which the refusal quotes its statement with (below). `require 1
 else` was "unknown command `else`" before, so no text that parsed reads
 otherwise; SQL has no such clause and no spelling of it, and its
-statements' FenecQL clauses take it (`update ... where ... require 1 else
+statements' FennecQL clauses take it (`update ... where ... require 1 else
 '...'`). It is `Require { n, reason: Box<str> }`, the reason empty where
 none was given: the parser refuses an empty one, an empty box allocates
 nothing, and an `Option` of it made every `require` 8 bytes more to move,
@@ -149,12 +149,12 @@ no change; those with a structure add it: the 412's body beside `error`
 (`error_response`) and a stopped `/batch`'s beside `at` (`api::Stop`,
 `render_batch_stop`, on the write, read and pinned paths alike), the
 module's and the native library's error JSON (`json::error_to_string`), and
-the sync's refusal -- the native core's `refused` action and `FenecSync`'s
-`FenecError.reason`, each read from the body, the write put back as
+the sync's refusal -- the native core's `refused` action and `FennecSync`'s
+`FennecError.reason`, each read from the body, the write put back as
 before; `integrations/sync-scenarios.json` holds both runners to it, and to
 a replica that finds the count unmet itself, saying the reason there with
 nothing sent. A query across tenants names each failed tenant's reason
-beside its words (fenec-shard's `fanout::said`), and an MCP tool's refusal
+beside its words (fennec-shard's `fanout::said`), and an MCP tool's refusal
 beside its text, as the 412 gives it. A scoped token is told it as any
 caller is (`access::told` passes it): the words are the statement's, which
 the token sent, and name nothing of a row. A second `String` in `Unmet`

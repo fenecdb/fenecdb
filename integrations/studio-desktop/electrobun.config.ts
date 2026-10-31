@@ -13,7 +13,7 @@ const set = (name: string) => (process.env[name] ?? "").trim() !== "";
 // Keychain items. The release build holds none of that code: `__TESTABLE__`
 // is a build-time constant, false there, and the bundler drops the branch.
 // scripts/checks/release.mjs holds the shipped bundle to it.
-const test = process.env["FENEC_DESKTOP_TEST_BUILD"] === "1";
+const test = process.env["FENNEC_DESKTOP_TEST_BUILD"] === "1";
 
 // Signing and notarization happen only where their secrets exist, so a
 // build on a laptop or in a fork's pull request is an unsigned one and
@@ -26,18 +26,18 @@ const notarize =
 	((set("ELECTROBUN_APPLEAPIKEY") && set("ELECTROBUN_APPLEAPIISSUER") && set("ELECTROBUN_APPLEAPIKEYPATH")) ||
 		(set("ELECTROBUN_APPLEID") && set("ELECTROBUN_APPLEIDPASS") && set("ELECTROBUN_TEAMID")));
 
-const identifier = test ? "dev.fenecdb.studio.test" : "dev.fenecdb.studio";
+const identifier = test ? "dev.fennecdb.studio.test" : "dev.fennecdb.studio";
 
 export default {
 	app: {
-		name: test ? "fenec studio test" : "fenec studio",
+		name: test ? "fennec studio test" : "fennec studio",
 		identifier,
 		version,
-		description: "fenec studio as a desktop app: make, open, serve and back up database files, or connect to a server.",
-		// A double-click on a .fenec file in Finder arrives as an `open-url`
+		description: "fennec studio as a desktop app: make, open, serve and back up database files, or connect to a server.",
+		// A double-click on a .fennec file in Finder arrives as an `open-url`
 		// event with a file: URL (macOS only; Windows and Linux file
 		// associations are not implemented by Electrobun 2.0.4).
-		fileAssociations: [{ name: "fenecdb database", ext: ["fenec"], role: "Editor" }],
+		fileAssociations: [{ name: "fennecdb database", ext: ["fennec"], role: "Editor" }],
 	},
 	runtime: {
 		// The default quits the process as the last window closes, right after the
@@ -75,12 +75,12 @@ export default {
 			"src/ui/app.css": "views/ui/app.css",
 			// The server the app starts for a file, and the shell that takes,
 			// verifies and restores its backups: put here by scripts/get-server.sh.
-			"bin/fenec-server": "bin/fenec-server",
-			"bin/fenec": "bin/fenec",
+			"bin/fennec-server": "bin/fennec-server",
+			"bin/fennec": "bin/fennec",
 		},
 		mac: {
 			bundleCEF: false,
-			// Hutch signs the nested Mach-O files (the bundled fenec-server among
+			// Hutch signs the nested Mach-O files (the bundled fennec-server among
 			// them), the app and the DMG, submits it, staples and validates. The
 			// server needs no entitlement of its own.
 			codesign: sign,

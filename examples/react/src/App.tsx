@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useLiveQuery } from '@fenecdb/react';
+import { useLiveQuery } from '@fennecdb/react';
 import { db } from './db.js';
 import { notes, embed } from './tables.js';
 

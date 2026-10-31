@@ -4,16 +4,16 @@
 // welcomes it in ONE batch, so a worker never finds a job with no signup nor
 // a signup that will never be welcomed.
 //
-// The Worker is a service of its own to fenec-server: a key (the secret
+// The Worker is a service of its own to fennec-server: a key (the secret
 // SERVICE_KEY, PKCS#8 in base64) whose public half is in the server's keys
-// file, and a token signed with it for five minutes, `iss` urn:fenec:services,
+// file, and a token signed with it for five minutes, `iss` urn:fennec:services,
 // `sub` signup-function. functions-policy.txt lets that identity insert into
 // two collections and nothing else. Not a person's token, and not the
 // server's own. The server binds no key to a `sub`, so the key is as good as
 // the identity: whoever holds it is any `sub` the policy has a rule for. It is a
 // Worker secret (`wrangler secret put SERVICE_KEY`) and read by nothing else.
 //
-// The client's Idempotency-Key goes on to fenec-server, with the caller's name
+// The client's Idempotency-Key goes on to fennec-server, with the caller's name
 // in front of it. The server keeps a key under this token's subject, which is
 // every caller's alike: left as it came, one caller's key could collide with
 // another's (a 422, or a replayed answer that was not theirs).
@@ -28,7 +28,7 @@ async function serviceToken(env) {
   const key = await crypto.subtle.importKey('pkcs8', Uint8Array.from(atob(env.SERVICE_KEY), (c) => c.charCodeAt(0)),
     { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
   const head = b64url(text(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: 'svc-1' })));
-  const body = b64url(text(JSON.stringify({ iss: 'urn:fenec:services', sub: 'signup-function', iat: now, exp: now + 300 })));
+  const body = b64url(text(JSON.stringify({ iss: 'urn:fennec:services', sub: 'signup-function', iat: now, exp: now + 300 })));
   const sig = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, text(`${head}.${body}`)));
   kept = { token: `${head}.${body}.${b64url(sig)}`, exp: now + 300 };
   return kept.token;
@@ -57,7 +57,7 @@ export default {
       const caller = request.headers.get('cf-connecting-ip') ?? 'unknown';
       headers['idempotency-key'] = `${caller}:${key.slice(0, 100)}`;
     }
-    const res = await fetch(`${env.FENEC_URL}/batch`, { method: 'POST', headers, body: lines.map((l) => JSON.stringify(l)).join('\n') });
+    const res = await fetch(`${env.FENNEC_URL}/batch`, { method: 'POST', headers, body: lines.map((l) => JSON.stringify(l)).join('\n') });
 
     if (res.status === 409) return Response.json({ error: 'already signed up' }, { status: 409 }); // @unique(email)
     if (!res.ok) return Response.json({ error: 'try again later' }, { status: 502 }); // not the server's words

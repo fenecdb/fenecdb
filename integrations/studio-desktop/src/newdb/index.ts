@@ -17,7 +17,7 @@ const checked = (n: string) => (document.querySelector(`input[name=${n}]:checked
 
 const fileName = () => {
 	const typed = name.value.trim();
-	return (typed || "orders") + (typed.toLowerCase().endsWith(".fenec") ? "" : ".fenec");
+	return (typed || "orders") + (typed.toLowerCase().endsWith(".fennec") ? "" : ".fennec");
 };
 function showName() {
 	$("file").textContent = fileName();

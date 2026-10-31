@@ -2,18 +2,18 @@
 // `npm ci`. Documents embedded with `embedMany` and found with `near`,
 // kept to a source, fused with the words; then a model calling the search
 // tool in `generateText` and answering from what it found. Needs
-// web/fenec.wasm (make wasm).
+// web/fennec.wasm (make wasm).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { generateText, stepCountIs } from 'ai';
 import { MockEmbeddingModelV4, MockLanguageModelV4 } from 'ai/test';
-import { Fenec } from '../../web/fenec.js';
+import { Fennec } from '../../web/fennec.js';
 import { index, retrieve, searchTool } from './rag.js';
 
-const wasm = await readFile(new URL('../../web/fenec.wasm', import.meta.url)).catch(() => null);
-const skip = wasm ? false : 'no web/fenec.wasm (make wasm)';
+const wasm = await readFile(new URL('../../web/fennec.wasm', import.meta.url)).catch(() => null);
+const skip = wasm ? false : 'no web/fennec.wasm (make wasm)';
 
 // A text's vector: how often each letter a..z appears, so texts sharing
 // words lie near each other, as a real model's would.
@@ -37,7 +37,7 @@ const documents = [
 ];
 
 test('documents embedded with the SDK are found again', { skip }, async () => {
-  const db = await Fenec.open(wasm);
+  const db = await Fennec.open(wasm);
   assert.equal(await index(db, { collection: 'docs', model, documents }), 4);
   const near = await retrieve(db, { collection: 'docs', model, query: 'compact rewrites the file', k: 2 });
   assert.equal(near[0].text, documents[0].text);
@@ -53,7 +53,7 @@ test('documents embedded with the SDK are found again', { skip }, async () => {
 });
 
 test('a model calls the search tool and answers from what it found', { skip }, async () => {
-  const db = await Fenec.open(wasm);
+  const db = await Fennec.open(wasm);
   await index(db, { collection: 'docs', model, documents });
   let step = 0;
   const llm = new MockLanguageModelV4({

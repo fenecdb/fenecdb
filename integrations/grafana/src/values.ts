@@ -1,8 +1,8 @@
 import type { DataFrame, MetricFindValue, ScopedVars } from '@grafana/data';
 import type { TemplateSrv } from '@grafana/runtime';
 
-import { BUILTINS, VARIABLE } from './fenecql/language';
-import type { FenecQuery } from './types';
+import { BUILTINS, VARIABLE } from './fennecql/language';
+import type { FennecQuery } from './types';
 
 /**
  * The values of the dashboard variables a query names -- in its text, its
@@ -13,7 +13,7 @@ import type { FenecQuery } from './types';
  */
 export function variableValues(
   templateSrv: TemplateSrv,
-  query: FenecQuery,
+  query: FennecQuery,
   scopedVars: ScopedVars = {}
 ): Record<string, string | string[]> {
   const names = new Set<string>();

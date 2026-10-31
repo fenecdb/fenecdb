@@ -1,4 +1,4 @@
-// The ledger: every movement of money as one block of FenecQL statements.
+// The ledger: every movement of money as one block of FennecQL statements.
 //
 // Each block is a debit where the money is, a credit where it goes, two
 // journal entries summing to zero, and a record of the movement, sent as

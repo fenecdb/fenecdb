@@ -1,14 +1,14 @@
-# fenecdb
+# fennecdb
 
 # The wasm32 target comes with rustup. Homebrew's cargo has no wasm32 std
 # library, so ~/.cargo/bin is preferred when it is present.
 CARGO ?= $(shell test -x $(HOME)/.cargo/bin/cargo && echo $(HOME)/.cargo/bin/cargo || echo cargo)
 PORT ?= 8787
 SITE_PORT ?= 8788
-WASM_OUT = target/wasm32-unknown-unknown/wasm/fenec_wasm.wasm
+WASM_OUT = target/wasm32-unknown-unknown/wasm/fennec_wasm.wasm
 # What the browser module is built with: every feature unless named --
 # `make wasm FEATURES="text sorted geo"`, FEATURES=indexes or language for a
-# group, FEATURES=none for none of them (fenec-core's Cargo.toml says what
+# group, FEATURES=none for none of them (fennec-core's Cargo.toml says what
 # each is, `make wasm-sizes` weighs each). The check a schema declared in
 # code opens with comes with any set, unless SCHEMA=0: 7.5 KB brotli for a
 # page whose code declares none.
@@ -22,7 +22,7 @@ SCHEMA ?= 1
 STUDIO_SERVER ?=
 WASM_FEATURES = $(if $(FEATURES)$(filter 0,$(SCHEMA)),--no-default-features --features "$(if $(filter none,$(FEATURES)),,$(if $(FEATURES),$(FEATURES),full)) $(if $(filter 0,$(SCHEMA)),,schema)",)
 
-.PHONY: all test test-js sync-scenarios-check fenecql-corpus builder-golden docs-builder schema-golden types types-check docs-types ffi ffi-bench sync-bench swift-test kotlin-test dart-test wasm wasm-lite wasm-min wasm-sizes wasm-speed wasm-exact-speed size-report packages version agents-md studio-test studio-desktop studio-desktop-test studio-highlight statements-bench file-bench web serve server node shard shard-bench quota-bench fence-bench policy-bench jwt-bench replica-bench node-archive-bench concurrency-bench requests-bench mcp-bench pages-bench recon-bench roundtrip-bench load-bench maintenance-bench compact-bench open-bench opens-bench reopen-bench quant-bench scale-bench ycsb mirror-bench counters-bench queue-bench nearest-bench geo-bench small bench sweep collate-bench subquery-bench composite-bench lookup-bench ttl-bench growth-bench search-bench fuzzy-bench text-memory nocase-bench analytics-bench \
+.PHONY: all test test-js sync-scenarios-check fennecql-corpus builder-golden docs-builder schema-golden types types-check docs-types ffi ffi-bench sync-bench swift-test kotlin-test dart-test wasm wasm-lite wasm-min wasm-sizes wasm-speed wasm-exact-speed size-report packages version agents-md studio-test studio-desktop studio-desktop-test studio-highlight statements-bench file-bench web serve server node shard shard-bench quota-bench fence-bench policy-bench jwt-bench replica-bench node-archive-bench concurrency-bench requests-bench mcp-bench pages-bench recon-bench roundtrip-bench load-bench maintenance-bench compact-bench open-bench opens-bench reopen-bench quant-bench scale-bench ycsb mirror-bench counters-bench queue-bench nearest-bench geo-bench small bench sweep collate-bench subquery-bench composite-bench lookup-bench ttl-bench growth-bench search-bench fuzzy-bench text-memory nocase-bench analytics-bench \
 	python-test go-test dotnet-test languages-test examples-test recipes-test react-test langchain-test ai-sdk-test mcp-test cloudflare-test cloudflare-bench entry-bench \
 	compare beir import-test follow-bench \
 	pgvector-up pgvector-down docker docker-run docker-compact docker-down grafana-check deploy-check drill memory clean \
@@ -30,11 +30,11 @@ WASM_FEATURES = $(if $(FEATURES)$(filter 0,$(SCHEMA)),--no-default-features --fe
 
 all: test wasm
 
-## Rust first: `cargo test` also builds the `fenec-server` binary, and the sync
+## Rust first: `cargo test` also builds the `fennec-server` binary, and the sync
 ## tests on the JS side run against it (they skip themselves without it).
-## Then fenec-core made without its indexes, as a small browser module is,
+## Then fennec-core made without its indexes, as a small browser module is,
 ## and without the rest of the language too: the smallest module there is.
-## fenec-bench has no tests, and SQLite's C source and the postgres client
+## fennec-bench has no tests, and SQLite's C source and the postgres client
 ## under it are the heaviest thing a build compiles; the examples are
 ## measurement programs, a fifth of what `cargo test` compiled. Clippy's
 ## --all-targets checks both, so neither rots.
@@ -42,57 +42,57 @@ all: test wasm
 ## time leaves none for sync-scenarios-check to find.
 test:
 	@rm -rf target/sync-scenarios
-	$(CARGO) test --workspace --exclude fenec-bench --lib --bins --tests
-	$(CARGO) test --workspace --exclude fenec-bench --doc
-	$(CARGO) test -p fenec-core --no-default-features --features std-fs,language --lib --test features
-	$(CARGO) test -p fenec-core --no-default-features --features std-fs --lib --test features
+	$(CARGO) test --workspace --exclude fennec-bench --lib --bins --tests
+	$(CARGO) test --workspace --exclude fennec-bench --doc
+	$(CARGO) test -p fennec-core --no-default-features --features std-fs,language --lib --test features
+	$(CARGO) test -p fennec-core --no-default-features --features std-fs --lib --test features
 	@$(MAKE) --no-print-directory test-js
-	@if [ -f web/fenec.wasm ] && command -v node >/dev/null 2>&1; then $(MAKE) --no-print-directory sync-scenarios-check; fi
+	@if [ -f web/fennec.wasm ] && command -v node >/dev/null 2>&1; then $(MAKE) --no-print-directory sync-scenarios-check; fi
 
 ## JS tests. node's own runner; no dependencies. The spec reporter ends a
 ## failing run with each failing test's name and assertion: Node 22's
 ## default away from a terminal is TAP, a failure among a thousand lines.
-##   fenec.test.js       query builder (end-to-end too when wasm is present)
-##   fenec.sync.test.js  sync layer -- against a real `fenec-server --http` server;
-##                     skipped when `web/fenec.wasm` or the binary is missing
-##   fenec.sync.scenarios.test.js  integrations/sync-scenarios.json against
-##                     FenecSync, over a scripted transport
-##   fenec.persist.test.js  incremental persistence, over an in-memory IndexedDB
-##   fenec.file.test.js  a database kept in an OPFS file, over in-memory files,
-##                     and handed to and from a real `fenec-server`
-##   fenec.schema.test.js  a schema declared in code (web/schema.js): what it
-##                     declares, the check at an open, migrations, fenec types --schema
-##   fenec.client.test.js  @fenecdb/web/client: the modules it reaches hold no
+##   fennec.test.js      query builder (end-to-end too when wasm is present)
+##   fennec.sync.test.js sync layer -- against a real `fennec-server --http` server;
+##                     skipped when `web/fennec.wasm` or the binary is missing
+##   fennec.sync.scenarios.test.js  integrations/sync-scenarios.json against
+##                     FennecSync, over a scripted transport
+##   fennec.persist.test.js  incremental persistence, over an in-memory IndexedDB
+##   fennec.file.test.js  a database kept in an OPFS file, over in-memory files,
+##                     and handed to and from a real `fennec-server`
+##   fennec.schema.test.js a schema declared in code (web/schema.js): what it
+##                     declares, the check at an open, migrations, fennec types --schema
+##   fennec.client.test.js @fennecdb/web/client: the modules it reaches hold no
 ##                     engine, and its live queries over a scripted server
-##   fenec.replicas.test.js  connect(url, { reads: 'nearest' }) against real
+##   fennec.replicas.test.js connect(url, { reads: 'nearest' }) against real
 ##                     nodes and routers: reads answered by a read replica,
 ##                     after the client's writes, and a live query's runs
 ##                     after the change its stream at home told of;
 ##                     skipped without the binaries
-##   studio/test/statements.test.mjs  fenec studio's statements: every value a
-##                     parameter, every name one FenecQL writes, its first load
+##   studio/test/statements.test.mjs  fennec studio's statements: every value a
+##                     parameter, every name one FennecQL writes, its first load
 ##                     under 120 KB gzipped and holding nothing of the playground's
 ##   studio/test/transport.test.mjs  the studio's two ways to a database answer
-##                     alike: a real fenec-server and the module in the page (the
+##                     alike: a real fennec-server and the module in the page (the
 ##                     playground's), statement for statement; skipped when
-##                     `web/fenec.wasm` or the binary is missing
+##                     `web/fennec.wasm` or the binary is missing
 test-js:
 	@if command -v node >/dev/null 2>&1; then \
-		node --test --test-reporter=spec web/fenec.test.js web/fenec.sync.test.js web/fenec.sync.scenarios.test.js web/fenec.persist.test.js web/fenec.file.test.js web/fenec.schema.test.js web/fenec.client.test.js web/fenec.replicas.test.js studio/test/statements.test.mjs studio/test/transport.test.mjs; \
+		node --test --test-reporter=spec web/fennec.test.js web/fennec.sync.test.js web/fennec.sync.scenarios.test.js web/fennec.persist.test.js web/fennec.file.test.js web/fennec.schema.test.js web/fennec.client.test.js web/fennec.replicas.test.js studio/test/statements.test.mjs studio/test/transport.test.mjs; \
 	else \
 		echo "node not found -- JS tests skipped"; \
 	fi
 
 ## Both runners of integrations/sync-scenarios.json -- the native core's
-## (fenec-abi's tests/scenarios.rs) and FenecSync's
-## (web/fenec.sync.scenarios.test.js) -- passed every scenario: each writes
+## (fennec-abi's tests/scenarios.rs) and FennecSync's
+## (web/fennec.sync.scenarios.test.js) -- passed every scenario: each writes
 ## what passed to target/sync-scenarios/, and a skip fails here
 sync-scenarios-check:
 	node integrations/sync-scenarios-check.mjs
 
 ## integrations/builder-golden.json written again from the JS builder's
 ## answers: the text and parameters the Python, Go and .NET builders are
-## held to (web/golden.mjs holds the chains; fenec.test.js checks the file)
+## held to (web/golden.mjs holds the chains; fennec.test.js checks the file)
 builder-golden:
 	node web/golden.mjs
 
@@ -103,19 +103,19 @@ builder-golden:
 docs-builder:
 	python3 site/builder_tabs.py --write
 
-## fenec studio in a headless Chrome (puppeteer-core, studio/'s one dev
-## dependency) against the debug fenec-server: the server token's browse,
+## fennec studio in a headless Chrome (puppeteer-core, studio/'s one dev
+## dependency) against the debug fennec-server: the server token's browse,
 ## sort, filter, edit, insert and delete, one user's rows alone, and a scroll
 ## through 100 000 rows with no long task; then the site's playground, the
 ## studio over a database in the page, from site/dist as this builds it.
 ## Chrome is CHROME_PATH, else the one puppeteer keeps in ~/.cache/puppeteer
 studio-test: wasm
-	$(CARGO) build -p fenec-server -p fenec-shard
+	$(CARGO) build -p fennec-server -p fennec-shard
 	python3 site/build.py
 	cd studio && npm ci --no-audit --no-fund --loglevel=error && npm run e2e
 
-## fenec studio as a desktop app (beta; macOS on Apple silicon, see
-## integrations/studio-desktop/README.md): the server and the `fenec` shell it
+## fennec studio as a desktop app (beta; macOS on Apple silicon, see
+## integrations/studio-desktop/README.md): the server and the `fennec` shell it
 ## bundles built from this checkout (scripts/get-server.sh; STUDIO_SERVER=0.1.12
 ## downloads that release's asset, which holds both, instead and checks its
 ## SHA-256 against the release's SHA256SUMS), then the unsigned .app and .dmg,
@@ -143,17 +143,17 @@ studio-desktop:
 ## keeps, saved servers and the Keychain, a new database, a database served
 ## and its token, backups and restores, a file from Finder.
 ## Needs a window server (a logged-in Mac); logs of a failure are in $$SD_DIR
-## (default: fenec-desktop-checks under the temp directory). It leaves the
-## test variant (build-test/) a program LaunchServices may offer for a .fenec
-## file, and deletes ~/Library/Application Support/dev.fenecdb.studio.test, its
+## (default: fennec-desktop-checks under the temp directory). It leaves the
+## test variant (build-test/) a program LaunchServices may offer for a .fennec
+## file, and deletes ~/Library/Application Support/dev.fennecdb.studio.test, its
 ## own folder, before it starts; a real install's is never read or written.
 studio-desktop-test: studio-desktop
 	cd integrations/studio-desktop && npm run typecheck && npm run test:unit
-	cd integrations/studio-desktop && FENEC_DESKTOP_TEST_BUILD=1 npm run build
+	cd integrations/studio-desktop && FENNEC_DESKTOP_TEST_BUILD=1 npm run build
 	cd integrations/studio-desktop && npm run checks
 
 ## studio/highlight.js and the Grafana data source's copy written again:
-## site/highlight.js with build.py's FenecQL rules in it, the query editors'
+## site/highlight.js with build.py's FennecQL rules in it, the query editors'
 ## colours (site/test_highlight.py refuses a copy that is not this)
 studio-highlight:
 	python3 site/build.py --studio-highlight
@@ -165,11 +165,11 @@ agents-md:
 
 ## integrations/schema-golden.json written again: each declaration's
 ## description, from web/schema.js, and each plan, from the engine (the
-## module: make wasm first). crates/fenec-abi runs every plan case natively.
+## module: make wasm first). crates/fennec-abi runs every plan case natively.
 schema-golden:
 	node web/schema-golden.mjs
 
-## web/fenec.d.ts held to web/fenec.js -- every export and method declared --
+## web/fennec.d.ts held to web/fennec.js -- every export and method declared --
 ## and to what a caller writes, under tsc --strict; then the docs' examples
 types-check:
 	cd web/types && npm ci --no-audit --no-fund --loglevel=error && npm test
@@ -179,10 +179,10 @@ types-check:
 docs-types:
 	cd web/types && npm ci --no-audit --no-fund --loglevel=error && npm run docs
 
-## TypeScript declarations from the schema: make types FILE=data.fenec
+## TypeScript declarations from the schema: make types FILE=data.fennec
 types:
-	@test -n "$(FILE)" || (echo "usage: make types FILE=data.fenec"; exit 1)
-	@$(CARGO) run -q --release -p fenec-cli -- types $(FILE) -o web/fenec-schema.d.ts
+	@test -n "$(FILE)" || (echo "usage: make types FILE=data.fennec"; exit 1)
+	@$(CARGO) run -q --release -p fennec-cli -- types $(FILE) -o web/fennec-schema.d.ts
 
 ## Builds WASM for the browser and copies it under web/
 #
@@ -208,83 +208,83 @@ types:
 # some of it back, and `--inlining` added 16.6 KB. opt-level "s" is 20%
 # faster (`make wasm-speed`) for 16.4 KB more brotli, 12%.
 wasm:
-	@$(CARGO) build -p fenec-wasm --target wasm32-unknown-unknown --profile wasm $(WASM_FEATURES) 2>&1 | tail -2 || \
+	@$(CARGO) build -p fennec-wasm --target wasm32-unknown-unknown --profile wasm $(WASM_FEATURES) 2>&1 | tail -2 || \
 		(echo "the wasm32 target may be missing: rustup target add wasm32-unknown-unknown"; exit 1)
-	@cp $(WASM_OUT) web/fenec.wasm
-	@mkdir -p web/collate && rm -f web/collate/*.bin && cp crates/fenec-core/src/collate/*.bin web/collate/
-	@cp crates/fenec-core/src/tz/zones.bin web/collate/
-	@echo "web/fenec.wasm  $$(wc -c < web/fenec.wasm) bytes"
+	@cp $(WASM_OUT) web/fennec.wasm
+	@mkdir -p web/collate && rm -f web/collate/*.bin && cp crates/fennec-core/src/collate/*.bin web/collate/
+	@cp crates/fennec-core/src/tz/zones.bin web/collate/
+	@echo "web/fennec.wasm  $$(wc -c < web/fennec.wasm) bytes"
 
 ## The module made without the indexes or the schema check (as `make wasm
-## FEATURES=language SCHEMA=0`), for web/fenec.test.js to hand files between
+## FEATURES=language SCHEMA=0`), for web/fennec.test.js to hand files between
 ## it and the full one, both ways. A test build: no package or release ships
-## it, since a page either runs its queries on a server (@fenecdb/web/client)
+## it, since a page either runs its queries on a server (@fennecdb/web/client)
 ## or takes the full module.
 wasm-lite:
-	@$(CARGO) build -p fenec-wasm --target wasm32-unknown-unknown --profile wasm --no-default-features --features language 2>&1 | tail -2
-	@cp $(WASM_OUT) web/fenec-lite.wasm
-	@echo "web/fenec-lite.wasm  $$(wc -c < web/fenec-lite.wasm) bytes"
+	@$(CARGO) build -p fennec-wasm --target wasm32-unknown-unknown --profile wasm --no-default-features --features language 2>&1 | tail -2
+	@cp $(WASM_OUT) web/fennec-lite.wasm
+	@echo "web/fennec-lite.wasm  $$(wc -c < web/fennec-lite.wasm) bytes"
 
 ## The module made with no feature at all (as `make wasm FEATURES=none
-## SCHEMA=0`), the smallest there is: web/fenec.test.js opens the full
+## SCHEMA=0`), the smallest there is: web/fennec.test.js opens the full
 ## one's files in it and holds it to refusing what it lacks. A test build,
 ## shipped by nothing, as wasm-lite.
 wasm-min:
-	@$(CARGO) build -p fenec-wasm --target wasm32-unknown-unknown --profile wasm --no-default-features 2>&1 | tail -2
-	@cp $(WASM_OUT) web/fenec-min.wasm
-	@echo "web/fenec-min.wasm  $$(wc -c < web/fenec-min.wasm) bytes"
+	@$(CARGO) build -p fennec-wasm --target wasm32-unknown-unknown --profile wasm --no-default-features 2>&1 | tail -2
+	@cp $(WASM_OUT) web/fennec-min.wasm
+	@echo "web/fennec-min.wasm  $$(wc -c < web/fennec-min.wasm) bytes"
 
 ## What counting a statement by its shape costs (/_stats/statements,
 ## pg_stat_statements): a million each, by one thread and by eight.
 statements-bench:
-	$(CARGO) run --release -p fenec-http --example statements
+	$(CARGO) run --release -p fennec-http --example statements
 
 ## The browser module's size with every feature, with none, with each alone
 ## and with every one but each: raw, gzip -9 and brotli -q 11, in KB, and
 ## what each adds and saves. ONLY="geo collate" for those alone.
 wasm-sizes:
-	@ONLY="$(ONLY)" python3 crates/fenec-wasm/sizes.py
+	@ONLY="$(ONLY)" python3 crates/fennec-wasm/sizes.py
 
 ## How fast the browser module is, in Node: an HNSW build, `near`, a filter
 ## and an order, `match`, a page of vectors as JSON. A list of .wasm files
-## holds builds of it side by side: node crates/fenec-wasm/speed.mjs a.wasm b.wasm
+## holds builds of it side by side: node crates/fennec-wasm/speed.mjs a.wasm b.wasm
 wasm-speed: wasm
-	@node crates/fenec-wasm/speed.mjs
+	@node crates/fennec-wasm/speed.mjs
 
 ## `near` in the build without the indexes, which has no graph and measures every
 ## vector: 1 000, 10 000 and 50 000 rows of 128 and 384 dimensions, against
 ## the full module's walk and its own exact scan (ROWS=10000 for one size)
 wasm-exact-speed: wasm wasm-lite
-	@node crates/fenec-wasm/exact.mjs
+	@node crates/fennec-wasm/exact.mjs
 
 ## Where the browser module's bytes go: raw, gzip and brotli, its code by
 ## crate, module and part of the standard library, the largest functions and
 ## the generics whose copies weigh most. BASE=<git ref> builds that commit in
 ## a worktree beside it and shows what changed: make size-report BASE=main.
-## WHY=<pattern> names the first of fenec's functions on each way to the
-## functions matching it: make size-report WHY=flt2dec. BIN=fenec|fenec-server|
-## fenec-shard reports that native binary's code by crate instead.
+## WHY=<pattern> names the first of fennec's functions on each way to the
+## functions matching it: make size-report WHY=flt2dec. BIN=fennec|fennec-server|
+## fennec-shard reports that native binary's code by crate instead.
 ## FEATURES="text geo" measures the module built with those alone (none: none).
 size-report:
-	@python3 crates/fenec-wasm/size_report.py $(BASE) $(if $(WHY),--why '$(WHY)') $(if $(BIN),--bin $(BIN)) $(if $(FEATURES),--features '$(if $(filter none,$(FEATURES)),,$(FEATURES))')
+	@python3 crates/fennec-wasm/size_report.py $(BASE) $(if $(WHY),--why '$(WHY)') $(if $(BIN),--bin $(BIN)) $(if $(FEATURES),--features '$(if $(filter none,$(FEATURES)),,$(FEATURES))')
 
-## Every FenecQL text the repository holds -- the docs' blocks and inline
+## Every FennecQL text the repository holds -- the docs' blocks and inline
 ## code, the golden files, the sources' strings -- parsed by this tree and by
-## BASE's, both `parse` and `parse_exact` (tools/fenecql_corpus.py, the
-## example crates/fenec-ql/examples/corpus.rs): fails where a text that
+## BASE's, both `parse` and `parse_exact` (tools/fennecql_corpus.py, the
+## example crates/fennec-ql/examples/corpus.rs): fails where a text that
 ## parsed reads as another tree or is refused, the rule a grammar change
-## keeps (docs/design/fenecql.md). make fenecql-corpus BASE=origin/main
-fenecql-corpus:
-	@python3 tools/fenecql_corpus.py $(or $(BASE),origin/main)
+## keeps (docs/design/fennecql.md). make fennecql-corpus BASE=origin/main
+fennecql-corpus:
+	@python3 tools/fennecql_corpus.py $(or $(BASE),origin/main)
 
-## PyPI's fenecdb and npm's @fenecdb/web and @fenecdb/react as a release
+## PyPI's fennecdb and npm's @fennecdb/web and @fennecdb/react as a release
 ## publishes them, installed into a project and a venv of their own and
 ## used (PYTHON=... picks the interpreter; it wants 3.10 or newer), and
-## NuGet's FenecDb where the .NET SDK is installed.
+## NuGet's FennecDb where the .NET SDK is installed.
 packages: wasm
 	@integrations/packages.sh
 	@if command -v dotnet >/dev/null 2>&1; then integrations/dotnet/package.sh; \
-	else echo "dotnet not found: FenecDb (NuGet) not checked"; fi
+	else echo "dotnet not found: FennecDb (NuGet) not checked"; fi
 
 ## One version wherever a release reads it: make version V=0.1.5
 version:
@@ -294,7 +294,7 @@ version:
 ## OPFS file (openFile), 32 MB, in a worker of headless Chrome --
 ## BROWSER=safari opens Safari instead, BROWSER=firefox runs Firefox.
 file-bench: wasm
-	@python3 crates/fenec-bench/browser/serve.py
+	@python3 crates/fennec-bench/browser/serve.py
 
 ## Serves the browser demo locally
 serve: wasm
@@ -303,21 +303,21 @@ serve: wasm
 	@echo ""
 	@cd web && python3 -m http.server $(PORT)
 
-## The server over ./data.fenec, HTTP on 127.0.0.1:8080 unless HTTP=addr
+## The server over ./data.fennec, HTTP on 127.0.0.1:8080 unless HTTP=addr
 ## names another (a token: make server TOKEN=secret)
 server:
-	$(CARGO) run --release -p fenec-server -- --http $(or $(HTTP),127.0.0.1:8080) --file data.fenec \
+	$(CARGO) run --release -p fennec-server -- --http $(or $(HTTP),127.0.0.1:8080) --file data.fennec \
 	  --sync 250 $(if $(TOKEN),--http-token $(TOKEN),)
 
 ## A tenant node: one file per tenant under ./tenants, HTTP only.
 ## make node HTTP=127.0.0.1:8081 ADMIN=secret
 node:
-	$(CARGO) run --release -p fenec-server -- --dir tenants --http $(or $(HTTP),127.0.0.1:8081) \
+	$(CARGO) run --release -p fennec-server -- --dir tenants --http $(or $(HTTP),127.0.0.1:8081) \
 	  --admin-token $(or $(ADMIN),$(error ADMIN=<token> is required)) --sync 250
 
-## The router in front of the nodes; the directory lives in ./shard.fenec.
+## The router in front of the nodes; the directory lives in ./shard.fennec.
 shard:
-	$(CARGO) run --release -p fenec-shard -- --listen 127.0.0.1:8090 --directory shard.fenec
+	$(CARGO) run --release -p fennec-shard -- --listen 127.0.0.1:8090 --directory shard.fennec
 
 ## What the router adds per request, how long a tenant move takes, and a
 ## query across 100 tenants against asking each (ARGS=latency or fanout
@@ -325,19 +325,19 @@ shard:
 ## the primary's; ARGS=regions a region keeping its own directory failing
 ## a node over while cut off from the global router, at leases of 1 and 5 s).
 shard-bench:
-	$(CARGO) run --release -p fenec-shard --example overhead -- $(or $(ARGS),100000 128)
+	$(CARGO) run --release -p fennec-shard --example overhead -- $(or $(ARGS),100000 128)
 
 ## What a tenant's quota costs: a put held to a limit in process, and a
 ## tenant with every quota against one with none over HTTP, in turns
-## (crates/fenec-http/examples/quotas.rs)
+## (crates/fennec-http/examples/quotas.rs)
 quota-bench:
-	$(CARGO) run --release -p fenec-http --example quotas -- 20000
+	$(CARGO) run --release -p fennec-http --example quotas -- 20000
 
 ## What a node's lease costs a write: a lone put in process with no fence
 ## and with a lease's, in turns, and Lease::allows alone
-## (crates/fenec-http/examples/fence.rs)
+## (crates/fennec-http/examples/fence.rs)
 fence-bench:
-	$(CARGO) run --release -p fenec-http --example fence -- $(or $(ARGS),201)
+	$(CARGO) run --release -p fennec-http --example fence -- $(or $(ARGS),201)
 
 ## What a scoped write's rules cost: a `set` under the server's token and
 ## under a policy of a plain rule, a field list, a transition, a field
@@ -345,22 +345,22 @@ fence-bench:
 ## by id under three of them, in process and over HTTP, in turns; ARGS="20000
 ## plain,reach" names sides, ARGS=streams a write beside scoped streams,
 ## ARGS=ranges an ordered index's range under a rule ordering by a claim
-## (crates/fenec-http/examples/policy.rs)
+## (crates/fennec-http/examples/policy.rs)
 policy-bench:
-	$(CARGO) run --release -p fenec-http --example policy -- $(or $(ARGS),20000)
+	$(CARGO) run --release -p fennec-http --example policy -- $(or $(ARGS),20000)
 
 ## What checking a JSON Web Token costs, HS256, RS256 and ES256 in turns: the
 ## signature alone, a token's first check and one found among those verified
-## (crates/fenec-http/examples/jwt.rs)
+## (crates/fennec-http/examples/jwt.rs)
 jwt-bench:
-	$(CARGO) run --release -p fenec-http --example jwt -- $(or $(ARGS),300)
+	$(CARGO) run --release -p fennec-http --example jwt -- $(or $(ARGS),300)
 
 ## Replication: a replica's lag under each sync policy, how fast it
 ## catches up and starts from an image, and what a failover loses.
 replica-bench:
-	$(CARGO) build --release -p fenec-server
-	$(CARGO) run --release -p fenec-http --example replica -- 100000 128
-	$(CARGO) run --release -p fenec-server --example failover -- 10
+	$(CARGO) build --release -p fennec-server
+	$(CARGO) run --release -p fennec-http --example replica -- 100000 128
+	$(CARGO) run --release -p fennec-server --example failover -- 10
 
 ## Every tenant of a node archived: a node of 1 000 tenants, 10 of them
 ## written and one of 64 MB, with no archiver, a tenant's own stream each
@@ -368,96 +368,96 @@ replica-bench:
 ## archiver's memory, threads, descriptors and CPU, the writes' round trips
 ## as the first images are taken and after, and a node restarted
 ## (ARGS="tenants active seconds sync way big_mb";
-## crates/fenec-http/examples/node_archive.rs); then the syncer's passes and
+## crates/fennec-http/examples/node_archive.rs); then the syncer's passes and
 ## a tenant's close under --sync 250 beside each way of archiving
 ## (PASSES="way seconds big_mb"; examples/node_archive_passes.rs)
 node-archive-bench:
-	$(CARGO) build --release -p fenec-server -p fenec-cli
-	$(CARGO) run --release -p fenec-http --example node_archive -- $(or $(ARGS),1000 10 20 always)
-	$(CARGO) run --release -p fenec-http --example node_archive_passes -- $(or $(PASSES),node 20 32)
+	$(CARGO) build --release -p fennec-server -p fennec-cli
+	$(CARGO) run --release -p fennec-http --example node_archive -- $(or $(ARGS),1000 10 20 always)
+	$(CARGO) run --release -p fennec-http --example node_archive_passes -- $(or $(PASSES),node 20 32)
 
-## Writers and readers at once, fenecdb against SQLite in one process:
+## Writers and readers at once, fennecdb against SQLite in one process:
 ## durable and buffered writes from 1, 4 and 16 threads, and reads alone,
 ## beside writers and beside blocks of 1 000 writes (a /batch's). ARGS=blocks
 ## the reads beside blocks alone, three times (NOPREP=1: the block's puts
 ## built under the write lock); ARGS=long the writers beside long reads.
 concurrency-bench:
-	$(CARGO) run --release -p fenec-bench --bin concurrency -- $(ARGS)
+	$(CARGO) run --release -p fennec-bench --bin concurrency -- $(ARGS)
 
 ## A `set` of a constant against one of `n + 1`, over 100 000 rows and
 ## one row by id; 16 threads and 16 HTTP clients each incrementing one key
 ## 10 000 times, which must end at 160 000 (`set c {n: n + 1}`).
 counters-bench:
-	$(CARGO) build --release -p fenec-server
-	$(CARGO) run --release -p fenec-bench --bin counters
+	$(CARGO) build --release -p fennec-server
+	$(CARGO) run --release -p fennec-bench --bin counters
 
 ## Points over a million rows, crowded round cities and spread evenly
-## (crates/fenec-bench/src/bin/geo.rs): radii of 100 m to 100 km, the ten
+## (crates/fennec-bench/src/bin/geo.rs): radii of 100 m to 100 km, the ten
 ## nearest within 50 km and anywhere -- through @geo and by the scan, against
 ## PostGIS's GiST and Redis's GEOSEARCH in Docker, each in turn -- the index's
 ## build, a put with it and without, and GEODIST held to distance().
-## GEO_ARGS: --rows N --queries Q --only fenec,pg,redis --dist cities,uniform
+## GEO_ARGS: --rows N --queries Q --only fennec,pg,redis --dist cities,uniform
 geo-bench:
-	$(CARGO) run --release -p fenec-bench --bin geo -- --pause 60 $(GEO_ARGS)
+	$(CARGO) run --release -p fennec-bench --bin geo -- --pause 60 $(GEO_ARGS)
 
 ## A job queue's claim over a million jobs (JOBS=200000 for fewer): one
 ## worker's claim of ten through @sorted and through a scan, 16 threads
 ## and 16 HTTP clients claiming and acking every job, and the read,
 ## compare-and-set and read back a client sends without `returning`; then
-## a claim held until a job comes (Fenec-Wait) against polling -- a job's
+## a claim held until a job comes (Fennec-Wait) against polling -- a job's
 ## pickup, a delayed one's, 100 and 1 000 held on an empty queue, a busy
 ## queue beside held claims, a put of another collection beside claims held
 ## (`held other`), one job to 10, 100 and 1 000 claims held, each its own
 ## group (`held contested`), one order to as many couriers each claiming the
 ## order nearest it (`held nearest`). QUEUE_ARGS="held busy" runs one part.
 queue-bench:
-	$(CARGO) build --release -p fenec-server
-	$(CARGO) run --release -p fenec-bench --bin queue -- $(QUEUE_ARGS)
+	$(CARGO) build --release -p fennec-server
+	$(CARGO) run --release -p fennec-bench --bin queue -- $(QUEUE_ARGS)
 
 ## Claiming the nearest ready order over HTTP, 1, 16 and 50 claimers at
 ## once: one statement (order distance(...) limit 1 returning id, and an
 ## inner get's near) against the dispatch example's read and /batch.
 ## ORDERS and CLAIMS shrink it.
 nearest-bench:
-	$(CARGO) build --release -p fenec-server
-	$(CARGO) run --release -p fenec-bench --bin nearest
+	$(CARGO) build --release -p fennec-server
+	$(CARGO) run --release -p fennec-bench --bin nearest
 
 ## A ledger's reconciliation beside its transfers: four clients sending
 ## transfer batches for 10 s, alone and beside a /batch of reads a second
 ## over a million journal entries -- their rate, p99 and longest wait
-## (crates/fenec-bench/src/bin/recon.rs; FENEC_SERVER=<bin> another build).
+## (crates/fennec-bench/src/bin/recon.rs; FENNEC_SERVER=<bin> another build).
 recon-bench:
-	$(CARGO) build --release -p fenec-server
-	$(CARGO) run --release -p fenec-bench --bin recon
+	$(CARGO) build --release -p fennec-server
+	$(CARGO) run --release -p fennec-bench --bin recon
 
 ## What one request costs over the wire: a row by id, a filter, a near and a
-## put, over fenec-server's HTTP (POST /query, kept alive) and PostgreSQL's
+## put, over fennec-server's HTTP (POST /query, kept alive) and PostgreSQL's
 ## extended and simple protocols, one client at a time and eight at once,
-## against fenec-server started here and PostgreSQL + pgvector (`make
+## against fennec-server started here and PostgreSQL + pgvector (`make
 ## pgvector-up` first, skipped without it).
 requests-bench:
-	$(CARGO) build --release -p fenec-server
-	$(CARGO) run --release -p fenec-bench --bin requests
+	$(CARGO) build --release -p fennec-server
+	$(CARGO) run --release -p fennec-bench --bin requests
 
 ## An MCP tool call against the /query it runs: in process, and one client's
-## round trip to a release fenec-server --mcp
+## round trip to a release fennec-server --mcp
 mcp-bench:
-	$(CARGO) build --release -p fenec-server
-	$(CARGO) run --release -p fenec-bench --bin mcp
+	$(CARGO) build --release -p fennec-server
+	$(CARGO) run --release -p fennec-bench --bin mcp
 
 ## A paged read whose size and place change each request, limit and offset
 ## written into the text against sent as parameters
-## (crates/fenec-bench/src/bin/pages.rs): once against the release server,
+## (crates/fennec-bench/src/bin/pages.rs): once against the release server,
 ## once against one built with `--features timing`, whose GET /_timing has
 ## the parse cache's misses
 pages-bench:
-	$(CARGO) build --release -p fenec-server
-	$(CARGO) build --release -p fenec-server --features timing --target-dir target/timing
-	$(CARGO) run --release -p fenec-bench --bin pages
-	FENECBENCH_SERVER=target/timing/release/fenec-server $(CARGO) run --release -p fenec-bench --bin pages
+	$(CARGO) build --release -p fennec-server
+	$(CARGO) build --release -p fennec-server --features timing --target-dir target/timing
+	$(CARGO) run --release -p fennec-bench --bin pages
+	FENNECBENCH_SERVER=target/timing/release/fennec-server $(CARGO) run --release -p fennec-bench --bin pages
 
-## One client's round trip taken apart (crates/fenec-bench/src/bin/roundtrip.rs):
-## YCSB's read by key and update of a field against fenec-server natively and
+## One client's round trip taken apart (crates/fennec-bench/src/bin/roundtrip.rs):
+## YCSB's read by key and update of a field against fennec-server natively and
 ## in Docker -- built with `--features timing`, whose GET /_timing has each
 ## phase inside it -- and PostgreSQL 17 in Docker, its bind and execute
 ## logged. RT_ARGS: --systems server,server-docker,pg --modes always,250
@@ -465,10 +465,10 @@ pages-bench:
 ## --measure read,update,scan50 (scanN: N records from a key, with the bytes,
 ## packets and page faults of the container an op).
 roundtrip-bench:
-	$(CARGO) build --release -p fenec-server --features timing --target-dir target/timing
-	$(CARGO) build --release -p fenec-bench --bin roundtrip
-	docker build --build-arg FEATURES=timing -t fenecdb-timing .
-	printf 'FROM alpine:3\nRUN apk add --no-cache strace\n' | docker build -t fenec-strace -
+	$(CARGO) build --release -p fennec-server --features timing --target-dir target/timing
+	$(CARGO) build --release -p fennec-bench --bin roundtrip
+	docker build --build-arg FEATURES=timing -t fennecdb-timing .
+	printf 'FROM alpine:3\nRUN apk add --no-cache strace\n' | docker build -t fennec-strace -
 	./target/release/roundtrip $(RT_ARGS)
 
 ## What loading 100 000 rows costs each way a client can send them: in
@@ -477,42 +477,42 @@ roundtrip-bench:
 ## a time; PostgreSQL's COPY and INSERT beside them (`make pgvector-up`
 ## first, skipped without it).
 load-bench:
-	$(CARGO) build --release -p fenec-server
-	$(CARGO) run --release -p fenec-bench --bin load
+	$(CARGO) build --release -p fennec-server
+	$(CARGO) run --release -p fennec-bench --bin load
 
 ## When size comes first: no import, abort instead of panic unwinding.
 small:
-	@$(CARGO) build --profile cli -p fenec-cli --no-default-features
-	@echo "target/cli/fenec  $$(wc -c < target/cli/fenec) bytes"
+	@$(CARGO) build --profile cli -p fennec-cli --no-default-features
+	@echo "target/cli/fennec  $$(wc -c < target/cli/fennec) bytes"
 
 ## Scale measurement (clustered embedding distribution). --uniform gives
 ## the pathological case.
 bench:
-	$(CARGO) run --release -p fenec-core --example bench -- 100000 128
+	$(CARGO) run --release -p fennec-core --example bench -- 100000 128
 
 ## Comparison against SQLite and PostgreSQL.
 ## For the PostgreSQL arm, first: make pgvector-up
 compare:
-	$(CARGO) run --release -p fenec-bench -- 100000 128
+	$(CARGO) run --release -p fennec-bench -- 100000 128
 
 ## Retrieval quality on BEIR, nDCG@10 for every way of ranking ten documents:
 ##   make beir BEIR=path/to/scifact
 ## The directory is one of BEIR's zips unpacked, with the vectors
-## crates/fenec-bench/beir/embed.mjs writes beside it (npm install there once);
-## without them BM25 alone is scored. FENECBENCH_TEXT=chars (or prefix=6)
+## crates/fennec-bench/beir/embed.mjs writes beside it (npm install there once);
+## without them BM25 alone is scored. FENNECBENCH_TEXT=chars (or prefix=6)
 ## gives the text index its options.
 beir:
-	@test -n "$(BEIR)" || (echo "usage: make beir BEIR=<dataset dir> (vectors: crates/fenec-bench/beir/embed.mjs; SPLADE, optional: splade.mjs)"; exit 1)
-	$(CARGO) run --release -p fenec-bench --bin beir -- $(BEIR)
+	@test -n "$(BEIR)" || (echo "usage: make beir BEIR=<dataset dir> (vectors: crates/fennec-bench/beir/embed.mjs; SPLADE, optional: splade.mjs)"; exit 1)
+	$(CARGO) run --release -p fennec-bench --bin beir -- $(BEIR)
 
 ## The LangChain and LlamaIndex vector stores against their frameworks' own
-## tests: fenec-server built and started here, the tests from a python:3.13
+## tests: fennec-server built and started here, the tests from a python:3.13
 ## container (Docker). The integrations may use outside packages; the
 ## crates may not.
 python-test:
 	integrations/python/run-tests.sh
 
-## The native library an app links (crates/fenec-ffi), in the ffi profile:
+## The native library an app links (crates/fennec-ffi), in the ffi profile:
 ## for this machine, or TARGET=aarch64-linux-android and the like (the
 ## toolchain's linker for it on the PATH, the NDK's for Android). The size
 ## printed is the shared library's, stripped as the profile strips it --
@@ -520,25 +520,25 @@ python-test:
 ## optimisation left it 4% larger. JNI=1 adds the Kotlin binding's functions.
 FFI_TARGET = $(or $(TARGET),$(shell rustc -vV | sed -n 's/^host: //p'))
 ffi:
-	@$(CARGO) rustc -q -p fenec-ffi --lib --profile ffi --target $(FFI_TARGET) $(if $(JNI),--features jni) --crate-type cdylib
-	@for f in target/$(FFI_TARGET)/ffi/libfenec_ffi.dylib target/$(FFI_TARGET)/ffi/libfenec_ffi.so; do \
+	@$(CARGO) rustc -q -p fennec-ffi --lib --profile ffi --target $(FFI_TARGET) $(if $(JNI),--features jni) --crate-type cdylib
+	@for f in target/$(FFI_TARGET)/ffi/libfennec_ffi.dylib target/$(FFI_TARGET)/ffi/libfennec_ffi.so; do \
 		test -f $$f && echo "$$f  $$(wc -c < $$f) bytes"; done; true
 
 ## A call through the native library against the same work through
-## fenec-server's HTTP handler in process: an open, a put, a near
+## fennec-server's HTTP handler in process: an open, a put, a near
 ffi-bench:
-	$(CARGO) run --release -p fenec-ffi --example ffi_bench
+	$(CARGO) run --release -p fennec-ffi --example ffi_bench
 
-## What the sync core (fenec_abi::sync) costs a change it applies, against
+## What the sync core (fennec_abi::sync) costs a change it applies, against
 ## the same rows put straight into the engine: a text row, a 128-dim row
 ## under HNSW, changes of one and of 100, a seed of 10 000
 sync-bench:
-	$(CARGO) run --release -p fenec-abi --example sync_bench
+	$(CARGO) run --release -p fennec-abi --example sync_bench
 
 ## The Swift package (Package.swift, integrations/swift) on macOS: the
 ## XCFramework's macOS slice for this machine, then swift test -- the
 ## engine, the builder over every golden case, live queries, a replica
-## against a fenec-server the tests start -- and the tests again with
+## against a fennec-server the tests start -- and the tests again with
 ## Swift's cooperative pool cut to one thread (test-strict.sh)
 swift-test:
 	integrations/swift/run-tests.sh
@@ -557,10 +557,10 @@ kotlin-test:
 dart-test:
 	integrations/dart/run-tests.sh
 
-## The Go SDK (integrations/go) against fenec-server processes its tests
+## The Go SDK (integrations/go) against fennec-server processes its tests
 ## start: a primary, a replica of it and a node of tenants
 go-test:
-	@$(CARGO) build -q -p fenec-server
+	@$(CARGO) build -q -p fennec-server
 	cd integrations/go && go vet ./... && go test -count=1 ./...
 
 ## The .NET SDK (integrations/dotnet) the same way, with the .NET on the
@@ -569,7 +569,7 @@ dotnet-test:
 	integrations/dotnet/run-tests.sh
 
 ## The docs' example for each language over HTTP, against a real
-## fenec-server: Python (the fenecdb client), Java, PHP and Ruby from
+## fennec-server: Python (the fennecdb client), Java, PHP and Ruby from
 ## containers of their own (Docker), JavaScript, Go, C# and Rust with the
 ## Node, Go, .NET and Rust on the machine; then the docs' statements held to
 ## those programs and the HTTP page's curl tab run as written (Python 3)
@@ -585,33 +585,33 @@ examples-test:
 	examples/run-tests.sh $(E)
 
 ## The recipes of the docs (auth, files in S3 or R2, functions and webhooks) against
-## this checkout's fenec-server and web/: each demo's output held to
+## this checkout's fennec-server and web/: each demo's output held to
 ## examples/recipes/golden/ and the golden to the pages that paste it. The files
 ## recipe needs Docker (an S3-compatible store), the Worker's part wrangler (CI
 ## installs it pinned); RECIPES_UPDATE=1 writes the golden again.
 recipes-test:
 	examples/run-tests.sh recipes
 
-## useLiveQuery for React, against a stand-in and a real fenec-server + replica
+## useLiveQuery for React, against a stand-in and a real fennec-server + replica
 ## (needs `make wasm`)
 react-test:
-	@$(CARGO) build -q -p fenec-server
+	@$(CARGO) build -q -p fennec-server
 	cd integrations/react && npm ci --no-audit --no-fund --loglevel=error && npm test
 
 ## The LangChain.js vector store over a database in the page and over
-## fenec-server's HTTP endpoint (needs `make wasm`)
+## fennec-server's HTTP endpoint (needs `make wasm`)
 langchain-test:
-	@$(CARGO) build -q -p fenec-server
+	@$(CARGO) build -q -p fennec-server
 	cd integrations/langchain && npm ci --no-audit --no-fund --loglevel=error && npm test
 
 ## The MCP server held to the official TypeScript client over Streamable HTTP
 ## and stdio, in both eras, with the configurations the docs give; then the
 ## example agent's tools, run without its model
 mcp-test:
-	@$(CARGO) build -q -p fenec-server -p fenec-cli
+	@$(CARGO) build -q -p fennec-server -p fennec-cli
 	cd integrations/mcp && npm ci --no-audit --no-fund --loglevel=error && npm test
 	cd examples/mcp-agent && npm ci --no-audit --no-fund --loglevel=error && \
-	    d=$$(mktemp -d) && FENEC_BIN=$(CURDIR)/target/debug/fenec FENEC_FILE=$$d/agent.fenec node agent.mjs --check; \
+	    d=$$(mktemp -d) && FENNEC_BIN=$(CURDIR)/target/debug/fennec FENNEC_FILE=$$d/agent.fennec node agent.mjs --check; \
 	    s=$$?; rm -rf "$$d"; exit $$s
 
 ## Retrieval for the Vercel AI SDK against its own mock models (needs `make wasm`)
@@ -622,10 +622,10 @@ ai-sdk-test:
 ## storage that fails part way, against stand-ins for a SQLite-backed and a
 ## key-value backed object; then the example Worker under `wrangler dev`,
 ## stopped and started again (needs `make wasm`); then the global entry
-## (entry/) under `wrangler dev` in front of two regions' fenec-shard
-## routers and fenec-server nodes, and in front of stand-ins
+## (entry/) under `wrangler dev` in front of two regions' fennec-shard
+## routers and fennec-server nodes, and in front of stand-ins
 cloudflare-test:
-	$(CARGO) build -p fenec-server -p fenec-shard
+	$(CARGO) build -p fennec-server -p fennec-shard
 	cd integrations/cloudflare && npm ci --no-audit --no-fund --loglevel=error && npm test
 
 ## A Durable Object's first answer after an eviction: the example Worker
@@ -641,63 +641,63 @@ cloudflare-bench:
 ## heard (a relay) -- against the router asked directly, in turns
 ## (integrations/cloudflare/entry/bench.mjs; N=2000 ROUNDS=6 to choose)
 entry-bench:
-	$(CARGO) build --release -p fenec-server -p fenec-shard
+	$(CARGO) build --release -p fennec-server -p fennec-shard
 	cd integrations/cloudflare && npm ci --no-audit --no-fund --loglevel=error && BUILD=release node entry/bench.mjs
 
-## What `order ... collate tr` costs over a million Turkish names, in fenecdb
+## What `order ... collate tr` costs over a million Turkish names, in fennecdb
 ## and (after `make pgvector-up`) in PostgreSQL under ICU's tr-x-icu
 collate-bench:
-	$(CARGO) run --release -p fenec-bench --bin collate
+	$(CARGO) run --release -p fennec-bench --bin collate
 
 ## Verifies the import's PostgreSQL arm against a live server
 import-test: pgvector-up
-	@$(CARGO) test -p fenec-import --test all -- --ignored pg:: follow:: && \
-	  $(CARGO) test -p fenec-server --test all -- --ignored follow::; \
+	@$(CARGO) test -p fennec-import --test all -- --ignored pg:: follow:: && \
+	  $(CARGO) test -p fennec-server --test all -- --ignored follow::; \
 	  status=$$?; $(MAKE) pgvector-down; exit $$status
 
-## `fenec import --follow` against a live server: commit-to-visible latency,
+## `fennec import --follow` against a live server: commit-to-visible latency,
 ## how fast a burst drains, how long a cut stream takes to come back.
 ## Needs `make pgvector-up` first.
 follow-bench:
-	$(CARGO) run --release -p fenec-import --example follow -- 10000 384
+	$(CARGO) run --release -p fennec-import --example follow -- 10000 384
 
 ## Starts PostgreSQL with pgvector for the comparison. `wal_level=logical`
-## is for `fenec import --follow` and its tests; it changes what is logged
+## is for `fennec import --follow` and its tests; it changes what is logged
 ## for updates and deletes, not how the compared reads run.
-## `fenec-server --follow` serving what it follows: commit to a subscriber of
+## `fennec-server --follow` serving what it follows: commit to a subscriber of
 ## the collection, and a server killed while the table is written to,
 ## started again. Needs `make pgvector-up` first.
 mirror-bench:
-	$(CARGO) build --release -p fenec-server
-	$(CARGO) run --release -p fenec-server --example mirror -- 10000
+	$(CARGO) build --release -p fennec-server
+	$(CARGO) run --release -p fennec-server --example mirror -- 10000
 
 ## --shm-size: a parallel HNSW build holds its graph in dynamic shared
 ## memory, up to maintenance_work_mem, which scale-bench sets to 1 800 MB so
 ## that its graphs build in memory
 pgvector-up:
-	docker run -d --name fenecbench-pg --rm \
-	  -e POSTGRES_PASSWORD=fenec -e POSTGRES_DB=fenecbench \
+	docker run -d --name fennecbench-pg --rm \
+	  -e POSTGRES_PASSWORD=fennec -e POSTGRES_DB=fennecbench \
 	  -p 55432:5432 --shm-size=2g pgvector/pgvector:pg17 \
 	  -c shared_buffers=1GB -c maintenance_work_mem=1GB \
 	  -c max_parallel_workers_per_gather=0 -c wal_level=logical
 	@echo "waiting for it to become ready..."
-	@until docker exec fenecbench-pg pg_isready -U postgres -d fenecbench >/dev/null 2>&1; do sleep 1; done
-	@echo "postgres://postgres:fenec@127.0.0.1:55432/fenecbench"
+	@until docker exec fennecbench-pg pg_isready -U postgres -d fennecbench >/dev/null 2>&1; do sleep 1; done
+	@echo "postgres://postgres:fennec@127.0.0.1:55432/fennecbench"
 
 pgvector-down:
-	-docker rm -f fenecbench-pg
+	-docker rm -f fennecbench-pg
 
 ## Builds the server image (static with musl, ~4 MB)
 docker:
-	docker build -t fenecdb .
+	docker build -t fennecdb .
 
 ## Starts the container: make docker-run TOKEN=secret
 ## The memory limit must be at least 3x the data file (compact peak).
 docker-run: docker
 	@test -n "$(TOKEN)" || (echo "token required: make docker-run TOKEN=secret"; exit 1)
-	docker run -d --name fenecdb --restart unless-stopped \
-	  -p 127.0.0.1:8080:8080 -v fenecdata:/data \
-	  -e FENEC_HTTP_TOKEN=$(TOKEN) --memory 1g --memory-swap 1g fenecdb
+	docker run -d --name fennecdb --restart unless-stopped \
+	  -p 127.0.0.1:8080:8080 -v fennecdata:/data \
+	  -e FENNEC_HTTP_TOKEN=$(TOKEN) --memory 1g --memory-swap 1g fennecdb
 	@echo "http://127.0.0.1:8080"
 
 ## Compacts the running container's file: what deletes and rewrites left
@@ -708,25 +708,25 @@ docker-compact:
 	  http://127.0.0.1:8080/query
 
 docker-down:
-	-docker rm -f fenecdb
+	-docker rm -f fennecdb
 
-## The "fenecdb data" Grafana dashboards end to end (Docker): monitoring/'s
-## compose with fenec-server and Grafana's fenecdb-datasource built from this
+## The "fennecdb data" Grafana dashboards end to end (Docker): monitoring/'s
+## compose with fennec-server and Grafana's fennecdb-datasource built from this
 ## checkout, under a project of its own (the recipe's shell's pid in its
 ## name) and on loopback ports Docker picks (0), read back with `docker
 ## compose port`, so it runs beside a stack already up and beside another
 ## check; every panel's query and the variables' asked of
 ## Grafana's /api/ds/query, through the Infinity data source and through the
-## plugin, and held to fenec-server's own answer, the plugin's alert rule
+## plugin, and held to fennec-server's own answer, the plugin's alert rule
 ## evaluated; then down with its volumes, whatever happened
-GRAFANA_CHECK = FENEC_HTTP_TOKEN=grafana-check FENEC_METRICS_TOKEN=grafana-check-scrape \
-	FENEC_JWT_SECRET=grafana-check-secret-of-32-bytes-at-least \
-	FENEC_PORT=0 GRAFANA_PORT=0 PROMETHEUS_PORT=0 \
-	docker compose -p fenec-grafana-check-$$$$ -f monitoring/docker-compose.yml
+GRAFANA_CHECK = FENNEC_HTTP_TOKEN=grafana-check FENNEC_METRICS_TOKEN=grafana-check-scrape \
+	FENNEC_JWT_SECRET=grafana-check-secret-of-32-bytes-at-least \
+	FENNEC_PORT=0 GRAFANA_PORT=0 PROMETHEUS_PORT=0 \
+	docker compose -p fennec-grafana-check-$$$$ -f monitoring/docker-compose.yml
 grafana-check:
 	@$(GRAFANA_CHECK) up -d --build && \
 	  GRAFANA_URL=http://$$($(GRAFANA_CHECK) port grafana 3000) \
-	  FENEC_URL=http://$$($(GRAFANA_CHECK) port fenecdb 8080) FENEC_HTTP_TOKEN=grafana-check \
+	  FENNEC_URL=http://$$($(GRAFANA_CHECK) port fennecdb 8080) FENNEC_HTTP_TOKEN=grafana-check \
 	    sh -c 'node monitoring/grafana/check.mjs && node monitoring/grafana/check-plugin.mjs'; \
 	  status=$$?; \
 	  if [ $$status -ne 0 ]; then $(GRAFANA_CHECK) logs --no-color --tail 60; fi; \
@@ -748,11 +748,11 @@ grafana-check:
 ## standby router promoted by the units -- then both removed
 PROMTOOL = docker run --rm -v "$(CURDIR)/deploy/alerts:/a:ro" -w /a --entrypoint promtool prom/prometheus:v3.15.0
 deploy-check:
-	$(PROMTOOL) check rules fenecdb.rules.yml
-	$(PROMTOOL) test rules fenecdb.rules.test.yml
+	$(PROMTOOL) check rules fennecdb.rules.yml
+	$(PROMTOOL) test rules fennecdb.rules.test.yml
 	python3 deploy/test/ingress.py
 	python3 deploy/test/image_cargo.py
-	docker build -f deploy/Dockerfile --target systemd -t fenec-kit-systemd .
+	docker build -f deploy/Dockerfile --target systemd -t fennec-kit-systemd .
 	python3 deploy/test/units.py
 
 ## The failover drill (Docker): two regions -- a router keeping each one's
@@ -764,7 +764,7 @@ deploy-check:
 ## (lost = 0) and the times printed. No fixed port, everything removed after.
 ## DRILL_LEASE, DRILL_TENANTS, DRILL_RATE, DRILL_KEEP=1, DRILL_JSON=<path>
 drill:
-	docker build -f deploy/Dockerfile --target kit -t fenec-kit .
+	docker build -f deploy/Dockerfile --target kit -t fennec-kit .
 	python3 deploy/drill/drill.py
 
 ## A file under updates, compacted on its own or not: YCSB's 1 KB records,
@@ -778,49 +778,49 @@ drill:
 ## for every bucket, the writers' lock waits and the faults beside it.
 COMPACT_ARGS ?= --records 1000000 --updates 5000000
 compact-bench:
-	$(CARGO) build --release -p fenec-core --example compaction
+	$(CARGO) build --release -p fennec-core --example compaction
 	./target/release/examples/compaction $(COMPACT_ARGS)
 
 ## What `create index` and `compact` cost the readers and writers of a
 ## running database: under the write lock, then beside it.
 maintenance-bench:
-	$(CARGO) run --release -p fenec-core --example maintenance -- 100000 128
+	$(CARGO) run --release -p fennec-core --example maintenance -- 100000 128
 
 ## `highlight()`, `snippet()` and `facet` over 100 000 documents: a row's
 ## marks against `match` alone, a facet by the buckets and by the scan, and
 ## the text index's build and `match` -- which must not move -- against a
 ## build from before them (the program runs there too, the rest `n/a`).
 search-bench:
-	$(CARGO) run --release -p fenec-core --example search -- 100000
+	$(CARGO) run --release -p fennec-core --example search -- 100000
 
 ## `match ... fuzzy` and `match ... prefix` over 100 000 documents of
 ## made-up words: the sorted words' build and size, the walk alone at one
 ## edit and two, and a query plain, with a typo and half typed. BEIR=<dir>
 ## times the walk over that dataset's words as well.
 fuzzy-bench:
-	$(CARGO) run --release -p fenec-core --example fuzzy -- 100000 $(BEIR)
+	$(CARGO) run --release -p fennec-core --example fuzzy -- 100000 $(BEIR)
 
 ## What a text index holds, counted by the allocator: a tenant's 200 notes
 ## of 30 words over a Zipf vocabulary and of made-up words, the bytes asked
 ## for, the allocations, musl's slots for them and `memory_bytes`.
 ## BEIR="<dir> <dir>": those datasets' corpora instead.
 text-memory:
-	$(CARGO) run --release -p fenec-core --example textmem -- $(if $(BEIR),beir $(BEIR))
+	$(CARGO) run --release -p fennec-core --example textmem -- $(if $(BEIR),beir $(BEIR))
 
 ## A `nocase` field against a plain one over 100 000 rows: a put asking
 ## `@unique`, an equality by the index and by the scan, `~`, an order, a
-## group and a facet (crates/fenec-core/examples/nocase.rs)
+## group and a facet (crates/fennec-core/examples/nocase.rs)
 nocase-bench:
-	$(CARGO) run --release -p fenec-core --example nocase -- $(ARGS)
+	$(CARGO) run --release -p fennec-core --example nocase -- $(ARGS)
 
 ## An index over several fields: a million posts over 10 000 owners, the
 ## latest twenty of one owner and a feed over ten, through `@sorted(owner,
 ## created desc)` against `created @sorted`, `owner @hash` and the scan; a
 ## lone put beside each; `@unique(org, slug)` against `@unique` on the two
 ## joined; and the ordered index's own reads and writes (`sorted`), whose
-## chunks the index shares (crates/fenec-core/examples/composite.rs).
+## chunks the index shares (crates/fennec-core/examples/composite.rs).
 composite-bench:
-	$(CARGO) build --release -p fenec-core --example composite
+	$(CARGO) build --release -p fennec-core --example composite
 	./target/release/examples/composite all 1000000 10000
 	./target/release/examples/composite sorted 1000000
 
@@ -828,18 +828,18 @@ composite-bench:
 ## 5 lines, `on (org, shop) = (org, id)` through `@sorted(org, shop, at
 ## desc)` against the key joined into one `@hash` text field, the tenant left
 ## out of a `@hash` key, and that key walked through an index it leads; and
-## `required` counted from the children's side (crates/fenec-core/examples/
+## `required` counted from the children's side (crates/fennec-core/examples/
 ## lookups.rs). ARGS="all 500 2": 500 orders a shop. ARGS=single: the
 ## `@hash` key alone, for a build from before the feature.
 lookup-bench:
-	$(CARGO) build --release -p fenec-core --example lookups
+	$(CARGO) build --release -p fennec-core --example lookups
 	./target/release/examples/lookups $(if $(ARGS),$(ARGS),all)
 
 ## `in (get ...)` against the same `in [..]` written out, and against the
 ## `lookup ... required` that asks the same question from the other side:
 ## 20 000 customers and 200 000 orders.
 subquery-bench:
-	$(CARGO) run --release -p fenec-core --example subquery -- 20000
+	$(CARGO) run --release -p fennec-core --example subquery -- 20000
 
 ## Expressions, `group` by several keys and by `bucket`, `count(distinct)`,
 ## `first`/`last`: a million events and a million ticks, each question as one
@@ -847,7 +847,7 @@ subquery-bench:
 ## of before (`ARGS=old` asks only those, for another commit; `ARGS=writes`
 ## and `ARGS=folds` the write and lookup-fold parts).
 analytics-bench:
-	$(CARGO) run --release -p fenec-core --example analytics -- $(ARGS)
+	$(CARGO) run --release -p fennec-core --example analytics -- $(ARGS)
 
 ## `@ttl`: reads of a million rows half past their time against the same
 ## rows with no expiry and with the expiry written out by hand, then a
@@ -855,7 +855,7 @@ analytics-bench:
 ## the sweep through a @hash field of five values over 10 000 000 rows, and a
 ## lone put and del beside such a field.
 ttl-bench:
-	$(CARGO) build --release -p fenec-core --example expiry
+	$(CARGO) build --release -p fennec-core --example expiry
 	./target/release/examples/expiry reads 1000000
 	./target/release/examples/expiry sweep 100000 1000
 	./target/release/examples/expiry hash 10000000 20000 1000
@@ -863,7 +863,7 @@ ttl-bench:
 
 ## Indexes as they grow, a put at a time, each timed -- p50, p99, p99.99,
 ## the longest and every one past a bound, where a table that outgrew itself
-## moved every key (crates/fenec-core/examples/growth.rs): a @unique field's
+## moved every key (crates/fennec-core/examples/growth.rs): a @unique field's
 ## 4 000 000 entries, then the index built after an open, a read by it and a
 ## lookup in it; a @text field taking 4 new terms a row to 4 million terms,
 ## then its build and `match`; and vectors under @hnsw, 1.1 million of 128
@@ -872,7 +872,7 @@ ttl-bench:
 ## minutes, and 600 000 of 768 outgrew an 8 GB machine's memory).
 GROWTH ?= unique text vector
 growth-bench:
-	$(CARGO) build --release -p fenec-core --example growth
+	$(CARGO) build --release -p fennec-core --example growth
 	$(if $(filter unique,$(GROWTH)),./target/release/examples/growth unique 4000000)
 	$(if $(filter text,$(GROWTH)),./target/release/examples/growth text 1000000 4)
 	$(if $(filter vector,$(GROWTH)),./target/release/examples/growth vector 128 1100000)
@@ -882,9 +882,9 @@ growth-bench:
 ## 2.3 million rows, written once, then opened each way in a process of its
 ## own. OPEN_ROWS=23000000 makes it 10 GB.
 OPEN_ROWS ?= 2300000
-OPEN_FILE ?= target/open-$(OPEN_ROWS).fenec
+OPEN_FILE ?= target/open-$(OPEN_ROWS).fennec
 open-bench:
-	$(CARGO) build --release -p fenec-core --example open
+	$(CARGO) build --release -p fennec-core --example open
 	test -f $(OPEN_FILE) || ./target/release/examples/open write $(OPEN_FILE) $(OPEN_ROWS) 400 hs
 	./target/release/examples/open open $(OPEN_FILE) read
 	./target/release/examples/open open $(OPEN_FILE) mapped
@@ -894,13 +894,13 @@ open-bench:
 ## dimensions with their graph, and a million rows with none. The files are
 ## written once by the build that runs it.
 opens-bench:
-	$(CARGO) build --release -p fenec-core --example opens
-	test -f target/opens-1k.fenec || ./target/release/examples/opens write target/opens-1k.fenec 1000 128
-	test -f target/opens-100k.fenec || ./target/release/examples/opens write target/opens-100k.fenec 100000 128
-	test -f target/opens-1m.fenec || ./target/release/examples/opens write target/opens-1m.fenec 1000000 0
-	./target/release/examples/opens open target/opens-1k.fenec 200
-	./target/release/examples/opens open target/opens-100k.fenec 40
-	./target/release/examples/opens open target/opens-1m.fenec 20
+	$(CARGO) build --release -p fennec-core --example opens
+	test -f target/opens-1k.fennec || ./target/release/examples/opens write target/opens-1k.fennec 1000 128
+	test -f target/opens-100k.fennec || ./target/release/examples/opens write target/opens-100k.fennec 100000 128
+	test -f target/opens-1m.fennec || ./target/release/examples/opens write target/opens-1m.fennec 1000000 0
+	./target/release/examples/opens open target/opens-1k.fennec 200
+	./target/release/examples/opens open target/opens-100k.fennec 40
+	./target/release/examples/opens open target/opens-1m.fennec 20
 
 ## What a crash costs the next open: 100 000 x 768 written and never
 ## checkpointed, so every vector is in the tail, then opened as a server did
@@ -909,10 +909,10 @@ opens-bench:
 ## graphs in the file, and crashed a row before the next one was due: the
 ## most a crash can leave to link. Each open is a process of its own.
 REOPEN_ROWS ?= 100000
-REOPEN_FILE ?= target/reopen-$(REOPEN_ROWS).fenec
-REOPEN_KEPT ?= target/reopen-$(REOPEN_ROWS)-kept.fenec
+REOPEN_FILE ?= target/reopen-$(REOPEN_ROWS).fennec
+REOPEN_KEPT ?= target/reopen-$(REOPEN_ROWS)-kept.fennec
 reopen-bench:
-	$(CARGO) build --release -p fenec-core --example reopen
+	$(CARGO) build --release -p fennec-core --example reopen
 	test -f $(REOPEN_FILE) || ./target/release/examples/reopen write $(REOPEN_FILE) $(REOPEN_ROWS) 768
 	./target/release/examples/reopen open $(REOPEN_FILE) linked
 	./target/release/examples/reopen open $(REOPEN_FILE) deferred
@@ -926,44 +926,44 @@ reopen-bench:
 ## million the docs quote; each mode runs in a process of its own.
 QUANT_ROWS ?= 100000
 quant-bench:
-	$(CARGO) build --release -p fenec-core --example quant
+	$(CARGO) build --release -p fennec-core --example quant
 	for m in none int8 bit; do ./target/release/examples/quant $(QUANT_ROWS) 768 $$m --rank 32 --filter 3000; done
 
-## fenec-server over HTTP against PostgreSQL + pgvector over its own wire, at
+## fennec-server over HTTP against PostgreSQL + pgvector over its own wire, at
 ## scale (make pgvector-up first): the load and the index, memory, disk,
 ## recall@10 and latency at beams of 40, 100 and 200, and eight clients'
 ## throughput. SCALE_ROWS x SCALE_DIM, a million 128-dim vectors unless
-## given; SCALE_ARGS=--after builds fenec-server's index once the rows are
-## in, SCALE_ARGS="--only fenec" (or pg) runs one side, for running them in
+## given; SCALE_ARGS=--after builds fennec-server's index once the rows are
+## in, SCALE_ARGS="--only fennec" (or pg) runs one side, for running them in
 ## turns after idle minutes.
 SCALE_ROWS ?= 1000000
 SCALE_DIM ?= 128
 scale-bench:
-	$(CARGO) build --release -p fenec-server -p fenec-bench --bin fenec-server --bin scale
+	$(CARGO) build --release -p fennec-server -p fennec-bench --bin fennec-server --bin scale
 	./target/release/scale $(SCALE_ROWS) $(SCALE_DIM) $(SCALE_ARGS)
 
-## YCSB's core workloads A-F (crates/fenec-bench/src/bin/ycsb.rs): fenecdb in
-## process against SQLite, fenec-server over HTTP against PostgreSQL 17,
+## YCSB's core workloads A-F (crates/fennec-bench/src/bin/ycsb.rs): fennecdb in
+## process against SQLite, fennec-server over HTTP against PostgreSQL 17,
 ## MongoDB 8 and Redis 7, each in a container the bench starts and removes in
 ## its turn. 1 000 000 records, 1/4/16 threads, durable and buffered (and
 ## Redis's snapshots alone, `snapshot`), 30 s a cell after a 5 s warm-up,
 ## each cell after the CPU has cooled; a line a cell into ycsb.tsv,
 ## `./target/release/ycsb report ycsb.tsv` the medians. Narrow it with
-## YCSB_ARGS, e.g. "--records 100000 --systems fenec,sqlite --workloads AC
+## YCSB_ARGS, e.g. "--records 100000 --systems fennec,sqlite --workloads AC
 ## --threads 1,16 --runs 3". --systems server-docker runs the server in a
-## container too, from `docker build -t fenecdb-ycsb .`.
-## crates/fenec-bench/ycsb/run-redis.sh is the Redis comparison's run.
+## container too, from `docker build -t fennecdb-ycsb .`.
+## crates/fennec-bench/ycsb/run-redis.sh is the Redis comparison's run.
 ycsb:
-	$(CARGO) build --release -p fenec-server -p fenec-bench --bin fenec-server --bin ycsb
+	$(CARGO) build --release -p fennec-server -p fennec-bench --bin fennec-server --bin ycsb
 	./target/release/ycsb $(YCSB_ARGS)
 
 ## Memory footprint (for calibrating --max-memory)
 memory:
-	$(CARGO) run --release -p fenec-core --example memory -- 100000 128
+	$(CARGO) run --release -p fennec-core --example memory -- 100000 128
 
 ## ef / recall trade-off
 sweep:
-	$(CARGO) run --release -p fenec-core --example sweep -- 50000 128
+	$(CARGO) run --release -p fennec-core --example sweep -- 50000 128
 
 ## The website and the documentation. Plain static files, stdlib-only
 ## generator; the live console on the home page needs `make wasm` first.
@@ -983,7 +983,7 @@ site-serve: wasm wasm-lite wasm-min
 packaging-test:
 	sh site/test_install.sh
 	python3 tools/test_homebrew_formula.py
-	python3 tools/homebrew-formula.py --check packaging/homebrew/Formula/fenecdb.rb
+	python3 tools/homebrew-formula.py --check packaging/homebrew/Formula/fennecdb.rb
 
 ## Publishes to Cloudflare Workers (fenecdb.com). Needs `wrangler login`
 ## or CLOUDFLARE_API_TOKEN; CI does the same thing on a push to main.
@@ -992,5 +992,5 @@ site-deploy: site
 
 clean:
 	$(CARGO) clean
-	rm -f web/fenec.wasm web/fenec-lite.wasm web/fenec-min.wasm
+	rm -f web/fennec.wasm web/fennec-lite.wasm web/fennec-min.wasm
 	rm -rf web/collate site/dist

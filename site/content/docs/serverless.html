@@ -1,23 +1,23 @@
 <!--
-title: Serverless and Cloudflare — fenecdb
-description: Run fenecdb inside a Cloudflare Worker with a database per Durable Object, or have the function talk to a server instead.
+title: Serverless and Cloudflare — fennecdb
+description: Run fennecdb inside a Cloudflare Worker with a database per Durable Object, or have the function talk to a server instead.
 -->
 
 <h1>Serverless and Cloudflare</h1>
-<p class="kicker">Run fenecdb inside a Cloudflare Worker, with one small
+<p class="kicker">Run fennecdb inside a Cloudflare Worker, with one small
 database for each Durable Object.</p>
 
 <h2 id="models">Two ways to use it</h2>
 
 <p>Either the engine runs inside the function, one database per Durable
-Object, or the function sends its queries to a <code>fenec-server</code> server.
+Object, or the function sends its queries to a <code>fennec-server</code> server.
 Inside is faster; a server holds more data and more writers.</p>
 
 <div class="tbl">
 <table>
 <thead><tr><th>&nbsp;</th><th>the engine in the function</th><th>the function talks to a server</th></tr></thead>
 <tbody>
-<tr><td>where the data is</td><td>in the object's memory, kept in its storage</td><td>in <code>fenec-server</code>'s file</td></tr>
+<tr><td>where the data is</td><td>in the object's memory, kept in its storage</td><td>in <code>fennec-server</code>'s file</td></tr>
 <tr><td>a query</td><td>no network in the object: 2.5 ms for a request's <code>near</code> over 10 000 × 128</td><td>a round trip to the server</td></tr>
 <tr><td>writers</td><td>one an object; a tenant an object</td><td>one a file; a node holds many</td></tr>
 <tr><td>size</td><td>about 60 000 rows of 128 dimensions, 12 000 of 768 (<a href="#limits">Limits</a>)</td><td>the machine's disk, the file mapped</td></tr>
@@ -30,13 +30,13 @@ Inside is faster; a server holds more data and more writers.</p>
 <p>The browser module runs wherever V8 runs a WebAssembly module, a
 Cloudflare Worker among them. A Durable Object gives it what a file gives a
 server: one writer, and storage that outlives the process. So one object
-holds one database, as a tenant is one file on a <code>fenec-server</code>
+holds one database, as a tenant is one file on a <code>fennec-server</code>
 node.</p>
 
 <p>The second is also how a Worker stands in front of a server as an endpoint
 with logic of its own, a signup that writes the row and its job in one batch,
 run under <code>wrangler dev</code> on <a href="/docs/functions#worker">Functions
-and webhooks</a>. It needs nothing new: <code>Fenec.connect(url)</code>, the
+and webhooks</a>. It needs nothing new: <code>Fennec.connect(url)</code>, the
 Python <code>Client</code> or <code>fetch</code>, and a function's connections
 are HTTP requests, so there is no pool to exhaust. Servers in several
 regions take one URL through a Worker in front of them, which sends each
@@ -52,21 +52,21 @@ keeps it: rows past their time deleted, a new image when one is worth
 it.</p>
 
 <pre data-lang="ts">import { DurableObject } from 'cloudflare:workers';
-import { Fenec } from '@fenecdb/web';
-import { maintain, persist, release, restore, schedule } from '@fenecdb/cloudflare';
-import wasm from '@fenecdb/web/fenec.wasm';
+import { Fennec } from '@fennecdb/web';
+import { maintain, persist, release, restore, schedule } from '@fennecdb/cloudflare';
+import wasm from '@fennecdb/web/fennec.wasm';
 
 interface Env {
   TENANT: DurableObjectNamespace&lt;Tenant&gt;;
 }
 
 export class Tenant extends DurableObject&lt;Env&gt; {
-  #db: Promise&lt;Fenec&gt; | null = null;
+  #db: Promise&lt;Fennec&gt; | null = null;
 
-  #open(): Promise&lt;Fenec&gt; {
+  #open(): Promise&lt;Fennec&gt; {
     // Once, with every other event held back while it restores.
     return (this.#db ??= this.ctx.blockConcurrencyWhile(async () =&gt; {
-      const db = await Fenec.open(wasm);         // the module as the Worker imports it
+      const db = await Fennec.open(wasm);         // the module as the Worker imports it
       await restore(db, this.ctx.storage);
       return db;
     }));
@@ -116,7 +116,7 @@ export default {
 
 <details class="deep"><summary>Why open and restore run in blockConcurrencyWhile</summary>
 <p>A Worker imports a <code>.wasm</code> file compiled, and cannot compile
-bytes at run time; <code>Fenec.open</code> takes the module so. The open
+bytes at run time; <code>Fennec.open</code> takes the module so. The open
 and the restore run inside <code>blockConcurrencyWhile</code>, once: opened
 by whichever request found the object cold, two requests could each
 restore an engine of their own and append to the storage as if alone.
@@ -167,7 +167,7 @@ outgrow half the image and 64 KiB, and a new image replaces them.</p>
 
 <p>A SQLite-backed object — the only kind a new account makes — has
 <code>ctx.storage.sql</code>, and the database is a table a generation,
-<code>fenec:1</code>, <code>fenec:2</code> and on (the key, then the
+<code>fennec:1</code>, <code>fennec:2</code> and on (the key, then the
 generation): the image's rows, cut under the 2 MB a row takes, then a row
 each time writes are stored. Nothing names where the database stands
 beside the rows: the table there is says it, so a write is the one row.
@@ -328,7 +328,7 @@ tombstones and built its image whole, and given nothing back.</p>
 <h2 id="limits">Limits</h2>
 
 <p>An object holds about 60 000 rows of 128 dimensions, or 12 000 of 768. For
-more, use a <code>fenec-server</code> server or spread a tenant over more
+more, use a <code>fennec-server</code> server or spread a tenant over more
 objects.</p>
 
 <ul>
@@ -336,10 +336,10 @@ objects.</p>
   as on a server; tenants write side by side.</li>
   <li><b>Bundle collation data.</b> Collation data for scripts the module does
   not carry is fetched from a URL by default; in a Worker, pass
-  <code>{collation: name =&gt; ...}</code> to <code>Fenec.open</code> and hand
+  <code>{collation: name =&gt; ...}</code> to <code>Fennec.open</code> and hand
   the chunks from your bundle.</li>
-  <li><b>Install it from npm.</b> <code>npm install @fenecdb/cloudflare
-  @fenecdb/web</code>; both are published with each release.</li>
+  <li><b>Install it from npm.</b> <code>npm install @fennecdb/cloudflare
+  @fennecdb/web</code>; both are published with each release.</li>
 </ul>
 
 <details class="deep"><summary>Memory in a 128 MB isolate, measured</summary>
@@ -383,6 +383,6 @@ storage: made all at once, the image stood beside the rows, and 50 000
 rows of 128 went from 73 to 109 MB at it, 83 now. So an object holds
 about 60 000 rows of 128 dimensions and 12 000 of 768, however many a
 request brings; past that, a
-<code>fenec-server</code> node and <code>Fenec.connect</code>, or a tenant's
+<code>fennec-server</code> node and <code>Fennec.connect</code>, or a tenant's
 data spread over more objects.</p>
 </details>

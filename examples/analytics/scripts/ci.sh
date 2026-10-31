@@ -8,16 +8,16 @@
 # which, so two runs -- or this beside any other suite or server -- never
 # meet on one.
 #
-#   FENEC_SERVER              the server binary (scripts/db.sh finds one otherwise)
+#   FENNEC_SERVER             the server binary (scripts/db.sh finds one otherwise)
 #   ANALYTICS_LIGHTHOUSE=1    Lighthouse CI's budgets too (lighthouserc.cjs)
 #   ANALYTICS_BENCH=1         npm run bench:ingest and bench:queries as well
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 cd "$here"
 dir=$(mktemp -d)
-export FENEC_PORT=0
-export FENEC_DIR="$dir/tenants"
-export FENEC_AUDIT="$dir/audit.log"
+export FENNEC_PORT=0
+export FENNEC_DIR="$dir/tenants"
+export FENNEC_AUDIT="$dir/audit.log"
 export KESTREL_INSECURE_COOKIES=1 # plain http on localhost
 db= app=
 stop() {
@@ -49,9 +49,9 @@ wait_for() { # url, log
 sh scripts/db.sh >"$dir/db.log" 2>&1 &
 db=$!
 until_line 'listening on: http://[^ ]+ ' "$dir/db.log" "$db"
-FENEC_URL=$(sed -n 's/.*listening on: \(http:[^ ]*\) .*/\1/p' "$dir/db.log" | head -1)
-export FENEC_URL
-wait_for "$FENEC_URL/_health" "$dir/db.log"
+FENNEC_URL=$(sed -n 's/.*listening on: \(http:[^ ]*\) .*/\1/p' "$dir/db.log" | head -1)
+export FENNEC_URL
+wait_for "$FENNEC_URL/_health" "$dir/db.log"
 KESTREL_SEED_DAYS=${KESTREL_SEED_DAYS:-40} npm run -s setup
 KESTREL_ROLLUP_ONCE=1 npx tsx scripts/rollup.ts
 npm run -s lint

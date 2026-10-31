@@ -8,7 +8,7 @@
 // 27 rows and 9 KB a second, and every claim, pickup and delivery adds a row.
 // A write that writes nothing -- a claim that took no order -- costs none.
 // Streams are the dispatchers' live views; held claims are the couriers
-// waiting at the server for an order (`Fenec-Wait`), each a connection, so
+// waiting at the server for an order (`Fennec-Wait`), each a connection, so
 // the plan bounds how many may wait at once apart from how many maps stream.
 
 export type Plan = 'starter' | 'pro';

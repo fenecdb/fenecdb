@@ -2,7 +2,7 @@
 //
 //   node --test site/search.test.mjs
 //
-// `build.py` runs it on the image it has just written (FENEC_SEARCH_INDEX)
+// `build.py` runs it on the image it has just written (FENNEC_SEARCH_INDEX)
 // and fails the build when a query does not put its page first; run alone,
 // it takes the image site/dist serves, gzipped. The queries go through
 // `search`, the function the dialog calls, over the image the page loads.
@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
-import { Fenec } from '../web/fenec.js';
+import { Fennec } from '../web/fennec.js';
 import { search, grouped } from './search-query.js';
 import { asker } from './search-meaning.js';
 import { fixtureVector } from './search-fixture.mjs';
@@ -20,18 +20,18 @@ import { fixtureVector } from './search-fixture.mjs';
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 /** An image: the one build.py names, or the one site/dist serves. */
 const imageOf = (env, stem) => (process.env[env] ? readFileSync(process.env[env]) : (() => {
-  const name = readdirSync(here('./dist/')).find((n) => new RegExp(`^${stem}\\.[0-9a-f]+\\.fenec\\.gz$`).test(n));
+  const name = readdirSync(here('./dist/')).find((n) => new RegExp(`^${stem}\\.[0-9a-f]+\\.fennec\\.gz$`).test(n));
   if (!name) throw new Error('no search index in site/dist: run python3 site/build.py');
   return gunzipSync(readFileSync(here(`./dist/${name}`)));
 })());
 
-const module = readFileSync(process.env.FENEC_WASM ?? here('../web/fenec.wasm'));
-const db = await Fenec.open(module);
-db.load(imageOf('FENEC_SEARCH_INDEX', 'search'));
+const module = readFileSync(process.env.FENNEC_WASM ?? here('../web/fennec.wasm'));
+const db = await Fennec.open(module);
+db.load(imageOf('FENNEC_SEARCH_INDEX', 'search'));
 // The image the page loads once the search by meaning answers: the same
 // sections, each with its vector.
-const dbv = await Fenec.open(module);
-dbv.load(imageOf('FENEC_SEARCH_VECTORS', 'search-vectors'));
+const dbv = await Fennec.open(module);
+dbv.load(imageOf('FENNEC_SEARCH_VECTORS', 'search-vectors'));
 
 const first = (q, section) => search(db, q, section).hits[0]?.url;
 
@@ -39,9 +39,9 @@ test('the index holds every page', () => {
   const n = db.run('get docs count').rows[0].count;
   assert.ok(n > 100, `only ${n} sections`);
   const pages = new Set(db.run('get docs select url limit 10000').rows.map((r) => r.url.split('#')[0]));
-  for (const p of ['', 'playground', 'docs/', 'docs/fenecql', 'docs/fenecql-reading', 'docs/fenecql-writing',
-    'docs/fenecql-schema', 'docs/fenecql-indexes', 'docs/fenecql-lookup', 'docs/fenecql-aggregates',
-    'docs/fenecql-search', 'docs/fenecql-vector', 'docs/server', 'docs/redis', 'docs/benchmarks', 'docs/vs-sqlite']) {
+  for (const p of ['', 'playground', 'docs/', 'docs/fennecql', 'docs/fennecql-reading', 'docs/fennecql-writing',
+    'docs/fennecql-schema', 'docs/fennecql-indexes', 'docs/fennecql-lookup', 'docs/fennecql-aggregates',
+    'docs/fennecql-search', 'docs/fennecql-vector', 'docs/server', 'docs/redis', 'docs/benchmarks', 'docs/vs-sqlite']) {
     assert.ok(pages.has(p), `no section of ${JSON.stringify(p)}`);
   }
   // docs/sharding was one page and is a tutorial and seven others now.
@@ -65,9 +65,9 @@ test('the index holds every page', () => {
 
 test('a known query finds its page first', () => {
   assert.equal(first('compact'), 'docs/server#compaction');
-  assert.match(first('insert if absent'), /^docs\/(redis|fenecql(-writing)?)(#|$)/);
-  assert.equal(first('facet'), 'docs/fenecql-search#facets');
-  assert.equal(first('highlight snippet'), 'docs/fenecql-search#highlights');
+  assert.match(first('insert if absent'), /^docs\/(redis|fennecql(-writing)?)(#|$)/);
+  assert.equal(first('facet'), 'docs/fennecql-search#facets');
+  assert.equal(first('highlight snippet'), 'docs/fennecql-search#highlights');
   assert.match(first('replica failover'), /^docs\/(replication|sharding(-failover)?)(#|$)/);
   // What the Quickstart held before it was split.
   assert.equal(first('homebrew'), 'docs/install#homebrew');
@@ -86,17 +86,17 @@ test('a word half typed, mistyped or written as the docs write it finds its page
   // `compacton` shares `compact` with `compaction`).
   for (const [q, page] of [
     ['replic', /^docs\/replication/], ['compac', /^docs\/server#compaction$/], ['idempot', /^docs\/http#idempotency$/],
-    ['highl', /^docs\/fenecql-search#highlights$/], ['quicks', /^docs\/quickstart/], ['subscr', /^docs\/(javascript#subscribe|http-reference#subscriptions)$/],
-    ['vecto', /^docs\/fenecql-vector/], ['embedd', /^docs\/embedding/], ['aggreg', /^docs\/fenecql-aggregates/],
-    ['colla', /^docs\/fenecql-schema#collation$/], ['grafa', /^docs\/(grafana|monitoring)/], ['stud', /^docs\/studio/],
-    ['mobi', /^docs\/mobile/], ['looku', /^docs\/fenecql-lookup/], ['failov', /^docs\/(sharding-failover|replication)/],
+    ['highl', /^docs\/fennecql-search#highlights$/], ['quicks', /^docs\/quickstart/], ['subscr', /^docs\/(javascript#subscribe|http-reference#subscriptions)$/],
+    ['vecto', /^docs\/fennecql-vector/], ['embedd', /^docs\/embedding/], ['aggreg', /^docs\/fennecql-aggregates/],
+    ['colla', /^docs\/fennecql-schema#collation$/], ['grafa', /^docs\/(grafana|monitoring)/], ['stud', /^docs\/studio/],
+    ['mobi', /^docs\/mobile/], ['looku', /^docs\/fennecql-lookup/], ['failov', /^docs\/(sharding-failover|replication)/],
     ['compacton', /^docs\/server#compaction$/], ['replicaton', /^docs\/replication/], ['idempotncy', /^docs\/http#idempotency$/],
     ['failovr', /^docs\/(sharding-failover|replication)/], ['quickstrat', /^docs\/quickstart/],
-    ['highlite', /^docs\/fenecql-search#highlights$/], ['colation', /^docs\/fenecql-schema#collation$/],
-    ['aggregats', /^docs\/fenecql-aggregates/],
-    ['--auto-compact', /^docs\/server#(compaction|flags)$/], ['prefix_min', /^docs\/(fenecql-indexes#indexes|javascript#schema)$/],
-    ['Idempotency-Key', /^docs\/http#idempotency$/], ['nocase', /^docs\/fenecql-schema#nocase$/],
-    ['upsert', /^docs\/(fenecql-writing|sql)/], ['rerank', /^docs\/fenecql-search/],
+    ['highlite', /^docs\/fennecql-search#highlights$/], ['colation', /^docs\/fennecql-schema#collation$/],
+    ['aggregats', /^docs\/fennecql-aggregates/],
+    ['--auto-compact', /^docs\/server#(compaction|flags)$/], ['prefix_min', /^docs\/(fennecql-indexes#indexes|javascript#schema)$/],
+    ['Idempotency-Key', /^docs\/http#idempotency$/], ['nocase', /^docs\/fennecql-schema#nocase$/],
+    ['upsert', /^docs\/(fennecql-writing|sql)/], ['rerank', /^docs\/fennecql-search/],
     // Turkish for replication, five letters of it the same.
     ['replikasyon', /^docs\/replication/],
   ]) {
@@ -232,8 +232,8 @@ test('a question with no word of the docs is ranked by its meaning alone, whatev
   }
   // What a docs change adds without meaning to: words that share three or
   // four letters with the question's. The pages stand where they stood.
-  const copy = await Fenec.open(module);
-  copy.load(imageOf('FENEC_SEARCH_VECTORS', 'search-vectors'));
+  const copy = await Fennec.open(module);
+  copy.load(imageOf('FENNEC_SEARCH_VECTORS', 'search-vectors'));
   const rows = copy.run('get docs select id, body limit 10000').rows;
   for (const r of rows.filter((_, i) => i % 3 === 0)) {
     copy.run('set docs {body: $1} where id = $2', [`${r.body} tell tells telling telephone version verify verified very`, r.id]);
@@ -253,7 +253,7 @@ const embedded = (url) => dbv.run('get docs where url = $1 count', [url]).rows[0
  *  and the cache is committed: held to the list the words give them while
  *  they have none, and to their own bound once they do. Any other section
  *  that loses its vector fails the test. Emptied by that commit. */
-const UNTIL_EMBEDDED = new Set(['docs/fenecql-schema#collation']);
+const UNTIL_EMBEDDED = new Set(['docs/fennecql-schema#collation']);
 
 test('what the words found, the meaning keeps', () => {
   for (const [q, url, within] of [
@@ -265,11 +265,11 @@ test('what the words found, the meaning keeps', () => {
     ['what happens to writes when the primary dies', 'docs/replication', 3],
     ['stop a retried request from writing twice', 'docs/http#idempotency', 1],
     ['run it in docker', 'docs/server#containers', 1],
-    // Collation moved to a page of another title (docs/fenecql held it),
+    // Collation moved to a page of another title (docs/fennecql held it),
     // so its text, and the vector the cache holds by that text, changed:
     // until a deploy embeds it and the cache is committed it has none, and
     // the words alone put it 8th. With its vector it is first.
-    ['sort names the way Turkish does', 'docs/fenecql-schema#collation', 1],
+    ['sort names the way Turkish does', 'docs/fennecql-schema#collation', 1],
     ['work offline and catch up later', 'docs/sync', 1],
   ]) {
     const [, meaning] = standing(q, url);

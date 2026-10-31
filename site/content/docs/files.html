@@ -1,5 +1,5 @@
 <!--
-title: Files with S3 and R2 — fenecdb
+title: Files with S3 and R2 — fennecdb
 description: The bytes in an object store, the facts about them in a collection: presigned upload and download links made only after the rules say yes, the object deleted with its row, orphans reconciled, and why the bytes stay out of the database file. Run against a real server and an S3-compatible store.
 -->
 
@@ -11,8 +11,8 @@ the store.</p>
 <p>A file is two things. The bytes are what an object store (Amazon S3,
 Cloudflare R2, anything that speaks the S3 API) keeps cheaply and serves from
 a CDN. The facts are whose it is, how big, what type, whether the upload
-finished, and those are rows. fenecdb keeps the rows. The app's backend,
-which can be a Worker, makes the links, and makes one only after fenec-server
+finished, and those are rows. fennecdb keeps the rows. The app's backend,
+which can be a Worker, makes the links, and makes one only after fennec-server
 has said yes: to an insert for an upload, to a read for a download.</p>
 
 <h2 id="why">Why the bytes stay out of the database file</h2>
@@ -30,7 +30,7 @@ the file:</p>
     (104 858 600 bytes reclaimed). By default the server compacts a file
     itself once half of it is dead and it is 64 MB, and each compaction copies
     every live byte, so its cost follows the bytes you keep
-    (<a href="/docs/server#compaction">Compaction</a>); <code>fenec-server
+    (<a href="/docs/server#compaction">Compaction</a>); <code>fennec-server
     --help</code> says <code>compact</code> peaks at about 3x the file in
     memory.</li>
   <li><b>The file is mapped and lives in the page cache.</b> A 40 MB photo
@@ -76,7 +76,7 @@ a thumbnail's worth or a hash.</p>
 </ol>
 
 <p>The backend holds no JWT library and checks no token itself. It passes the
-<code>Authorization</code> header on, and fenec-server verifies it
+<code>Authorization</code> header on, and fennec-server verifies it
 (<a href="/docs/auth">Auth with your identity provider</a>). The policy is the
 whole of who may do what:</p>
 
@@ -101,8 +101,8 @@ files         update(name)            where owner = $jwt.sub
 # them, and moves a pending one to ready, a transition because one filter asked
 # of the row before and after would refuse the move it grants (`new.` is the
 # row as the write leaves it).
-files         read                    where $jwt.sub = 'files-backend' and $jwt.iss = 'urn:fenec:services'
-files         update(state)           where state = "pending" and new.state = "ready" and $jwt.sub = 'files-backend' and $jwt.iss = 'urn:fenec:services'</pre>
+files         read                    where $jwt.sub = 'files-backend' and $jwt.iss = 'urn:fennec:services'
+files         update(state)           where state = "pending" and new.state = "ready" and $jwt.sub = 'files-backend' and $jwt.iss = 'urn:fennec:services'</pre>
 
 <ul>
   <li><b>A person adds what is theirs and pending, up to 10 MiB.</b> The
@@ -115,7 +115,7 @@ files         update(state)           where state = "pending" and new.state = "r
     <code>where state = "pending"</code> would refuse the very write it grants,
     because the row after it is not pending (<a href="/docs/http-access#scoped-access">Transitions</a>).</li>
   <li><b>The backend is <code>files-backend</code> of the issuer
-    <code>urn:fenec:services</code>, and no <code>role</code>.</b> Both are in the
+    <code>urn:fennec:services</code>, and no <code>role</code>.</b> Both are in the
     rule: a <code>sub</code> alone is what a provider's token can say too (a
     Firebase project's owner picks the uid of a custom token), and a role claim in
     the provider's namespace would be one a provider's settings, or a user's own
@@ -143,8 +143,8 @@ is 500 and a line in its own log.</p>
 
 <details class="deep" open><summary>files-backend.mjs</summary>
 <pre data-lang="js">// Files in an object store (S3, R2 or anything that speaks S3), their metadata
-// in fenecdb: the app's small backend, docs/files. It holds no JWT library and
-// checks no token itself. Each request's `Authorization` goes to fenec-server
+// in fennecdb: the app's small backend, docs/files. It holds no JWT library and
+// checks no token itself. Each request's `Authorization` goes to fennec-server
 // as it came, and the server's rules (files-policy.txt) say whether this
 // person may add a file or read one; a presigned URL is made only after the
 // server has said yes -- to an insert for an upload, to a read for a download.
@@ -162,7 +162,7 @@ is 500 and a line in its own log.</p>
 import { createServer } from 'node:http';
 import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { connect } from '@fenecdb/web/client';
+import { connect } from '@fennecdb/web/client';
 import { keysOf } from './store.mjs';
 import { isMain } from './main.mjs';
 
@@ -186,8 +186,8 @@ export function disposition(name) {
  * `appToken` is `() =&gt; Promise&lt;token&gt;`: the backend's own, signed on demand
  * (service-token.mjs). `prefix` is the tenant on a `--dir` node.
  */
-export function backend({ fenec, appToken, s3, bucket, prefix = '', expiresIn = 300, log = console.error }) {
-  const as = (token) =&gt; connect(fenec, { token });
+export function backend({ fennec, appToken, s3, bucket, prefix = '', expiresIn = 300, log = console.error }) {
+  const as = (token) =&gt; connect(fennec, { token });
   const keys = keysOf(prefix);
 
   return createServer(async (req, res) =&gt; {
@@ -198,7 +198,7 @@ export function backend({ fenec, appToken, s3, bucket, prefix = '', expiresIn = 
     try {
       const token = (req.headers.authorization ?? '').replace(/^Bearer /, '');
       if (!token) return reply(401, { error: 'no token' });
-      const me = as(token); // fenec-server verifies it, and holds every query to its rules
+      const me = as(token); // fennec-server verifies it, and holds every query to its rules
       const [, route, rawId, verb] = new URL(req.url, 'http://x').pathname.split('/');
       if (route !== 'files') return reply(404, { error: 'not found' });
       const id = rawId === undefined ? undefined : Number(rawId);
@@ -324,7 +324,7 @@ if (isMain(import.meta.url)) {
   const { serviceTokens } = await import('./service-token.mjs');
   const env = process.env;
   const server = backend({
-    fenec: env.FENEC_URL,
+    fennec: env.FENNEC_URL,
     // The key as a PEM file, whose path is SERVICE_KEY_FILE (a Worker keeps its key
     // in a secret instead, as base64 of the DER: the two forms are not the same).
     appToken: serviceTokens({ pem: readFileSync(env.SERVICE_KEY_FILE), sub: 'files-backend' }),
@@ -421,7 +421,7 @@ export const keysOf = (prefix = '') =&gt; ({
 
 <h2 id="deleting">The object goes with its row, and what is left is found</h2>
 
-<p>The store is not part of fenec-server's write, so a deleted row could leave
+<p>The store is not part of fennec-server's write, so a deleted row could leave
 its object behind if the delete ran in the backend and the backend died after
 it. A consumer of the change stream closes that. It runs beside the server
 (<code>--cdc</code>), reads every write once it is on disk, and deletes the
@@ -429,13 +429,13 @@ objects of each deleted row, whoever deleted it: the backend, a page's own
 token, the sweep of pending uploads.</p>
 
 <pre data-lang="js" data-label="blobs.mjs">// The bucket follows the table, docs/files: a consumer of the change stream
-// (`fenec-server --cdc`) that deletes an object once its row is gone, whoever
+// (`fennec-server --cdc`) that deletes an object once its row is gone, whoever
 // deleted the row -- the backend, a person's own token from a page, the sweep
 // of pending uploads. The server keeps the consumer's place, so a restart
 // carries on where it stopped; a crash between the delete and the commit
 // deletes again, which an object store answers as it answered the first time.
 //
-//   FENEC_URL=... ADMIN_TOKEN=... S3_ENDPOINT=... S3_KEY=... S3_SECRET=... BUCKET=... node blobs.mjs
+//   FENNEC_URL=... ADMIN_TOKEN=... S3_ENDPOINT=... S3_KEY=... S3_SECRET=... BUCKET=... node blobs.mjs
 //
 // /_changes takes the server's own token and no scoped one: it carries every
 // row of every person, documents and all.
@@ -456,25 +456,25 @@ const pause = (ms, signal) =&gt; new Promise((resolve) =&gt; {
   signal?.addEventListener('abort', () =&gt; (clearTimeout(t), resolve()), { once: true });
 });
 
-export async function follow({ fenec, adminToken, s3, bucket, prefix = '', name = 'blobs', wait = 10_000, signal, log = console.log }) {
+export async function follow({ fennec, adminToken, s3, bucket, prefix = '', name = 'blobs', wait = 10_000, signal, log = console.log }) {
   const headers = { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' };
   const keys = keysOf(prefix);
   // PATCH moves the consumer; a POST only makes it.
-  const move = (since) =&gt; fetch(`${fenec}/_changes/consumers/${name}`, { method: 'PATCH', headers, body: JSON.stringify({ since }) });
+  const move = (since) =&gt; fetch(`${fennec}/_changes/consumers/${name}`, { method: 'PATCH', headers, body: JSON.stringify({ since }) });
   const commit = async (since) =&gt; {
     const res = await move(since);
     if (!res.ok) throw new Error(`commit of ${name} at ${since}: ${res.status}`);
   };
   // Made at every start: a POST makes the consumer (201) and leaves one that
   // exists where it stands (200), so a restart carries on from the last commit.
-  const made = await fetch(`${fenec}/_changes/consumers/${name}`, { method: 'POST', headers });
+  const made = await fetch(`${fennec}/_changes/consumers/${name}`, { method: 'POST', headers });
   if (!made.ok) throw new Error(`/_changes/consumers/${name}: ${made.status}`);
   // A server restarted, or not answering for a while, is waited for with a back-off;
   // after RETRIES answers missed the follower ends with an error, so that whatever
   // supervises it starts it again. It ends with a zero only at its own signal.
   let missed = 0;
   while (!signal?.aborted) {
-    const page = await fetch(`${fenec}/_changes?consumer=${name}&amp;wait=${wait}`, { headers, signal }).catch(() =&gt; null);
+    const page = await fetch(`${fennec}/_changes?consumer=${name}&amp;wait=${wait}`, { headers, signal }).catch(() =&gt; null);
     if (!page) {
       if (signal?.aborted) break;
       if (++missed &gt;= RETRIES) throw new Error(`/_changes: no answer ${missed} times`);
@@ -485,7 +485,7 @@ export async function follow({ fenec, adminToken, s3, bucket, prefix = '', name 
     if (page.status === 410) {
       const { since } = await page.json();
       log(`blobs: behind what the server keeps; reconciling, then on from ${since}`);
-      const gone = await reconcile({ fenec, adminToken, s3, bucket, prefix });
+      const gone = await reconcile({ fennec, adminToken, s3, bucket, prefix });
       log(`blobs: reconciled, ${gone.length} deleted: ${gone.join(', ') || 'none'}`);
       // The first write the server keeps can be past what is on disk yet (a commit
       // there is 409), and can move on while writes are not: not at once, then.
@@ -495,7 +495,7 @@ export async function follow({ fenec, adminToken, s3, bucket, prefix = '', name 
       continue;
     }
     if (!page.ok) throw new Error(`/_changes: ${page.status}`);
-    const next = Number(page.headers.get('fenec-next'));
+    const next = Number(page.headers.get('fennec-next'));
     for (const line of (await page.text()).split('\n').filter(Boolean)) {
       const change = JSON.parse(line);
       if (change.collection === 'files' &amp;&amp; change.op === 'del') {
@@ -514,7 +514,7 @@ export async function follow({ fenec, adminToken, s3, bucket, prefix = '', name 
 if (isMain(import.meta.url)) {
   const env = process.env;
   await follow({
-    fenec: env.FENEC_URL, adminToken: env.ADMIN_TOKEN, s3: s3From(env), bucket: env.BUCKET, prefix: env.KEY_PREFIX ?? '',
+    fennec: env.FENNEC_URL, adminToken: env.ADMIN_TOKEN, s3: s3From(env), bucket: env.BUCKET, prefix: env.KEY_PREFIX ?? '',
   });
 }</pre>
 
@@ -582,7 +582,7 @@ if (isMain(import.meta.url)) {
 //     answered 410. A deletion is not in a read of the table, so "start over
 //     from a read" cannot find the objects whose rows are gone: this can.
 //
-//   FENEC_URL=... ADMIN_TOKEN=... S3_ENDPOINT=... S3_KEY=... S3_SECRET=... BUCKET=... node reconcile.mjs
+//   FENNEC_URL=... ADMIN_TOKEN=... S3_ENDPOINT=... S3_KEY=... S3_SECRET=... BUCKET=... node reconcile.mjs
 //
 // The objects are listed first and the rows read after: a row is made before
 // its URL, so an object listed has a row made earlier, and a row deleted since
@@ -612,10 +612,10 @@ async function* objects(s3, bucket, prefix) {
 }
 
 /** Every file row's state, by id, read in pages of a thousand. */
-async function states(fenec, adminToken) {
+async function states(fennec, adminToken) {
   const rows = new Map();
   for (let after = 0; ;) {
-    const res = await fetch(`${fenec}/query`, {
+    const res = await fetch(`${fennec}/query`, {
       method: 'POST',
       headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
       body: JSON.stringify({ query: 'get files select id, state where id &gt; $1 order id limit 1000', params: [after] }),
@@ -630,13 +630,13 @@ async function states(fenec, adminToken) {
 
 /**
  * The keys deleted, in order (with `dryRun`, the keys that would be). `prefix`
- * is the tenant on a `--dir` node, and `fenec` that tenant's address.
+ * is the tenant on a `--dir` node, and `fennec` that tenant's address.
  */
-export async function reconcile({ fenec, adminToken, s3, bucket, prefix = '', dryRun = false, maxDeletePercent = 50, force = false }) {
+export async function reconcile({ fennec, adminToken, s3, bucket, prefix = '', dryRun = false, maxDeletePercent = 50, force = false }) {
   const keys = keysOf(prefix);
   const listed = [];
   for await (const key of objects(s3, bucket, prefix)) if (keys.parse(key)) listed.push(key);
-  const rows = await states(fenec, adminToken);
+  const rows = await states(fennec, adminToken);
   const doomed = listed.sort().filter((key) =&gt; {
     const { kind, id } = keys.parse(key);
     // An upload belongs to a pending row; what a ready row left under pending/
@@ -662,7 +662,7 @@ if (isMain(import.meta.url)) {
   const percent = args.indexOf('--max-delete-percent');
   try {
     const gone = await reconcile({
-      fenec: env.FENEC_URL, adminToken: env.ADMIN_TOKEN, s3: s3From(env), bucket: env.BUCKET, prefix: env.KEY_PREFIX ?? '',
+      fennec: env.FENNEC_URL, adminToken: env.ADMIN_TOKEN, s3: s3From(env), bucket: env.BUCKET, prefix: env.KEY_PREFIX ?? '',
       dryRun: args.includes('--dry-run'), force: args.includes('--force'),
       ...(percent &gt;= 0 &amp;&amp; { maxDeletePercent: Number(args[percent + 1]) }),
     });
@@ -676,7 +676,7 @@ if (isMain(import.meta.url)) {
 
 <h2 id="run">A run</h2>
 
-<p>Two people, a real fenec-server with <code>files-policy.txt</code>, the
+<p>Two people, a real fennec-server with <code>files-policy.txt</code>, the
 backend above, the consumer, and an S3-compatible server in Docker
 (<code>npm install</code> in <code>examples/recipes</code>, then <code>node
 files-demo.mjs</code>, which pulls the image quietly (and again, if Docker Hub
@@ -690,7 +690,7 @@ server takes the same SDK calls. S3 and R2 themselves were not run for this
 page. <code>make recipes-test</code> holds the lines below to what the demo
 prints.</p>
 
-<pre data-lang="text">fenec-server and the bucket recipes are up
+<pre data-lang="text">fennec-server and the bucket recipes are up
 
 -- alice adds a file
 POST /files             201 {"id":1,"url":"&lt;store&gt;/recipes/pending/1?…"}

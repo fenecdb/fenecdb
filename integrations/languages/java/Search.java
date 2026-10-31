@@ -10,11 +10,11 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 public class Search {
-    static final String URL = System.getenv().getOrDefault("FENEC_URL", "http://127.0.0.1:8080");
-    static final String TOKEN = System.getenv("FENEC_TOKEN");
+    static final String URL = System.getenv().getOrDefault("FENNEC_URL", "http://127.0.0.1:8080");
+    static final String TOKEN = System.getenv("FENNEC_TOKEN");
     static final HttpClient HTTP = HttpClient.newHttpClient();
 
-    // One FenecQL statement, its body the JSON {"query": ..., "params": [...]}.
+    // One FennecQL statement, its body the JSON {"query": ..., "params": [...]}.
     static HttpResponse<String> query(String json) throws Exception {
         var req = HttpRequest.newBuilder(URI.create(URL + "/query"))
             .header("Content-Type", "application/json")

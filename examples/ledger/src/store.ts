@@ -1,9 +1,9 @@
-// Where the ledger's statements run: fenec-server over HTTP, or the engine
-// in this process (the WebAssembly module of @fenecdb/web). The ledger
+// Where the ledger's statements run: fennec-server over HTTP, or the engine
+// in this process (the WebAssembly module of @fennecdb/web). The ledger
 // writes every movement as one block of statements sharing one list of
 // parameters, so both run the same text.
-import type { Fenec } from '@fenecdb/web';
-import { connect, FenecError, type FenecHttp } from '@fenecdb/web/client';
+import type { Fennec } from '@fennecdb/web';
+import { connect, FennecError, type FennecHttp } from '@fennecdb/web/client';
 
 export type Outcome =
   | { ok: true; results: unknown[]; replayed: boolean; seq?: number }
@@ -29,16 +29,16 @@ export class StoreError extends Error {
 }
 
 /**
- * fenec-server, reached at `base` (`http://host:port/t/<tenant>` on a
- * tenant node) with `token`, through `@fenecdb/web/client`. Its `batch` is
+ * fennec-server, reached at `base` (`http://host:port/t/<tenant>` on a
+ * tenant node) with `token`, through `@fennecdb/web/client`. Its `batch` is
  * `POST /batch`: the statements under the write lock as one block, and
  * with `idempotencyKey` a retry is answered as the first try was and moves
- * nothing twice. A refusal comes back as a `FenecError` with its `status`
+ * nothing twice. A refusal comes back as a `FennecError` with its `status`
  * and the statement it stopped at (`at`), which the ledger answers rather
  * than throws.
  */
 export class HttpStore implements Store {
-  readonly #db: FenecHttp;
+  readonly #db: FennecHttp;
 
   constructor(
     readonly base: string,
@@ -55,7 +55,7 @@ export class HttpStore implements Store {
       );
       return { ok: true, results: r.results, replayed: r.replayed, seq: r.seq ?? undefined };
     } catch (e) {
-      if (!(e instanceof FenecError) || e.status === undefined) throw e;
+      if (!(e instanceof FennecError) || e.status === undefined) throw e;
       return { ok: false, status: e.status, error: e.message, at: e.at };
     }
   }
@@ -64,13 +64,13 @@ export class HttpStore implements Store {
     try {
       return (await this.#db.rows(query, params)) as T[];
     } catch (e) {
-      if (e instanceof FenecError && e.status !== undefined) throw new StoreError(e.message, e.status);
+      if (e instanceof FennecError && e.status !== undefined) throw new StoreError(e.message, e.status);
       throw e;
     }
   }
 
   // A /batch of reads alone runs under one read lock: no write lands
-  // between them, so they read one state, and `Fenec-Seq` names it. Other
+  // between them, so they read one state, and `Fennec-Seq` names it. Other
   // reads go on beside it; a write waits for it, as for any read.
   async snapshot(queries: string[]) {
     const out = await this.batch(queries, []);
@@ -88,14 +88,14 @@ export class HttpStore implements Store {
  * from landing twice in process.
  */
 export class LocalStore implements Store {
-  constructor(readonly db: Fenec) {}
+  constructor(readonly db: Fennec) {}
 
   async batch(statements: string[], params: unknown[]): Promise<Outcome> {
     try {
       this.db.run(statements.join('\n'), params);
       return { ok: true, results: [], replayed: false, seq: this.db.changeSeq };
     } catch (e) {
-      if (!(e instanceof FenecError)) throw e;
+      if (!(e instanceof FennecError)) throw e;
       const error = e.message;
       // A block of one statement names no place: it is the first.
       return { ok: false, status: statusOf(error), error, at: e.at ?? 0 };
@@ -120,7 +120,7 @@ export class LocalStore implements Store {
   }
 }
 
-/** The status fenec-server would answer the error with. */
+/** The status fennec-server would answer the error with. */
 function statusOf(message: string): number {
   if (message.startsWith('unmet:')) return 412;
   if (/is unique, and the value is taken/.test(message)) return 409;

@@ -1,21 +1,21 @@
-// `make grafana-check`: the "fenecdb data" dashboard as Grafana serves it,
-// against fenec-server. Every panel's query and the symbol variable's are
+// `make grafana-check`: the "fennecdb data" dashboard as Grafana serves it,
+// against fennec-server. Every panel's query and the symbol variable's are
 // asked of Grafana's /api/ds/query -- through the Infinity data source, its
 // token and its allowed URL -- as an anonymous viewer, then the same
-// FenecQL is sent to fenec-server directly with the server's token, and
+// FennecQL is sent to fennec-server directly with the server's token, and
 // the frames must hold the rows, column by column. Then what the data
 // source must refuse: a write, a URL other than POST /query, and a variable
 // trying to close its string.
 //
 //   GRAFANA_URL       http://127.0.0.1:3000
-//   FENEC_URL         http://127.0.0.1:8080
-//   FENEC_HTTP_TOKEN  the server's token, for the direct runs
+//   FENNEC_URL        http://127.0.0.1:8080
+//   FENNEC_HTTP_TOKEN the server's token, for the direct runs
 import assert from 'node:assert/strict';
 
 const GRAFANA = (process.env.GRAFANA_URL ?? 'http://127.0.0.1:3000').replace(/\/$/, '');
-const FENEC = (process.env.FENEC_URL ?? 'http://127.0.0.1:8080').replace(/\/$/, '');
-const TOKEN = process.env.FENEC_HTTP_TOKEN;
-if (!TOKEN) throw new Error('set FENEC_HTTP_TOKEN');
+const FENNEC = (process.env.FENNEC_URL ?? 'http://127.0.0.1:8080').replace(/\/$/, '');
+const TOKEN = process.env.FENNEC_HTTP_TOKEN;
+if (!TOKEN) throw new Error('set FENNEC_HTTP_TOKEN');
 const DAY = 86_400_000;
 
 async function json(url, init) {
@@ -29,7 +29,7 @@ async function json(url, init) {
 let dashboard;
 for (let i = 0; ; i++) {
   try {
-    const r = await json(`${GRAFANA}/api/dashboards/uid/fenecdb-data`);
+    const r = await json(`${GRAFANA}/api/dashboards/uid/fennecdb-data`);
     if (r.status === 200) {
       dashboard = r.body.dashboard;
       break;
@@ -37,7 +37,7 @@ for (let i = 0; ; i++) {
   } catch {
     // not listening yet
   }
-  if (i === 120) throw new Error(`no fenecdb-data dashboard at ${GRAFANA} after two minutes`);
+  if (i === 120) throw new Error(`no fennecdb-data dashboard at ${GRAFANA} after two minutes`);
   await new Promise((r) => setTimeout(r, 1000));
 }
 
@@ -66,7 +66,7 @@ async function viaGrafana(target) {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      queries: [{ ...target, refId: 'A', datasource: { type: 'yesoreyeram-infinity-datasource', uid: 'fenecdb-data' }, intervalMs, maxDataPoints: 1000 }],
+      queries: [{ ...target, refId: 'A', datasource: { type: 'yesoreyeram-infinity-datasource', uid: 'fennecdb-data' }, intervalMs, maxDataPoints: 1000 }],
       from: String(from),
       to: String(to),
     }),
@@ -77,9 +77,9 @@ async function viaGrafana(target) {
 
 async function direct(target) {
   const body = target.url_options.data.replaceAll('${__from}', String(from)).replaceAll('${__to}', String(to));
-  const res = await fetch(`${FENEC}/query`, { method: 'POST', headers: { authorization: `Bearer ${TOKEN}` }, body });
+  const res = await fetch(`${FENNEC}/query`, { method: 'POST', headers: { authorization: `Bearer ${TOKEN}` }, body });
   const rows = await res.json();
-  assert.equal(res.status, 200, `fenec-server answered ${res.status}: ${JSON.stringify(rows)}`);
+  assert.equal(res.status, 200, `fennec-server answered ${res.status}: ${JSON.stringify(rows)}`);
   return rows;
 }
 
@@ -96,15 +96,15 @@ async function same(name, target) {
   assert.equal(g.frames.length, 1, `${name}: ${g.frames.length} frames`);
   const frame = g.frames[0];
   const rows = await direct(target);
-  assert.ok(rows.length > 0, `${name}: fenec-server has no rows for it`);
+  assert.ok(rows.length > 0, `${name}: fennec-server has no rows for it`);
   // The plugin orders a frame's fields by name (the dashboard's Organize
   // transformation puts them back), so they are matched by name.
   const fields = frame.schema.fields.map((f) => f.name);
   assert.deepEqual([...fields].sort(), target.columns.map((c) => c.text).sort(), `${name}: the frame's fields`);
   for (const c of target.columns) {
-    assert.deepEqual(frame.data.values[fields.indexOf(c.text)], column(c, rows), `${name}: ${c.text} against fenec-server's rows`);
+    assert.deepEqual(frame.data.values[fields.indexOf(c.text)], column(c, rows), `${name}: ${c.text} against fennec-server's rows`);
   }
-  console.log(`ok  ${name}: ${rows.length} rows, ${target.columns.length} columns as fenec-server answers them`);
+  console.log(`ok  ${name}: ${rows.length} rows, ${target.columns.length} columns as fennec-server answers them`);
   return rows;
 }
 
@@ -152,5 +152,5 @@ assert.equal(g.frames[0].data.values[0]?.length ?? 0, 0, 'the injected symbol ma
 console.log('ok  a symbol trying to close its string: one value, no rows');
 // The format leaves a backslash as it is, so `\"` does end the string --
 // with the symbol the body's last string, what follows can only make a body
-// that is not JSON, which fenec-server refuses before it runs anything.
+// that is not JSON, which fennec-server refuses before it runs anything.
 await refused('a symbol ending its string with \\"', frontend(candles, { sym: `${vars.sym}\\", 1, 2], "query": "get ticks select count(*) as n", "params": [` }), /400/);

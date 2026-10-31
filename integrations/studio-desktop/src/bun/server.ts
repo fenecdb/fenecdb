@@ -1,7 +1,7 @@
-// The one place a server, and the `fenec` shell, are started: the bundled
+// The one place a server, and the `fennec` shell, are started: the bundled
 // binaries, run through Bun. What a start does and how a server is watched is
 // process.ts, which `node --test` drives the real binary through; the
-// arguments are serving.ts's; a backup's run of `fenec` is backups.ts's.
+// arguments are serving.ts's; a backup's run of `fennec` is backups.ts's.
 
 import { PATHS } from "electrobun/main";
 import { join } from "node:path";
@@ -19,14 +19,14 @@ export { AlreadyOpen, PortTaken, StartFailed, randomToken, type FileServer } fro
  * a hook; this is not one there (`checks/release.mjs`).
  */
 export function serverBinary(): string {
-	const named = __TESTABLE__ ? process.env["FENEC_SERVER_BIN"] : undefined;
-	return named || join(PATHS.RESOURCES_FOLDER, "app", "bin", "fenec-server");
+	const named = __TESTABLE__ ? process.env["FENNEC_SERVER_BIN"] : undefined;
+	return named || join(PATHS.RESOURCES_FOLDER, "app", "bin", "fennec-server");
 }
 
-/** The bundled `fenec` shell, which takes, verifies and restores backups. The same rule as the server's. */
+/** The bundled `fennec` shell, which takes, verifies and restores backups. The same rule as the server's. */
 export function cliBinary(): string {
-	const named = __TESTABLE__ ? process.env["FENEC_CLI_BIN"] : undefined;
-	return named || join(PATHS.RESOURCES_FOLDER, "app", "bin", "fenec");
+	const named = __TESTABLE__ ? process.env["FENNEC_CLI_BIN"] : undefined;
+	return named || join(PATHS.RESOURCES_FOLDER, "app", "bin", "fennec");
 }
 
 /**
@@ -54,12 +54,12 @@ export function startFileServer(plan: Plan, token: string): Promise<FileServer> 
 	return startServer(bunSpawn, serverBinary(), plan, token);
 }
 
-/** What `fenec` writes is kept to this much of each stream: a backup says one line. */
+/** What `fennec` writes is kept to this much of each stream: a backup says one line. */
 const CLI_OUTPUT = 64 * 1024;
 /** A backup of a large database takes a while; one that takes this long is stopped. */
 const CLI_TIMEOUT_MS = 30 * 60_000;
 
-/** The runs of `fenec` under way: a quit stops them (`stopCli`). */
+/** The runs of `fennec` under way: a quit stops them (`stopCli`). */
 const runs = new Map<{ kill(signal?: NodeJS.Signals): void }, Promise<unknown>>();
 let stopping = false;
 
@@ -67,7 +67,7 @@ let stopping = false;
 export const cliBusy = () => runs.size > 0;
 
 /**
- * The bundled `fenec` with `args`, in `env` (backups.ts builds it: the
+ * The bundled `fennec` with `args`, in `env` (backups.ts builds it: the
  * allowlist and the secrets). It ends by itself, or at a quit (`stopCli`).
  *
  * Its stdin is nothing: unlike the server, the shell's `backup`, `verify`,
@@ -99,7 +99,7 @@ export const runCli: Run = (args, env) => {
 };
 
 /**
- * What a quit does first: every run of `fenec` is stopped (SIGTERM, which
+ * What a quit does first: every run of `fennec` is stopped (SIGTERM, which
  * the one-shot commands take as an end) and its caller has seen it end. A
  * backup stopped so leaves no image (an image is written as `.tmp` and
  * renamed once whole, and `.tmp` is no image to the shell); a restore, nothing

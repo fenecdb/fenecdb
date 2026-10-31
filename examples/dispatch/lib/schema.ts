@@ -1,5 +1,5 @@
 // Plover's collections, declared in code the way Drizzle declares tables.
-// Two kinds of tenant, each a file of its own on a node behind fenec-shard:
+// Two kinds of tenant, each a file of its own on a node behind fennec-shard:
 //
 // - `plover`, the platform's: who may sign in, and to which company;
 // - `co-<slug>`, a delivery company's: its couriers, where they are, and the
@@ -7,11 +7,11 @@
 //   this tenant alone (the token's `tenant` claim), and inside it only what
 //   policy.txt grants their role.
 //
-// scripts/setup.ts hands each tenant its schema as FenecQL (`toFenecQL`)
+// scripts/setup.ts hands each tenant its schema as FennecQL (`toFennecQL`)
 // when the router places it; the app's pages connect with `schema`, which
 // checks the tenant holds what the code reads.
 import {
-  fenecTable,
+  fennecTable,
   text,
   integer,
   doublePrecision,
@@ -19,12 +19,12 @@ import {
   geo,
   index,
   uniqueIndex,
-} from '@fenecdb/web/schema';
+} from '@fennecdb/web/schema';
 
 // ---------------------------------------------------------------- platform
 
 /** The companies on the platform, and the plan each pays for. */
-export const companies = fenecTable('companies', {
+export const companies = fennecTable('companies', {
   slug: text().notNull(),
   name: text().notNull(),
   plan: text().notNull(), // starter | pro (lib/plans.ts)
@@ -38,7 +38,7 @@ export const companies = fenecTable('companies', {
  * with either is a clash -- kept as it was typed. A staff code is unique in
  * its company, `@unique(company, code)`: two companies may both have a C-001.
  */
-export const users = fenecTable('users', {
+export const users = fennecTable('users', {
   uid: text().notNull(), // the token's `sub`
   email: text().notNull().nocase(),
   name: text().notNull(),
@@ -58,7 +58,7 @@ export const platform = { companies, users };
 // ----------------------------------------------------------------- company
 
 /** A company's couriers: who they are, and what they ride. */
-export const couriers = fenecTable('couriers', {
+export const couriers = fennecTable('couriers', {
   user: text().notNull(), // the account's id in `plover`, the token's `sub`
   code: text().notNull(),
   name: text().notNull(),
@@ -75,7 +75,7 @@ export const couriers = fenecTable('couriers', {
  * (waiting for an order), `pickup` (on the way to the merchant), `dropoff`
  * (carrying it).
  */
-export const positions = fenecTable('positions', {
+export const positions = fennecTable('positions', {
   courier: text().notNull(),
   loc: geo().notNull(),
   seen: timestamp().notNull(),
@@ -90,7 +90,7 @@ export const positions = fenecTable('positions', {
 ]);
 
 /** Where orders are picked up: restaurants, shops, pharmacies. */
-export const merchants = fenecTable('merchants', {
+export const merchants = fennecTable('merchants', {
   code: text().notNull(),
   name: text().notNull(),
   kind: text().notNull(),
@@ -116,7 +116,7 @@ export const merchants = fenecTable('merchants', {
  * written with each lease extension: the customer follows it on their own
  * order, since a rule cannot say "the position of my order's courier".
  */
-export const orders = fenecTable('orders', {
+export const orders = fennecTable('orders', {
   ref: text().notNull(), // the merchant's own reference
   merchant: text().notNull(),
   customer: text().notNull(), // the customer's account id, their token's `sub`

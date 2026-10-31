@@ -1,11 +1,11 @@
-// generated from the fenecdb schema: schema.fenecql
-// fenec types --schema schema.fenecql > schema.ts
+// generated from the fennecdb schema: schema.fennecql
+// fennec types --schema schema.fennecql > schema.ts
 // The tables are the code's from here on: change them here, and an open
-// with them checks the database against them (Fenec.open's `schema`).
+// with them checks the database against them (Fennec.open's `schema`).
 
-import { fenecTable, text, integer, doublePrecision, boolean, timestamp, bytea, json, vector, halfvec, sparsevec, index, uniqueIndex } from '@fenecdb/web/schema';
+import { fennecTable, text, integer, doublePrecision, boolean, timestamp, bytea, json, vector, halfvec, sparsevec, index, uniqueIndex } from '@fennecdb/web/schema';
 
-export const articles = fenecTable('articles', {
+export const articles = fennecTable('articles', {
   title: text().collate('tr').notNull(),
   year: integer(),
   score: doublePrecision(),
@@ -36,7 +36,7 @@ export const articles = fenecTable('articles', {
   uniqueIndex('articles_year_meta_lang_idx').on(t.year, t.meta.path('lang')),
 ]);
 
-export const product_reviews = fenecTable('product_reviews', {
+export const product_reviews = fennecTable('product_reviews', {
   product_id: integer().notNull(),
   stars: integer(),
   notes: text().collate('und'),
@@ -45,11 +45,11 @@ export const product_reviews = fenecTable('product_reviews', {
   index('product_reviews_product_id_stars_idx').on(t.product_id, t.stars.desc()),
 ]);
 
-export const ki_iler = fenecTable('kişiler', {
+export const ki_iler = fennecTable('kişiler', {
   ad: text(),
   'yaş': integer(),
 });
 
-export const textTable = fenecTable('text', {
+export const textTable = fennecTable('text', {
   body: text(),
 });

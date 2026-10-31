@@ -1,5 +1,5 @@
 # The browser module is built with WebAssembly SIMD. The distance kernels in
-# crates/fenec-core/src/vector.rs are written against it (`vector::simd`),
+# crates/fennec-core/src/vector.rs are written against it (`vector::simd`),
 # because the module is optimised for size and at `opt-level = "z"` LLVM does
 # not vectorise them on its own: a 20 000 x 384 HNSW build took 28.0 s without
 # it and 9.95 s with it, for 0.9 KB of the module.

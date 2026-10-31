@@ -1,7 +1,7 @@
 // The example Worker under `wrangler dev`, workerd running it as Cloudflare
 // does: each tenant's database in a Durable Object, written, then read back
 // after the server is stopped and started again over the same storage.
-// Needs web/fenec.wasm (make wasm) and `npm ci` here, which brings wrangler.
+// Needs web/fennec.wasm (make wasm) and `npm ci` here, which brings wrangler.
 
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,10 +11,10 @@ import { join } from 'node:path';
 import { readyUrl, running, serve as dev } from './dev.mjs';
 
 const ready = await Promise.all([
-  access(new URL('../../web/fenec.wasm', import.meta.url)),
+  access(new URL('../../web/fennec.wasm', import.meta.url)),
   access(new URL('node_modules/.bin/wrangler', import.meta.url)),
 ]).then(() => true, () => false);
-const skip = ready ? false : 'needs web/fenec.wasm (make wasm) and wrangler (npm ci)';
+const skip = ready ? false : 'needs web/fennec.wasm (make wasm) and wrangler (npm ci)';
 // The entry Worker needs no module: wrangler alone.
 const wrangler = await access(new URL('node_modules/.bin/wrangler', import.meta.url)).then(() => true, () => false);
 const skipWrangler = wrangler ? false : 'needs wrangler (npm ci)';
@@ -57,7 +57,7 @@ test('the ready line is read through the colours wrangler may write it in', () =
 });
 
 test('wrangler dev that ends before it is ready fails the start, and one asked for colours starts', { skip, timeout: 120_000 }, async () => {
-  const state = await mkdtemp(join(tmpdir(), 'fenecdb-dev-'));
+  const state = await mkdtemp(join(tmpdir(), 'fennecdb-dev-'));
   try {
     // A directory with no Worker in it: wrangler gives up, and so does the start.
     await assert.rejects(dev(state, state), /ended before it was ready/);
@@ -80,7 +80,7 @@ test('wrangler dev that ends before it is ready fails the start, and one asked f
 });
 
 test('wrangler devs started at once each start', { skip: skipWrangler, timeout: 120_000 }, async () => {
-  const state = await mkdtemp(join(tmpdir(), 'fenecdb-dev-'));
+  const state = await mkdtemp(join(tmpdir(), 'fennecdb-dev-'));
   try {
     // The entry, which needs no module: six at once, as `npm test`'s files start theirs.
     const all = await Promise.allSettled(
@@ -96,7 +96,7 @@ test('wrangler devs started at once each start', { skip: skipWrangler, timeout: 
 });
 
 test('a tenant database lives in a Durable Object and comes back', { skip, timeout: 180_000 }, async () => {
-  const state = await mkdtemp(join(tmpdir(), 'fenecdb-worker-'));
+  const state = await mkdtemp(join(tmpdir(), 'fennecdb-worker-'));
   try {
     let w = await serve(state);
     assert.deepEqual(
@@ -156,7 +156,7 @@ async function until(ok, what, ms = 30_000) {
 }
 
 test('maintenance runs from alarms set only when it is due', { skip, timeout: 180_000 }, async () => {
-  const state = await mkdtemp(join(tmpdir(), 'fenecdb-alarms-'));
+  const state = await mkdtemp(join(tmpdir(), 'fennecdb-alarms-'));
   // The alarm a second after the write that brings it due, a row swept as
   // soon as it is past its time, 100 rows an alarm.
   const vars = { QUIET: 1000, GRACE: 0, EVERY: 0, SWEEP: 100 };

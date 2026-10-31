@@ -1,5 +1,5 @@
 <!--
-title: Sharding: replicas and failover — fenecdb
+title: Sharding: replicas and failover — fennecdb
 description: How to keep a copy of every tenant on another node, fail a node over by hand or on a lease, and run a second router that follows the first.
 -->
 
@@ -12,9 +12,9 @@ description: How to keep a copy of every tenant on another node, fail a node ove
 it is written. When the node is lost, one call promotes its tenants on the
 standby.</p>
 
-<pre data-lang="bash">fenec-server --dir /data/n1 --http 127.0.0.1:8081 --admin-token a1 \
+<pre data-lang="bash">fennec-server --dir /data/n1 --http 127.0.0.1:8081 --admin-token a1 \
          --replication-token r1 --sync always
-fenec-server --dir /data/n2 --http 127.0.0.1:8082 --admin-token a2 \
+fennec-server --dir /data/n2 --http 127.0.0.1:8082 --admin-token a2 \
          --replication-token r1 --replica-of http://127.0.0.1:8081
 
 curl -X PUT localhost:8090/_shard/nodes/n1 \
@@ -84,7 +84,7 @@ other way round. The router then has each of its tenants follow
 primary's, and follow only when told to — and the writes it took that were
 never sent are gone.</p>
 
-<pre data-lang="bash">fenec-server --dir /data/n1 --http 127.0.0.1:8081 --admin-token a1 \
+<pre data-lang="bash">fennec-server --dir /data/n1 --http 127.0.0.1:8081 --admin-token a1 \
          --replication-token r1 --replica-of http://127.0.0.1:8082
 curl -X PUT localhost:8090/_shard/nodes/n2 \
   -d '{"addr":"127.0.0.1:8082","token":"a2","standby":"n1"}'
@@ -101,14 +101,14 @@ nothing from its primary since it opened).</p>
 
 <h2 id="replicas-of-their-own">Replicas of their own</h2>
 
-<p>Instead of an idle standby, <code>fenec-shard --replicas</code> gives each
+<p>Instead of an idle standby, <code>fennec-shard --replicas</code> gives each
 tenant its own replica on another node, so every node holds both primaries
 and replicas and a lost node's tenants spread over the rest.</p>
 
-<pre data-lang="bash">fenec-server --dir /data/n1 --http 127.0.0.1:8081 --admin-token a1 --replication-token r1 --sync always
-fenec-server --dir /data/n2 --http 127.0.0.1:8082 --admin-token a2 --replication-token r1 --sync always
-fenec-server --dir /data/n3 --http 127.0.0.1:8083 --admin-token a3 --replication-token r1 --sync always
-fenec-shard --replicas
+<pre data-lang="bash">fennec-server --dir /data/n1 --http 127.0.0.1:8081 --admin-token a1 --replication-token r1 --sync always
+fennec-server --dir /data/n2 --http 127.0.0.1:8082 --admin-token a2 --replication-token r1 --sync always
+fennec-server --dir /data/n3 --http 127.0.0.1:8083 --admin-token a3 --replication-token r1 --sync always
+fennec-shard --replicas
 
 curl -X PUT localhost:8090/_shard/tenants/acme -d '{"node":"n1"}'
 {"tenant":"acme","node":"n1","replica_on":"n2"}
@@ -120,12 +120,12 @@ curl -X PUT localhost:8090/_shard/tenants/acme -d '{"node":"n1"}'
   <li><b>A replica that did not take</b> — its node refused, or answered
     after the router stopped waiting — is tried again on its own, a few
     times over the next four minutes.</li>
-  <li><b><code>fenec_router_tenants_unreplicated</code></b> counts the tenants
+  <li><b><code>fennec_router_tenants_unreplicated</code></b> counts the tenants
     with no copy to fail over to, by region (<a
     href="monitoring.html#router">Monitoring</a>).</li>
   <li><b>A file the router may have left on a node</b> is reported, never
     deleted: every repair lists it under <code>left</code>, and
-    <code>fenec_router_files_left</code> counts it.</li>
+    <code>fennec_router_files_left</code> counts it.</li>
 </ul>
 
 <details class="deep"><summary>How --replicas places a copy for each tenant</summary>
@@ -181,8 +181,8 @@ that would not go, a copy a failed try made or found, a deleted tenant's
 copy that stayed, an old primary on a node that was silent as its tenant's
 replica went elsewhere — is noted in the directory with why, and reported:
 every repair lists it under <code>left</code>
-(<code>{"tenant","node","why"}</code>), <code>fenec_router_files_left</code>
-counts it, and <code>FenecFilesLeftOnNodes</code> alerts after half an
+(<code>{"tenant","node","why"}</code>), <code>fennec_router_files_left</code>
+counts it, and <code>FennecFilesLeftOnNodes</code> alerts after half an
 hour. The router never deletes one. Neither it nor the node can tell the
 file it left from a later one at the same place: the tenant moved back
 onto that node, or made there again, or a file put there by hand. A create
@@ -192,8 +192,8 @@ places, so an operator removes it by hand after looking at it, then runs a
 repair (<code>deploy/RUNBOOK.md</code>, <i>Files left on nodes</i>). Only a
 tenant left without its replica makes a repair answer 502. Tenants left
 without a copy are counted by
-<code>fenec_router_tenants_unreplicated{region}</code>, which
-<code>FenecTenantsWithoutReplica</code> in <code>deploy/alerts/</code>
+<code>fennec_router_tenants_unreplicated{region}</code>, which
+<code>FennecTenantsWithoutReplica</code> in <code>deploy/alerts/</code>
 reads.</p>
 
 <p>Measured with <code>make shard-bench</code>, three nodes and the router in
@@ -213,9 +213,9 @@ It works on leases: a node stops writing when its lease runs out, and only
 after that does the router promote its tenants elsewhere, so a tenant never
 has two primaries.</p>
 
-<pre data-lang="bash">fenec-server --dir /data/n1 --http 127.0.0.1:8081 --admin-token a1 \
+<pre data-lang="bash">fennec-server --dir /data/n1 --http 127.0.0.1:8081 --admin-token a1 \
          --replication-token r1 --sync always --lease
-fenec-shard --listen 127.0.0.1:8090 --directory shard.fenec --replicas --auto-failover 5
+fennec-shard --listen 127.0.0.1:8090 --directory shard.fennec --replicas --auto-failover 5
 </pre>
 
 <ul>
@@ -239,8 +239,8 @@ fenec-shard --listen 127.0.0.1:8090 --directory shard.fenec --replicas --auto-fa
 too. Only the primary router makes changes; promote the standby when the
 primary is gone.</p>
 
-<pre data-lang="bash">fenec-shard --listen 127.0.0.1:8090 --directory shard.fenec --replication-token r1
-fenec-shard --listen 127.0.0.1:8091 --directory standby.fenec --replication-token r1 \
+<pre data-lang="bash">fennec-shard --listen 127.0.0.1:8090 --directory shard.fennec --replication-token r1
+fennec-shard --listen 127.0.0.1:8091 --directory standby.fennec --replication-token r1 \
             --replica-of http://127.0.0.1:8090
 </pre>
 
@@ -250,7 +250,7 @@ fenec-shard --listen 127.0.0.1:8091 --directory standby.fenec --replication-toke
 </ul>
 
 <details class="deep"><summary>How a standby router follows the directory</summary>
-<p>The directory is a fenecdb file, so it replicates the way any other does.
+<p>The directory is a fennecdb file, so it replicates the way any other does.
 A second router follows it and forwards from the same placements; the
 primary is the one that changes it.</p>
 

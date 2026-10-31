@@ -1,25 +1,25 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/fenec-core",
-    "crates/fenec-ql",
-    "crates/fenec-abi",
-    "crates/fenec-wasm",
-    "crates/fenec-ffi",
-    "crates/fenec-server",
-    "crates/fenec-wire",
-    "crates/fenec-http",
-    "crates/fenec-import",
-    "crates/fenec-shard",
-    "crates/fenec-cli",
-    "crates/fenec-bench",
+    "crates/fennec-core",
+    "crates/fennec-ql",
+    "crates/fennec-abi",
+    "crates/fennec-wasm",
+    "crates/fennec-ffi",
+    "crates/fennec-server",
+    "crates/fennec-wire",
+    "crates/fennec-http",
+    "crates/fennec-import",
+    "crates/fennec-shard",
+    "crates/fennec-cli",
+    "crates/fennec-bench",
 ]
 
 [workspace.package]
 version = "0.1.12"
 edition = "2021"
 license = "Apache-2.0"
-repository = "https://github.com/fenecdb/fenecdb"
+repository = "https://github.com/fennec-db/fennecdb"
 readme = "README.md"
 keywords = ["database", "vector", "embedded", "wasm", "http"]
 categories = ["database", "database-implementations", "wasm"]
@@ -28,19 +28,19 @@ categories = ["database", "database-implementations", "wasm"]
 # publish a dependency that has only a path, and keeping them here means a
 # release bumps one number instead of seven.
 [workspace.dependencies]
-# Without its files: fenec-ql and fenec-wasm take the core as it is, and a
+# Without its files: fennec-ql and fennec-wasm take the core as it is, and a
 # crate that opens files names `std-fs`. Left on here, the `default-features =
 # false` those two write was ignored and the browser build had them too.
-fenec-core = { version = "0.1.3", path = "crates/fenec-core", default-features = false }
+fennec-core = { version = "0.1.3", path = "crates/fennec-core", default-features = false }
 # Without named statements' definitions and calls (`statements`): the browser
 # module takes the parser as it is, and the server, the shell and the native
 # library name them.
-fenec-ql = { version = "0.1.3", path = "crates/fenec-ql", default-features = false }
-fenec-abi = { version = "0.1.7", path = "crates/fenec-abi", default-features = false }
-fenec-http = { version = "0.1.3", path = "crates/fenec-http" }
-fenec-server = { version = "0.1.3", path = "crates/fenec-server" }
-fenec-wire = { version = "0.1.12", path = "crates/fenec-wire" }
-fenec-import = { version = "0.1.3", path = "crates/fenec-import" }
+fennec-ql = { version = "0.1.3", path = "crates/fennec-ql", default-features = false }
+fennec-abi = { version = "0.1.7", path = "crates/fennec-abi", default-features = false }
+fennec-http = { version = "0.1.3", path = "crates/fennec-http" }
+fennec-server = { version = "0.1.3", path = "crates/fennec-server" }
+fennec-wire = { version = "0.1.12", path = "crates/fennec-wire" }
+fennec-import = { version = "0.1.3", path = "crates/fennec-import" }
 
 [profile.release]
 opt-level = 3
@@ -54,27 +54,27 @@ strip = true
 [profile.test]
 debug = "line-tables-only"
 
-# Small binary for the `fenec` shell: abort instead of panic unwinding.
+# Small binary for the `fennec` shell: abort instead of panic unwinding.
 # The shell is a single process with no scenario for recovering from a panic;
-# the unwind tables, meanwhile, take ~12% of the binary. `fenec-server` does *not*
+# the unwind tables, meanwhile, take ~12% of the binary. `fennec-server` does *not*
 # use this profile: there a panicking connection thread unwinds and only
 # drops its own request, leaving the server up.
 [profile.cli]
 inherits = "release"
 panic = "abort"
 
-# The shell reaches fenec-http only for `fenec backup`, `archive` and
+# The shell reaches fennec-http only for `fennec backup`, `archive` and
 # `restore`, which wait on the network and the disk: built for size it is
-# 16.3 KB less of the released binary (`make size-report BIN=fenec`). The
+# 16.3 KB less of the released binary (`make size-report BIN=fennec`). The
 # importer stays fast -- built for size it took 32.6 KB off, and a
 # 200 000-row SQLite import from 251 to 285 ms -- and so does the root
 # crate: built for size it made the binary 129 KB larger.
-[profile.cli.package.fenec-http]
+[profile.cli.package.fennec-http]
 opt-level = "z"
 
-# The native library an app links (fenec-ffi): release speed, and panics
+# The native library an app links (fennec-ffi): release speed, and panics
 # that unwind, as the server's do -- each call catches one at the boundary
-# and answers FENEC_PANIC, where `abort` would take the app down with it.
+# and answers FENNEC_PANIC, where `abort` would take the app down with it.
 # Named rather than left to `release` so the choice is written where it is
 # made, and so a change to `release` does not move it.
 [profile.ffi]

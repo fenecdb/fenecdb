@@ -1,0 +1,314 @@
+import Testing
+
+@testable import FennecDB
+
+struct Note: Codable, Equatable, FennecValue {
+    var title: String
+    var stars: Int
+    var embed: [Float]
+}
+
+@Suite struct Engine {
+    @Test func aStatementAndItsRows() async throws {
+        let db = try Fennec.memory()
+        let created = try await db.run("create collection notes (title text, stars int, embed vector<3> @hnsw(cosine))")
+        #expect(created == .ok("collection `notes` created"))
+        let n = try await db.execute(
+            "put notes [{title: $1, stars: 5, embed: $2}, {title: $3, stars: 3, embed: $4}]",
+            "oasis", [Float(1), 0, 0], "dunes", [Float(0), 1, 0])
+        #expect(n == 2)
+        let rows = try await db.query("get notes select title, stars order stars desc")
+        #expect(rows.map { $0["title"]?.string } == ["oasis", "dunes"])
+        #expect(rows[0]["stars"] == .int(5))
+        #expect(rows[0].keys == ["title", "stars"])
+        try await db.close()
+    }
+
+    /// `near` scores as the engine computes them, to the `Float`: the
+    /// vector goes over as its bytes and comes back as the shortest text of
+    /// each `Float`.
+    @Test func nearScoresAreExact() async throws {
+        let db = try Fennec.memory()
+        try await db.execute("create collection v (n int, e vector<2> @hnsw(l2))")
+        try await db.execute("put v [{n: 1, e: [1, 0]}, {n: 2, e: [0, 1]}, {n: 3, e: [0.5, 0.25]}]")
+        let q: [Float] = [1, 0]
+        let rows = try await db.query("get v select n near e $1 limit 3", q)
+        #expect(rows.map { $0["n"]?.int } == [1, 3, 2])
+        let scores = rows.map { Float($0["_score"]!.double!) }
+        let third: Float = ((0.5 - 1) * (0.5 - 1) + 0.25 * 0.25 as Float).squareRoot()
+        #expect(scores == [0, third, Float(2).squareRoot()])
+        // A list of `Double`s is a vector too, as a page's numbers are.
+        let again = try await db.query("get v select n near e $1 limit 1", [0.0, 1.0] as [Double])
+        #expect(again.first?["n"] == .int(2))
+        let stored = try await db.query("get v select e where n = 3")
+        #expect(stored.first?["e"]?.floats == [0.5, 0.25])
+        try await db.close()
+    }
+
+    @Test func rowsDecodeAndDocumentsEncodeInTheirOrder() async throws {
+        let db = try Fennec.memory()
+        try await db.execute("create collection notes (title text, stars int, embed vector<2>)")
+        let notes = try db.from("notes")
+        #expect(try notes.toInsert(Note(title: "a", stars: 4, embed: [0.5, 0.25])).text
+            == "put notes {title: $1, stars: $2, embed: $3}")
+        try await notes.insert([Note(title: "a", stars: 4, embed: [0.5, 0.25]), Note(title: "b", stars: 2, embed: [1, 0])])
+        let got = try await notes.order("stars", "desc").rows(as: Note.self)
+        #expect(got == [Note(title: "a", stars: 4, embed: [0.5, 0.25]), Note(title: "b", stars: 2, embed: [1, 0])])
+        let typed = try await db.query(as: Note.self, "get notes where stars < $1", 3)
+        #expect(typed.map(\.title) == ["b"])
+        #expect(try await notes.where("title", "a").first(as: Note.self)?.stars == 4)
+        #expect(try await notes.count() == 2)
+        #expect(try await notes.where("stars", ">", 3).update(["stars": 5] as Value) == 1)
+        #expect(try await notes.where("stars", 5).delete() == 1)
+        try await db.close()
+    }
+
+    /// A json field keeps a list of numbers as written: sent as `Float`s,
+    /// the library asks for it again as JSON, which the binding does.
+    @Test func aJsonFieldTakesItsListAsWritten() async throws {
+        let db = try Fennec.memory()
+        try await db.execute("create collection t (meta json)")
+        try await db.execute("put t {meta: $1}", [0.1, 0.2] as [Double])
+        let r = try await db.query("get t select meta")
+        #expect(r.first?["meta"] == .array([.double(0.1), .double(0.2)]))
+        try await db.close()
+    }
+
+    @Test func errorsCarryTheirKind() async throws {
+        let db = try Fennec.memory()
+        try await db.execute("create collection t (a int @unique)")
+        try await db.execute("put t {a: 1}")
+        let cases: [(String, FennecError.Code)] = [
+            ("get nowhere", .notFound),
+            ("broken query", .query),
+            ("create collection t (a int)", .exists),
+            ("put t {a: 1}", .duplicate),
+            ("put t {a: \"x\"}", .type),
+        ]
+        for (text, code) in cases {
+            await #expect(throws: FennecError.self) { try await db.run(text) }
+            do {
+                _ = try await db.run(text)
+            } catch let e as FennecError {
+                #expect(e.code == code, "\(text): \(e)")
+                #expect(!e.message.isEmpty)
+            }
+        }
+        // The builder refuses before anything runs.
+        do {
+            _ = try db.from("t; drop collection t")
+            Issue.record("a name that is no name was taken")
+        } catch let e as FennecError {
+            #expect(e.code == .builder)
+            #expect(e.message == #"invalid collection name: "t; drop collection t""#)
+        }
+        try await db.close()
+        // A closed database refuses, and saying so twice is nothing.
+        await #expect(throws: FennecError(code: .misuse, message: "the database was closed")) {
+            try await db.run("get t")
+        }
+        try await db.close()
+    }
+
+    /// A tenant node's quota refusal, as a remote reads it: the quota named,
+    /// and for a rate the wait the server asks for -- its header over its body.
+    @Test func aQuotaRefusalNamesTheQuotaAndTheWait() throws {
+        let rows = FennecRemote.refused(
+            507, try Value.parse(#"{"error":"past its quota of 5 rows","quota":"rows"}"#), retryAfter: nil)
+        #expect(rows.code == .quota && rows.status == 507 && rows.quota == "rows" && rows.retryAfter == nil)
+        let rate = FennecRemote.refused(
+            429, try Value.parse(#"{"error":"past","quota":"writes","retry_after":1}"#), retryAfter: "3")
+        #expect(rate.code == .quota && rate.quota == "writes" && rate.retryAfter == 3)
+        // To the millisecond where the body says it, over the whole second.
+        let soon = FennecRemote.refused(
+            429, try Value.parse(#"{"error":"past","quota":"writes","retry_after":1,"retry_after_ms":2}"#),
+            retryAfter: "1")
+        #expect(soon.quota == "writes" && soon.retryAfter == 0.002)
+        let memory = FennecRemote.refused(507, try Value.parse(#"{"error":"data ceiling"}"#), retryAfter: nil)
+        #expect(memory.quota == nil && memory.code == .io)
+        // A tenant being moved says the wait in its body as a quota does.
+        let moved = FennecRemote.refused(
+            503, try Value.parse(#"{"error":"the tenant is being moved; retry shortly","retry_after":1}"#),
+            retryAfter: nil)
+        #expect(moved.status == 503 && moved.quota == nil && moved.retryAfter == 1)
+    }
+
+    /// `require 1` over a row that is not there is refused as `unmet`, and
+    /// the write is put back: nothing of it lands.
+    @Test func aRequireNotMetWritesNothing() async throws {
+        let db = try Fennec.memory()
+        try await db.execute("create collection accounts (balance int)")
+        try await db.execute("put accounts {id: 1, balance: 5}")
+        do {
+            _ = try await db.from("accounts").where("id", 2).update(["balance": 0] as Value, require: 1)
+            Issue.record("a require not met was taken")
+        } catch let e as FennecError {
+            #expect(e.code == .unmet, "\(e)")
+        }
+        let rows = try await db.query("get accounts select balance")
+        #expect(rows.map { $0["balance"] } == [.int(5)])
+        #expect(try await db.from("accounts").where("id", 1).update(["balance": 3] as Value, require: 1) == 1)
+        try await db.close()
+    }
+
+    /// A require that says why: the error's `reason` is the statement's
+    /// own words, the library's and a server's alike; nil where it gave none.
+    @Test func anUnmetRequireSaysItsReason() async throws {
+        let db = try Fennec.memory()
+        try await db.execute("create collection accounts (name text, balance int)")
+        try await db.execute(#"put accounts {id: 1, name: "a", balance: 5}"#)
+        let accounts = try db.from("accounts")
+        do {
+            _ = try await accounts.where("name", "a").where("balance", ">=", 9)
+                .update(["balance": .inc(-9)] as Value, require: 1, reason: "insufficient funds")
+            Issue.record("a require not met was taken")
+        } catch let e as FennecError {
+            #expect(e.code == .unmet && e.reason == "insufficient funds", "\(e)")
+        }
+        do {
+            _ = try await accounts.where("id", 2).limit(1).require(1, reason: "it's not there").rows()
+            Issue.record("a read's require not met was taken")
+        } catch let e as FennecError {
+            #expect(e.code == .unmet && e.reason == "it's not there", "\(e)")
+        }
+        do {
+            _ = try await accounts.where("id", 2).delete(require: 1)
+            Issue.record("a require not met was taken")
+        } catch let e as FennecError {
+            #expect(e.code == .unmet && e.reason == nil, "\(e)")
+        }
+        try await db.close()
+        let body = try Value.parse(
+            #"{"error":"no such account (`set accounts` wrote 0 rows, and requires 1)","reason":"no such account"}"#)
+        let remote = FennecRemote.refused(412, body, retryAfter: nil)
+        #expect(remote.code == .unmet && remote.reason == "no such account" && remote.status == 412)
+        let batch = FennecRemote.refused(
+            412, try Value.parse(#"{"error":"unmet: x","completed":0,"at":1,"reason":"x"}"#), retryAfter: nil)
+        #expect(batch.at == 1 && batch.reason == "x")
+        #expect(FennecRemote.refused(412, try Value.parse(#"{"error":"unmet"}"#), retryAfter: nil).reason == nil)
+    }
+
+    /// An open leaves a `@text` index for its first read; `warm` builds it
+    /// beforehand, once.
+    @Test func warmBuildsWhatAnOpenLeft() async throws {
+        let path = try scratch("warm")
+        var db = try await Fennec.open(path: path)
+        try await db.execute("create collection docs (body text @text)")
+        try await db.execute(#"put docs [{body: "rust is fast"}, {body: "go is simple"}]"#)
+        try await db.close()
+        db = try await Fennec.open(path: path)
+        #expect(try await db.warm(["docs"]) == 1)
+        let hits = try await db.from("docs").select("body").match("body", "rust").rows()
+        #expect(hits.compactMap { $0["body"]?.string } == ["rust is fast"])
+        #expect(try await db.warm() == 0)
+        try await db.close()
+    }
+
+    @Test func aFileIsThereAgainAndOpenOnce() async throws {
+        let path = try scratch("reopen")
+        var db = try await Fennec.open(path: path)
+        try await db.execute("create collection t (title text, e vector<2> @hnsw(cosine))")
+        for i in 0..<20 {
+            try await db.execute("put t {title: $1, e: $2}", "n\(i)", [Float(i) / 10, 1])
+        }
+        await #expect(throws: FennecError.self) { _ = try await Fennec.open(path: path) }
+        do {
+            _ = try await Fennec.open(path: path)
+        } catch let e as FennecError {
+            #expect(e.code == .locked)
+        }
+        try await db.checkpoint()
+        try await db.close()
+        db = try await Fennec.open(path: path, options: [.noSync])
+        #expect(try await db.from("t").count() == 20)
+        try await db.execute("put t {title: \"after\"}")
+        try await db.flush()
+        try await db.sync()
+        try await db.close()
+        db = try await open(url: path, options: [.inMemory])
+        #expect(try await db.from("t").count() == 21)
+        let near = try await db.from("t").select("title").near("e", [Float(0), 1]).limit(1).rows()
+        #expect(near.first?["title"] == "n0")
+        try await db.close()
+    }
+
+    /// Every close a caller sees finished has let the file go: a second
+    /// close called while the first runs waits for it, where it returned at
+    /// once and the open after it was refused.
+    @Test func aCloseSeenFinishedHasLetTheFileGo() async throws {
+        let path = try scratch("closes")
+        for _ in 0..<50 {
+            let db = try await Fennec.open(path: path, options: [.noSync])
+            try await db.execute("create collection if not exists t (n int)")
+            try await db.execute("put t {n: 1}")
+            async let first: Void = db.close()
+            try await db.close()
+            let again = try await Fennec.open(path: path, options: [.noSync])
+            try await first
+            try await again.close()
+        }
+    }
+
+    @Test func manyTasksShareOneDatabase() async throws {
+        let db = try await Fennec.open(path: try scratch("tasks"))
+        try await db.execute("create collection t (w int, e vector<2> @hnsw(l2))")
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for w in 0..<8 {
+                group.addTask {
+                    for i in 0..<20 {
+                        if w % 2 == 0 {
+                            try await db.execute("put t {w: $1, e: $2}", w, [Float(w), Float(i)])
+                        } else {
+                            _ = try await db.query("get t near e $1 limit 3", [Float(0), 1])
+                        }
+                    }
+                }
+            }
+            try await group.waitForAll()
+        }
+        #expect(try await db.from("t").count() == 80)
+        try await db.close()
+    }
+
+    /// A mark answers in the row under its label; facets beside the rows,
+    /// counted over every row the query matched.
+    @Test func highlightsInTheRowsAndFacetsBesideThem() async throws {
+        let db = try Fennec.memory()
+        try await db.execute("create collection docs (title text, kind text, body text @text)")
+        let docs = try db.from("docs")
+        try await docs.insert([
+            ["title": "a", "kind": "guide", "body": "rust is fast"] as Value,
+            ["title": "b", "kind": "guide", "body": "rust and go"],
+            ["title": "c", "kind": "news", "body": "go is simple"],
+        ] as Value)
+        let found = try await docs.select("title").highlight("body").match("body", "rust").facet("kind").answer()
+        #expect(found.rows.map { $0["title"] }.sorted { $0!.string! < $1!.string! } == ["a", "b"])
+        #expect(found.rows.allSatisfy { $0["highlight(body)"] == [[0, 4]] })
+        #expect(found.rows.first?.keys == ["title", "highlight(body)", "_score"])
+        #expect(found.facets.fields == ["kind"])
+        #expect(found.facets["kind"] == [FacetCount(value: "guide", count: 2)])
+        // Over every row, not the page; `rows()` hands the rows alone.
+        let page = try docs.facet("kind", top: 1).limit(1)
+        #expect(try await page.answer().facets["kind"] == [FacetCount(value: "guide", count: 2)])
+        #expect(try await page.rows().count == 1)
+        let tagged = try await docs.snippet("body", 2, pre: "[", post: "]").match("body", "fast").rows()
+        #expect(tagged.first?["snippet(body)"]?.string?.contains("[fast]") == true)
+        // No facets asked, none answered.
+        #expect(try await docs.answer().facets.isEmpty)
+        try await db.close()
+    }
+
+    @Test func valuesWriteAndReadAsJson() throws {
+        let v: Value = ["s": "a\"b\n\u{1}ç", "n": -1, "f": 0.5, "ok": true, "none": nil, "list": [1, 2.5]]
+        #expect(v.json == #"{"s":"a\"b\n\u0001ç","n":-1,"f":0.5,"ok":true,"none":null,"list":[1,2.5]}"#)
+        #expect(try Value.parse(v.json) == v)
+        #expect(try Value.parse(#"{"e":"😀","x":1e3}"#)["e"] == "😀")
+        // The one Float whose shortest text rounds away through a Double.
+        let tie = Float(7.038531e-26)
+        #expect(Float(Double(Value.number(tie))!) == tie)
+        #expect(Value.number(Float(0.1)) == "0.1")
+        #expect(isoText(seconds: 1_789_821_296.789) == "2026-09-19T12:34:56.789Z")
+        #expect(isoText(seconds: -0.001) == "1969-12-31T23:59:59.999Z")
+        #expect(Fennec.version.split(separator: ".").count == 3)
+    }
+}

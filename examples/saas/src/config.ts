@@ -7,9 +7,9 @@ const env = process.env;
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
 export interface Config {
-  /** fenec-shard, as this server reaches it. */
+  /** fennec-shard, as this server reaches it. */
   routerUrl: string;
-  /** fenec-shard, as a browser reaches it (the board talks to it directly). */
+  /** fennec-shard, as a browser reaches it (the board talks to it directly). */
   publicRouterUrl: string;
   /** The router's own token: places tenants. Only org creation uses it. */
   shardToken: string;
@@ -63,5 +63,5 @@ export function config(over: Partial<Config> = {}): Config {
 }
 
 export const POLICY_FILE = here('../policy.txt');
-export const ACCOUNTS_SCHEMA = readFileSync(here('../schema/accounts.fenecql'), 'utf8');
-export const ORG_SCHEMA = readFileSync(here('../schema/org.fenecql'), 'utf8');
+export const ACCOUNTS_SCHEMA = readFileSync(here('../schema/accounts.fennecql'), 'utf8');
+export const ORG_SCHEMA = readFileSync(here('../schema/org.fennecql'), 'utf8');

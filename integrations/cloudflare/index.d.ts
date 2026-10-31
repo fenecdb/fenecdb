@@ -1,4 +1,4 @@
-import type { Fenec } from '@fenecdb/web';
+import type { Fennec } from '@fennecdb/web';
 
 /** The cursor `sql.exec` answers: rows as objects, or as arrays through `raw()`. */
 export interface SqlCursor {
@@ -27,7 +27,7 @@ export interface Storage {
 }
 
 export interface Options {
-  /** Where in the storage the database is kept; `fenec` by default: the table `fenec:<gen>`, or keys under `fenec:`. */
+  /** Where in the storage the database is kept; `fennec` by default: the table `fennec:<gen>`, or keys under `fennec:`. */
   key?: string;
   /**
    * The largest row or value a part of the image or the writes takes, in
@@ -51,7 +51,7 @@ export const PIECE: number;
  * stored, and from then on: the database is then ahead of its storage, and
  * has to be opened again and restored.
  */
-export function persist(fenec: Fenec<any>, storage: Storage, options?: Options): Promise<number>;
+export function persist(fennec: Fennec<any>, storage: Storage, options?: Options): Promise<number>;
 
 /**
  * Writes a new image, graphs included, once the writes kept since the
@@ -59,13 +59,13 @@ export function persist(fenec: Fenec<any>, storage: Storage, options?: Options):
  * graphs rather than link every vector written since. Resolves to the
  * bytes written, 0 when it wrote no image.
  */
-export function checkpoint(fenec: Fenec<any>, storage: Storage, options?: Options & { min?: number }): Promise<number>;
+export function checkpoint(fennec: Fennec<any>, storage: Storage, options?: Options & { min?: number }): Promise<number>;
 
 /**
- * Loads the database kept under `key` into `fenec`, a row or a value at a
+ * Loads the database kept under `key` into `fennec`, a row or a value at a
  * time into the module's memory. Resolves to false when there is none.
  */
-export function restore(fenec: Fenec<any>, storage: Storage, options?: Pick<Options, 'key'>): Promise<boolean>;
+export function restore(fennec: Fennec<any>, storage: Storage, options?: Pick<Options, 'key'>): Promise<boolean>;
 
 /**
  * Lets the database go: nothing it holds is stored after this, and every
@@ -76,7 +76,7 @@ export function restore(fenec: Fenec<any>, storage: Storage, options?: Pick<Opti
  * database again. A rejection of those calls on a failed or released
  * database likewise comes once no flush of it is under way.
  */
-export function release(fenec: Fenec<any>): Promise<void>;
+export function release(fennec: Fennec<any>): Promise<void>;
 
 export interface MaintenanceOptions extends Options {
   /** How long past its time (`@ttl`) a row stays for a reader of `expired()` before it is deleted: 60 000 ms. */
@@ -98,7 +98,7 @@ export interface Maintained {
   image: number;
   /**
    * Whether the module holds enough dead records to be worth opening
-   * again: storage holds an image without them, and a new `Fenec`
+   * again: storage holds an image without them, and a new `Fennec`
    * restored from it gives them back. Asked once a database.
    */
   reload: boolean;
@@ -118,7 +118,7 @@ export interface Maintained {
  * `grace` past it (no sooner than `every` after the last sweep); null when
  * nothing will be.
  */
-export function due(fenec: Fenec<any>, storage: Storage, options?: MaintenanceOptions): number | null;
+export function due(fennec: Fennec<any>, storage: Storage, options?: MaintenanceOptions): number | null;
 
 /**
  * Sets the object's alarm once `maintain` comes due, `quiet` after now at
@@ -128,7 +128,7 @@ export function due(fenec: Fenec<any>, storage: Storage, options?: MaintenanceOp
  * writes into an image only once they outgrow the whole image, where it
  * did at half: `maintain` writes that image.
  */
-export function schedule(fenec: Fenec<any>, storage: Storage, options?: MaintenanceOptions & { quiet?: number }): Promise<number | null>;
+export function schedule(fennec: Fennec<any>, storage: Storage, options?: MaintenanceOptions & { quiet?: number }): Promise<number | null>;
 
 /**
  * An alarm's work: deletes the rows past their time by `grace`, `sweep` at
@@ -139,4 +139,4 @@ export function schedule(fenec: Fenec<any>, storage: Storage, options?: Maintena
  * opened again (`release`); an alarm it could not set is `error`, not a
  * rejection.
  */
-export function maintain(fenec: Fenec<any>, storage: Storage, options?: MaintenanceOptions): Promise<Maintained>;
+export function maintain(fennec: Fennec<any>, storage: Storage, options?: MaintenanceOptions): Promise<Maintained>;

@@ -12,7 +12,7 @@ and comments that explain *why*.
 <!--
 Delete the ones that do not apply; keep and answer the ones that do.
 
-- [ ] Adds no external crate outside fenec-bench
+- [ ] Adds no external crate outside fennec-bench
 - [ ] Keeps the dependency direction (core -> ql -> http -> pg -> import -> cli)
 - [ ] New limits error rather than truncate
 - [ ] Does not make the HNSW graph load-bearing (it stays derived data)

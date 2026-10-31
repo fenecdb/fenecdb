@@ -6,7 +6,7 @@ import { after, test } from "node:test";
 // @ts-expect-error: plain JavaScript, with no declarations
 import { treeDigest } from "../scripts/tree-digest.mjs";
 
-const dir = mkdtempSync(join(tmpdir(), "fenec-tree-"));
+const dir = mkdtempSync(join(tmpdir(), "fennec-tree-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
 
 function tree(name: string, files: Record<string, string>) {

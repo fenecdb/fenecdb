@@ -12,7 +12,7 @@ import (
 
 // ID is the plugin's id, as plugin.json and Grafana's
 // GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS name it.
-const ID = "fenecdb-datasource"
+const ID = "fennecdb-datasource"
 
 // Settings are a data source's: the server's URL from the data source's
 // own URL field, the rest from its JSON data, the token from its secure
@@ -21,7 +21,7 @@ type Settings struct {
 	URL    string
 	Tenant string
 	// Wait is how long the server holds a query sent after a change it has
-	// not reached (Fenec-Wait); zero leaves the server's five seconds.
+	// not reached (Fennec-Wait); zero leaves the server's five seconds.
 	Wait time.Duration
 	// Timeout bounds each request; zero is the client's 30 seconds.
 	Timeout time.Duration

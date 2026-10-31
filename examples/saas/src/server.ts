@@ -2,14 +2,14 @@
 // shell and its scripts, and /db/, a pipe to the router for the browser.
 //
 // A plain node:http server. Its job is small on purpose -- it holds the
-// signing key and the credentials, and everything else goes to fenecdb
+// signing key and the credentials, and everything else goes to fennecdb
 // with a scoped token -- so a framework would add a runtime, a build and a
 // second place where requests are routed, and nothing this needs.
 //
 // The browser reads and writes its organisation through /db/ with its own
-// access token: this server passes the request to fenec-shard as it came
+// access token: this server passes the request to fennec-shard as it came
 // and the node holds it to policy.txt. A page on another origin could reach
-// the router itself now -- fenec-server answers a CORS preflight before it
+// the router itself now -- fennec-server answers a CORS preflight before it
 // asks for a token, and the nodes allow this origin -- but /db/ stays: one
 // origin behind one TLS terminator is how this would be deployed, the CSP's
 // `connect-src 'self'` holds the page to it, and the router stays off the
@@ -32,16 +32,16 @@ import { shell, mailPage } from './views.ts';
 const RT_COOKIE = 'trellis_rt';
 const SSO_COOKIE = 'trellis_sso';
 const PUBLIC = fileURLToPath(new URL('../public/', import.meta.url));
-const FENEC_WEB = dirname(createRequire(import.meta.url).resolve('@fenecdb/web/client'));
+const FENNEC_WEB = dirname(createRequire(import.meta.url).resolve('@fennecdb/web/client'));
 const VENDOR: Record<string, string> = {
-  'client.js': join(FENEC_WEB, 'client.js'),
-  'builder.js': join(FENEC_WEB, 'builder.js'),
-  'http.js': join(FENEC_WEB, 'http.js'),
+  'client.js': join(FENNEC_WEB, 'client.js'),
+  'builder.js': join(FENNEC_WEB, 'builder.js'),
+  'http.js': join(FENNEC_WEB, 'http.js'),
 };
 
 /** The headers a request to the database may carry through /db/, and an answer back. */
-const PASS_UP = ['authorization', 'content-type', 'accept', 'idempotency-key', 'if-none-match', 'fenec-after', 'fenec-wait'];
-const PASS_DOWN = ['content-type', 'etag', 'fenec-seq', 'fenec-next', 'retry-after', 'idempotent-replayed', 'cache-control'];
+const PASS_UP = ['authorization', 'content-type', 'accept', 'idempotency-key', 'if-none-match', 'fennec-after', 'fennec-wait'];
+const PASS_DOWN = ['content-type', 'etag', 'fennec-seq', 'fennec-next', 'retry-after', 'idempotent-replayed', 'cache-control'];
 
 const PAGE_ROUTES = /^\/(?:$|signin$|signup$|forgot$|reset$|verify$|account$|orgs\/new$|invite\/[^/]+\/[^/]+$|o\/[a-z0-9-]+(?:\/(?:board|members|search|audit)(?:\/[^/]*)?)?$)/;
 
@@ -82,8 +82,8 @@ export function trellisServer(trellis: Trellis, server: Server = createServer())
 
     if (method === 'GET' && path === '/healthz') return json(res, 200, { ok: true });
     if (method === 'GET' && path.startsWith('/static/')) return file(res, join(PUBLIC, path.slice('/static/'.length)));
-    if (method === 'GET' && path.startsWith('/vendor/fenec/')) {
-      const f = VENDOR[path.slice('/vendor/fenec/'.length)];
+    if (method === 'GET' && path.startsWith('/vendor/fennec/')) {
+      const f = VENDOR[path.slice('/vendor/fennec/'.length)];
       return f ? file(res, f) : json(res, 404, { error: 'Not found.' });
     }
     if (method === 'GET' && PAGE_ROUTES.test(path)) return html(res, 200, shell());

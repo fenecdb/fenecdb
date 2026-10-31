@@ -1,11 +1,11 @@
-// `@fenecdb/web/client`: the HTTP client, the query builder and live
+// `@fennecdb/web/client`: the HTTP client, the query builder and live
 // queries over the server's subscriptions, without the engine. The types
-// are `@fenecdb/web`'s own, re-exported: a query typed for one is typed for
+// are `@fennecdb/web`'s own, re-exported: a query typed for one is typed for
 // the other.
 
 export {
-  FenecError, FenecHttp, Query, and, bucket, connect, countDistinct, distance, expr, first, from, inc, last, not, or, raw, sseEvents,
-} from './fenec.js';
+  FennecError, FennecHttp, Query, and, bucket, connect, countDistinct, distance, expr, first, from, inc, last, not, or, raw, sseEvents,
+} from './fennec.js';
 export type {
   Aggregate,
   BatchItem,
@@ -60,4 +60,4 @@ export type {
   Where,
   Writable,
   WriteOptions,
-} from './fenec.js';
+} from './fennec.js';

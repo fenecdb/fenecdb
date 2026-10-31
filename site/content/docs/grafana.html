@@ -1,18 +1,18 @@
 <!--
-title: Grafana — fenecdb
-description: fenecdb in Grafana: the server's metrics through Prometheus, and the database's own rows through fenecdb's data source plugin — FenecQL with the time range and variables bound as parameters, alert rules, annotations, columns in the select list's order — or through the Infinity plugin with nothing to install.
+title: Grafana — fennecdb
+description: fennecdb in Grafana: the server's metrics through Prometheus, and the database's own rows through fennecdb's data source plugin — FennecQL with the time range and variables bound as parameters, alert rules, annotations, columns in the select list's order — or through the Infinity plugin with nothing to install.
 -->
 
 <h1>Grafana</h1>
-<p class="kicker">Grafana shows fenecdb two ways: the server's health
+<p class="kicker">Grafana shows fennecdb two ways: the server's health
 through Prometheus, and the data itself — visitors, top pages, price
-candles — through fenecdb's own data source, each panel one FenecQL
+candles — through fennecdb's own data source, each panel one FennecQL
 statement with the dashboard's range and variables bound as parameters,
 alert rules included. The repository's <code>monitoring/</code> runs all of
 it with one <code>docker compose up</code>.</p>
 
 <figure class="shot">
-<img src="../images/grafana-plugin-dark.webp" width="1280" height="1800" alt="The fenecdb data (plugin) dashboard in Grafana, dark: events, visitors and signups over the last seven days, visitors over time as two lines, the ten most viewed pages, distinct users per day as bars, one symbol's price candles with a yellow line at each day's high from an annotation query, each symbol's latest price with its change, and the volume of three picked symbols as a stacked series each">
+<img src="../images/grafana-plugin-dark.webp" width="1280" height="1800" alt="The fennecdb data (plugin) dashboard in Grafana, dark: events, visitors and signups over the last seven days, visitors over time as two lines, the ten most viewed pages, distinct users per day as bars, one symbol's price candles with a yellow line at each day's high from an annotation query, each symbol's latest price with its change, and the volume of three picked symbols as a stacked series each">
 </figure>
 
 <h2 id="two">Metrics and data</h2>
@@ -24,9 +24,9 @@ different tokens.</p>
 <table>
 <thead><tr><th></th><th>The server's metrics</th><th>The data</th></tr></thead>
 <tbody>
-<tr><td>What</td><td>statements, latency, memory, replication, tenants: <code>/_metrics</code></td><td>your collections' rows, grouped and counted by FenecQL</td></tr>
-<tr><td>Path</td><td>fenec-server → Prometheus → Grafana</td><td>Grafana → <code>fenecdb-datasource</code> → <code>POST /query</code></td></tr>
-<tr><td>Dashboard</td><td><code>monitoring/grafana/fenecdb.json</code></td><td><code>monitoring/grafana/fenecdb-data-plugin.json</code>, and <code>fenecdb-data.json</code> through Infinity</td></tr>
+<tr><td>What</td><td>statements, latency, memory, replication, tenants: <code>/_metrics</code></td><td>your collections' rows, grouped and counted by FennecQL</td></tr>
+<tr><td>Path</td><td>fennec-server → Prometheus → Grafana</td><td>Grafana → <code>fennecdb-datasource</code> → <code>POST /query</code></td></tr>
+<tr><td>Dashboard</td><td><code>monitoring/grafana/fennecdb.json</code></td><td><code>monitoring/grafana/fennecdb-data-plugin.json</code>, and <code>fennecdb-data.json</code> through Infinity</td></tr>
 <tr><td>Token</td><td>the admin token, in Prometheus</td><td>a JSON Web Token that reads two collections, in the data source</td></tr>
 <tr><td>Docs</td><td><a href="/docs/monitoring">Monitoring</a></td><td>this page</td></tr>
 </tbody>
@@ -35,11 +35,11 @@ different tokens.</p>
 
 <h2 id="run">Run it</h2>
 
-<pre data-lang="bash">FENEC_HTTP_TOKEN=secret FENEC_METRICS_TOKEN=scrape \
-FENEC_JWT_SECRET=$(openssl rand -hex 32) \
+<pre data-lang="bash">FENNEC_HTTP_TOKEN=secret FENNEC_METRICS_TOKEN=scrape \
+FENNEC_JWT_SECRET=$(openssl rand -hex 32) \
   docker compose -f monitoring/docker-compose.yml up -d --build
-# the data:     http://127.0.0.1:3000/d/fenecdb-data-plugin
-# the metrics:  http://127.0.0.1:3000/d/fenecdb
+# the data:     http://127.0.0.1:3000/d/fennecdb-data-plugin
+# the metrics:  http://127.0.0.1:3000/d/fennecdb
 
 # down, the data and the token with it
 docker compose -f monitoring/docker-compose.yml down -v
@@ -48,7 +48,7 @@ docker compose -f monitoring/docker-compose.yml down -v
 <ul>
   <li><b>Seeded data.</b> The first start writes thirty days of a product
     site's events, made by the traffic simulator of
-    <a href="https://github.com/fenecdb/fenecdb/tree/main/examples/analytics">examples/analytics</a>,
+    <a href="https://github.com/fennec-db/fennecdb/tree/main/examples/analytics">examples/analytics</a>,
     and a week of trades in twenty invented symbols, 60 000 a day: about
     108 000 events and 470 000 trades, written in two seconds.</li>
   <li><b>Grafana 13.2.2 with the plugin built from the checkout</b>
@@ -56,13 +56,13 @@ docker compose -f monitoring/docker-compose.yml down -v
     frontend, mage for its backend), unsigned and let in by name; the
     Infinity plugin 4.1.1 beside it. The first build took 1 min 25 s on an
     M1 Air.</li>
-  <li><b>No code in fenecdb's server.</b> Both data sources speak the
+  <li><b>No code in fennecdb's server.</b> Both data sources speak the
     <a href="/docs/http">HTTP endpoint</a> every client speaks; the plugin
     through the <a href="/docs/languages">Go SDK</a>.</li>
 </ul>
 
 <details class="deep"><summary>What the compose file starts and provisions</summary>
-<p>The compose file starts fenec-server with a <code>--policy</code>, a
+<p>The compose file starts fennec-server with a <code>--policy</code>, a
 one-shot <code>seed</code> container (Node, running
 <code>monitoring/seed/seed.mjs</code> with no install: Node strips the
 simulator's types as it imports it), Prometheus, and Grafana once the seed
@@ -74,8 +74,8 @@ dashboards, both data sources and the alert rule
 
 <p>The JWT secret goes to the server as a file
 (<code>--jwt-secret-file</code>, from a compose secret) and not as
-<code>FENEC_JWT_SECRET</code>, which every process in the container would
-see; the seed reads the same file to mint Grafana's token. <code>FENEC_PORT</code>,
+<code>FENNEC_JWT_SECRET</code>, which every process in the container would
+see; the seed reads the same file to mint Grafana's token. <code>FENNEC_PORT</code>,
 <code>GRAFANA_PORT</code> and <code>PROMETHEUS_PORT</code> move the ports
 published on loopback.</p>
 
@@ -84,39 +84,39 @@ published on loopback.</p>
 <ol>
   <li><b>The plugin:</b> build it (<code>integrations/grafana/README.md</code>:
     <code>npm run build</code>, then mage for your Grafana's platform), copy
-    <code>dist/</code> to <code>&lt;plugins&gt;/fenecdb-datasource/</code>,
-    and set <code>GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=fenecdb-datasource</code>
+    <code>dist/</code> to <code>&lt;plugins&gt;/fennecdb-datasource/</code>,
+    and set <code>GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=fennecdb-datasource</code>
     until it is signed (the README says how).</li>
   <li><b>A token</b> for a role the policy lets read (<a href="#token">below</a>):
-    <code>fenec-server --jwt-secret-file jwt.secret --mint-token
+    <code>fennec-server --jwt-secret-file jwt.secret --mint-token
     '{"sub":"grafana","role":"grafana","exp":1823000000}'</code>.</li>
   <li><b>The data source:</b>
-    <code>monitoring/grafana/provisioning/datasources/fenecdb-plugin.yml</code>
+    <code>monitoring/grafana/provisioning/datasources/fennecdb-plugin.yml</code>
     with your server's URL and the token, then the dashboard's JSON
     imported.</li>
 </ol>
 
 <pre data-lang="yaml">apiVersion: 1
 datasources:
-  - name: fenecdb
-    type: fenecdb-datasource
-    uid: fenecdb
-    url: http://fenecdb:8080
+  - name: fennecdb
+    type: fennecdb-datasource
+    uid: fennecdb
+    url: http://fennecdb:8080
     jsonData:
       tenant: acme          # optional: requests go to /t/acme/
     secureJsonData:
-      token: $__file{/run/fenec/grafana.jwt}
+      token: $__file{/run/fennec/grafana.jwt}
 </pre>
 </details>
 
 <h2 id="plugin">A panel's query</h2>
 
-<p>A panel's query is FenecQL. Grafana's range and interval, and the
+<p>A panel's query is FennecQL. Grafana's range and interval, and the
 dashboard's variables, are named in it; the plugin's backend makes each
 name a <code>$n</code> parameter and sends the statement with the values
 beside it, never in its text.</p>
 
-<pre data-lang="fenecql">get ticks select bucket(at, $__interval_ms) as time, sym, sum(qty) as volume
+<pre data-lang="fennecql">get ticks select bucket(at, $__interval_ms) as time, sym, sum(qty) as volume
   where sym in $syms and at >= $__from and at < $__to
   group time, sym order time
 </pre>
@@ -141,7 +141,7 @@ beside it, never in its text.</p>
     used twice is one parameter.</li>
   <li><b>A multi-value variable</b> goes after <code>in</code>:
     <code>sym in $syms</code> is sent as <code>sym in [$2, $3, $4]</code>,
-    a parameter a value, since FenecQL's <code>in</code> takes a list of
+    a parameter a value, since FennecQL's <code>in</code> takes a list of
     values and a parameter binds one. Nothing picked is <code>in []</code>,
     no rows.</li>
   <li><b>The columns come in the select list's order</b>, typed: numbers,
@@ -153,8 +153,8 @@ beside it, never in its text.</p>
 </ul>
 
 <details class="deep"><summary>How the editor binds parameters and types columns</summary>
-<p>The editor colours FenecQL by the docs' own rules (the same file as
-fenec studio's editor), completes <code>$__from</code> and the dashboard's
+<p>The editor colours FennecQL by the docs' own rules (the same file as
+fennec studio's editor), completes <code>$__from</code> and the dashboard's
 variables, and under <b>Explain</b> shows the statement as the backend binds
 it, its parameters, and the server's plan. Beside the text it holds a list
 of parameters, <code>$1</code>, <code>$2</code>, ...: each a literal of its
@@ -191,7 +191,7 @@ status and message: a parse error's position, a 412 of an unmet
 draws and not the rows behind them; the recipes are <a
 href="/docs/analytics">Analytics and market data</a>'s.</p>
 
-<pre data-lang="fenecql">-- Events, visitors and signups
+<pre data-lang="fennecql">-- Events, visitors and signups
 get events select count(*) as Events, count(distinct user) as Visitors, sum(case when name = "signup_completed" then 1 else 0 end) as Signups where at >= $__from and at < $__to
 -- Visitors over time
 get events select bucket(at, $__interval_ms) as Time, count(*) as Events, count(distinct user) as Visitors where at >= $__from and at < $__to group Time order Time
@@ -219,8 +219,8 @@ a value, so it needs a data source that binds them itself. The compose
 provisions one over the trades: the last ten minutes' volume of each
 symbol, firing above 2 000.</p>
 
-<pre data-lang="yaml"># monitoring/grafana/provisioning/alerting/fenecdb.yml (its query)
-datasourceUid: fenecdb
+<pre data-lang="yaml"># monitoring/grafana/provisioning/alerting/fennecdb.yml (its query)
+datasourceUid: fennecdb
 relativeTimeRange: {from: 21600, to: 0}
 model:
   format: time_series
@@ -248,7 +248,7 @@ its <code>ETag</code>, and sends the same request again with
 (<a href="/docs/http-reference#polling">Polling a read</a>).</p>
 
 <p>Over the seeded week, the median of 21 runs of each, the ways in turns,
-from the host into Docker on an M1 Air: fenec-server directly, Grafana
+from the host into Docker on an M1 Air: fennec-server directly, Grafana
 through Infinity, Grafana through the plugin with a new answer each time
 (the range's end moved a millisecond a run, as a refresh's <code>now</code>
 moves), and the same request again, answered 304 — with the read-only JWT
@@ -290,16 +290,16 @@ running stack.</p>
 
 <h2 id="compare">The plugin or Infinity</h2>
 
-<p>The Infinity plugin reads fenecdb with nothing to build or install
+<p>The Infinity plugin reads fennecdb with nothing to build or install
 beyond Grafana's catalog; <code>monitoring/</code> keeps its dashboard
-(<code>/d/fenecdb-data</code>) beside the plugin's.</p>
+(<code>/d/fennecdb-data</code>) beside the plugin's.</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th></th><th>fenecdb-datasource</th><th>Infinity 4.1.1</th></tr></thead>
+<thead><tr><th></th><th>fennecdb-datasource</th><th>Infinity 4.1.1</th></tr></thead>
 <tbody>
 <tr><td>Install</td><td>built from <code>integrations/grafana</code>, unsigned until you sign it</td><td>Grafana's catalog, signed</td></tr>
-<tr><td>A query</td><td>FenecQL in an editor that colours it</td><td>a JSON body, FenecQL inside a string</td></tr>
+<tr><td>A query</td><td>FennecQL in an editor that colours it</td><td>a JSON body, FennecQL inside a string</td></tr>
 <tr><td>Values</td><td>bound as parameters by the backend</td><td>written into the body's text by Grafana's frontend</td></tr>
 <tr><td>Multi-value variables</td><td><code>in $syms</code>, a parameter a value</td><td>a list in one parameter (<code>:json</code>), which <code>in</code> does not take</td></tr>
 <tr><td>Columns</td><td>the select list's order, typed from the schema and the values</td><td>sorted by name; an Organize transformation and a type a column, by hand, in each panel</td></tr>
@@ -331,16 +331,16 @@ list — <code>timestamp</code> for a time, <code>number</code>,
 
 <pre data-lang="yaml">apiVersion: 1
 datasources:
-  - name: fenecdb data
+  - name: fennecdb data
     type: yesoreyeram-infinity-datasource
-    uid: fenecdb-data
-    url: http://fenecdb:8080
+    uid: fennecdb-data
+    url: http://fennecdb:8080
     jsonData:
       auth_method: bearerToken
       allowedHosts:
-        - http://fenecdb:8080/query
+        - http://fennecdb:8080/query
     secureJsonData:
-      bearerToken: $__file{/run/fenec/grafana.jwt}
+      bearerToken: $__file{/run/fennec/grafana.jwt}
 </pre>
 
 <ul>
@@ -351,7 +351,7 @@ datasources:
     writes a single value as it is. The format leaves a backslash as it is,
     so a value holding <code>\"</code> does end its string: keep a text
     variable the body's last string, and what follows can only make a body
-    that is not JSON, which fenec-server refuses with 400.</li>
+    that is not JSON, which fennec-server refuses with 400.</li>
   <li><b>Columns come back in the order of their names</b>, so each panel
     has Grafana's <i>Organize fields</i> transformation put them back.</li>
   <li><b>Alerting needs the backend parser</b>, and a body that names its
@@ -360,7 +360,7 @@ datasources:
     frontend parsers cannot alert.</li>
   <li><b>A refresh runs every statement again</b>: Infinity keeps no
     <code>ETag</code>, and runs its own filters and computed columns over
-    every row the answer holds — aggregate in FenecQL.</li>
+    every row the answer holds — aggregate in FennecQL.</li>
   <li><b><code>allowedHosts</code></b> holds every query's URL to
     <code>POST /query</code>, host and path: through the data source,
     <code>/_whoami</code> is refused by the plugin.</li>
@@ -409,7 +409,7 @@ on the server bounds how far ahead any token's <code>exp</code> may lie.</p>
 <p><code>make grafana-check</code> starts <code>monitoring/</code>'s compose
 on ports of its own and asks Grafana's <code>/api/ds/query</code> for every
 panel's, variable's and annotation's query of both data dashboards, as a
-viewer, holding each frame to the same FenecQL sent to fenec-server
+viewer, holding each frame to the same FennecQL sent to fennec-server
 directly — through the plugin, column by column in the select list's order,
 the statement it sent included, and a series a label where it made one.
 Then the alert rule must have evaluated, an instance a symbol, firing where

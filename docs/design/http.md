@@ -4,14 +4,14 @@ The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *The HT
 
 ## Studio
 
-**fenec studio is a page with no authority of its own** (`studio/`,
-`fenec_http::studio`, `--studio` on `fenec-server` and `fenec-shard`; off,
+**fennec studio is a page with no authority of its own** (`studio/`,
+`fennec_http::studio`, `--studio` on `fennec-server` and `fennec-shard`; off,
 `/_studio/` is a 404 as an unknown path is). Plain ES modules and CSS with
 no build step, importing `web/client.js` as any page would; the files are
-embedded by `include_bytes!` under fenec-http's `studio` feature, which the
+embedded by `include_bytes!` under fennec-http's `studio` feature, which the
 two binaries turn on and the shell does not: +210 KB of each release binary
 on aarch64-apple-darwin, the files 193 KB of it, and the later views 116
-KB more of `fenec-server` and 99 of `fenec-shard`, their files 106 KB.
+KB more of `fennec-server` and 99 of `fennec-shard`, their files 106 KB.
 They are served before any token is asked, with a strict CSP (`script-src 'self'`, no inline script,
 `connect-src 'self'` and the one `--studio-connect` origin, which is
 checked to be an origin since it is written into a header), `DENY` framing,
@@ -22,7 +22,7 @@ as a client sends it, so the server's scope rewrite holds the grid, the
 counts and the facets to a scoped token's rows. Every statement is written
 in `studio/statements.js` -- the later views' in `statements-views.js`,
 under the same rules: values as parameters, a name refused unless it is
-one FenecQL writes, the typed `where` held inside parentheses it cannot
+one FennecQL writes, the typed `where` held inside parentheses it cannot
 close; writes are `/batch`es under an `Idempotency-Key`, a cell's `set ...
 where id = $2 require 1`, so a row deleted meanwhile is a 412. `GET
 /_whoami` is what it shows a token by: `open`, `full` or `scoped` with the
@@ -38,12 +38,12 @@ fetched the first time each opens (`app.js`'s `LOAD`, their stylesheet
 it on the first load (`statements.test.mjs` holds both). The editor runs
 the text as typed -- cut at each `;` outside strings and comments, one
 statement to `/query`, several one `/batch` -- and shows the status,
-`Fenec-Seq`, `X-Request-Id` (exposed to CORS for it) and `explain` of a
+`Fennec-Seq`, `X-Request-Id` (exposed to CORS for it) and `explain` of a
 `get`; it is coloured by `studio/highlight.js`, `site/highlight.js` with
 build.py's rules written in (`make studio-highlight`;
 `site/test_highlight.py` refuses a stale copy), whose mirror is text
 nodes, never `innerHTML`. The schema view shows a collection as the
-engine writes it (`GET /_schema?as=fenecql`) and every change as its
+engine writes it (`GET /_schema?as=fennecql`) and every change as its
 statement and `/_schema/plan` of the collection as it would be; a drop
 runs once its name is typed, and a text box's `change` on blur no longer
 asks the plan again, which held the apply button back. The live view is a
@@ -52,23 +52,23 @@ holds them all; the admin view, for the server's token, reads
 `/_stats/statements`, `/_metrics` and on a router `/_shard/tenants?bytes`
 (each node's `/_admin/sizes`). The site's playground is the same studio
 over a database in the page: every view reads through `state.db`, one
-surface -- `run`, `batch` and `subscribe` as `FenecHttp` has them,
+surface -- `run`, `batch` and `subscribe` as `FennecHttp` has them,
 `request(path)` for an answer shown whole, `stats()` -- which
 `connect.js`'s `Remote` answers over HTTP (its `request` the views'
 `kit.js` code, fetched with them) and `local.js`'s `Local` from the
 browser module in a dedicated worker (`worker.js`), as a server would
 (`engine.js`): `/query`, `/batch` as one block over calls
-(`Fenec.batch`, the module's `fenec_block`), `/_schema` and
-`?as=fenecql` (`Fenec.describe`, `fenec_schema` modes 3 and 4),
-`/_schema/plan` (the JSON description written as FenecQL, which alone
+(`Fennec.batch`, the module's `fennec_block`), `/_schema` and
+`?as=fennecql` (`Fennec.describe`, `fennec_schema` modes 3 and 4),
+`/_schema/plan` (the JSON description written as FennecQL, which alone
 the module reads), every refusal with the status `api::status_of` gives
 -- a parse's message kept whole, as a server keeps it -- and a
-subscription as a `Fenec.live` of the shape whose differences are the
+subscription as a `Fennec.live` of the shape whose differences are the
 change. The token, the tenant, the admin view and the file's sizes are
 left out rather than faked, "Running in your browser." where the token
 was, with Keep it in this browser (`persist`, off by default) and Reset
 data. `studio/test/transport.test.mjs` sends the same statements, batches,
-schema requests and a subscription's writes to a debug fenec-server and to
+schema requests and a subscription's writes to a debug fennec-server and to
 the module and holds every answer equal; a server's change also names as
 deleted a written row its shape never held, which a view passes over, and
 the test drops those. `site/build.py` serves the studio's own files in
@@ -113,8 +113,8 @@ its first test with the `before` hook's 100 000-row seed, about 10 s, which
 is the hook's and not the router's.
 
 An app embedding the studio -- the desktop app's window on the
-`fenec-server` it started for a file (#381) -- hands it a session as
-`window.fenecHost.session`, `{server, token, tenant}`, frozen and written
+`fennec-server` it started for a file (#381) -- hands it a session as
+`window.fennecHost.session`, `{server, token, tenant}`, frozen and written
 by a preload before the modules run. The preload defines it only where
 `location.origin` is the origin the app started or connected to, and names
 that origin as `server`: a preload runs in every document the window
@@ -126,28 +126,28 @@ preload in an isolated world -- Electron's under its default context
 isolation -- defines nothing the page sees: there it goes through
 `contextBridge.exposeInMainWorld`, whose copy must pass `Object.isFrozen`.
 `connect.js` reads it once as it loads, and only a plain object, since an
-element with the id `fenecHost` is `window.fenecHost` too by named access,
+element with the id `fennecHost` is `window.fennecHost` too by named access,
 its fields read once each, so a getter cannot answer one way to the check
 and another to the use; takes the session only frozen and naming the
 page's own origin, so the studio sends its token to no server but the one
 that served the page; and keeps nothing under a host: `save` writes
 nothing and a session in `sessionStorage` is not read. The spike's preload
-had written `sessionStorage["fenec-studio"]` for `saved()` to find, a
+had written `sessionStorage["fennec-studio"]` for `saved()` to find, a
 private contract on a key that put the token in storage. `app.js` shows no
 Sign out and no sign-in form under a host: a refused token or a session it
 cannot take is said on a page of its own, since a token typed there would
 be a connection the app never sees; the expiry's toasts and a 401
 (`explain`) say to connect again from the app. The first load grew from
 66.3 to 67.3 KB gzipped. `e2e.test.mjs` holds it with a page that defines
-`fenecHost` before the document's scripts, as a preload does: the session
+`fennecHost` before the document's scripts, as a preload does: the session
 taken and taken again on a reload, its token in no storage, another
 token's session in `sessionStorage` passed over, a refused token, and a
 session for another origin or not frozen sending no request.
 
 The desktop app also serves a file to other apps and backs it up, with
 nothing of the format written by the app: a new file is made by a server
-started on it for a moment, an image is `fenec backup`'s, a file from one is
-`fenec restore`'s (the shell is bundled beside the server). A served
+started on it for a moment, an image is `fennec backup`'s, a file from one is
+`fennec restore`'s (the shell is bundled beside the server). A served
 database's window is a window on that server, handed the same session, so a
 file has one server of the app's at a time, and `<file>.lock` turns away
 another program's. Its token is made once and kept in the Keychain sealed for
@@ -162,14 +162,14 @@ is sent (under `--sync off`, which refuses the token, a backup is refused). A
 port asked for is refused when anything answers on 127.0.0.1 there: the server
 binds with SO_REUSEADDR, under which macOS let a second server bind
 127.0.0.1:P beside a first's 0.0.0.0:P, and the app reaches its servers on
-127.0.0.1 with the token. `fenec restore` wrote over the file at its output
+127.0.0.1 with the token. `fennec restore` wrote over the file at its output
 while a server served it (exit 0), so the app restores into a name of its own
 and puts the result in place with `link`, which refuses a name that is taken.
 
 ## MCP
 
 **An agent's MCP tool is a statement, held to the token as `/query` is**
-(`fenec_http::mcp`, `fenec-server --mcp`, `fenec mcp`). One `answer`
+(`fennec_http::mcp`, `fennec-server --mcp`, `fennec mcp`). One `answer`
 serves the stateless 2026-07-28 revision -- its version and the client's
 capabilities in every request's `_meta`, `server/discover`, no session --
 and the handshake revisions 2025-11-25, 2025-06-18 and 2025-03-26 (an
@@ -179,8 +179,8 @@ of October 2026 opens in the old era unless told. Streamable HTTP is
 `/_metrics`'s does (a tenant's `/t/<t>/_mcp`, which a router forwards as any
 tenant path; GET and DELETE 405, a batch refused, an answer one JSON
 object, never a stream), with the 2026-07-28 headers held to the body
-(`-32020`); stdio is `fenec mcp --file` (`serve_lines`) and `--url`
-(`bridge`, the token from `FENEC_TOKEN`, never argv). The tools are
+(`-32020`); stdio is `fennec mcp --file` (`serve_lines`) and `--url`
+(`bridge`, the token from `FENNEC_TOKEN`, never argv). The tools are
 `schema`, `search` (`match`, its `fuzzy` and `prefix` too, `near` or
 `fuse`, a snippet in `**bold**`),
 `query`, `get`; `write` with `--mcp-write` (put, insert, set and del:
@@ -191,7 +191,7 @@ memory's own expiry, the vector field added at the first vector). A
 filter a model writes is parsed alone, `get <c> where <raw>`, and refused
 unless the `Select` is the bare one with a filter (its `PartialEq`), its
 condition put into a statement built here, never its text; names are
-checked against FenecQL's rule, values are parameters. A read past
+checked against FennecQL's rule, values are parameters. A read past
 `--mcp-max-rows` is asked for one row more and refused (413), one past
 `--mcp-max-bytes` refused, never cut: a model told nothing of the cut
 takes half an answer for the whole. Refusals are the tool's result with
@@ -202,14 +202,14 @@ localhost or an address, which a rebound DNS name cannot. A served
 session reads pinned and writes through `handle_query` (read-only mode,
 quotas, the ceiling, the fsync); a local one (`Run::local`) runs under the
 lock -- a function pointer, not a flag, since a flag kept `/query`'s path
-in the shell: `fenec mcp` added 243 KB to `fenec` with it (`maintain_with`
-alone 24 KB) and 130 KB without, `fenec-server` 97 KB, `fenec-shard` and
-the browser module not a byte. `<file>.lock` (`fenec_abi::lock`, moved
-from fenec-ffi) is taken by `fenec mcp --file`, `fenec-server --file`, the
+in the shell: `fennec mcp` added 243 KB to `fennec` with it (`maintain_with`
+alone 24 KB) and 130 KB without, `fennec-server` 97 KB, `fennec-shard` and
+the browser module not a byte. `<file>.lock` (`fennec_abi::lock`, moved
+from fennec-ffi) is taken by `fennec mcp --file`, `fennec-server --file`, the
 native library and the shell alike, so any two refuse each other
 ([engine.md](engine.md#single-writer)). Calls are held to
 `--mcp-calls-per-sec` by a scoped token's subject or the caller's address,
-counted in `fenec_mcp_tool_calls_total` once a process serves MCP, and a
+counted in `fennec_mcp_tool_calls_total` once a process serves MCP, and a
 write tool's call is an `mcp` line of the audit log. A row by id costs
 3.8 us through the `query` tool against `/query`'s 1.2 in process, 21.9
 against 17.7 us p50 over HTTP, a search 1-2% more (`make mcp-bench`);
@@ -241,7 +241,7 @@ parsed each time and the collection made if missing every time, 14 600.
 ## Audit
 
 **Refusals and schema changes are logged; a refusal waits**
-(`fenec_http::audit`, `--audit`, `--auth-delay`). A JSON line an event: an
+(`fennec_http::audit`, `--audit`, `--auth-delay`). A JSON line an event: an
 HTTP 401, a statement whose shape starts with
 `create`/`drop`/`alter`/`compact` -- found where `statements::record` shapes
 every statement, so no literal reaches the log -- and a
@@ -269,7 +269,7 @@ waited past the first 100 ms. A good token answered 400, 403, 404, 409 or
 412 was verified all the same, and clears. Behind the router the node
 verifies and the router keeps the count, so `verified` under the router's
 mark sets a thread-local instead, which the answer's head carries as
-`Fenec-Verified: 1` (`audit::push_verified`, in `Response::write` and a
+`Fennec-Verified: 1` (`audit::push_verified`, in `Response::write` and a
 subscription's and a replication stream's heads), taken as it is written
 and reset as each request is read, so the request before on a pooled
 connection says nothing of the next; the router drops it from what it
@@ -280,22 +280,22 @@ a JWT; one side of twelve left out, the machine's load past 6 from other
 builds), every median stayed inside the runs' spread. The count is an
 address's, not a token's: a client holding any good token -- a JWT an app
 hands every user among them -- clears its own between guesses at another,
-as it always could. `tests/audit.rs` (fenec-http) and `tests/refusals.rs`
-(fenec-shard) send a guessed token to each of those answers and hold the
+as it always could. `tests/audit.rs` (fennec-http) and `tests/refusals.rs`
+(fennec-shard) send a guessed token to each of those answers and hold the
 count where it was, a good token to the others and see it cleared, and
 fail with the inference put back.
-Behind `fenec-shard` every request came from the router's address -- four
+Behind `fennec-shard` every request came from the router's address -- four
 forged tokens made a fifth client's expired one wait 1.6 s, and any good
 token cleared the attacker's count -- so the router waits out a refusal
 itself, by its client's address (`forward` calls `audit::http`), and a node
-waits none for a request bearing `Fenec-Router: <address> <mark>`, the mark
+waits none for a request bearing `Fennec-Router: <address> <mark>`, the mark
 16 bytes of an HMAC of its admin token (`audit::router_mark`,
 `Config::router_mark`), the address the log's `peer` (the router `via`):
 the router drops the header from what a client sends, and a node believes
 it from no one else. At the router the count is one across every node.
 Behind the global entry the router's peer is Cloudflare's address, so with
 `--entry-token` it counts, clears, logs and names onwards the address the
-entry's `Fenec-Client` names (`audit::entry`, `NAMED`; under *One URL
+entry's `Fennec-Client` names (`audit::entry`, `NAMED`; under *One URL
 reaches every region*). As two headers and the whole HMAC it added 2.5 us to the 22 a request
 through the router took; as one, with the forwarded headers borrowed
 rather than cloned and written without `format!` (`Pool::send`), 0.85 us
@@ -311,7 +311,7 @@ of its own: the log and the counts are the process's.
 ## Request ids
 
 **Every request has an id, in its answer and in every line it wrote**
-(`fenec_http::request_id`). Taken from `X-Request-Id` when it is printable
+(`fennec_http::request_id`). Taken from `X-Request-Id` when it is printable
 ASCII of at most 128 bytes, made otherwise -- 16 hex characters,
 SplitMix64's finalizer over a key read from the system once a process, the
 thread's number and its count of requests, so no system call a request --
@@ -331,19 +331,19 @@ to make and 12 to keep a client's; in `make requests-bench`, eight
 runs in ABBA turns a minute apart, one client's p50 stayed 0.016-0.022 ms
 for a row by id either way, and eight clients' medians moved -12% to +6%
 by case with no sign shared -- the runs' own spread, the machine busy with
-other builds. `fenec_refused_total` (and the router's
-`fenec_router_refused_total`) count the 401s the audit log names.
+other builds. `fennec_refused_total` (and the router's
+`fennec_router_refused_total`) count the 401s the audit log names.
 `monitoring/datadog/` holds the Agent's `conf.yaml` (OpenMetrics check,
-`namespace: fenecdb`, `raw_metric_prefix: fenec_`), `pipeline.json` and
-`dashboard.json`: `fenec-shard`'s `tests/datadog.rs` scrapes a primary, its
+`namespace: fennecdb`, `raw_metric_prefix: fennec_`), `pipeline.json` and
+`dashboard.json`: `fennec-shard`'s `tests/datadog.rs` scrapes a primary, its
 replica, a tenant node and a router in process and fails on a metric the
 check keeps or the dashboard asks for that none of them sends, and
-`fenec-server`'s `tests/logs.rs` on an attribute the pipeline or the
+`fennec-server`'s `tests/logs.rs` on an attribute the pipeline or the
 dashboard reads that no real line has.
 
 ## Traces
 
-**A request is a trace, sent over OTLP** (`fenec_http::trace`,
+**A request is a trace, sent over OTLP** (`fennec_http::trace`,
 `--otlp-endpoint`, `--otlp-header`, `--trace-sample`, the standard `OTEL_*`
 variables). A W3C `traceparent` is continued -- a sampled parent followed
 whatever the ratio (`parentbased`), `tracestate` passed on unchanged -- and
@@ -357,10 +357,10 @@ connection over (its spans would be held for as long as it lasts), a trace
 64 spans at most. The spans are the waits: the server span (`http.route` a
 template, `db.query.text` the statement's shape from `statements::record`,
 never a value -- a REST target's query string holds words the shape keeps,
-so it has its route alone -- `fenec.request_id`, `fenec.tenant`),
+so it has its route alone -- `fennec.request_id`, `fennec.tenant`),
 `lock.wait` in `held::read`/`write`, `execute`, `durability` in
 `await_durable` holding the `Tee`'s `fsync` and `replication.wait_sent`,
-`fenec.wait_for_write` for `Fenec-After`, and the router's `forward`, a
+`fennec.wait_for_write` for `Fennec-After`, and the router's `forward`, a
 client span whose id `Pool::send` sends the node as its `traceparent` --
 the client's dropped from the forwarded headers while the router traces,
 passed through as they came while it does not. Every start and end is a
@@ -372,17 +372,17 @@ once in 45 000 and up to 83 ms beside load, so two requests of one process
 their own; a step of the clock shows inside a span, macOS reads it in
 microseconds, and a read costs what the monotonic one did. A server span
 ends once its answer is written, so a node's outlasts the router's
-`forward` by its write: `fenec-shard`'s test held the whole span inside the
+`forward` by its write: `fennec-shard`'s test held the whole span inside the
 forward and failed 22 runs of 203 in three cores beside six busy loops,
 the node ending 82 us to 1.3 ms after; it holds the start and every span
 the node ended before writing, none of 300 failing. A finished trace goes
 into a queue (`OTEL_BSP_MAX_QUEUE_SIZE`, 2 048 spans) under a mutex held for a
 push, the exporter taking it whole in one swap; full, the spans are dropped
-and counted (`fenec_trace_spans_dropped_total{reason}`), so a request never
+and counted (`fennec_trace_spans_dropped_total{reason}`), so a request never
 waits on the collector, and a thread posts it every second or at 512 spans
 as OTLP/HTTP JSON written with `json::escape_into` and a client of a page,
 the connection kept alive, a post bounded by `OTEL_EXPORTER_OTLP_TIMEOUT`.
-fenecdb speaks no TLS, so an `https://` endpoint and a `grpc` protocol are
+fennecdb speaks no TLS, so an `https://` endpoint and a `grpc` protocol are
 refused at the start: the endpoint is a collector on loopback -- the
 OpenTelemetry Collector, the Datadog Agent's OTLP receiver -- forwarding
 over TLS. Off, each hook is one relaxed load: in `make requests-bench`,
@@ -390,13 +390,13 @@ six runs in turns against main, one client's p50 stayed 0.022, 0.034, 0.059
 and 0.022 ms (main 0.022, 0.033, 0.059, 0.021) and eight clients' medians
 inside the runs' spread; on at 100% to a sink on loopback 0.022, 0.034,
 0.060 and 0.024, eight clients 2 to 9% fewer requests a second, the
-exporter's JSON a core of the eight. `fenec-server` grew 49.7 KB,
-`fenec-shard` 82.7 KB (aarch64-apple-darwin), and the browser module not by
-a byte: nothing below `fenec-http` changed. `fenec-server`'s
+exporter's JSON a core of the eight. `fennec-server` grew 49.7 KB,
+`fennec-shard` 82.7 KB (aarch64-apple-darwin), and the browser module not by
+a byte: nothing below `fennec-http` changed. `fennec-server`'s
 `tests/tracing.rs` holds the spans an in-process receiver (`tests/otlp.rs`)
 is sent to OTLP's JSON, their parents and attributes, a ratio of 0 to
 nothing but a sampled parent's trace, and a collector that hangs or is down
-to costing no request its time; `fenec-shard`'s, a `[[test]]` of its own
+to costing no request its time; `fennec-shard`'s, a `[[test]]` of its own
 since tracing is the process's, a trace through the router into the node.
 
 ## Metrics
@@ -412,8 +412,8 @@ path has an underscore because a collection may be called `metrics`.
 `--metrics <addr>` is a listener for it alone that never attaches a watcher
 -- a second one would take the HTTP endpoint's subscription wake-ups -- and a
 tenant node publishes counts of its tenants, never a tenant's collection
-names. The router counts its own the same way (`fenec-shard/src/metrics.rs`,
-over `fenec_http::metrics::Timings`): requests by route and status class, a
+names. The router counts its own the same way (`fennec-shard/src/metrics.rs`,
+over `fennec_http::metrics::Timings`): requests by route and status class, a
 forwarded one's time at its node, the nodes it could not reach and its moves,
 never a tenant in a label -- 13.3 ns a request with eight threads counting,
 beside the 17 µs the router adds. A subscription is timed to its head, and a
@@ -423,7 +423,7 @@ written, so a client holding its answer finds it in the next scrape: the
 router counted after the write, and `entry.test.js` read eu's router a
 relayed request short and then one over (CI) -- 8 runs of 10 with the
 router's thread held 5 to 10 ms past the write, none once it counts first
-(`fenec_shard::metrics::counted`). The router times a request once its
+(`fennec_shard::metrics::counted`). The router times a request once its
 answer is written, as before: count, clock and histogram all moved ahead of
 the write took its added p50 up 0.1 us, the count alone nothing measurable.
 
@@ -431,8 +431,8 @@ the write took its added p50 up 0.1 us, the count alone nothing measurable.
 
 **`/_stats/statements` counts by shape, a tenant's apart.** Every
 statement is also counted by its text with each literal and parameter as
-`$n` and a list of literals alone as one (`fenec_http::statements::shape`)
--- over HTTP by the FenecQL of `/query` and `/batch`, noted as
+`$n` and a list of literals alone as one (`fennec_http::statements::shape`)
+-- over HTTP by the FennecQL of `/query` and `/batch`, noted as
 `api::parse_query` reads it (`statements::text`), since the strings of the
 JSON would all have been one shape. The counts are shards a thread each
 behind a mutex only a reader of the whole also takes, 5 000 shapes at most,
@@ -458,7 +458,7 @@ and cost a second send each answer. One client asking a row by id over
 10 000 x 128 went 40.4k -> 47.1k requests a second, and eight 14 to 20%
 more (`make requests-bench`). The router writes the answer it forwards
 the same way (`answer_out`, `http::write_parts`): its added p50 went 23.6
--> 20.6-20.8 us (`make shard-bench ARGS=latency`). FenecQL's lexer walks a text's bytes,
+-> 20.6-20.8 us (`make shard-bench ARGS=latency`). FennecQL's lexer walks a text's bytes,
 reading a character whole only outside ASCII and a number where it stands,
 and a list of numbers alone becomes its vector without an expression each
 (`numbers_in_brackets`): a query holding a 128-dim vector parsed in 16.9 us
@@ -493,7 +493,7 @@ It must write byte for byte what `json::rows_array_into` writes of
 document, a dropped one, a mapped file, rows past their time). In the
 container, musl's allocator gives a freed group of blocks back to the
 system and faults it in again at the next request: a YCSB scan of 50 1 KB
-records took 37 page faults and 213-220 us inside fenec-server, a read by
+records took 37 page faults and 213-220 us inside fennec-server, a read by
 id a page mapped and unmapped while its columns were `Vec`s -- so the
 columns sit in an array on the stack, and an answer's body is the
 connection's spare buffer (`http::spare_body`, given back after the
@@ -509,7 +509,7 @@ load-bench`'s pages read back 165.8k -> 212.0k rows a second.
 ## Connections without a thread
 
 **A connection no thread can be made for is answered 503, as one past the
-ceiling is** (`fenec_http::accept`). Every connection is a thread, and past
+ceiling is** (`fennec_http::accept`). Every connection is a thread, and past
 the system's thread limit -- macOS's 2 048 a process, a cgroup's
 `pids.max`, systemd's `TasksMax=`, `ulimit -u` -- `thread::Builder::spawn`
 fails and drops the closure it could not run, and the stream inside it
@@ -518,7 +518,7 @@ closed with nothing said. Its client had sent its request and read
 written whole, its connection ended before a byte of an answer, which is
 what a node that ran it and went down looks like, so `replayable` had it
 answered 502, "did not answer", where the node had run nothing (#372 found
-it, fenec-shard's test binary at 2 047 threads). Both accept loops, the
+it, fennec-shard's test binary at 2 047 threads). Both accept loops, the
 node's -- the HTTP endpoint, `--metrics`, a `--dir` node, and with them MCP,
 replication and the node's archive streams, which are its paths -- and the
 router's, now spawn through `accept::spawn`: the stream goes into the
@@ -530,8 +530,8 @@ nothing more on the way: no `try_clone` (a `dup` a connection) and no
 allocation. `accept::refuse` answers it on the accepting thread as the
 ceiling's refusal is answered, which goes the same way now: 503,
 `Retry-After: 1`, `{"error", "retry_after"}`, the CORS headers and
-`Fenec-Unserved: no_thread` (or `ceiling`), the router's mark
-(`Fenec-Shard: 1`) on its own. A pooled connection has its thread already.
+`Fennec-Unserved: no_thread` (or `ceiling`), the router's mark
+(`Fennec-Shard: 1`) on its own. A pooled connection has its thread already.
 
 The router passes a node's 503 on as the node's answer, as it passes every
 503 that is not a cut's (`forward`) -- once it reads it: it wrote a
@@ -547,7 +547,7 @@ the request reads what answer has arrived (`answer_waiting`, a peek, then
 the head as any): an answer in before the request went out whole is the
 node's to a request it never read whole, so it ran nothing -- a body past
 what one `writev` takes meets the reset after its first bytes. Only a
-status of 400 or more: a fenec node answers a request it has not read
+status of 400 or more: a fennec node answers a request it has not read
 whole only to refuse it (400, 411, 413, 431, the 503 unserved), never a 2xx
 or a 401, reading the whole body before it asks the token or runs a byte,
 so a 200 there is a peer claiming what it cannot have done and the request
@@ -561,7 +561,7 @@ of its bytes: Linux takes none, and macOS's `dofilewrite` answers EPIPE
 with -1 where part of the call went out. Either holds the small write
 alone: 0 of 30 000 sends failed under that load with one, the other or
 both, and 0 of 40 000 puts through a router with both. A router drops a
-node's `Fenec-Unserved` from what it forwards: the router's own
+node's `Fennec-Unserved` from what it forwards: the router's own
 connection was served, and a client of it, the global entry among them,
 reads the mark as the router's. A router relaying to a region's routers
 (`relay_send`, `call_routers_by`) and the global entry (`judged`'s
@@ -571,7 +571,7 @@ noted as the one that answered last, its 503 the answer only where every
 router gives one; taken for any router's answer, a router at its thread
 limit kept every request, where a reset of its connection had sent a read
 on to the standby beside it. A standby's 409 refusing a `/_shard/` change
-is passed over the same way, marked `Fenec-Follows`
+is passed over the same way, marked `Fennec-Follows`
 ([regions.md](regions.md#the-global-entry)): asked after a busy primary
 and taken for the answer, it held every later change of the entry's
 isolate at the standby.
@@ -582,15 +582,15 @@ answer, a few hundred bytes into a new socket's empty send buffer, goes out
 whole in one write all the same, and where it would not it is let go of. The
 request is not waited for -- the answer does not hang on it -- and the
 socket is not closed with the answer either (below). Each is counted --
-`fenec_connections_refused_total` and the router's
-`fenec_router_connections_refused_total`, by `reason`,
+`fennec_connections_refused_total` and the router's
+`fennec_router_connections_refused_total`, by `reason`,
 `ceiling` or `no_thread`, the ceiling's counted nowhere before, neither in
-`fenec_router_requests_total` -- and one with no thread is said in the log
+`fennec_router_requests_total` -- and one with no thread is said in the log
 a minute apart at most by the monotonic clock (a wall clock set back held
 it silent), naming the limits to raise, its peer looked up only then and
 the line carrying the answer's request id; one whose stream a std would
 not give back -- none does -- is counted and said as well, closed
-unanswered, and a debug build's assertion. `FenecNoThreadForConnection`
+unanswered, and a debug build's assertion. `FennecNoThreadForConnection`
 pages on any, since the process's other threads, a router's lease grants
 among them, meet the same limit; a scrape is a connection too, so `up`
 falls to 0 beside it.
@@ -686,9 +686,9 @@ A test makes the next spawns fail (`Server::fail_spawns`,
 which no address space maps: macOS, glibc and musl each refused 2^50 to
 2^62 with EAGAIN, the error at the thread limit, where 2^46 was mapped;
 reaching the real limit would fail every other test's threads in the
-process. A connection pays one relaxed load for it. fenec-http's
+process. A connection pays one relaxed load for it. fennec-http's
 `a_connection_with_no_thread_is_answered_503_and_told_when_to_come_back`,
-fenec-shard's `no_thread.rs` -- a write through the router answered the
+fennec-shard's `no_thread.rs` -- a write through the router answered the
 node's 503 and not run, where it was a 502; the router's own; a relay
 asking the region's next router -- `upstream`'s
 `a_node_refusing_a_connection_as_it_takes_it_is_answered_by_its_refusal`
@@ -705,9 +705,9 @@ at once, the latter failing without the accepting thread's read off: 10
 of 10 on Linux, `EPIPE` left after the end the shut writing sent first,
 and every run on macOS, `ECONNRESET` after the answer -- each fail with
 its part taken out. So do `accept`'s
-`a_request_after_the_refusal_is_read_off_not_reset`, fenec-http's
+`a_request_after_the_refusal_is_read_off_not_reset`, fennec-http's
 `a_request_written_after_the_ceilings_refusal_is_read_off_not_reset` and
-fenec-shard's
+fennec-shard's
 `a_request_written_after_the_routers_refusal_is_read_off_not_reset`:
 three refused connections each, read to the answer's end -- where the
 refusal closed the socket, it had closed it by then -- then written a
@@ -722,7 +722,7 @@ macOS 136 to 350 times in 1 000 connections, the reset taken in as it
 came -- a thousand connections a test, which no test should open on a
 host. A test waits for no time: the connection's end comes either way.
 The counts by reason, a delta of one each and none of
-the other, are `refused_counts.rs`'s in fenec-http and fenec-shard, each a
+the other, are `refused_counts.rs`'s in fennec-http and fennec-shard, each a
 `[[test]]` of its own, the count being the process's.
 
 In ABBA turns against main at loads of 1.95-2.97, the machine moving
@@ -742,10 +742,10 @@ a request through the router 42.2 us p50 against 42.1 (42.0-42.6 and
 39.5), the node asked directly 20.1 against 20.6 (19.8-21.6 and
 20.2-21.6), so the added p50 read 22.05 against 21.1 -- the node's move,
 whose path did not change, not the router's; a `GET`'s head went in one
-`write` before as well, its empty body writing nothing. `fenec-server`'s
-`__text` grew 4 032 bytes and `fenec-shard`'s 6 720 (aarch64-apple-darwin):
+`write` before as well, its empty body writing nothing. `fennec-server`'s
+`__text` grew 4 032 bytes and `fennec-shard`'s 6 720 (aarch64-apple-darwin):
 `refuse`, `no_thread`, its lines and the family, the relays' and the
-early answer's code. Nothing below `fenec-http` changed, and the browser
+early answer's code. Nothing below `fennec-http` changed, and the browser
 module is the same to the byte.
 
 The lingering thread and the wider queue touch no served connection: a
@@ -758,6 +758,6 @@ eight clients, 15 868-16 084 a second against 14 635-16 233 in the first
 two quartets (the third slowed both, 8 614 and 13 890 against 9 212 and
 15 735), p50 296-300 us against 293-303. On macOS, 32 clients kept alive at
 loads of 6.6 to 16: 124.1-165.2k against 131.6-158.7k, p50 115-201 us
-against 132-225. `fenec-server`'s `__text` grew 5 632 bytes and
-`fenec-shard`'s 5 632 (aarch64-apple-darwin): `linger`, `hold`, `ready`,
+against 132-225. `fennec-server`'s `__text` grew 5 632 bytes and
+`fennec-shard`'s 5 632 (aarch64-apple-darwin): `linger`, `hold`, `ready`,
 `most_held` and `widen`; a refusal reads the descriptor limit once.

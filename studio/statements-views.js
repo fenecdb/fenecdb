@@ -1,6 +1,6 @@
 // The statements of the views past the rows -- the query editor's cut of a
 // text into statements, and every schema change -- held to the same rules
-// as `statements.js`: a name checked against FenecQL's, never spliced
+// as `statements.js`: a name checked against FennecQL's, never spliced
 // otherwise, and a value a parameter. A module of its own so the first
 // load, which holds only the rows' statements, carries none of it.
 //
@@ -20,7 +20,7 @@ export { StatementError };
  * The statements of a text: each `;` outside a string or a comment ends
  * one, and a piece holding nothing but blanks and comments is no
  * statement. Each is `{text, at}`, `at` the offset its text starts at.
- * Strings and comments as FenecQL's lexer reads them: a string runs over
+ * Strings and comments as FennecQL's lexer reads them: a string runs over
  * lines to its quote, and `#` starts a comment as `--` does.
  */
 export function splitStatements(source) {
@@ -103,7 +103,7 @@ export function explained({ text, params }) {
 // ------------------------------------------------------------------ the schema
 //
 // A schema change names collections, fields, indexes and types, none of
-// which can be a parameter: each is checked here against what FenecQL
+// which can be a parameter: each is checked here against what FennecQL
 // writes, and a number or a duration against its form, before it reaches
 // a statement's text. Each change also says what the schema is once it is
 // made, as a description `/_schema/plan` reads, so the page shows the
@@ -145,7 +145,7 @@ const DURATION = /^(\d{1,9})(ms|s|m|h|d)$/;
 const UNIT = { ms: 1, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
 
 /**
- * An index as FenecQL writes it (`text`) and as a description holds it
+ * An index as FennecQL writes it (`text`) and as a description holds it
  * (`json`): `{kind: 'hnsw', metric: 'cosine', quant: 'int8'}` is
  * `@hnsw(cosine, quant=int8)`; `{kind: 'ttl', ttl: '7d'}` is `@ttl(7d)`,
  * `{kind: 'ttl', ms: 604800000}`; `{kind: 'text', prefix: 6, chars: true}`
@@ -204,7 +204,7 @@ export function createIndex(collection, field, spec) {
 
 /**
  * An index's parts as a person types them, `owner, at desc`: each a field
- * -- or a path into a json one, `meta.lang` -- each name one FenecQL
+ * -- or a path into a json one, `meta.lang` -- each name one FennecQL
  * writes, ascending unless `desc` follows it.
  */
 export function compositeKeys(text) {
@@ -343,12 +343,12 @@ export function planned(description, change) {
 }
 
 /**
- * The statements `GET /_schema?as=fenecql` answers, by the collection each
+ * The statements `GET /_schema?as=fennecql` answers, by the collection each
  * makes: its `create collection`, then each `create index on` it.
  */
-export function createTexts(fenecql) {
+export function createTexts(fennecql) {
   const out = new Map();
-  for (const line of String(fenecql ?? '').split('\n')) {
+  for (const line of String(fennecql ?? '').split('\n')) {
     const m = /^create (?:collection|index on) (\S+?) \(/u.exec(line);
     if (!m) continue;
     if (!out.has(m[1])) out.set(m[1], []);

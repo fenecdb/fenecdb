@@ -1,11 +1,11 @@
 // Tables declared in code, every column kind among them, for schema.ts to
-// hold `$inferSelect` and `$inferInsert` to what `fenec types` generates for
-// the same collections (schema-generated.d.ts). web/fenec.schema.test.js
-// makes a file from these tables and runs `fenec types` over it, which must
+// hold `$inferSelect` and `$inferInsert` to what `fennec types` generates for
+// the same collections (schema-generated.d.ts). web/fennec.schema.test.js
+// makes a file from these tables and runs `fennec types` over it, which must
 // give that file again; `node check.mjs --schema` writes it.
 
 import {
-  fenecTable,
+  fennecTable,
   text,
   integer,
   doublePrecision,
@@ -21,7 +21,7 @@ import {
   defineRelations,
 } from '../schema.js';
 
-export const articles = fenecTable(
+export const articles = fennecTable(
   'articles',
   {
     title: text().notNull(),
@@ -48,7 +48,7 @@ export const articles = fenecTable(
   ],
 );
 
-export const reviews = fenecTable(
+export const reviews = fennecTable(
   'reviews',
   { articleId: integer().notNull(), stars: integer(), note: text() },
   (t) => [index('reviews_article').using('hash', t.articleId)],

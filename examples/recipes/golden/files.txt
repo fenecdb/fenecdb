@@ -1,4 +1,4 @@
-fenec-server and the bucket recipes are up
+fennec-server and the bucket recipes are up
 
 -- alice adds a file
 POST /files             201 {"id":1,"url":"<store>/recipes/pending/1?…"}

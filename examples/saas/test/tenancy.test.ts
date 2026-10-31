@@ -1,5 +1,5 @@
 // Who may do what, role by role: every operation tried with each person's
-// own token, straight against fenec-server through the router (what anyone
+// own token, straight against fennec-server through the router (what anyone
 // holding their token could send) and through this app's API, and the
 // outcome checked with the operator's token -- a refused write must have
 // written nothing. Then invitations: once, to the address they were sent

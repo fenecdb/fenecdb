@@ -1,11 +1,11 @@
 // What the tests share: a shopper as a browser would be one -- its own
-// cookies, sent with every request -- and fenec-server reached directly.
+// cookies, sent with every request -- and fennec-server reached directly.
 // They run against a shop and a server already started (scripts/ci.sh).
 import { mint } from '../lib/jwt';
 
 export const SHOP = (process.env.SHOP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
-export const FENEC = (process.env.FENEC_URL ?? 'http://127.0.0.1:8080').replace(/\/$/, '');
-export const ROOT = process.env.FENEC_TOKEN ?? 'shop-dev-token';
+export const FENNEC = (process.env.FENNEC_URL ?? 'http://127.0.0.1:8080').replace(/\/$/, '');
+export const ROOT = process.env.FENNEC_TOKEN ?? 'shop-dev-token';
 export const ADMIN = process.env.SHOP_ADMIN_TOKEN ?? 'shop-dev-admin';
 
 export class Shopper {
@@ -56,9 +56,9 @@ export class Shopper {
   }
 }
 
-/** FenecQL straight to fenec-server, with the server's token or a JWT. */
-export async function fenec(query: string, params: unknown[] = [], token = ROOT): Promise<{ status: number; body: unknown }> {
-  const res = await fetch(`${FENEC}/query`, {
+/** FennecQL straight to fennec-server, with the server's token or a JWT. */
+export async function fennec(query: string, params: unknown[] = [], token = ROOT): Promise<{ status: number; body: unknown }> {
+  const res = await fetch(`${FENNEC}/query`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
     body: JSON.stringify({ query, params }),
@@ -68,7 +68,7 @@ export async function fenec(query: string, params: unknown[] = [], token = ROOT)
 }
 
 export async function rows<T = Record<string, unknown>>(query: string, params: unknown[] = []): Promise<T[]> {
-  const r = await fenec(query, params);
+  const r = await fennec(query, params);
   if (r.status !== 200) throw new Error(`${query}: ${r.status} ${JSON.stringify(r.body)}`);
   const b = r.body as T[] | { rows: T[] };
   return Array.isArray(b) ? b : b.rows;
@@ -76,7 +76,7 @@ export async function rows<T = Record<string, unknown>>(query: string, params: u
 
 /** A token as the shop mints them, for a subject of the test's choosing. */
 export function tokenAs(sub: string, role?: string) {
-  return mint({ sub, ...(role ? { role } : {}) }, 600, process.env.FENEC_JWT_SECRET ?? 'shop-dev-jwt-secret-of-at-least-32-bytes!');
+  return mint({ sub, ...(role ? { role } : {}) }, 600, process.env.FENNEC_JWT_SECRET ?? 'shop-dev-jwt-secret-of-at-least-32-bytes!');
 }
 
 /** A product that is in stock, by sku, with its catalog price. */

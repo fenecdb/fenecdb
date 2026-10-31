@@ -249,7 +249,7 @@ def tasks():
           [check("get orders select id", [[o["id"]] for o in O if o["id"] not in theirs])],
           answer=[[i] for i in theirs])
 
-    # One FenecQL answer to each task, which `eval.py check` runs through the
+    # One FennecQL answer to each task, which `eval.py check` runs through the
     # scoring an agent's statements meet: what the tasks ask can be said, and
     # the answers above are the engine's.
     upsert_ref = ('put products {{sku: "{sku}", name: "Spare Part", category: "misc", price: 1000, '

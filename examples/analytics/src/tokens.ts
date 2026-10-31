@@ -1,4 +1,4 @@
-// HS256 JSON Web Tokens, signed with the secret fenec-server checks them
+// HS256 JSON Web Tokens, signed with the secret fennec-server checks them
 // with (`--jwt-secret-file`), with node:crypto alone. Every token names an
 // `exp` (the server refuses one without) and a `tenant`: on a --dir node a
 // token reaches only the tenant its claim names.

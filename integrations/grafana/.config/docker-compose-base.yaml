@@ -1,7 +1,7 @@
 services:
   grafana:
     user: root
-    container_name: 'fenecdb-datasource'
+    container_name: 'fennecdb-datasource'
 
     build:
       context: .
@@ -19,13 +19,13 @@ services:
     cap_add:
       - SYS_PTRACE
     volumes:
-      - ../dist:/var/lib/grafana/plugins/fenecdb-datasource
+      - ../dist:/var/lib/grafana/plugins/fennecdb-datasource
       - ../provisioning:/etc/grafana/provisioning
-      - ..:/root/fenecdb-datasource
+      - ..:/root/fennecdb-datasource
 
     environment:
       NODE_ENV: development
-      GF_LOG_FILTERS: plugin.fenecdb-datasource:debug
+      GF_LOG_FILTERS: plugin.fennecdb-datasource:debug
       GF_LOG_LEVEL: debug
       GF_DATAPROXY_LOGGING: 1
-      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: fenecdb-datasource
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: fennecdb-datasource

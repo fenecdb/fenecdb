@@ -1,3 +1,3 @@
-module fenecdb/integrations/languages
+module fennecdb/integrations/languages
 
 go 1.22

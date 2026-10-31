@@ -12,7 +12,7 @@ mapped file's pages. A page that cannot be read in is the process's end
 fails reads or a network file system -- and a mapped file is only ever
 replaced by rename: a copy over it in place took a server down. A failed `fsync` is
 never retried -- the kernel may already have dropped the pages -- and
-`fenec-server` under `--sync always` reports it (500) instead of the success it
+`fennec-server` under `--sync always` reports it (500) instead of the success it
 had not yet sent. That fsync runs *outside* the exclusive lock: under it a
 write only calls `Database::flush`, which hands back a `Durability` to run once
 the lock is released, and `FileSink` writes the bytes there as well (a `write`
@@ -63,7 +63,7 @@ VM a 300-byte append and its `fdatasync` took 356 us, the same bytes
 written into room the file already had and synced 65 -- why PostgreSQL
 fills its WAL segments first. So `FileSink`'s sync writes what the file
 took since the last one into `<file>.sync` (the whole name and `.sync`:
-with the extension replaced, `x.db` and `x.fenec` shared one, as they
+with the extension replaced, `x.db` and `x.fennec` shared one, as they
 shared `.compacting` and `.beside` -- `fs::beside` names all three), 4 KB
 of header and 256 KB of entries written once at full size and never
 grown, and syncs that alone (`Tail`). The file is fsynced when an entry
@@ -84,7 +84,7 @@ unsealed, a tenant's import (`fs::forget_sync_log`); a clean close syncs
 the file and removes it, so a node keeps none beside a closed tenant, and
 `Tenants::stats` counts it; a log that cannot be made is not tried again
 until the next open, each try being 260 KB of writes. `open_read_only`
-applies none: after a power loss, `fenec types` or a raw copy taken
+applies none: after a power loss, `fennec types` or a raw copy taken
 before the next open may lack the last durable writes. On macOS
 `F_FULLFSYNC` flushes the drive either way, 3.9 ms appended or not, so
 there is no log (`ENABLED`; `fs::keep_sync_log` has a test thread keep
@@ -92,12 +92,12 @@ one). In Docker a durable update went 624 -> 325 us p50 (`make
 roundtrip-bench`), against PostgreSQL's 378; `tests/synclog.rs` crashes
 the machine (the process forgotten, the file cut back to the log's
 start) through a full log, a sync past an entry, a torn header, a file
-renamed in, a second open and two files of one stem, and fenec-core's
-and fenec-http's tests pass on Linux, where every file keeps one.
+renamed in, a second open and two files of one stem, and fennec-core's
+and fennec-http's tests pass on Linux, where every file keeps one.
 
 ## The one shutdown
 
-**Every way a server stops is the one shutdown** (`fenec-server`'s
+**Every way a server stops is the one shutdown** (`fennec-server`'s
 `durability`). `SIGINT`, `SIGTERM` and `SIGHUP` store `SHUTDOWN` in their
 handler, which is all a handler may safely do, and the thread that syncs
 -- `run_syncer` over a file, `serve_dir`'s loop over a node's tenants --
@@ -132,7 +132,7 @@ and the review of #383 measured a file server of 100 000 64-dimension
 vectors whose port was held log `checkpoint written` at every failed start,
 its inode new and its file 26.4, 28.4, 28.9, 29.3 MB, each graph a part
 (the next open still linked 91 691 vectors), a `--dir --replica-of` standby
-rewrite its vector tenant at each, which `fenec-node.service`'s
+rewrite its vector tenant at each, which `fennec-node.service`'s
 `Restart=on-failure` repeats, and `--follow` make its slot and publication
 and copy 200 000 rows within `STOP_WAIT` before it exited 1. A `--follow`
 server whose PostgreSQL refused it served before its mirror failed, and
@@ -147,11 +147,11 @@ the database: the graph keeper, the sweeper, a replica's follower, the
 mirror, the stdin thread, a node's tenants. Not before the open, whose
 reading of a large file a connection would wait out in the backlog. An open
 address without a token is refused with the flags, exit 2, before the open
-(`fenec_http::exposed`, which counts an empty token as none). What fails
+(`fennec_http::exposed`, which counts an empty token as none). What fails
 before anything writes the file or runs beside it -- a flag, the lock, the
 open, a port -- exits where it fails, with the exit codes it had: 1 for a
 file server's HTTP port, 2 for a node's and for `--metrics`'. It has
-written `<file>.lock` (`fenec_abi::lock::hold`, taken before the open and
+written `<file>.lock` (`fennec_abi::lock::hold`, taken before the open and
 left on disk, as every server leaves it) and what the open writes, no
 more: a file, or a node's directory, made where none was (an empty file is
 8 bytes), a torn tail cut, and on Linux and Android a sync log's entries

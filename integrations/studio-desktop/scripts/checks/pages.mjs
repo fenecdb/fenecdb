@@ -12,7 +12,7 @@ import { EXE, REPORT, assertClean, cmd, evalIn, file, lines, quit, startApp, ste
 
 assertClean('before');
 
-const app = startApp('pages', { FENEC_DESKTOP_LAUNCHER: '1' });
+const app = startApp('pages', { FENNEC_DESKTOP_LAUNCHER: '1' });
 await waitFor((l) => l.what === 'ready', 60000, 'ready');
 await waitFor((l) => l.what === 'page-text' && l.key === 'launcher' && /Open file/.test(l.text), 20000, 'the launcher drawn');
 cmd({ cmd: 'newdb' });
@@ -81,7 +81,7 @@ for (const key of ['launcher', 'newdb']) {
 
 step('a second instance asks this one to show itself and quits, opening nothing');
 const k = lines().length;
-const second = spawn(EXE, [], { env: { ...process.env, FENEC_DESKTOP_REPORT: REPORT }, stdio: 'ignore' });
+const second = spawn(EXE, [], { env: { ...process.env, FENNEC_DESKTOP_REPORT: REPORT }, stdio: 'ignore' });
 const secondExit = new Promise((r) => second.on('exit', r));
 await waitFor((l, i) => i >= k && l.what === 'second-instance', 30000, 'the second instance found this one');
 await waitFor((l, i) => i >= k && l.what === 'instance-asked', 30000, 'this one was asked to show itself');

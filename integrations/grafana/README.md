@@ -1,11 +1,11 @@
-# fenecdb-datasource
+# fennecdb-datasource
 
-fenecdb's rows in Grafana: a data source whose queries are FenecQL, with the
+fennecdb's rows in Grafana: a data source whose queries are FennecQL, with the
 dashboard's time range, interval and variables bound as `$n` parameters --
 never written into the statement -- run by the plugin's Go backend over
-fenec-server's HTTP endpoint, so alert rules run them too.
+fennec-server's HTTP endpoint, so alert rules run them too.
 
-```fenecql
+```fennecql
 get ticks select bucket(at, $__interval_ms) as time, sym, sum(qty) as volume
   where sym in $syms and at >= $__from and at < $__to
   group time, sym order time
@@ -19,7 +19,7 @@ The backend sends that as
 ```
 
 and answers a series a symbol. `make grafana-check` runs it in Grafana 13.2.2
-beside the Infinity data source, every panel held to fenec-server's own
+beside the Infinity data source, every panel held to fennec-server's own
 answer; the docs are at https://fenecdb.com/docs/grafana.
 
 ## Queries
@@ -35,7 +35,7 @@ answer; the docs are at https://fenecdb.com/docs/grafana.
   backend gives the name a slot. A value is a value whatever it holds: a
   quote, a comment, a statement.
 - **A multi-value variable** goes after `in`: `where sym in $syms` becomes
-  `in [$2, $3, $4]`, one parameter a value -- FenecQL's `in` takes a list of
+  `in [$2, $3, $4]`, one parameter a value -- FennecQL's `in` takes a list of
   values and a parameter binds one. Nothing picked is `in []`, no rows.
 - **The parameters' list** is `$1`, `$2`, ...: each a literal of its type, or
   one variable whole. Names in the text are numbered after it.
@@ -44,8 +44,8 @@ answer; the docs are at https://fenecdb.com/docs/grafana.
   the data source to reads on the server; this keeps a write from leaving
   Grafana at all.
 - **After** (optional): a change the server must hold before it answers
-  (`Fenec-After`), for a dashboard reading a replica; the data source's Wait
-  bounds it (`Fenec-Wait`).
+  (`Fennec-After`), for a dashboard reading a replica; the data source's Wait
+  bounds it (`Fennec-Wait`).
 - **Explain** in the editor shows the statement as bound, its parameters, and
   the server's plan.
 
@@ -74,7 +74,7 @@ answer; the docs are at https://fenecdb.com/docs/grafana.
 
 The answer to each statement and its parameters is kept with its `ETag`, and
 the same request is sent again with `If-None-Match`: a 304 is answered from
-the kept answer. With the server's token fenec-server answers that 304
+the kept answer. With the server's token fennec-server answers that 304
 without running the statement; with a scoped JSON Web Token it runs it and
 compares a digest of the answer, which saves the transfer and the plugin's
 parsing only -- a 304 by the change counter would tell a token when anyone
@@ -93,7 +93,7 @@ open-source build's. `monitoring/grafana/bench.mjs` measures each way.
   nothing a query holds becomes part of a URL. The client follows no
   redirect, sends no basic auth, no headers of the settings' own, and nothing
   forwarded from the viewer.
-- No FenecQL is made from user input: a variable's value is a parameter, and
+- No FennecQL is made from user input: a variable's value is a parameter, and
   the only text the plugin writes is `$n`, a bracket of them, and `explain`
   before a `get` for the editor's plan.
 - Any viewer of a Grafana can send a data source any query
@@ -105,16 +105,16 @@ open-source build's. `monitoring/grafana/bench.mjs` measures each way.
 ```yaml
 apiVersion: 1
 datasources:
-  - name: fenecdb
-    type: fenecdb-datasource
-    uid: fenecdb
-    url: http://fenecdb:8080
+  - name: fennecdb
+    type: fennecdb-datasource
+    uid: fennecdb
+    url: http://fennecdb:8080
     jsonData:
       tenant: acme          # optional: /t/acme/
-      waitMs: 5000          # optional: Fenec-Wait
+      waitMs: 5000          # optional: Fennec-Wait
       timeoutSeconds: 30    # optional
     secureJsonData:
-      token: $__file{/run/fenec/grafana.jwt}
+      token: $__file{/run/fennec/grafana.jwt}
 ```
 
 ## Build and test
@@ -126,15 +126,15 @@ The layout is `@grafana/create-plugin` 7.12.2's (`.config/` is its own:
 
 ```sh
 npm ci && npm run typecheck && npm run lint && npm run test:ci && npm run build   # dist/
-go run github.com/magefile/mage@v1.17.2 -v build:linux build:linuxARM64             # dist/gpx_fenecdb_linux_*
-FENEC_SERVER=../../target/debug/fenec-server go test ./pkg/...                       # the live tests need a fenec-server
+go run github.com/magefile/mage@v1.17.2 -v build:linux build:linuxARM64             # dist/gpx_fennecdb_linux_*
+FENNEC_SERVER=../../target/debug/fennec-server go test ./pkg/...                     # the live tests need a fennec-server
 make grafana-check                                                                   # from the repository's root
 ```
 
 `Dockerfile` builds Grafana 13.2.2 with the plugin from this checkout, which
 `monitoring/docker-compose.yml` runs. Into a Grafana of your own: copy `dist/`
-to `<plugins>/fenecdb-datasource/` and let it load unsigned,
-`GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=fenecdb-datasource`.
+to `<plugins>/fennecdb-datasource/` and let it load unsigned,
+`GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=fennecdb-datasource`.
 
 ## Signing
 
@@ -148,7 +148,7 @@ Grafana Cloud account, which is the publisher's step:
    after `npm run build` and the backend build; it writes `dist/MANIFEST.txt`.
 3. Community signature, for the catalog: submit the zipped `dist/` at
    grafana.com for review. The catalog's validator asks for an id of the form
-   `<org>-<name>-<type>`, so this id (`fenecdb-datasource`) would become one
-   such as `fenecdb-fenecdb-datasource` in `src/plugin.json` and `pkg/plugin/settings.go`.
+   `<org>-<name>-<type>`, so this id (`fennecdb-datasource`) would become one
+   such as `fennecdb-fennecdb-datasource` in `src/plugin.json` and `pkg/plugin/settings.go`.
 
 Then `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS` is no longer needed.

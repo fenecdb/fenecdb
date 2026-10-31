@@ -1,11 +1,11 @@
 // The bucket follows the table, docs/files: a consumer of the change stream
-// (`fenec-server --cdc`) that deletes an object once its row is gone, whoever
+// (`fennec-server --cdc`) that deletes an object once its row is gone, whoever
 // deleted the row -- the backend, a person's own token from a page, the sweep
 // of pending uploads. The server keeps the consumer's place, so a restart
 // carries on where it stopped; a crash between the delete and the commit
 // deletes again, which an object store answers as it answered the first time.
 //
-//   FENEC_URL=... ADMIN_TOKEN=... S3_ENDPOINT=... S3_KEY=... S3_SECRET=... BUCKET=... node blobs.mjs
+//   FENNEC_URL=... ADMIN_TOKEN=... S3_ENDPOINT=... S3_KEY=... S3_SECRET=... BUCKET=... node blobs.mjs
 //
 // /_changes takes the server's own token and no scoped one: it carries every
 // row of every person, documents and all.
@@ -26,25 +26,25 @@ const pause = (ms, signal) => new Promise((resolve) => {
   signal?.addEventListener('abort', () => (clearTimeout(t), resolve()), { once: true });
 });
 
-export async function follow({ fenec, adminToken, s3, bucket, prefix = '', name = 'blobs', wait = 10_000, signal, log = console.log }) {
+export async function follow({ fennec, adminToken, s3, bucket, prefix = '', name = 'blobs', wait = 10_000, signal, log = console.log }) {
   const headers = { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' };
   const keys = keysOf(prefix);
   // PATCH moves the consumer; a POST only makes it.
-  const move = (since) => fetch(`${fenec}/_changes/consumers/${name}`, { method: 'PATCH', headers, body: JSON.stringify({ since }) });
+  const move = (since) => fetch(`${fennec}/_changes/consumers/${name}`, { method: 'PATCH', headers, body: JSON.stringify({ since }) });
   const commit = async (since) => {
     const res = await move(since);
     if (!res.ok) throw new Error(`commit of ${name} at ${since}: ${res.status}`);
   };
   // Made at every start: a POST makes the consumer (201) and leaves one that
   // exists where it stands (200), so a restart carries on from the last commit.
-  const made = await fetch(`${fenec}/_changes/consumers/${name}`, { method: 'POST', headers });
+  const made = await fetch(`${fennec}/_changes/consumers/${name}`, { method: 'POST', headers });
   if (!made.ok) throw new Error(`/_changes/consumers/${name}: ${made.status}`);
   // A server restarted, or not answering for a while, is waited for with a back-off;
   // after RETRIES answers missed the follower ends with an error, so that whatever
   // supervises it starts it again. It ends with a zero only at its own signal.
   let missed = 0;
   while (!signal?.aborted) {
-    const page = await fetch(`${fenec}/_changes?consumer=${name}&wait=${wait}`, { headers, signal }).catch(() => null);
+    const page = await fetch(`${fennec}/_changes?consumer=${name}&wait=${wait}`, { headers, signal }).catch(() => null);
     if (!page) {
       if (signal?.aborted) break;
       if (++missed >= RETRIES) throw new Error(`/_changes: no answer ${missed} times`);
@@ -55,7 +55,7 @@ export async function follow({ fenec, adminToken, s3, bucket, prefix = '', name 
     if (page.status === 410) {
       const { since } = await page.json();
       log(`blobs: behind what the server keeps; reconciling, then on from ${since}`);
-      const gone = await reconcile({ fenec, adminToken, s3, bucket, prefix });
+      const gone = await reconcile({ fennec, adminToken, s3, bucket, prefix });
       log(`blobs: reconciled, ${gone.length} deleted: ${gone.join(', ') || 'none'}`);
       // The first write the server keeps can be past what is on disk yet (a commit
       // there is 409), and can move on while writes are not: not at once, then.
@@ -65,7 +65,7 @@ export async function follow({ fenec, adminToken, s3, bucket, prefix = '', name 
       continue;
     }
     if (!page.ok) throw new Error(`/_changes: ${page.status}`);
-    const next = Number(page.headers.get('fenec-next'));
+    const next = Number(page.headers.get('fennec-next'));
     for (const line of (await page.text()).split('\n').filter(Boolean)) {
       const change = JSON.parse(line);
       if (change.collection === 'files' && change.op === 'del') {
@@ -84,6 +84,6 @@ export async function follow({ fenec, adminToken, s3, bucket, prefix = '', name 
 if (isMain(import.meta.url)) {
   const env = process.env;
   await follow({
-    fenec: env.FENEC_URL, adminToken: env.ADMIN_TOKEN, s3: s3From(env), bucket: env.BUCKET, prefix: env.KEY_PREFIX ?? '',
+    fennec: env.FENNEC_URL, adminToken: env.ADMIN_TOKEN, s3: s3From(env), bucket: env.BUCKET, prefix: env.KEY_PREFIX ?? '',
   });
 }

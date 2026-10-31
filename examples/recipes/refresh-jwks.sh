@@ -1,10 +1,10 @@
 #!/bin/sh
-# Keep the JWKS file fenec-server reads (--jwt-keys) as fresh as the provider's.
-# fenec-server fetches no URL: it reads this file, and again whenever its
+# Keep the JWKS file fennec-server reads (--jwt-keys) as fresh as the provider's.
+# fennec-server fetches no URL: it reads this file, and again whenever its
 # modification time changes (at most once a second). Run this from cron or a
 # systemd timer every few minutes.
 #
-#   refresh-jwks.sh https://acme.us.auth0.com/.well-known/jwks.json /etc/fenec/jwks.json [own-keys.json]
+#   refresh-jwks.sh https://acme.us.auth0.com/.well-known/jwks.json /etc/fennec/jwks.json [own-keys.json]
 #
 # The new file is written beside the old one and renamed over it, so the server
 # never reads half of one, and only a file holding a key the server verifies

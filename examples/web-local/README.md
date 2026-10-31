@@ -1,12 +1,12 @@
 # Notes -- the browser (local)
 
-A notes page whose database runs in the page: `@fenecdb/web`'s engine as
+A notes page whose database runs in the page: `@fennecdb/web`'s engine as
 WebAssembly, kept in IndexedDB between visits. No server.
 
 ## What it shows
 
-- the schema declared in code, Drizzle's way (`src/tables.ts`, `fenecTable`
-  from `@fenecdb/web/schema`): `Fenec.open(wasm, { schema })` makes it, and
+- the schema declared in code, Drizzle's way (`src/tables.ts`, `fennecTable`
+  from `@fennecdb/web/schema`): `Fennec.open(wasm, { schema })` makes it, and
   checks it at every open;
 - `restore` at the open and `persist` after each write: only the writes
   since go into IndexedDB, not the whole image;
@@ -35,11 +35,11 @@ Reload the page: the notes are where you left them.
 ## The core
 
 ```ts
-import wasm from '@fenecdb/web/fenec.wasm?url';
-import { Fenec, persist, restore } from '@fenecdb/web';
-import { notes, embed } from './tables.js';         // fenecTable('notes', { ... })
+import wasm from '@fennecdb/web/fennec.wasm?url';
+import { Fennec, persist, restore } from '@fennecdb/web';
+import { notes, embed } from './tables.js';         // fennecTable('notes', { ... })
 
-const db = await Fenec.open(wasm, { schema: { notes } });
+const db = await Fennec.open(wasm, { schema: { notes } });
 await restore(db, 'notes');                          // last visit's database, checked against the schema
 
 db.live(db.from(notes).where('done', false).order('at', 'desc'), draw);   // now, and after every write
@@ -61,8 +61,8 @@ dimensions), or a server's embeddings API does; declare
 
 ## Against this repository's build
 
-CI installs `@fenecdb/web` packed from `web/` in this checkout (after `make
+CI installs `@fennecdb/web` packed from `web/` in this checkout (after `make
 wasm`) rather than npm's: `examples/run-tests.sh web-local` copies the
 folder, points the dependency at the tarball (`npm pkg set
-dependencies.@fenecdb/web=file:...`), installs, and runs `npm run smoke` and
+dependencies.@fennecdb/web=file:...`), installs, and runs `npm run smoke` and
 `npm run build`.

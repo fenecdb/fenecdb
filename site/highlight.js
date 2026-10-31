@@ -2,7 +2,7 @@
    being typed. The rules are not written here -- build.py writes its own
    patterns and keyword lists in place of the marker below, so a statement
    cannot be coloured two ways, and `site/test_highlight.py` holds the two to
-   the same HTML. Loaded by fenec studio's query editor -- on a server,
+   the same HTML. Loaded by fennec studio's query editor -- on a server,
    and on the site's playground -- from the file build.py writes
    (`studio/highlight.js`, which the same test holds to it byte for
    byte). */
@@ -76,13 +76,13 @@ function line(code, lang) {
    inputs came in it. The page holds the two in their box already
    (`<div class="hl"><pre class="hl-mirror">` before the textarea): moved
    into one here, a textarea already being typed in would lose its focus. */
-export function overlay(area, lang = 'fenecql') {
+export function overlay(area, lang = 'fennecql') {
   const box = area.parentElement;
   const pre = box.querySelector('.hl-mirror');
 
   /* A line a block, and only the lines a keystroke changed drawn again: the
      whole text of 500 lines, highlighted and laid out at once, took 15 ms a
-     keystroke. No FenecQL token spans a line (a comment ends with it, a
+     keystroke. No FennecQL token spans a line (a comment ends with it, a
      string may not hold one), so a line coloured alone is coloured as in
      the whole -- test_highlight.py holds that too. */
   let shown = [], queued = false;

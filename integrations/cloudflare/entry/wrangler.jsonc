@@ -3,7 +3,7 @@
   // routers of the tenant's home region (entry.js says how it learns it).
   // Named with --config, as the example is.
   "$schema": "../node_modules/wrangler/config-schema.json",
-  "name": "fenecdb-entry",
+  "name": "fennecdb-entry",
   "main": "worker.js",
   "compatibility_date": "2026-09-01",
   // `request.signal` aborts once the client goes away, and the fetch to the
@@ -16,7 +16,7 @@
   "vars": {
     // Each region by the name its routers give it, its routers in the order
     // to try -- the one keeping its directory, then its standbys -- each an
-    // HTTPS hostname (a Cloudflare Tunnel to the router: fenecdb speaks no
+    // HTTPS hostname (a Cloudflare Tunnel to the router: fennecdb speaks no
     // TLS, and a Worker fetches no bare IP address), and the continents
     // whose clients send a tenant the entry has not seen there first.
     "REGIONS": {
@@ -34,9 +34,9 @@
     // "ADMIN": ["https://router-1.eu.example.com"]: /_shard/ to the global
     // router. Unset, as every path but /t/<tenant>/ is, a 404 here.
   }
-  // The key of the client's mark (Fenec-Client: an HMAC of the client's
+  // The key of the client's mark (Fennec-Client: an HMAC of the client's
   // address and the time), shared with the routers, each started with
-  // --entry-token (or FENEC_SHARD_ENTRY_TOKEN) set to it -- a token of its
+  // --entry-token (or FENNEC_SHARD_ENTRY_TOKEN) set to it -- a token of its
   // own, never one a router or a node holds for anything else. Changed by
   // starting the routers with the new one first, then putting it here:
   //   npx wrangler secret put ENTRY_TOKEN --config entry/wrangler.jsonc

@@ -1,12 +1,12 @@
-// Plover's database on one machine: fenec-server tenant nodes (`--dir`) and
-// fenec-shard in front of them. `npm run cluster` runs it for development;
+// Plover's database on one machine: fennec-server tenant nodes (`--dir`) and
+// fennec-shard in front of them. `npm run cluster` runs it for development;
 // each test file starts one of its own over a new directory.
 //
 // Every node takes the same flags: the secret JSON Web Tokens are signed
 // with (HS256, from a file), the policy, CORS for the site's origin -- the
 // dispatcher's live map talks to the router from the browser -- and room
 // for the connections a fleet holds open: each courier waiting for an order
-// is a request held at the node (`Fenec-Wait`), a connection and a thread
+// is a request held at the node (`Fennec-Wait`), a connection and a thread
 // as a subscription is, and 100, the default, is a fleet of 90.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -16,8 +16,8 @@ import { JWT_SECRET, POLICY_FILE } from './config';
 
 const root = fileURLToPath(new URL('../../..', import.meta.url));
 
-export function binary(name: 'fenec-server' | 'fenec-shard'): string {
-  const envName = name === 'fenec-server' ? 'FENEC_SERVER' : 'FENEC_SHARD';
+export function binary(name: 'fennec-server' | 'fennec-shard'): string {
+  const envName = name === 'fennec-server' ? 'FENNEC_SERVER' : 'FENNEC_SHARD';
   const found = [process.env[envName], join(root, 'target/release', name), join(root, 'target/debug', name)].find(
     (b) => b && existsSync(b),
   );
@@ -96,11 +96,11 @@ export class Cluster {
     mkdirSync(this.opts.dir, { recursive: true });
     writeFileSync(join(this.opts.dir, 'jwt.secret'), JWT_SECRET, { mode: 0o600 });
     for (const n of this.nodeNames) await this.startNode(n);
-    await this.#run('router', binary('fenec-shard'), [
+    await this.#run('router', binary('fennec-shard'), [
       '--listen',
       this.#listen('router'),
       '--directory',
-      join(this.opts.dir, 'shard.fenec'),
+      join(this.opts.dir, 'shard.fennec'),
       '--token',
       this.opts.shardToken,
       '--max-connections',
@@ -125,7 +125,7 @@ export class Cluster {
   async startNode(name: string): Promise<void> {
     const dir = join(this.opts.dir, name);
     mkdirSync(dir, { recursive: true });
-    await this.#run(name, binary('fenec-server'), [
+    await this.#run(name, binary('fennec-server'), [
       '--dir',
       dir,
       '--http',
@@ -150,7 +150,7 @@ export class Cluster {
       '2000',
       ...(this.opts.cors ? ['--http-cors', this.opts.cors] : []),
       ...(this.opts.nodeFlags ?? []),
-    ], { FENEC_HTTP_TOKEN: this.opts.operatorToken });
+    ], { FENNEC_HTTP_TOKEN: this.opts.operatorToken });
   }
 
   /** SIGKILL: the node is gone, mid-write, as a machine lost would be. */
@@ -181,7 +181,7 @@ export class Cluster {
     // A test or the bench that dies leaves no node behind.
     process.on('exit', () => child.kill('SIGKILL'));
     this.#procs.set(name, { child, out, exited });
-    // Up once it says where it listens: fenec-server's and fenec-shard's
+    // Up once it says where it listens: fennec-server's and fennec-shard's
     // `listening on: http://<address>  [...]` line names the port it bound,
     // the one the system picked for `:0` -- read to the space after it, so
     // a line that came in two pieces is not read short.

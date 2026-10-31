@@ -1,5 +1,5 @@
 <!--
-title: Points and distances — fenecdb
+title: Points and distances — fennecdb
 description: Redis's GEOADD and GEOSEARCH in a collection: a geo field, distances in metres, rows within a radius or a box, the nearest first, positions that expire — each a statement, with what it costs over a million points against PostGIS and Redis.
 -->
 
@@ -21,8 +21,8 @@ a scan of every row gives, row for row.</p>
 href="/docs/queues">job queues</a>, pub/sub — are recipes of
 <a href="/docs/redis">Instead of Redis</a>.</p>
 
-<p>Every FenecQL block on this page is run, statement by statement, by a
-test (<code>crates/fenec-core/tests/geo_docs.rs</code>), and each
+<p>Every FennecQL block on this page is run, statement by statement, by a
+test (<code>crates/fennec-core/tests/geo_docs.rs</code>), and each
 <code>-- → x</code> is the answer it checks: a write's count, or the first
 value of the first row it answered. The costs are <code>make
 geo-bench</code> on an M1 Air, over a million points.</p>
@@ -32,7 +32,7 @@ geo-bench</code> on an M1 Air, over a million points.</p>
 <p>A point is written as a list of two numbers, its longitude first —
 GeoJSON's order, and the order Redis and PostGIS take them in.</p>
 
-<pre data-lang="fenecql">create collection places (name text, kind text @hash, loc geo @geo)
+<pre data-lang="fennecql">create collection places (name text, kind text @hash, loc geo @geo)
 put places [{name: "Palermo", kind: "city", loc: [13.361389, 38.115556]}, {name: "Catania", kind: "city", loc: [15.087269, 37.502669]}]   -- → 2
 get places select loc where name = "Catania"   -- → [15.087269,37.502669]
 </pre>
@@ -60,7 +60,7 @@ get places select loc where name = "Catania"   -- → [15.087269,37.502669]
 sphere of Redis's radius (6 372 797.56 m) — so it is
 <code>GEODIST</code>'s answer.</p>
 
-<pre data-lang="fenecql">get places select distance(loc, [15.087269, 37.502669]) as m where name = "Palermo"   -- → 166274.2577914073
+<pre data-lang="fennecql">get places select distance(loc, [15.087269, 37.502669]) as m where name = "Palermo"   -- → 166274.2577914073
 </pre>
 
 <ul>
@@ -75,14 +75,14 @@ sphere of Redis's radius (6 372 797.56 m) — so it is
     6 371 008.8 m, so its metres are 0.03% fewer: Palermo to Catania is
     166 227.6 m. Its default, the WGS84 ellipsoid, differs from a sphere by
     up to 0.5%: 166 506.2 m.</li>
-  <li><b>The same bits everywhere.</b> The trigonometry is fenecdb's own,
+  <li><b>The same bits everywhere.</b> The trigonometry is fennecdb's own,
     not the platform's: a point on a radius's edge is in or out alike on a
     server, a phone and a page.</li>
 </ul>
 
 <h2 id="radius">Within a radius</h2>
 
-<pre data-lang="fenecql">get places select name where distance(loc, [15, 37]) &lt;= 200000   -- → "Palermo": in id order
+<pre data-lang="fennecql">get places select name where distance(loc, [15, 37]) &lt;= 200000   -- → "Palermo": in id order
 get places select name where distance(loc, [15, 37]) &lt;= 100000   -- → "Catania"
 get places where distance(loc, [15, 37]) &lt;= 200000 count         -- → 2
 </pre>
@@ -106,7 +106,7 @@ get places where distance(loc, [15, 37]) &lt;= 200000 count         -- → 2
 <code>p</code>, a tie by id, and <code>_score</code> is the distance in
 metres:</p>
 
-<pre data-lang="fenecql">get places select name, distance(loc, [15, 37]) as m near loc [15, 37] limit 1   -- → "Catania"
+<pre data-lang="fennecql">get places select name, distance(loc, [15, 37]) as m near loc [15, 37] limit 1   -- → "Catania"
 get places select name where distance(loc, [15, 37]) &lt;= 200000 near loc [15, 37] limit 10   -- → "Catania": then Palermo
 get places select name where distance(loc, [15, 37]) &lt;= 200000 order distance(loc, [15, 37]) limit 10   -- → "Catania": the same rows
 </pre>
@@ -139,7 +139,7 @@ get places select name where distance(loc, [15, 37]) &lt;= 200000 order distance
 inside the box or on its edge. A box whose west is east of its east crosses
 the antimeridian:</p>
 
-<pre data-lang="fenecql">get places where within(loc, [12, 37, 16, 39]) count   -- → 2
+<pre data-lang="fennecql">get places where within(loc, [12, 37, 16, 39]) count   -- → 2
 put places [{name: "Suva", kind: "city", loc: [178.4419, -18.1248]}, {name: "Apia", kind: "city", loc: [-171.7513, -13.8333]}, {name: "Nuku'alofa", kind: "city", loc: [-175.2018, -21.1394]}]   -- → 3
 get places where within(loc, [170, -25, -170, -10]) count   -- → 3
 get places select name near loc [180, -15] limit 1   -- → "Suva"
@@ -161,7 +161,7 @@ get places select name near loc [180, -15] limit 1   -- → "Suva"
 rest of the query goes with it: other conditions, an order, a count, a
 facet, a <code>lookup</code>.</p>
 
-<pre data-lang="fenecql">put places [{name: "Cafe A", kind: "cafe", loc: [15.0912, 37.5047]}, {name: "Cafe B", kind: "cafe", loc: [15.0855, 37.5076]}, {name: "Fish market", kind: "market", loc: [15.0868, 37.5005]}]   -- → 3
+<pre data-lang="fennecql">put places [{name: "Cafe A", kind: "cafe", loc: [15.0912, 37.5047]}, {name: "Cafe B", kind: "cafe", loc: [15.0855, 37.5076]}, {name: "Fish market", kind: "market", loc: [15.0868, 37.5005]}]   -- → 3
 get places select name where kind = "cafe" and distance(loc, [15.087269, 37.502669]) &lt;= 1000 near loc [15.087269, 37.502669] limit 5   -- → "Cafe A"
 get places where kind = "cafe" and distance(loc, [15.087269, 37.502669]) &lt;= 1000 count   -- → 2
 get places select name where distance(loc, [15.087269, 37.502669]) &lt;= 1000 facet kind
@@ -188,7 +188,7 @@ written over as it moves, and gone when it stops being sent.
 <code>@ttl</code> takes a row out of every read once its time is
 past.</p>
 
-<pre data-lang="fenecql">create collection couriers (name text @unique, loc geo @geo, seen timestamp @ttl(30s))
+<pre data-lang="fennecql">create collection couriers (name text @unique, loc geo @geo, seen timestamp @ttl(30s))
 put couriers {name: "ada", loc: [15.0901, 37.5031], seen: now()} if absent else set {loc: new.loc, seen: new.seen}   -- → 1
 put couriers {name: "bo", loc: [15.0702, 37.5120], seen: now()} if absent else set {loc: new.loc, seen: new.seen}    -- → 1
 get couriers select name near loc [15.087269, 37.502669] limit 1   -- → "ada"
@@ -205,7 +205,7 @@ get couriers count   -- → 1
     and time set after, one statement whichever it is.</li>
   <li><b>Gone at once:</b> a row past its <code>@ttl</code> is out of every
     read the moment it is, and the server's sweeper deletes it one to two
-    minutes later (<a href="/docs/fenecql-indexes#ttl">Rows that expire</a>).</li>
+    minutes later (<a href="/docs/fennecql-indexes#ttl">Rows that expire</a>).</li>
 </ul>
 
 <h2 id="dispatch">The nearest job</h2>
@@ -215,9 +215,9 @@ worker that is ready, taken in one statement under the write lock, so two
 workers never take the same one. <code>order</code> takes the distance as
 its key in a <code>set</code> that picks its rows, and
 <code>returning</code> answers what was taken
-(<a href="/docs/fenecql-writing#pick">Writes that pick their rows</a>):</p>
+(<a href="/docs/fennecql-writing#pick">Writes that pick their rows</a>):</p>
 
-<pre data-lang="fenecql">create collection deliveries (pickup geo @geo, run_at timestamp @sorted, courier text)
+<pre data-lang="fennecql">create collection deliveries (pickup geo @geo, run_at timestamp @sorted, courier text)
 put deliveries [{pickup: [15.0912, 37.5047], run_at: now()}, {pickup: [15.0855, 37.5076], run_at: now()}, {pickup: [15.0880, 37.5031], run_at: now() + 600000}]   -- → 3
 set deliveries {courier: "ada", run_at: now() + 45000} where run_at &lt;= now() and distance(pickup, [15.0901, 37.5031]) &lt;= 3000 order distance(pickup, [15.0901, 37.5031]) limit 1 returning id   -- → 1: the nearest ready; 3 is nearer, and waits ten minutes
 set deliveries {courier: "bo", run_at: now() + 45000} where run_at &lt;= now() and distance(pickup, [15.0901, 37.5031]) &lt;= 3000 order distance(pickup, [15.0901, 37.5031]) limit 1 returning id   -- → 2: the one left
@@ -245,7 +245,7 @@ set deliveries {courier: "cy", run_at: now() + 45000} where id in (get deliverie
 
 <h2 id="clients">From a client</h2>
 
-<p>Over HTTP a point is a JSON array, and a filter is FenecQL's:</p>
+<p>Over HTTP a point is a JSON array, and a filter is FennecQL's:</p>
 
 <pre data-lang="bash">curl -X POST http://127.0.0.1:8080/places -d '{"name": "Catania", "loc": [15.087269, 37.502669]}'
 curl 'http://127.0.0.1:8080/places?select=name&amp;where=distance(loc,%5B15,37%5D)%3C%3D200000'
@@ -256,10 +256,10 @@ curl -X POST http://127.0.0.1:8080/query \
 
 <p>The builders write it as an object condition:</p>
 
-<pre data-lang="ts">import { connect, distance, type Point } from '@fenecdb/web/client';
-import type { FenecSchema } from './fenec-schema.js';   // fenec types app.fenec
+<pre data-lang="ts">import { connect, distance, type Point } from '@fennecdb/web/client';
+import type { FennecSchema } from './fennec-schema.js';   // fennec types app.fennec
 
-const db = connect&lt;FenecSchema&gt;('http://127.0.0.1:8080');
+const db = connect&lt;FennecSchema&gt;('http://127.0.0.1:8080');
 const here: Point = [15.087269, 37.502669];
 const cafes = await db.from('places')
   .select('name', distance('loc', here).as('m'))
@@ -272,7 +272,7 @@ const inView = await db.from('places').where({ loc: { within: [12, 37, 16, 39] }
 
 <p>Python's, Go's, .NET's, Swift's, Kotlin's and Dart's builders take the
 same <code>within</code> and <code>distance</code> conditions and render the
-same text. <code>fenec types</code> writes a <code>geo</code> field as each
+same text. <code>fennec types</code> writes a <code>geo</code> field as each
 language's pair of doubles, and a Drizzle table's
 <code>geometry('loc', { type: 'point' })</code> with a GiST index is a
 <code>geo</code> field with <code>@geo</code>.</p>
@@ -290,11 +290,11 @@ language's pair of doubles, and a Drizzle table's
 
 <h2 id="postgis">From PostGIS</h2>
 
-<p><code>fenec import</code> takes a <code>geometry(Point, 4326)</code> or
+<p><code>fennec import</code> takes a <code>geometry(Point, 4326)</code> or
 <code>geography(Point)</code> column, or PostgreSQL's own
 <code>point</code>, as a <code>geo</code> field:</p>
 
-<pre data-lang="bash">fenec import postgres://app@db:5432/app --table stores --into stores --index "loc@geo"
+<pre data-lang="bash">fennec import postgres://app@db:5432/app --table stores --into stores --index "loc@geo"
 </pre>
 
 <p>A column of other shapes — lines, polygons — or of another SRID is
@@ -304,7 +304,7 @@ refused naming it; <code>--follow</code> mirrors the table as it changes
 <h2 id="costs">What it costs</h2>
 
 <p>A million points crowded round 48 cities, as a shop's or a courier's lie,
-<code>make geo-bench</code>: fenecdb in process; PostGIS 3.5 (a
+<code>make geo-bench</code>: fennecdb in process; PostGIS 3.5 (a
 <code>geography(Point)</code> column, GiST, <code>ST_DWithin(…, false)</code>
 and <code>&lt;-&gt;</code>) and Redis 7 (<code>GEOSEARCH</code>) in Docker,
 each server's own mean time of the query from
@@ -314,7 +314,7 @@ thousand queries near a point of the data:</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>a million points</th><th class="n">rows</th><th class="n">fenecdb <code>@geo</code></th><th class="n">no index: the scan</th><th class="n">Redis</th><th class="n">PostGIS</th></tr></thead>
+<thead><tr><th>a million points</th><th class="n">rows</th><th class="n">fennecdb <code>@geo</code></th><th class="n">no index: the scan</th><th class="n">Redis</th><th class="n">PostGIS</th></tr></thead>
 <tbody>
 <tr><td>within 100 m</td><td class="n">0.3</td><td class="n"><b>7.2 us</b></td><td class="n">21.7 ms</td><td class="n">12.6 us</td><td class="n">1.26 ms</td></tr>
 <tr><td>within 1 km</td><td class="n">27</td><td class="n"><b>12.6 us</b></td><td class="n">21.9 ms</td><td class="n">34.3 us</td><td class="n">1.31 ms</td></tr>

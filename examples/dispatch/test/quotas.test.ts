@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { startWorld, tandem, hopper, cast, quantile, sleep, type World } from './harness';
 import { heartbeat } from '../lib/dispatch';
 import { placeOrder } from '../lib/orders';
-import { asUser, FenecError, operatorDb, one, retrying } from '../lib/db';
+import { asUser, FennecError, operatorDb, one, retrying } from '../lib/db';
 import { setQuota } from '../lib/setup';
 import { PLANS } from '../lib/plans';
 import { addresses, bounds, rng, type Point } from '../lib/city';
@@ -129,14 +129,14 @@ test('a bulk import past the bytes a second waits out its debt', async () => {
         promised: Date.now(),
       };
     });
-  let refusal: FenecError | null = null;
+  let refusal: FennecError | null = null;
   let landed = 0;
   for (let k = 0; k < 6 && !refusal; k++) {
     try {
       await dispatcher.run('put orders $1', [page(k)]);
       landed++;
     } catch (e) {
-      if (!(e instanceof FenecError)) throw e;
+      if (!(e instanceof FennecError)) throw e;
       refusal = e;
     }
   }
@@ -168,7 +168,7 @@ test("an idle fleet larger than the plan's held claims cannot all wait at the se
       return asUser(who)
         .batch([['set orders {courier: $1} where run_at <= now() and distance(pickup, $2) <= 1 order run_at limit 1', [who.sub, nowhere]]], { wait: 4_000 })
         .then(() => 'held')
-        .catch((e: FenecError) => `${e.status} ${e.quota}`);
+        .catch((e: FennecError) => `${e.status} ${e.quota}`);
     }),
   );
   assert.equal(answers.filter((a) => a === 'held').length, held);
@@ -184,7 +184,7 @@ test('a company at its rows takes no new order, and deletes still land', async (
   const place = (i: number) =>
     placeOrder(hp.customer(i), { ref: `full-${i}`, merchant: shop, dropoff: door.point, dropoffAddr: door.label, items: 1, fee: 300 });
   for (let i = 0; i < 3; i++) await place(i);
-  await assert.rejects(place(3), (e: FenecError) => e.status === 507 && e.quota === 'rows');
+  await assert.rejects(place(3), (e: FennecError) => e.status === 507 && e.quota === 'rows');
   // The dispatcher clears cancelled orders, and the company has room again.
   const cleared = await asUser(hp.dispatcher).run('del orders where status = "cancelled" and ref ~ "import-0-"');
   assert.ok((cleared as { count: number }).count > 0);

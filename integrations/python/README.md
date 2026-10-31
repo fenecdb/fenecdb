@@ -1,14 +1,14 @@
-# fenecdb for Python
+# fennecdb for Python
 
-A client for fenec-server's HTTP endpoint (`fenec-server --http <address>`), and
+A client for fennec-server's HTTP endpoint (`fennec-server --http <address>`), and
 vector stores for LangChain and LlamaIndex on top of it.
 
 ```sh
-pip install "fenecdb[langchain]"      # or "fenecdb[llama-index]"
+pip install "fennecdb[langchain]"      # or "fennecdb[llama-index]"
 ```
 
 ```python
-from fenecdb import Client
+from fennecdb import Client
 
 db = Client("http://127.0.0.1:8080", token="...")
 db.query("get articles select title near embed $1 limit 5", [[0.1, 0.2, 0.3]])
@@ -19,7 +19,7 @@ every name checked -- the same text the JavaScript, Go and .NET builders
 make of the same chain:
 
 ```python
-from fenecdb import or_
+from fennecdb import or_
 
 docs = db.collection("articles")
 rows = (docs.select("title")
@@ -33,12 +33,12 @@ docs.where("year", "<", 2000).delete()        # no filter: refused unless all=Tr
 docs.where("lang", "tr").count()
 ```
 
-Aggregates go in `select` as FenecQL spells them, and `group` takes one key
+Aggregates go in `select` as FennecQL spells them, and `group` takes one key
 or more; `bucket`, `count_distinct`, `first`, `last` and `expr` make a
 column, named with `.as_(name)` (`as` being Python's keyword):
 
 ```python
-from fenecdb import bucket, expr, first, last
+from fennecdb import bucket, expr, first, last
 
 bars = (db.collection("ticks")
           .select(bucket("at", "1m").as_("minute"), first("px", "at").as_("open"),
@@ -55,7 +55,7 @@ value `[from, to]`, and `disjunctive=True` counts past the filter's own
 condition on the field, as a shop's filter list does.
 
 Several statements are one `batch`, a block under one write lock: all
-land or none, and a `FenecError` that stops it says which (`e.at`, from 0;
+land or none, and a `FennecError` that stops it says which (`e.at`, from 0;
 412 for a write whose `require` was not met). `reason=` beside `require=`
 (`require 1 else 'insufficient funds'`, written into the text) comes back
 as `e.reason`, which tells one guard's refusal from another's where `e.at`
@@ -70,7 +70,7 @@ under an idempotency key -- the second answer is the first one kept
 (`db.replayed`), and the key with another request is refused (422):
 
 ```python
-from fenecdb import inc
+from fennecdb import inc
 
 debit = docs.where("id", 1).to_update({"stock": inc(-1)}, require=1)
 db.batch([debit, ("put orders {item: $1}", [1])], idempotency_key=order_id)
@@ -83,7 +83,7 @@ A job queue's claim is one statement: `order` and `limit` before
 fields) answers them as written, where a count is answered otherwise:
 
 ```python
-from fenecdb import expr, inc, raw
+from fennecdb import expr, inc, raw
 
 claimed = (
     db.collection("jobs").where(raw("run_at <= now()")).order("run_at").limit(10)
@@ -98,8 +98,8 @@ took, or with none at the end of the wait. `query` and `batch` take it
 too, and `AsyncClient`'s give a held request up when cancelled.
 
 To see the text and parameters a chain builds, for logging or a test,
-`to_fenecql()` returns them and runs nothing:
-`docs.select("title").limit(5).to_fenecql()` is
+`to_fennecql()` returns them and runs nothing:
+`docs.select("title").limit(5).to_fennecql()` is
 `("get articles select title limit 5", [])`. A query needs no call to it
 before it runs.
 
@@ -108,7 +108,7 @@ same calls awaited, over one kept-alive connection, the standard library
 alone:
 
 ```python
-from fenecdb import AsyncClient
+from fennecdb import AsyncClient
 
 async with AsyncClient("http://127.0.0.1:8080", token="...") as db:
     rows = await db.query("get articles select title near embed $1 limit 5", [[0.1, 0.2, 0.3]])
@@ -116,7 +116,7 @@ async with AsyncClient("http://127.0.0.1:8080", token="...") as db:
     rows = await db.collection("articles").where("year", ">=", 2024).rows()
 ```
 
-Every write on the server's disk (`fenec-server --cdc`), for a consumer whose
+Every write on the server's disk (`fennec-server --cdc`), for a consumer whose
 cursor the server keeps -- each batch committed once the loop comes back
 for the next, so each write comes at least once, and a loop started again
 goes on from the last batch committed -- and the same handed on to another
@@ -131,23 +131,23 @@ for batch in db.follow("search-index"):
 ```
 
 ```sh
-python -m fenecdb.relay http://127.0.0.1:8080 --consumer kafka | kcat -P -b broker:9092 -t fenec
+python -m fennecdb.relay http://127.0.0.1:8080 --consumer kafka | kcat -P -b broker:9092 -t fennec
 ```
 
 ```python
-from fenecdb.langchain import FenecVectorStore
+from fennecdb.langchain import FennecVectorStore
 
-store = FenecVectorStore(embeddings, "docs", url="http://127.0.0.1:8080", token="...",
+store = FennecVectorStore(embeddings, "docs", url="http://127.0.0.1:8080", token="...",
                          metadata_fields={"source": "text"})
 store.add_documents(documents)
 store.similarity_search("how do I compact", k=4, filter={"source": "handbook"})
 ```
 
 ```python
-from fenecdb.llama_index import FenecVectorStore
+from fennecdb.llama_index import FennecVectorStore
 from llama_index.core import StorageContext, VectorStoreIndex
 
-store = FenecVectorStore("docs", url="http://127.0.0.1:8080", token="...")
+store = FennecVectorStore("docs", url="http://127.0.0.1:8080", token="...")
 index = VectorStoreIndex.from_documents(
     documents, storage_context=StorageContext.from_defaults(vector_store=store)
 )
@@ -164,11 +164,11 @@ by the words alone or by the words and the vector fused -- LangChain's
 `quant="int8"` or `"bit"` keeps the graph over codes.
 
 ```python
-store = FenecVectorStore(embeddings, "docs", url=..., token=..., full_text=True)
+store = FennecVectorStore(embeddings, "docs", url=..., token=..., full_text=True)
 store.similarity_search("how do I compact", k=4, mode="hybrid")
 ```
 
 `./run-tests.sh` runs LangChain's standard vector store suite and the tests
-LlamaIndex's own integrations run against a fenec-server it builds and starts,
+LlamaIndex's own integrations run against a fennec-server it builds and starts,
 and the query builder against every case of `integrations/builder-golden.json`.
 Full reference: https://fenecdb.com/docs/integrations

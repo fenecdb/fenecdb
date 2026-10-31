@@ -360,20 +360,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
 
 [[package]]
-name = "fenec-abi"
+name = "fennec-abi"
 version = "0.1.12"
 dependencies = [
- "fenec-core",
- "fenec-ql",
+ "fennec-core",
+ "fennec-ql",
 ]
 
 [[package]]
-name = "fenec-bench"
+name = "fennec-bench"
 version = "0.1.12"
 dependencies = [
- "fenec-core",
- "fenec-http",
- "fenec-ql",
+ "fennec-core",
+ "fennec-http",
+ "fennec-ql",
  "mongodb",
  "pgvector",
  "postgres",
@@ -383,95 +383,95 @@ dependencies = [
 ]
 
 [[package]]
-name = "fenec-cli"
+name = "fennec-cli"
 version = "0.1.12"
 dependencies = [
- "fenec-abi",
- "fenec-core",
- "fenec-http",
- "fenec-import",
- "fenec-ql",
+ "fennec-abi",
+ "fennec-core",
+ "fennec-http",
+ "fennec-import",
+ "fennec-ql",
 ]
 
 [[package]]
-name = "fenec-core"
+name = "fennec-core"
 version = "0.1.12"
 dependencies = [
- "fenec-ql",
+ "fennec-ql",
 ]
 
 [[package]]
-name = "fenec-ffi"
+name = "fennec-ffi"
 version = "0.1.12"
 dependencies = [
- "fenec-abi",
- "fenec-core",
- "fenec-http",
- "fenec-ql",
+ "fennec-abi",
+ "fennec-core",
+ "fennec-http",
+ "fennec-ql",
 ]
 
 [[package]]
-name = "fenec-http"
+name = "fennec-http"
 version = "0.1.12"
 dependencies = [
- "fenec-abi",
- "fenec-core",
- "fenec-ql",
+ "fennec-abi",
+ "fennec-core",
+ "fennec-ql",
 ]
 
 [[package]]
-name = "fenec-import"
+name = "fennec-import"
 version = "0.1.12"
 dependencies = [
- "fenec-core",
- "fenec-ql",
- "fenec-wire",
+ "fennec-core",
+ "fennec-ql",
+ "fennec-wire",
 ]
 
 [[package]]
-name = "fenec-ql"
+name = "fennec-ql"
 version = "0.1.12"
 dependencies = [
- "fenec-core",
+ "fennec-core",
 ]
 
 [[package]]
-name = "fenec-server"
+name = "fennec-server"
 version = "0.1.12"
 dependencies = [
- "fenec-abi",
- "fenec-core",
- "fenec-http",
- "fenec-import",
- "fenec-ql",
- "fenec-wire",
+ "fennec-abi",
+ "fennec-core",
+ "fennec-http",
+ "fennec-import",
+ "fennec-ql",
+ "fennec-wire",
 ]
 
 [[package]]
-name = "fenec-shard"
+name = "fennec-shard"
 version = "0.1.12"
 dependencies = [
- "fenec-abi",
- "fenec-core",
- "fenec-http",
- "fenec-ql",
+ "fennec-abi",
+ "fennec-core",
+ "fennec-http",
+ "fennec-ql",
 ]
 
 [[package]]
-name = "fenec-wasm"
+name = "fennec-wasm"
 version = "0.1.12"
 dependencies = [
- "fenec-abi",
- "fenec-core",
- "fenec-ql",
+ "fennec-abi",
+ "fennec-core",
+ "fennec-ql",
 ]
 
 [[package]]
-name = "fenec-wire"
+name = "fennec-wire"
 version = "0.1.12"
 dependencies = [
- "fenec-core",
- "fenec-http",
+ "fennec-core",
+ "fennec-http",
 ]
 
 [[package]]

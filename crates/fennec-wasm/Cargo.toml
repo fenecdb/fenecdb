@@ -1,0 +1,46 @@
+[package]
+name = "fennec-wasm"
+description = "fennecdb's browser (WASM) binding -- raw ABI, no wasm-bindgen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+fennec-core = { workspace = true, default-features = false }
+fennec-ql.workspace = true
+# Without the replica's sync, the native bindings': dead code in the
+# module all the same, its mere presence moved LLVM's inlining and left the
+# module 155 bytes larger.
+fennec-abi = { workspace = true, default-features = false }
+
+# A module made for a page leaves out what the page does not use: `make
+# wasm FEATURES=...` names what it keeps. fennec-core's `Cargo.toml` says
+# what each is and what a build without it does with a file or a statement
+# that needs it; `make wasm-sizes` weighs each.
+[features]
+default = ["full", "schema"]
+full = ["indexes", "language"]
+indexes = ["vector", "text", "sparse", "sorted", "composite"]
+language = ["geo", "nocase", "facets", "highlight", "analytics", "collate"]
+# The check a schema declared in code is opened with (`fennec_schema`,
+# `fennec_core::declared`): 23 KB of the module, 7.5 KB brotli, which a page
+# whose code declares none may leave out.
+schema = []
+vector = ["fennec-core/vector"]
+text = ["fennec-core/text"]
+sparse = ["fennec-core/sparse"]
+sorted = ["fennec-core/sorted"]
+composite = ["sorted", "fennec-core/composite"]
+geo = ["fennec-core/geo"]
+nocase = ["fennec-core/nocase"]
+facets = ["fennec-core/facets"]
+highlight = ["fennec-core/highlight"]
+analytics = ["fennec-core/analytics"]
+collate = ["fennec-core/collate"]

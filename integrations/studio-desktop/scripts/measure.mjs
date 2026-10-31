@@ -1,9 +1,9 @@
 // Launch-to-studio time, idle memory and quit time of the built app, on this machine.
 //
-//   node scripts/measure.mjs data.fenec [runs=3]
-//   node scripts/mkdata.mjs /tmp/x.fenec 100000      # a file to open
+//   node scripts/measure.mjs data.fennec [runs=3]
+//   node scripts/mkdata.mjs /tmp/x.fennec 100000      # a file to open
 //
-// Runs the test variant (FENEC_DESKTOP_APP names another): it is the shipped
+// Runs the test variant (FENNEC_DESKTOP_APP names another): it is the shipped
 // app plus the hooks that tell this script when the studio shows the
 // collections. Not run by the checks and not in CI: a number from a shared
 // runner says nothing. Run it after one launch of the build (`warmup`: the
@@ -11,21 +11,21 @@
 // give the file and the machine with the figures.
 //
 // Memory is `ps` RSS of every process of the app -- the launcher, the Bun
-// main process, the fenec-server it started -- and of the WebKit processes
+// main process, the fennec-server it started -- and of the WebKit processes
 // that appeared with it (WebContent, Networking, GPU), which are separate on
 // macOS. RSS counts shared pages in each process that maps them, so the sum
 // is an upper bound.
 import { mine, now, procs, quit, sleep, startApp, waitFor } from './checks/lib.mjs';
 
 const [file, runsArg = '3'] = process.argv.slice(2);
-if (!file) throw new Error('usage: measure.mjs <file.fenec> [runs]');
+if (!file) throw new Error('usage: measure.mjs <file.fennec> [runs]');
 const webkit = () => new Set(procs().filter((p) => /com\.apple\.WebKit\.(WebContent|Networking|GPU)/.test(p.command)).map((p) => p.pid));
 const MB = (kb) => Math.round(kb / 1024);
 
 async function once() {
   const before = webkit();
   const t0 = now();
-  const app = startApp('measure', { FENEC_DESKTOP_OPEN: file });
+  const app = startApp('measure', { FENNEC_DESKTOP_OPEN: file });
   const started = await waitFor((l) => l.what === 'server-started', 120000, 'server-started');
   const visible = await waitFor((l) => l.detail?.type === 'state' && l.detail.loaded && /orders \d/.test(l.detail.side), 120000, 'the studio showing orders');
   await sleep(6000); // idle
@@ -39,7 +39,7 @@ async function once() {
     studioMs: visible.at - t0,
     rss: {
       total: sum(() => true),
-      server: sum((p) => /fenec-server/.test(p.command)),
+      server: sum((p) => /fennec-server/.test(p.command)),
       bunAndLauncher: sum((p) => /Contents\/MacOS\/(bun|launcher)/.test(p.command)),
       webkit: sum((p) => /com\.apple\.WebKit/.test(p.command)),
     },

@@ -1,4 +1,4 @@
-// Passwords and the secrets mailed to people, all handled here: fenecdb
+// Passwords and the secrets mailed to people, all handled here: fennecdb
 // stores what this produces and never sees a password.
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';

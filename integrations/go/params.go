@@ -1,4 +1,4 @@
-package fenecdb
+package fennecdb
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ func writeBody(buf *bytes.Buffer, text string, params []any) error {
 		Params []any  `json:"params"`
 	}{text, exact})
 	if err != nil {
-		return fmt.Errorf("fenecdb: a parameter of %q: %w", text, err)
+		return fmt.Errorf("fennecdb: a parameter of %q: %w", text, err)
 	}
 	buf.Write(b)
 	return nil
@@ -87,7 +87,7 @@ func (v vec32) MarshalJSON() ([]byte, error) {
 // one, and that one landed on the server as its neighbour.
 func appendF32(out []byte, f float32) ([]byte, error) {
 	if math.IsNaN(float64(f)) || math.IsInf(float64(f), 0) {
-		return nil, fmt.Errorf("fenecdb: %v is no number JSON can carry", f)
+		return nil, fmt.Errorf("fennecdb: %v is no number JSON can carry", f)
 	}
 	start := len(out)
 	out = strconv.AppendFloat(out, float64(f), 'g', -1, 32)

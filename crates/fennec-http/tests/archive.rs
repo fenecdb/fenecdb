@@ -1,0 +1,928 @@
+//! Backups and restoring to a moment, against a primary serving in this
+//! process: what a restore to a time, a change or the end holds, next to
+//! what the primary held then.
+
+use fennec_core::prelude::*;
+use fennec_http::archive::{self, Archive, Target};
+use fennec_http::replication::{self, fresh_id, Replication, Upstream};
+use fennec_http::{Config, Server};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+const TOKEN: &str = "t";
+
+fn dir(name: &str) -> PathBuf {
+    let d = std::env::temp_dir().join(format!("fennec-archive-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    d
+}
+
+struct Primary {
+    db: Arc<RwLock<Database>>,
+    url: String,
+}
+
+fn primary(file: &Path, buffer: usize) -> Primary {
+    let (mut db, feed) = replication::open(file.to_str().unwrap(), buffer).unwrap();
+    db.fork(fresh_id()).unwrap();
+    let db = Arc::new(RwLock::new(db));
+    let cfg = Config {
+        addr: "127.0.0.1:0".into(),
+        sync_on_write: true,
+        ..Config::default()
+    };
+    let server = Server::new(Arc::clone(&db), cfg).with_replication(Replication::new(
+        Some(TOKEN.into()),
+        Some(feed),
+        None,
+    ));
+    let listener = server.bind().unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        let _ = server.serve_on(listener);
+    });
+    Primary { db, url }
+}
+
+impl Primary {
+    /// A write as a client makes one: executed, then fsynced -- which is
+    /// what sends it to the archive.
+    fn exec(&self, sql: &str) {
+        let durable = {
+            let mut g = self.db.write().unwrap();
+            g.execute(&fennec_ql::parse_one(sql).unwrap()).unwrap();
+            g.flush().unwrap()
+        };
+        if let Some(d) = durable {
+            d().unwrap();
+        }
+    }
+
+    fn seq(&self) -> u64 {
+        self.db.read().unwrap().change_seq()
+    }
+}
+
+fn rows(db: &Database, sql: &str) -> Vec<(u64, Vec<Value>)> {
+    let r = db.query(&fennec_ql::parse_one(sql).unwrap(), &[]).unwrap();
+    r.rows()
+        .unwrap()
+        .rows
+        .iter()
+        .map(|r| (r.id, r.values.clone()))
+        .collect()
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+}
+
+/// An archiver on its own thread, and the flag that stops it.
+struct Archiver {
+    stop: Arc<AtomicBool>,
+    done: std::thread::JoinHandle<std::io::Result<()>>,
+}
+
+fn archiver(path: &Path, url: &str) -> Archiver {
+    let stop = Arc::new(AtomicBool::new(false));
+    let (flag, path, url) = (Arc::clone(&stop), path.to_path_buf(), url.to_string());
+    let done = std::thread::spawn(move || {
+        let upstream = Upstream::new(&url, TOKEN.into()).unwrap();
+        Archive::new(&path)?.follow(&upstream, &flag, &|_| {})
+    });
+    Archiver { stop, done }
+}
+
+impl Archiver {
+    fn finish(self) {
+        self.stop.store(true, Ordering::SeqCst);
+        self.done.join().unwrap().unwrap();
+    }
+}
+
+/// Waits until a restore to the end reaches `seq`.
+fn archived(arch: &Path, seq: u64) {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let a = Archive::new(arch).unwrap();
+    let probe = arch.join("probe.fennec");
+    loop {
+        if let Ok(r) = a.restore(&probe, Target::End) {
+            if r.seq >= seq {
+                return;
+            }
+        }
+        assert!(Instant::now() < deadline, "the archive did not reach {seq}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Waits for the image an archiver is sent as it first connects. A test
+/// counting the images `consolidate` takes, or restoring to a change or a
+/// moment among its writes, writes after it: an archiver that connected
+/// late, under load, was sent an image holding the writes already made --
+/// `consolidate` rightly found nothing after it to take, and a restore to
+/// a change before it had no image to start from (in a three-core
+/// container beside busy loops, 7 runs of 160). The directory too: an
+/// archiver's thread makes it as it starts, which may be after the call.
+fn first_image(arch: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !arch.is_dir() || files(arch, "image-") == 0 {
+        assert!(Instant::now() < deadline, "the archiver was sent no image");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+fn restored(arch: &Path, out: &Path, to: Target) -> (Database, archive::Restored) {
+    let r = Archive::new(arch).unwrap().restore(out, to).unwrap();
+    (fennec_core::fs::open(out).unwrap(), r)
+}
+
+#[test]
+fn a_restore_holds_what_the_primary_held_at_that_moment() {
+    let d = dir("moment");
+    let p = primary(&d.join("p.fennec"), replication::DEFAULT_BUFFER);
+    p.exec("create collection notes (title text @text, n int @hash)");
+    let arch = d.join("archive");
+    let a = archiver(&arch, &p.url);
+    first_image(&arch);
+    for i in 0..20 {
+        p.exec(&format!("put notes {{title: \"early {i}\", n: {i}}}"));
+    }
+    let early = p.seq();
+    let early_rows = rows(&p.db.read().unwrap(), "get notes");
+    std::thread::sleep(Duration::from_millis(30));
+    let moment = now_ms();
+    std::thread::sleep(Duration::from_millis(30));
+
+    // The mistake to undo, and a compact that folds it into an image: the
+    // archive holds the writes as they were made all the same.
+    p.exec("del notes where n < 10");
+    p.exec("put notes {title: \"late\", n: 99}");
+    p.exec("compact");
+    for i in 0..5 {
+        p.exec(&format!(
+            "put notes {{title: \"later {i}\", n: {}}}",
+            100 + i
+        ));
+    }
+    archived(&arch, p.seq());
+    a.finish();
+
+    // To the moment: the twenty notes, nothing after. A sync log a file of
+    // that name left (`fennec_core::fs`) is another file's, and goes before
+    // the restored one is renamed into the place.
+    let stale = fennec_core::fs::beside(&d.join("moment.fennec"), "sync");
+    std::fs::write(&stale, b"FENECSYN another file's log").unwrap();
+    let (db, r) = restored(&arch, &d.join("moment.fennec"), Target::Time(moment));
+    assert!(!stale.exists());
+    assert_eq!(r.seq, early);
+    assert!(r.time.unwrap() <= moment);
+    assert_eq!(rows(&db, "get notes"), early_rows);
+    assert_eq!(
+        rows(&db, r#"get notes select id match title "early""#).len(),
+        20
+    );
+    // Forked: this is a history of its own from here.
+    let restored_history = db.history().clone();
+    assert!(!restored_history.following);
+    assert_ne!(
+        restored_history.current(),
+        p.db.read().unwrap().history().current()
+    );
+    // Of the primary's lineage, the top half of its first history's id: a
+    // client orders positions by term within a lineage alone, and took a
+    // restore's for another tenant's, at any term.
+    let lineage = p.db.read().unwrap().history().lineage[0].0 >> 32;
+    assert_eq!(restored_history.current() >> 32, lineage);
+
+    // To a change: each document a statement writes is a change of its
+    // own, but the statement's writes land together -- the primary never
+    // held nineteen notes. Its first change is the moment before it, its
+    // tenth all ten gone.
+    let (db, r) = restored(&arch, &d.join("change.fennec"), Target::Change(early + 1));
+    assert_eq!(r.seq, early);
+    assert_eq!(rows(&db, "get notes").len(), 20);
+    let (db, r) = restored(&arch, &d.join("change.fennec"), Target::Change(early + 10));
+    assert_eq!(r.seq, early + 10);
+    assert_eq!(rows(&db, "get notes").len(), 10);
+
+    // To the end: what the primary holds now.
+    let (db, _) = restored(&arch, &d.join("end.fennec"), Target::End);
+    assert_eq!(
+        rows(&db, "get notes"),
+        rows(&p.db.read().unwrap(), "get notes")
+    );
+    assert_eq!(db.change_seq(), p.seq());
+
+    // A restored file takes writes, as a database of its own.
+    drop(db);
+    let mut db = fennec_core::fs::open(d.join("end.fennec")).unwrap();
+    db.execute(&fennec_ql::parse_one("put notes {title: \"after\"}").unwrap())
+        .unwrap();
+}
+
+#[test]
+fn an_archiver_stopped_goes_on_and_one_behind_takes_an_image() {
+    let d = dir("resume");
+    // A buffer this small keeps only the last few writes.
+    let p = primary(&d.join("p.fennec"), 512);
+    p.exec("create collection c (x int)");
+    let arch = d.join("archive");
+    let a = archiver(&arch, &p.url);
+    for i in 0..10 {
+        p.exec(&format!("put c {{x: {i}}}"));
+    }
+    archived(&arch, p.seq());
+    a.finish();
+    let stopped_at = p.seq();
+    let before = rows(&p.db.read().unwrap(), "get c");
+
+    // Stopped, it misses more than the primary keeps: the next run takes an
+    // image and goes on from there. A restore to the point it was stopped
+    // at still starts from the first image.
+    for i in 10..200 {
+        p.exec(&format!("put c {{x: {i}}}"));
+    }
+    let a = archiver(&arch, &p.url);
+    archived(&arch, p.seq());
+    for i in 200..210 {
+        p.exec(&format!("put c {{x: {i}}}"));
+    }
+    archived(&arch, p.seq());
+    a.finish();
+    let images = std::fs::read_dir(&arch)
+        .unwrap()
+        .filter(|e| {
+            let n = e.as_ref().unwrap().file_name();
+            n.to_string_lossy().starts_with("image-")
+        })
+        .count();
+    assert_eq!(images, 2);
+
+    let (db, r) = restored(&arch, &d.join("then.fennec"), Target::Change(stopped_at));
+    assert_eq!(r.seq, stopped_at);
+    assert_eq!(rows(&db, "get c"), before);
+    let (db, _) = restored(&arch, &d.join("end.fennec"), Target::End);
+    assert_eq!(rows(&db, "get c"), rows(&p.db.read().unwrap(), "get c"));
+
+    // Between the two images the archive holds no write: a restore there
+    // says so rather than inventing one.
+    let err = Archive::new(&arch)
+        .unwrap()
+        .restore(&d.join("gap.fennec"), Target::Change(stopped_at + 5))
+        .unwrap_err();
+    assert!(err.to_string().contains("lacks change"), "{err}");
+}
+
+#[test]
+fn a_backup_is_a_database_of_its_own() {
+    let d = dir("backup");
+    let p = primary(&d.join("p.fennec"), replication::DEFAULT_BUFFER);
+    p.exec("create collection c (x int, e vector<3> @hnsw(cosine))");
+    for i in 0..50 {
+        p.exec(&format!("put c {{x: {i}, e: [{i}.0, 1.0, 0.0]}}"));
+    }
+    let upstream = Upstream::new(&p.url, TOKEN.into()).unwrap();
+    let file = d.join("backup.fennec");
+    let seq = archive::backup(&upstream, &file, None).unwrap();
+    assert_eq!(seq, p.seq());
+
+    let mut db = fennec_core::fs::open(&file).unwrap();
+    assert_eq!(rows(&db, "get c"), rows(&p.db.read().unwrap(), "get c"));
+    assert_eq!(db.change_seq(), seq);
+    // Forked where it was taken, of the primary's lineage, and taking
+    // writes.
+    assert_eq!(db.history().lineage.last().unwrap().1, seq);
+    assert_eq!(
+        db.history().current() >> 32,
+        p.db.read().unwrap().history().lineage[0].0 >> 32
+    );
+    db.execute(&fennec_ql::parse_one("put c {x: 1000}").unwrap())
+        .unwrap();
+
+    // Into an archive, it is a base image a restore starts from.
+    let arch = d.join("archive");
+    std::fs::create_dir_all(&arch).unwrap();
+    archive::backup(&upstream, &arch, None).unwrap();
+    let (db, r) = restored(&arch, &d.join("from-image.fennec"), Target::End);
+    assert_eq!((r.seq, r.image), (seq, seq));
+    assert_eq!(rows(&db, "get c"), rows(&p.db.read().unwrap(), "get c"));
+}
+
+/// A block's writes are one record in the archive, as on the primary: a
+/// restore to the end holds them all, and one to a change inside the block
+/// stops before it -- the primary never stood there, the block landing
+/// whole.
+#[test]
+fn a_block_is_archived_and_restored_whole() {
+    let d = dir("block");
+    let p = primary(&d.join("primary.fennec"), 1 << 20);
+    p.exec("create collection a (n int)");
+    p.exec("create collection b (n int)");
+    p.exec("put a {n: 1}");
+    let arch = d.join("arch");
+    let a = archiver(&arch, &p.url);
+    // The archive's image first: the block has to come after it.
+    let before = p.seq();
+    archived(&arch, before);
+    let durable = {
+        let mut g = p.db.write().unwrap();
+        let s: Vec<Statement> = ["put a {n: 2}", "put b {n: 3}", "put a [{n: 4}, {n: 5}]"]
+            .iter()
+            .map(|q| fennec_ql::parse_one(q).unwrap())
+            .collect();
+        let block: Vec<(&Statement, &[Value])> = s.iter().map(|s| (s, &[][..])).collect();
+        g.execute_block(&block).unwrap();
+        g.flush().unwrap()
+    };
+    if let Some(d) = durable {
+        d().unwrap();
+    }
+    p.exec("put b {n: 6}");
+    let end = p.seq();
+    assert_eq!(end, before + 5);
+    archived(&arch, end);
+    a.finish();
+
+    let ns = |db: &Database, c: &str| -> Vec<Value> {
+        rows(db, &format!("get {c} select n order n"))
+            .into_iter()
+            .map(|(_, v)| v[0].clone())
+            .collect()
+    };
+    let (db, r) = restored(&arch, &d.join("end.fennec"), Target::End);
+    assert_eq!(r.seq, end);
+    assert_eq!(ns(&db, "a"), [1, 2, 4, 5].map(Value::Int));
+    assert_eq!(ns(&db, "b"), [3, 6].map(Value::Int));
+    // Inside the block: before it.
+    let (db, r) = restored(&arch, &d.join("mid.fennec"), Target::Change(before + 2));
+    assert_eq!(r.seq, before);
+    assert_eq!(ns(&db, "a"), [Value::Int(1)]);
+    assert!(ns(&db, "b").is_empty());
+    // At its last write: the block whole.
+    let (db, r) = restored(&arch, &d.join("whole.fennec"), Target::Change(before + 4));
+    assert_eq!(r.seq, before + 4);
+    assert_eq!(ns(&db, "a"), [1, 2, 4, 5].map(Value::Int));
+    assert_eq!(ns(&db, "b"), [Value::Int(3)]);
+}
+
+/// A block holding schema changes is archived and restored whole as well:
+/// a restore inside it stops before it, with the collection it dropped
+/// still there and the one it made not yet.
+#[test]
+fn a_block_with_schema_changes_is_archived_and_restored_whole() {
+    let d = dir("schema-block");
+    let p = primary(&d.join("primary.fennec"), 1 << 20);
+    p.exec("create collection a (n int)");
+    p.exec("create collection b (n int)");
+    p.exec("put b {n: 1}");
+    let arch = d.join("arch");
+    let a = archiver(&arch, &p.url);
+    let before = p.seq();
+    archived(&arch, before);
+    let durable = {
+        let mut g = p.db.write().unwrap();
+        let s: Vec<Statement> = [
+            "create collection c (n int @hash)",
+            "put c [{n: 2}, {n: 3}]",
+            "drop collection b",
+            "create index on a (n) @sorted",
+            "put a {n: 4}",
+        ]
+        .iter()
+        .map(|q| fennec_ql::parse_one(q).unwrap())
+        .collect();
+        let block: Vec<(&Statement, &[Value])> = s.iter().map(|s| (s, &[][..])).collect();
+        g.execute_block(&block).unwrap();
+        g.flush().unwrap()
+    };
+    if let Some(d) = durable {
+        d().unwrap();
+    }
+    let end = p.seq();
+    assert_eq!(end, before + 6);
+    archived(&arch, end);
+    a.finish();
+
+    let (db, r) = restored(&arch, &d.join("end.fennec"), Target::End);
+    assert_eq!(r.seq, end);
+    assert_eq!(db.collection_names(), ["a", "c"]);
+    assert_eq!(rows(&db, "get c select n where n = 3").len(), 1);
+    assert_eq!(rows(&db, "get a select n where n > 3").len(), 1);
+    // Inside the block: before it, the dropped collection still there.
+    let (db, r) = restored(&arch, &d.join("mid.fennec"), Target::Change(before + 3));
+    assert_eq!(r.seq, before);
+    assert_eq!(db.collection_names(), ["a", "b"]);
+    assert_eq!(rows(&db, "get b").len(), 1);
+}
+
+/// Every file of the archive whose name starts with `prefix`.
+fn files(arch: &Path, prefix: &str) -> usize {
+    std::fs::read_dir(arch)
+        .unwrap()
+        .filter(|e| {
+            let name = e.as_ref().unwrap().file_name();
+            let name = name.to_string_lossy();
+            name.starts_with(prefix) && !name.ends_with(".tmp")
+        })
+        .count()
+}
+
+/// An archive takes images of its own end, without asking the primary,
+/// and a new segment begins after each: then what no restore within the
+/// window needs -- the images before its start, the segments before the
+/// oldest image kept -- goes, and a restore to any moment in the window, or
+/// to the end, holds what the primary held.
+#[test]
+fn an_archive_takes_its_own_images_and_lets_go_of_what_no_restore_needs() {
+    let d = dir("images");
+    let p = primary(&d.join("p.fennec"), replication::DEFAULT_BUFFER);
+    p.exec("create collection notes (title text, n int @hash, e vector<4> @hnsw(cosine))");
+    let arch = d.join("archive");
+    let shared = Arc::new(Archive::new(&arch).unwrap());
+    let stop = Arc::new(AtomicBool::new(false));
+    let follower = {
+        let (a, flag, url) = (Arc::clone(&shared), Arc::clone(&stop), p.url.clone());
+        std::thread::spawn(move || {
+            let upstream = Upstream::new(&url, TOKEN.into()).unwrap();
+            a.follow(&upstream, &flag, &|_| {})
+        })
+    };
+    let batch = |from: i64| {
+        for i in from..from + 10 {
+            p.exec(&format!(
+                "put notes {{title: \"note {i}\", n: {i}, e: [{i}, 1, 0, 1]}}"
+            ));
+        }
+    };
+    first_image(&arch);
+    batch(0);
+    let seq_a = p.seq();
+    archived(&arch, seq_a);
+    assert_eq!(shared.consolidate().unwrap(), Some(seq_a));
+    assert_eq!(shared.consolidate().unwrap(), None, "nothing after it");
+
+    batch(10);
+    let seq_b = p.seq();
+    let rows_b = rows(&p.db.read().unwrap(), "get notes");
+    archived(&arch, seq_b);
+    std::thread::sleep(Duration::from_millis(30));
+    let moment_b = now_ms();
+    std::thread::sleep(Duration::from_millis(30));
+    assert_eq!(shared.consolidate().unwrap(), Some(seq_b));
+
+    batch(20);
+    p.exec("del notes where n = 3");
+    archived(&arch, p.seq());
+    stop.store(true, Ordering::SeqCst);
+    follower.join().unwrap().unwrap();
+
+    // The primary's first image and the two taken here; a segment for the
+    // writes before each image taken here, and the one going on.
+    assert_eq!(files(&arch, "image-"), 3);
+    assert_eq!(files(&arch, "writes-"), 3);
+
+    // Kept within the window since moment B: the image of change B, which
+    // a restore to B starts from, and what came after it.
+    let now = now_ms();
+    let (images, segments) = shared.prune(now - moment_b, now).unwrap();
+    assert_eq!((images, segments), (2, 2));
+    assert_eq!(files(&arch, "image-"), 1);
+    assert_eq!(files(&arch, "writes-"), 1);
+
+    let (db, r) = restored(&arch, &d.join("b.fennec"), Target::Time(moment_b));
+    assert_eq!(r.seq, seq_b);
+    assert_eq!(rows(&db, "get notes"), rows_b);
+    let (db, _) = restored(&arch, &d.join("end.fennec"), Target::End);
+    assert_eq!(
+        rows(&db, "get notes"),
+        rows(&p.db.read().unwrap(), "get notes")
+    );
+    assert_eq!(
+        rows(&db, "get notes select n near e [5, 1, 0, 1] limit 3"),
+        rows(
+            &p.db.read().unwrap(),
+            "get notes select n near e [5, 1, 0, 1] limit 3"
+        )
+    );
+    // Before the window, nothing to start from.
+    let err = shared
+        .restore(&d.join("a.fennec"), Target::Change(seq_a))
+        .unwrap_err();
+    assert!(err.to_string().contains("no image"), "{err}");
+    // A second prune finds nothing more to let go of.
+    assert_eq!(shared.prune(now - moment_b, now).unwrap(), (0, 0));
+}
+
+/// A copy of an archive's directory, to damage.
+fn copy_of(arch: &Path, to: &Path) -> PathBuf {
+    let _ = std::fs::remove_dir_all(to);
+    std::fs::create_dir_all(to).unwrap();
+    for e in std::fs::read_dir(arch).unwrap() {
+        let e = e.unwrap();
+        std::fs::copy(e.path(), to.join(e.file_name())).unwrap();
+    }
+    to.to_path_buf()
+}
+
+/// The archive's files named `prefix`..., in order.
+fn named(arch: &Path, prefix: &str) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = std::fs::read_dir(arch)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.file_name().unwrap().to_string_lossy().starts_with(prefix))
+        .collect();
+    out.sort();
+    out
+}
+
+/// `verify` reads an archive as a restore would and says what it holds --
+/// and what no restore could be made from: a record cut short before the
+/// last segment's end, an image that does not open, a change missing.
+#[test]
+fn verify_says_what_an_archive_can_restore() {
+    let d = dir("verify");
+    let p = primary(&d.join("p.fennec"), replication::DEFAULT_BUFFER);
+    p.exec("create collection notes (n int @hash)");
+    let arch = d.join("archive");
+    let shared = Arc::new(Archive::new(&arch).unwrap());
+    let stop = Arc::new(AtomicBool::new(false));
+    let follower = {
+        let (a, flag, url) = (Arc::clone(&shared), Arc::clone(&stop), p.url.clone());
+        std::thread::spawn(move || {
+            let upstream = Upstream::new(&url, TOKEN.into()).unwrap();
+            a.follow(&upstream, &flag, &|_| {})
+        })
+    };
+    first_image(&arch);
+    for round in 0..3 {
+        for i in 0..5 {
+            p.exec(&format!("put notes {{n: {}}}", round * 10 + i));
+        }
+        archived(&arch, p.seq());
+        if round < 2 {
+            assert!(shared.consolidate().unwrap().is_some());
+        }
+    }
+    stop.store(true, Ordering::SeqCst);
+    follower.join().unwrap().unwrap();
+
+    let v = shared.verify().unwrap();
+    assert_eq!((v.images, v.segments, v.last, v.torn), (3, 3, p.seq(), 0));
+    assert!(v.gaps.is_empty() && v.to.is_some());
+
+    // The last segment cut in a record's middle, as an archiver stopped
+    // mid-write leaves it: the rest restores, and it says how much.
+    let torn = copy_of(&arch, &d.join("torn"));
+    let last = named(&torn, "writes-").pop().unwrap();
+    let len = std::fs::metadata(&last).unwrap().len();
+    let f = std::fs::OpenOptions::new().write(true).open(&last).unwrap();
+    f.set_len(len - 3).unwrap();
+    let v = Archive::new(&torn).unwrap().verify().unwrap();
+    assert!(v.torn > 0 && v.last < p.seq(), "{v:?}");
+
+    // Cut short before the last segment's end: no restore passes it.
+    let cut = copy_of(&arch, &d.join("cut"));
+    let first = named(&cut, "writes-").remove(0);
+    let len = std::fs::metadata(&first).unwrap().len();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&first)
+        .unwrap()
+        .set_len(len - 3)
+        .unwrap();
+    let e = Archive::new(&cut).unwrap().verify().unwrap_err();
+    assert!(e.to_string().contains("cut short"), "{e}");
+
+    // A segment gone between two images: the end restores from the later
+    // one, and the changes no restore can reach are named.
+    let gone = copy_of(&arch, &d.join("gone"));
+    std::fs::remove_file(named(&gone, "writes-").remove(1)).unwrap();
+    let v = Archive::new(&gone).unwrap().verify().unwrap();
+    assert_eq!(v.gaps.len(), 1, "{v:?}");
+    assert_eq!(v.last, p.seq());
+
+    // An image that does not open.
+    let bad = copy_of(&arch, &d.join("bad"));
+    let image = named(&bad, "image-").remove(1);
+    let mut bytes = std::fs::read(&image).unwrap();
+    let mid = bytes.len() / 2;
+    bytes.truncate(mid);
+    std::fs::write(&image, bytes).unwrap();
+    let e = Archive::new(&bad).unwrap().verify().unwrap_err();
+    assert!(e.to_string().contains("image-"), "{e}");
+}
+
+/// Verifies of two archives at once in one process, as tests run side by
+/// side: each restores its own end. Their probes were named by the
+/// millisecond, and two in the same one restored into one file -- a
+/// verify of an archive at change 15 opened the other's, at 151.
+#[test]
+fn verifies_at_once_each_restore_their_own_archive() {
+    let d = dir("verifies");
+    let p = primary(&d.join("p.fennec"), replication::DEFAULT_BUFFER);
+    p.exec("create collection notes (n int @hash)");
+    let arch = d.join("archive");
+    Archive::new(&arch).unwrap();
+    let a = archiver(&arch, &p.url);
+    first_image(&arch);
+    for i in 0..5 {
+        p.exec(&format!("put notes {{n: {i}}}"));
+    }
+    archived(&arch, p.seq());
+    let early = (copy_of(&arch, &d.join("early")), p.seq());
+    for i in 5..50 {
+        p.exec(&format!("put notes {{n: {i}}}"));
+    }
+    archived(&arch, p.seq());
+    a.finish();
+    let late = (arch, p.seq());
+    let threads: Vec<_> = (0..8)
+        .map(|t| {
+            let (path, last) = if t % 2 == 0 { &early } else { &late };
+            let (path, last) = (path.clone(), *last);
+            std::thread::spawn(move || {
+                let a = Archive::new(&path).unwrap();
+                for _ in 0..25 {
+                    assert_eq!(a.verify().unwrap().last, last);
+                }
+            })
+        })
+        .collect();
+    for t in threads {
+        t.join().unwrap();
+    }
+}
+
+/// What a sync tool -- `rclone sync`, `aws s3 sync` -- does to an archive
+/// being written: copies its files one after another, each as it stands
+/// then. A copy taken so is restorable to a moment or says it is not, and
+/// a copy taken again once the archive stood still is whole.
+#[test]
+fn a_copy_taken_while_the_archive_writes_restores_or_says_why_not() {
+    let d = dir("sync");
+    let p = Arc::new(primary(&d.join("p.fennec"), replication::DEFAULT_BUFFER));
+    p.exec("create collection notes (n int @hash, title text)");
+    let arch = d.join("archive");
+    let shared = Arc::new(Archive::new(&arch).unwrap());
+    let stop = Arc::new(AtomicBool::new(false));
+    let follower = {
+        let (a, flag, url) = (Arc::clone(&shared), Arc::clone(&stop), p.url.clone());
+        std::thread::spawn(move || {
+            let upstream = Upstream::new(&url, TOKEN.into()).unwrap();
+            a.follow(&upstream, &flag, &|_| {})
+        })
+    };
+    // Writes all along, and images taken here meanwhile, so segments end
+    // and begin while the copies are made.
+    let writing = Arc::new(AtomicBool::new(true));
+    let writer = {
+        let (p, go, a) = (Arc::clone(&p), Arc::clone(&writing), Arc::clone(&shared));
+        std::thread::spawn(move || {
+            let mut i = 0;
+            while go.load(Ordering::SeqCst) {
+                p.exec(&format!("put notes {{n: {i}, title: \"note {i}\"}}"));
+                if i % 150 == 149 {
+                    a.consolidate().unwrap();
+                }
+                i += 1;
+            }
+            i
+        })
+    };
+    let (mut whole, mut refused) = (0, 0);
+    for k in 0..12 {
+        std::thread::sleep(Duration::from_millis(40));
+        let copy = copy_of_as_it_goes(&arch, &d.join(format!("copy{k}")));
+        match Archive::new(&copy).unwrap().verify() {
+            Ok(v) => {
+                whole += 1;
+                // What it restores is the primary as it stood at a change:
+                // every note up to one, none after.
+                let (db, r) = restored(&copy, &d.join(format!("copy{k}.fennec")), Target::End);
+                assert_eq!(r.seq, v.last);
+                let ns: Vec<i64> = rows(&db, "get notes select n")
+                    .into_iter()
+                    .map(|(_, v)| match v[0] {
+                        Value::Int(n) => n,
+                        ref other => panic!("{other:?}"),
+                    })
+                    .collect();
+                assert!(
+                    ns.iter().enumerate().all(|(i, &n)| n == i as i64),
+                    "copy {k}: a prefix"
+                );
+            }
+            Err(e) => {
+                refused += 1;
+                let e = e.to_string();
+                assert!(
+                    e.contains("cut short")
+                        || e.contains("missing")
+                        || e.contains("lacks")
+                        || e.contains("image"),
+                    "copy {k}: {e}"
+                );
+            }
+        }
+    }
+    writing.store(false, Ordering::SeqCst);
+    let n = writer.join().unwrap();
+    archived(&arch, p.seq());
+    stop.store(true, Ordering::SeqCst);
+    follower.join().unwrap().unwrap();
+    // Synced again once it stood still: whole, and all of it.
+    let last = copy_of_as_it_goes(&arch, &d.join("last"));
+    let v = Archive::new(&last).unwrap().verify().unwrap();
+    assert_eq!(v.last, p.seq());
+    let (db, _) = restored(&last, &d.join("last.fennec"), Target::End);
+    assert_eq!(rows(&db, "get notes").len(), n as usize);
+    assert!(
+        whole + refused == 12 && whole > 0,
+        "{whole} whole, {refused} refused"
+    );
+}
+
+/// Copies an archive's files one at a time, in the order a directory
+/// listing gives them, each as it stands when its turn comes -- the file
+/// being written may be cut in a record's middle.
+fn copy_of_as_it_goes(arch: &Path, to: &Path) -> PathBuf {
+    let _ = std::fs::remove_dir_all(to);
+    std::fs::create_dir_all(to).unwrap();
+    for e in std::fs::read_dir(arch).unwrap() {
+        let e = e.unwrap();
+        let name = e.file_name();
+        if name.to_string_lossy().ends_with(".tmp") {
+            continue;
+        }
+        // A file renamed away between the listing and its copy is skipped,
+        // as a sync tool skips it until its next run.
+        let _ = std::fs::copy(e.path(), to.join(name));
+    }
+    to.to_path_buf()
+}
+
+/// An archive sealed with a key: every file in it encrypted, a restore and a
+/// verify through the key as through a plain archive, and a file changed,
+/// the wrong key or no key refused rather than read. An archiver stopped
+/// mid-frame goes on from the last whole one.
+#[test]
+fn a_sealed_archive_restores_with_its_key_and_nothing_else() {
+    use fennec_http::seal::Key;
+    let d = dir("sealed");
+    let key = Key::from_hex(&"ab".repeat(32)).unwrap();
+    let wrong = Key::from_hex(&"cd".repeat(32)).unwrap();
+    let p = primary(&d.join("p.fennec"), replication::DEFAULT_BUFFER);
+    p.exec("create collection c (x int, t text)");
+    let arch = d.join("archive");
+    let follow = |stop: Arc<AtomicBool>| {
+        let (path, url, key) = (arch.clone(), p.url.clone(), key.clone());
+        std::thread::spawn(move || {
+            let upstream = Upstream::new(&url, TOKEN.into()).unwrap();
+            Archive::with_key(&path, Some(key))?.follow(&upstream, &stop, &|_| {})
+        })
+    };
+    let sealed = Archive::with_key(&arch, Some(key.clone())).unwrap();
+    let wait = |seq: u64| {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let probe = d.join("probe.fennec");
+        while sealed
+            .restore(&probe, Target::End)
+            .map(|r| r.seq)
+            .unwrap_or(0)
+            < seq
+        {
+            assert!(Instant::now() < deadline, "the archive did not reach {seq}");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    let stop = Arc::new(AtomicBool::new(false));
+    let t = follow(Arc::clone(&stop));
+    for i in 0..30 {
+        p.exec(&format!("put c {{x: {i}, t: \"secret {i}\"}}"));
+    }
+    wait(p.seq());
+    stop.store(true, Ordering::SeqCst);
+    t.join().unwrap().unwrap();
+
+    // Nothing of the rows in the clear, in any file.
+    for e in std::fs::read_dir(&arch).unwrap() {
+        let bytes = std::fs::read(e.unwrap().path()).unwrap();
+        assert!(!bytes.windows(6).any(|w| w == b"secret"));
+    }
+    // A frame cut short at the end of the segment, as a crash leaves one:
+    // passed over, and the archiver goes on after the last whole frame.
+    let segment = std::fs::read_dir(&arch)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.extension().is_some_and(|x| x == "log"))
+        .unwrap();
+    let whole = std::fs::read(&segment).unwrap();
+    std::fs::write(&segment, [&whole[..], &whole[whole.len() - 50..]].concat()).unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let t = follow(Arc::clone(&stop));
+    for i in 30..40 {
+        p.exec(&format!("put c {{x: {i}, t: \"secret {i}\"}}"));
+    }
+    wait(p.seq());
+    stop.store(true, Ordering::SeqCst);
+    t.join().unwrap().unwrap();
+
+    let out = d.join("restored.fennec");
+    let r = sealed.restore(&out, Target::End).unwrap();
+    assert_eq!(r.seq, p.seq());
+    let db = fennec_core::fs::open(&out).unwrap();
+    assert_eq!(rows(&db, "get c"), rows(&p.db.read().unwrap(), "get c"));
+    assert_eq!(sealed.verify().unwrap().last, p.seq());
+    assert!(sealed.consolidate().unwrap().is_none() || sealed.verify().is_ok());
+
+    // The wrong key, no key, a byte changed: refused, not read.
+    assert!(Archive::with_key(&arch, Some(wrong))
+        .unwrap()
+        .verify()
+        .is_err());
+    assert!(Archive::new(&arch).unwrap().verify().is_err());
+    let mut bytes = std::fs::read(&segment).unwrap();
+    let at = bytes.len() / 2;
+    bytes[at] ^= 1;
+    std::fs::write(&segment, bytes).unwrap();
+    assert!(sealed.verify().is_err());
+
+    // A backup file sealed with the key opens into the database it holds.
+    let upstream = Upstream::new(&p.url, TOKEN.into()).unwrap();
+    let file = d.join("backup.sealed");
+    let seq = archive::backup(&upstream, &file, Some(&key)).unwrap();
+    assert!(fennec_core::fs::open_read_only(&file).is_err());
+    let opened = d.join("unsealed.fennec");
+    assert_eq!(archive::unseal(&file, &key, &opened).unwrap(), seq);
+    let db = fennec_core::fs::open(&opened).unwrap();
+    assert_eq!(rows(&db, "get c"), rows(&p.db.read().unwrap(), "get c"));
+}
+
+/// A primary restored to an earlier moment and served again is on a history
+/// of its own, behind the archive: its image and writes would land among
+/// changes of the same numbers the archive holds -- a segment of the same
+/// name written over -- so the archiver refuses it and leaves the archive as
+/// it was.
+#[test]
+fn a_primary_restored_to_an_earlier_moment_is_refused_not_mixed_in() {
+    let d = dir("diverged");
+    let p = primary(&d.join("p.fennec"), replication::DEFAULT_BUFFER);
+    p.exec("create collection c (x int)");
+    let arch = d.join("archive");
+    let a = archiver(&arch, &p.url);
+    first_image(&arch);
+    for i in 0..10 {
+        p.exec(&format!("put c {{x: {i}}}"));
+    }
+    archived(&arch, p.seq());
+    a.finish();
+    let end = p.seq();
+    let (db, _) = restored(&arch, &d.join("back.fennec"), Target::Change(end - 5));
+    drop(db);
+    let q = primary(&d.join("back.fennec"), replication::DEFAULT_BUFFER);
+    q.exec("put c {x: 100}");
+    let upstream = Upstream::new(&q.url, TOKEN.into()).unwrap();
+    let err = Archive::new(&arch)
+        .unwrap()
+        .follow(&upstream, &AtomicBool::new(false), &|_| {})
+        .unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData, "{err}");
+    assert!(err.to_string().contains("does not lead from"), "{err}");
+    let (db, r) = restored(&arch, &d.join("still.fennec"), Target::End);
+    assert_eq!(r.seq, end);
+    assert_eq!(rows(&db, "get c").len(), 10);
+    assert_eq!(Archive::new(&arch).unwrap().verify().unwrap().images, 1);
+}
+
+/// An archiver behind the primary's feed is sent an image; with no write
+/// after it, no segment follows the gap it leaves, and verify names that
+/// gap all the same -- counted only before a segment, it said none.
+#[test]
+fn verify_names_a_gap_an_image_alone_ends() {
+    let d = dir("trailing");
+    let p = primary(&d.join("p.fennec"), 512);
+    p.exec("create collection c (x int)");
+    let arch = d.join("archive");
+    let a = archiver(&arch, &p.url);
+    for i in 0..5 {
+        p.exec(&format!("put c {{x: {i}}}"));
+    }
+    archived(&arch, p.seq());
+    a.finish();
+    let stopped = p.seq();
+    for i in 5..200 {
+        p.exec(&format!("put c {{x: {i}}}"));
+    }
+    let a = archiver(&arch, &p.url);
+    archived(&arch, p.seq());
+    a.finish();
+    let v = Archive::new(&arch).unwrap().verify().unwrap();
+    assert_eq!(v.gaps, vec![(stopped + 1, p.seq())], "{v:?}");
+}

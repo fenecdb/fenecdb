@@ -19,10 +19,10 @@ import {
 } from '@grafana/ui';
 
 import { DataSource } from '../datasource';
-import { BUILTINS, LANGUAGE, registerFenecQL } from '../fenecql/language';
-import { Explained, FenecOptions, FenecQuery, Format, Param, PARAM_TYPES, ParamType } from '../types';
+import { BUILTINS, LANGUAGE, registerFennecQL } from '../fennecql/language';
+import { Explained, FennecOptions, FennecQuery, Format, Param, PARAM_TYPES, ParamType } from '../types';
 
-type Props = QueryEditorProps<DataSource, FenecQuery, FenecOptions>;
+type Props = QueryEditorProps<DataSource, FennecQuery, FennecOptions>;
 
 const FORMATS: Array<SelectableValue<Format>> = [
   { label: 'Auto', value: 'auto', description: 'A time series when the statement groups by its first column, a time' },
@@ -85,7 +85,7 @@ export function QueryEditor({ datasource, query, onChange, onRunQuery, range, da
         height={Math.min(Math.max(lines, 4), 20) * 19 + 12}
         showLineNumbers={true}
         showMiniMap={false}
-        onBeforeEditorMount={registerFenecQL}
+        onBeforeEditorMount={registerFennecQL}
         getSuggestions={suggestions}
         onChange={(text) => onChange({ ...query, queryText: text })}
         onBlur={(text) => {
@@ -109,7 +109,7 @@ export function QueryEditor({ datasource, query, onChange, onRunQuery, range, da
             }}
           />
         </InlineField>
-        <InlineField label="After" tooltip="A change the server must hold before it answers (Fenec-After): a number, or $variable">
+        <InlineField label="After" tooltip="A change the server must hold before it answers (Fennec-After): a number, or $variable">
           <Input
             width={14}
             value={query.after ?? ''}

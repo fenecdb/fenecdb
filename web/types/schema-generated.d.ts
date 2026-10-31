@@ -1,19 +1,19 @@
-// generated from the fenecdb schema: tables.fenec
-// fenec types tables.fenec > fenec-schema.d.ts
+// generated from the fennecdb schema: tables.fennec
+// fennec types tables.fennec > fennec-schema.d.ts
 // Do not edit by hand -- regenerate when the schema changes.
 
 /** `timestamp`: ISO-8601 text when read; a Date/number is accepted when writing. */
-export type Timestamp = string & { readonly __fenec: 'timestamp' };
+export type Timestamp = string & { readonly __fennec: 'timestamp' };
 /** `sparse<N>`: pgvector's text form, `{1:0.5,3:0.25}/N`, indices from 1. */
-export type Sparse = string & { readonly __fenec: 'sparse' };
+export type Sparse = string & { readonly __fennec: 'sparse' };
 /** `vector<N>`: an array of numbers in JSON. */
-export type Vector = number[] & { readonly __fenec: 'vector' };
+export type Vector = number[] & { readonly __fennec: 'vector' };
 /** `json`: any value JSON holds; a path reads into it, `'meta.lang'`. */
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 /** `bytes`: an array of bytes in JSON. */
-export type Bytes = number[] & { readonly __fenec: 'bytes' };
+export type Bytes = number[] & { readonly __fennec: 'bytes' };
 
-export type FenecSchema = {
+export type FennecSchema = {
   articles: {
     /** text required */
     title: string;

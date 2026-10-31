@@ -13,13 +13,13 @@
 # own pool it stalls before it runs anything. So the built bundle is handed
 # to the toolchain's swift-testing runner, as `swift test` hands it.
 #
-# A run that has not ended after FENEC_STRICT_TIMEOUT seconds (300) is
+# A run that has not ended after FENNEC_STRICT_TIMEOUT seconds (300) is
 # sampled -- every thread's stack, to the log -- and fails.
 set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"
 BIN=$(swift build --show-bin-path)
-BUNDLE="$BIN/FenecDBPackageTests.xctest/Contents/MacOS/FenecDBPackageTests"
+BUNDLE="$BIN/FennecDBPackageTests.xctest/Contents/MacOS/FennecDBPackageTests"
 test -x "$BUNDLE" || { echo "no test bundle at $BUNDLE: run swift test first" >&2; exit 2; }
 HELPER="$(dirname "$(xcrun --find swift)")/../libexec/swift/pm/swiftpm-testing-helper"
 test -x "$HELPER" || { echo "no swiftpm-testing-helper beside $(xcrun --find swift)" >&2; exit 2; }
@@ -35,11 +35,11 @@ for d in "$PLATFORM/Developer/Library/Frameworks" "$DEV/Library/Developer/Framew
 done
 if [ -n "$PLATFORM" ] && [ -d "$PLATFORM/Developer/usr/lib" ]; then LIB="$PLATFORM/Developer/usr/lib"; fi
 
-LOG=$(mktemp -t fenecdb-strict)
+LOG=$(mktemp -t fennecdb-strict)
 LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 DYLD_FRAMEWORK_PATH="$FW" DYLD_LIBRARY_PATH="$LIB" \
   "$HELPER" --test-bundle-path "$BUNDLE" --testing-library swift-testing >"$LOG" 2>&1 &
 pid=$!
-limit=${FENEC_STRICT_TIMEOUT:-300}
+limit=${FENNEC_STRICT_TIMEOUT:-300}
 t=0
 while kill -0 "$pid" 2>/dev/null && [ "$t" -lt "$limit" ]; do
   sleep 1

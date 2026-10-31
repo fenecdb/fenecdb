@@ -35,7 +35,7 @@ export default defineConfig([
       '**/.eslintcache',
       // Written by site/build.py (make studio-highlight), the docs' rules
       // in it: held byte for byte to what that writes, not to this style.
-      'src/fenecql/highlight.js',
+      'src/fennecql/highlight.js',
     ],
   },
   ...baseConfig,

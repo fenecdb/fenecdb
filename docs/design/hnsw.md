@@ -149,14 +149,14 @@ linked together, at 16.0k, and 18.3k as a `/batch` of single puts over HTTP now 
 **A server answers before its graph is linked.** A server checkpoints only
 on its way down, so a crash after a long run leaves every vector written
 since in the tail, and linking them at the open kept the port closed for as
-long as they took: at 100 000 x 768 never checkpointed, `fenec-server` answered
+long as they took: at 100 000 x 768 never checkpointed, `fennec-server` answered
 its first `near` 67.7 s after it started, and linking at the open still
-took 18.4 s with the lists pruned in parallel (14.9-16.3 s now, below). `fenec-server`, a tenant and a replica
+took 18.4 s with the lists pruned in parallel (14.9-16.3 s now, below). `fennec-server`, a tenant and a replica
 open with `fs::open_serving` instead, and it answers after 1.23 s: those
 vectors go into the arena unlinked (`VectorIndex::defer_batch`, every vector
 of a graph the open cannot restore too), a search measures each of them
 beside what its walk finds -- so an answer is never missing one -- and
-`fenec_http::link::beside` links them on a thread of its own, slices of
+`fennec_http::link::beside` links them on a thread of its own, slices of
 about 10 ms under the write lock, each at most twice the last (a pace taken
 over a small graph had a slice hold the lock for 112 ms). `near` takes the
 exact scan's 10.5 ms until the 19.2 s of linking are done and 0.31 ms after,
@@ -174,7 +174,7 @@ browser has none of it (`vector::UNLINKED`: 1.1 KB brotli).
 
 **A server keeps its graphs in its file.** It checkpoints only on its way
 down, so a crash after a long run left every vector written since the start
-to link again. `fenec_http::link::keep` looks at every database the process
+to link again. `fennec_http::link::keep` looks at every database the process
 serves every 5 s, and appends to the tail each graph that changed in 10 000
 nodes since it last reached the file, has none waiting to be linked, and
 whose record the file has grown three times over since
@@ -318,7 +318,7 @@ so it could use no server's halves, and its first put after a load hashed
 every vector: 13.1-14.6 ms at 20 000 x 384, 21-34 at 100 000 x 128, the
 puts after it 0.3-0.5. It hashes with `hash_lanes` now, a slot placed by
 its half as natively, and reads and writes the halves as a native build
-does; `web/fenec.test.js` finds the bytes
+does; `web/fennec.test.js` finds the bytes
 `the_halves_a_record_carries_are_the_browsers` holds a native record to in
 the module's image of the same vectors. Its first put after a load went
 13.1-14.6 -> 1.3-2.1 ms at 20 000 x 384 from its own image and 12.7-13.1
@@ -337,11 +337,11 @@ rather than into room made first 0.4 KB.
 
 **An open of a file with a graph copies its vectors, and that is most of
 it.** `make compare`'s reopen once read 9 ms against SQLite's 0.9: one open
-and an ANN query of fenecdb's against SQLite's open and a count through its
+and an ANN query of fennecdb's against SQLite's open and a count through its
 index, two different first questions. It now times each side's open alone,
 then with a read by id, then with a vector top-10 -- SQLite's a full scan --
 the median of 31 each: 6.0, 6.0 and 6.1 ms against 0.07, 0.46 and 30.5.
-SQLite reads nothing until it is asked. Of fenecdb's 6.2 ms at 100 000 x 128
+SQLite reads nothing until it is asked. Of fennecdb's 6.2 ms at 100 000 x 128
 (`examples/opens.rs`, timers in each part), 3.6 are the arena -- 51 MB of
 vectors read out of the mapped file, made unit ones and written into pages
 the open allocates, on every core -- which the pages bound: each page of the

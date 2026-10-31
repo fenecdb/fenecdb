@@ -51,7 +51,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "fenecdb-languages-rust"
+name = "fennecdb-languages-rust"
 version = "0.0.0"
 dependencies = [
  "serde_json",

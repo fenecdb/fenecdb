@@ -1,10 +1,10 @@
 // The Notes app's data: the schema, the seeds, the toy embedding and the
-// queries. Only package:fenecdb, so the test runs it with no Flutter UI.
+// queries. Only package:fennecdb, so the test runs it with no Flutter UI.
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:fenecdb/fenecdb.dart';
+import 'package:fennecdb/fennecdb.dart';
 
 /// A placeholder for a real embedding model: hashed character trigrams
 /// (of the UTF-8 bytes, ASCII lowered) into 64 dimensions, unit length.
@@ -60,13 +60,13 @@ const seeds = [
 const shown = ['id', 'title', 'body', 'tags', 'done', 'at'];
 
 class Notes {
-  final Fenec db;
+  final Fennec db;
   Notes(this.db);
 
-  /// Opens the file, brings it to [schema] (schema.fenecql) and seeds an
+  /// Opens the file, brings it to [schema] (schema.fennecql) and seeds an
   /// empty collection.
   static Future<Notes> open(String path, String schema) async {
-    final db = await Fenec.open(path);
+    final db = await Fennec.open(path);
     await db.schema(schema);
     final notes = Notes(db);
     if (await db.from('notes').count() == 0) {

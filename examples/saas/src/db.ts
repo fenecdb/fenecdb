@@ -1,11 +1,11 @@
 // One tenant, reached through the router with one token, over
-// `@fenecdb/web/client`. A block of statements is `POST /batch`: they land
+// `@fennecdb/web/client`. A block of statements is `POST /batch`: they land
 // whole or not at all, a `require` that is not met stops it with 412 and
 // the place of the statement (`at`), and an idempotency key makes a retry
 // answer as the first try did. A refusal comes back as an Outcome rather
 // than an exception, since most of them are answers: a used token, a taken
 // slug, a rate limit.
-import { connect, FenecError, type FenecHttp } from '@fenecdb/web/client';
+import { connect, FennecError, type FennecHttp } from '@fennecdb/web/client';
 
 export type Outcome =
   | { ok: true; results: { rows?: Record<string, unknown>[]; affected?: number }[]; replayed: boolean; seq?: number }
@@ -21,7 +21,7 @@ export class DbError extends Error {
 }
 
 export class Db {
-  readonly #http: FenecHttp;
+  readonly #http: FennecHttp;
 
   constructor(
     readonly base: string,
@@ -35,7 +35,7 @@ export class Db {
       const r = await this.#http.batch(statements, { idempotencyKey: opts.key });
       return { ok: true, results: r.results as never, replayed: r.replayed, seq: r.seq ?? undefined };
     } catch (e) {
-      if (!(e instanceof FenecError) || e.status === undefined) throw e;
+      if (!(e instanceof FennecError) || e.status === undefined) throw e;
       return { ok: false, status: e.status, error: e.message, at: e.at };
     }
   }
@@ -44,7 +44,7 @@ export class Db {
     try {
       return (await this.#http.rows(query, params)) as T[];
     } catch (e) {
-      if (e instanceof FenecError && e.status !== undefined) throw new DbError(e.message, e.status);
+      if (e instanceof FennecError && e.status !== undefined) throw new DbError(e.message, e.status);
       throw e;
     }
   }

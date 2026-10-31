@@ -1,5 +1,5 @@
 // The ledger's server: the operator console and a JSON API, over
-// fenec-server. A plain node:http server rendering strings: the console is
+// fennec-server. A plain node:http server rendering strings: the console is
 // a few tables and forms, so a framework would add its runtime and build to
 // every page and nothing the ledger needs.
 //

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Plover end to end, as CI runs it: lint; a cluster of its own (two tenant
-# nodes and fenec-shard over a new directory) set up with two days of
+# nodes and fennec-shard over a new directory) set up with two days of
 # history; the site built and started on it; then the tests -- the claims,
 # leases, quotas and security files each start a cluster of their own, the
 # pages file runs against this one. DISPATCH_BENCH=1 adds the measurements.
@@ -8,7 +8,7 @@
 # Every port is one the system picks, so two runs -- or this beside any
 # other suite or server -- never meet on one.
 #
-#   FENEC_SERVER, FENEC_SHARD   the binaries (this repository's target/release, then target/debug)
+#   FENNEC_SERVER, FENNEC_SHARD   the binaries (this repository's target/release, then target/debug)
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 cd "$here"

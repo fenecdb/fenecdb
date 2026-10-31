@@ -2,7 +2,7 @@
 // collection's, a key file's -- made what they name or refused in words. Pure,
 // so `node --test` runs it (test/names.test.ts).
 
-export const EXTENSION = ".fenec";
+export const EXTENSION = ".fennec";
 
 export type Named = { ok: true; fileName: string } | { ok: false; message: string };
 
@@ -11,7 +11,7 @@ const MAX_BYTES = 255;
 
 /**
  * A first collection, from the new-database window: a name and its fields as
- * FenecQL writes them (`title text, done bool @hash`), made into the one
+ * FennecQL writes them (`title text, done bool @hash`), made into the one
  * statement that creates it, or refused in words. Held to a narrow grammar
  * rather than handed over as typed: the statement goes to the server with the
  * database's own token, and nothing typed here may close the field list and
@@ -48,7 +48,7 @@ export function collectionStatement(name: string, fields: string): Statement {
 /**
  * The bidirectional controls (U+061C, U+200E, U+200F, U+202A to U+202E, U+2066
  * to U+2069): a name holding one is drawn in another order than it is spelled
- * (`invoice<U+202E>slx.fenec` shows as `invoicenef.xls`), in the app's lists
+ * (`invoice<U+202E>slx.fennec` shows as `invoicenef.xls`), in the app's lists
  * and in Finder alike. Written as escapes: the characters themselves in source
  * would do to it what they do to a name.
  */

@@ -18,15 +18,15 @@ assertClean('before');
 const REMOTE = data('remote', 10);
 const SMALL = data('small', 10);
 const TOKEN = 'storage-check-token';
-const server = await startServer(['--file', REMOTE, '--studio', '--http', '127.0.0.1:0'], { FENEC_HTTP_TOKEN: TOKEN });
+const server = await startServer(['--file', REMOTE, '--studio', '--http', '127.0.0.1:0'], { FENNEC_HTTP_TOKEN: TOKEN });
 
-const app = startApp('storage', { FENEC_DESKTOP_OPEN: SMALL });
+const app = startApp('storage', { FENNEC_DESKTOP_OPEN: SMALL });
 await waitFor((l) => l.what === 'server-started', 60000, 'the file opened');
 const FILE_KEY = `file:${SMALL}`;
 await waitStudio(FILE_KEY);
 
 let windowsMade = 0;
-const NAME = 'fenec-test-history';
+const NAME = 'fennec-test-history';
 const read = async (key) => (await evalIn(key, `return localStorage.getItem(${JSON.stringify(NAME)})`)).value;
 const write = (key, value) => evalIn(key, `localStorage.setItem(${JSON.stringify(NAME)}, ${JSON.stringify(value)}); return 1`);
 const close = async (key) => {

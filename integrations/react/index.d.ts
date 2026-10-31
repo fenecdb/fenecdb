@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 
 /**
- * What the hooks need of a database: fenecdb's `Fenec`, a database in the
- * page, or `FenecSync`, a replica synced from a server.
+ * What the hooks need of a database: fennecdb's `Fennec`, a database in the
+ * page, or `FennecSync`, a replica synced from a server.
  */
 export interface LiveSource {
   live(
@@ -12,23 +12,23 @@ export interface LiveSource {
   ): () => void;
 }
 
-/** What the hooks need of a query: fenecdb's `Query`. */
+/** What the hooks need of a query: fennecdb's `Query`. */
 export interface LiveQuery {
-  toFenecQL(): [string, unknown[]];
+  toFennecQL(): [string, unknown[]];
   readonly context?: unknown;
 }
 
-/** Makes `db` the database `useFenec` and `useLiveQuery` use below. */
-export function FenecProvider(props: { db: LiveSource; children?: ReactNode }): ReactNode;
+/** Makes `db` the database `useFennec` and `useLiveQuery` use below. */
+export function FennecProvider(props: { db: LiveSource; children?: ReactNode }): ReactNode;
 
-/** The database of the nearest `FenecProvider`. */
-export function useFenec<DB extends LiveSource = LiveSource>(): DB;
+/** The database of the nearest `FennecProvider`. */
+export function useFennec<DB extends LiveSource = LiveSource>(): DB;
 
 /**
  * The rows of `query`, from the database in the page, given again every
  * time they change; `undefined` until the first answer -- typed by the
  * query, a builder's from its collection's schema (`db.from(todos)`), with
- * no type given. A FenecQL text or `[text, params]` runs on the provider's
+ * no type given. A FennecQL text or `[text, params]` runs on the provider's
  * database, and names what it reads with `collections` (without them, every
  * write runs it again).
  */
@@ -37,7 +37,7 @@ export function useLiveQuery<Q extends LiveQuery & { rows(): Promise<unknown[]> 
   opts?: { collections?: string[] },
 ): Awaited<ReturnType<Q['rows']>> | undefined;
 /**
- * The same, its rows typed by the caller: a FenecQL text, or a query whose
+ * The same, its rows typed by the caller: a FennecQL text, or a query whose
  * type does not say. A text that asks for facets (`facet brand`) has them
  * on its rows.
  */

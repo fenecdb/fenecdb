@@ -15,7 +15,7 @@ const SECRETS = [
 	"ELECTROBUN_APPLEID",
 	"ELECTROBUN_APPLEIDPASS",
 	"ELECTROBUN_TEAMID",
-	"FENEC_DESKTOP_TEST_BUILD",
+	"FENNEC_DESKTOP_TEST_BUILD",
 ];
 
 function config(env: Record<string, string> = {}) {
@@ -59,10 +59,10 @@ test("a secret that is set but empty, as CI hands one that does not exist, is un
 });
 
 test("the test variant has its own identity and builds, is never signed, and is the only one with the hooks", () => {
-	const t = config({ FENEC_DESKTOP_TEST_BUILD: "1", ELECTROBUN_DEVELOPER_ID: "D", ...apiKey });
+	const t = config({ FENNEC_DESKTOP_TEST_BUILD: "1", ELECTROBUN_DEVELOPER_ID: "D", ...apiKey });
 	const release = config();
-	assert.equal(t.app.identifier, "dev.fenecdb.studio.test");
-	assert.equal(release.app.identifier, "dev.fenecdb.studio");
+	assert.equal(t.app.identifier, "dev.fennecdb.studio.test");
+	assert.equal(release.app.identifier, "dev.fennecdb.studio");
 	assert.notEqual(t.app.name, release.app.name);
 	assert.notEqual(t.build.buildFolder, release.build.buildFolder);
 	assert.notEqual(t.build.artifactFolder, release.build.artifactFolder);
@@ -70,8 +70,8 @@ test("the test variant has its own identity and builds, is never signed, and is 
 	assert.equal(t.build.bun.define.__TESTABLE__, "true");
 	assert.equal(release.build.bun.define.__TESTABLE__, "false");
 	// The Keychain service follows the identifier, so a check never touches a real install's items.
-	assert.equal(JSON.parse(t.build.bun.define.__KEYCHAIN_SERVICE__), "dev.fenecdb.studio.test");
-	assert.equal(JSON.parse(release.build.bun.define.__KEYCHAIN_SERVICE__), "dev.fenecdb.studio");
+	assert.equal(JSON.parse(t.build.bun.define.__KEYCHAIN_SERVICE__), "dev.fennecdb.studio.test");
+	assert.equal(JSON.parse(release.build.bun.define.__KEYCHAIN_SERVICE__), "dev.fennecdb.studio");
 });
 
 const pick = (c: any) => ({ codesign: c.build.mac.codesign, notarize: c.build.mac.notarize });

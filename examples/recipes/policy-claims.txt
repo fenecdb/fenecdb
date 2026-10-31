@@ -1,5 +1,5 @@
 # Rules that name a claim's value. What pins a token to the application the
-# database is for is not here: fenec-server is started with the provider's
+# database is for is not here: fennec-server is started with the provider's
 # issuer and audience (--jwt-issuer, --jwt-audience, --jwt-client), and
 # refuses a token made for another application, on every route, before a rule
 # is read (docs/http-access, "Whom a token is for"). A rule names what only a claim

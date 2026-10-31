@@ -1,15 +1,15 @@
 name: packages
 
-# PyPI's `fenecdb`, npm's `@fenecdb/web`, `@fenecdb/react`,
-# `@fenecdb/cloudflare` and `@fenecdb/langchain`, NuGet's `FenecDb`
+# PyPI's `fennecdb`, npm's `@fennecdb/web`, `@fennecdb/react`,
+# `@fennecdb/cloudflare` and `@fennecdb/langchain`, NuGet's `FennecDb`
 # (with NUGET_API_KEY, the job below), Maven Central's
-# `com.fenecdb:fenecdb` and `fenecdb-android` (with the Central
-# Portal's token and a signing key) and pub.dev's `fenecdb` and
-# `fenecdb_flutter` (with PUB_CREDENTIALS) go out when
+# `com.fennecdb:fennecdb` and `fennecdb-android` (with the Central
+# Portal's token and a signing key) and pub.dev's `fennecdb` and
+# `fennecdb_flutter` (with PUB_CREDENTIALS) go out when
 # a release is published -- not when its tag is pushed: release.yml leaves
 # the release a draft so its notes get a read, and publishing the draft is
 # the moment the packages follow it. So does Homebrew's formula
-# (fenecdb/homebrew-tap, with HOMEBREW_TAP_TOKEN, the `homebrew` job). A registry keeps what it is given, so
+# (fennec-db/homebrew-tap, with HOMEBREW_TAP_TOKEN, the `homebrew` job). A registry keeps what it is given, so
 # nothing goes to one before every package has been built, installed and
 # used (integrations/packages.sh). Each registry takes a token when its
 # secret is set -- NPM_TOKEN, PYPI_API_TOKEN -- and this workflow's OIDC
@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/fenecdb/
+      url: https://pypi.org/project/fennecdb/
     permissions:
       id-token: write
     steps:
@@ -77,7 +77,7 @@ jobs:
       - name: Keep the Python files
         run: |
           mkdir pypi
-          mv dist/fenecdb-*.whl dist/fenecdb-*.tar.gz pypi/
+          mv dist/fennecdb-*.whl dist/fennecdb-*.tar.gz pypi/
 
       # An API token when the secret holds one -- an account-wide token
       # creates the project on its first upload -- and the OIDC identity when
@@ -96,7 +96,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: npm
-      url: https://www.npmjs.com/org/fenecdb
+      url: https://www.npmjs.com/org/fennecdb
     permissions:
       id-token: write
     steps:
@@ -121,7 +121,7 @@ jobs:
         run: |
           set -eu
           # The web client first: the others' users install it beside.
-          for pkg in dist/fenecdb-web-*.tgz dist/fenecdb-react-*.tgz dist/fenecdb-cloudflare-*.tgz dist/fenecdb-langchain-*.tgz; do
+          for pkg in dist/fennecdb-web-*.tgz dist/fennecdb-react-*.tgz dist/fennecdb-cloudflare-*.tgz dist/fennecdb-langchain-*.tgz; do
             # A version already on npm is left, as PyPI's are: npm refuses to
             # publish one twice, and a dispatch after a run that failed part
             # of the way would otherwise stop at it.
@@ -136,8 +136,8 @@ jobs:
             npm publish "./$pkg" --access public --provenance
           done
 
-  # NuGet's `FenecDb`: packed, installed from the .nupkg into a console app
-  # of its own and used against a fenec-server (integrations/dotnet/
+  # NuGet's `FennecDb`: packed, installed from the .nupkg into a console app
+  # of its own and used against a fennec-server (integrations/dotnet/
   # package.sh), and only then pushed. NuGet takes an API key alone here;
   # without NUGET_API_KEY the job says so and stops, and the other
   # registries go on.
@@ -146,7 +146,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: nuget
-      url: https://www.nuget.org/packages/FenecDb
+      url: https://www.nuget.org/packages/FennecDb
     steps:
       - name: Look for the key
         id: key
@@ -154,7 +154,7 @@ jobs:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
           if [ -z "$NUGET_API_KEY" ]; then
-            echo "::notice::NUGET_API_KEY is not set: FenecDb is not published to NuGet (RELEASING.md, 'Once: the registries' side')"
+            echo "::notice::NUGET_API_KEY is not set: FennecDb is not published to NuGet (RELEASING.md, 'Once: the registries' side')"
             echo "set=false" >> "$GITHUB_OUTPUT"
           else
             echo "set=true" >> "$GITHUB_OUTPUT"
@@ -183,11 +183,11 @@ jobs:
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
-          dotnet nuget push dist-nuget/FenecDb.*.nupkg --api-key "$NUGET_API_KEY" \
+          dotnet nuget push dist-nuget/FennecDb.*.nupkg --api-key "$NUGET_API_KEY" \
             --source https://api.nuget.org/v3/index.json --skip-duplicate
 
-  # Maven Central's `com.fenecdb:fenecdb` (the JVM library) and
-  # `fenecdb-android` (the AAR, the native library for each ABI inside):
+  # Maven Central's `com.fennecdb:fennecdb` (the JVM library) and
+  # `fennecdb-android` (the AAR, the native library for each ABI inside):
   # built, signed and laid out as a Maven repository by Gradle, zipped into
   # the bundle the Central Portal takes and uploaded to its API -- no
   # publishing plugin. The Portal takes a user token and every file signed;
@@ -198,7 +198,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: maven
-      url: https://central.sonatype.com/namespace/com.fenecdb
+      url: https://central.sonatype.com/namespace/com.fennecdb
     steps:
       - name: Look for the secrets
         id: keys
@@ -208,7 +208,7 @@ jobs:
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
         run: |
           if [ -z "$MAVEN_CENTRAL_USERNAME" ] || [ -z "$MAVEN_CENTRAL_PASSWORD" ] || [ -z "$SIGNING_KEY" ]; then
-            echo "::notice::MAVEN_CENTRAL_USERNAME, MAVEN_CENTRAL_PASSWORD or SIGNING_KEY is not set: fenecdb is not published to Maven Central (RELEASING.md, 'Once: the registries' side')"
+            echo "::notice::MAVEN_CENTRAL_USERNAME, MAVEN_CENTRAL_PASSWORD or SIGNING_KEY is not set: fennecdb is not published to Maven Central (RELEASING.md, 'Once: the registries' side')"
             echo "set=false" >> "$GITHUB_OUTPUT"
           else
             echo "set=true" >> "$GITHUB_OUTPUT"
@@ -272,15 +272,15 @@ jobs:
           # A dispatch after a run that went part of the way finds the
           # version on Central already; the Portal would refuse it, and the
           # wait below would read that as a failure.
-          if curl -sf "https://repo1.maven.org/maven2/com/fenecdb/fenecdb/${RELEASE_TAG#v}/" >/dev/null; then
-            echo "com.fenecdb:fenecdb ${RELEASE_TAG#v} is on Maven Central already"
+          if curl -sf "https://repo1.maven.org/maven2/com/fennecdb/fennecdb/${RELEASE_TAG#v}/" >/dev/null; then
+            echo "com.fennecdb:fennecdb ${RELEASE_TAG#v} is on Maven Central already"
             exit 0
           fi
           token=$(printf '%s:%s' "$MAVEN_CENTRAL_USERNAME" "$MAVEN_CENTRAL_PASSWORD" | base64 -w0)
           id=$(curl --fail-with-body -sS -X POST \
             -H "Authorization: Bearer $token" \
             -F "bundle=@integrations/kotlin/build/central-bundle.zip" \
-            "https://central.sonatype.com/api/v1/publisher/upload?name=fenecdb-$RELEASE_TAG&publishingType=AUTOMATIC")
+            "https://central.sonatype.com/api/v1/publisher/upload?name=fennecdb-$RELEASE_TAG&publishingType=AUTOMATIC")
           echo "deployment $id"
           # The upload answers before the Portal has validated anything: a
           # bundle it refuses (a missing signature, sources or javadoc jar,
@@ -300,7 +300,7 @@ jobs:
           done
           echo "::warning::deployment $id was not published within 30 minutes: see central.sonatype.com, Deployments"
 
-  # pub.dev's `fenecdb` (the Dart package) and then `fenecdb_flutter` (the
+  # pub.dev's `fennecdb` (the Dart package) and then `fennecdb_flutter` (the
   # plugin, which names that version and bundles the native library: the
   # release's dynamic XCFramework and the .so of each ABI from its AAR). pub.dev's
   # own automated publishing trusts a workflow started by a tag's push,
@@ -311,7 +311,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pub
-      url: https://pub.dev/packages/fenecdb
+      url: https://pub.dev/packages/fennecdb
     steps:
       - name: Look for the credentials
         id: keys
@@ -319,7 +319,7 @@ jobs:
           PUB_CREDENTIALS: ${{ secrets.PUB_CREDENTIALS }}
         run: |
           if [ -z "$PUB_CREDENTIALS" ]; then
-            echo "::notice::PUB_CREDENTIALS is not set: fenecdb and fenecdb_flutter are not published to pub.dev (RELEASING.md, 'Once: the registries' side')"
+            echo "::notice::PUB_CREDENTIALS is not set: fennecdb and fennecdb_flutter are not published to pub.dev (RELEASING.md, 'Once: the registries' side')"
             echo "set=false" >> "$GITHUB_OUTPUT"
           else
             echo "set=true" >> "$GITHUB_OUTPUT"
@@ -342,12 +342,12 @@ jobs:
           RELEASE_TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
         run: |
           set -eu
-          gh release download "$RELEASE_TAG" -R "${{ github.repository }}" -p 'FenecFFIDynamic.xcframework.zip' -p 'fenecdb-android-*.aar' -D assets
+          gh release download "$RELEASE_TAG" -R "${{ github.repository }}" -p 'FennecFFIDynamic.xcframework.zip' -p 'fennecdb-android-*.aar' -D assets
           mkdir -p integrations/swift/build integrations/kotlin/android/build/jniLibs
-          unzip -q assets/FenecFFIDynamic.xcframework.zip -d integrations/swift/build/dynamic
-          unzip -q assets/fenecdb-android-*.aar 'jni/*' -d assets/aar
+          unzip -q assets/FennecFFIDynamic.xcframework.zip -d integrations/swift/build/dynamic
+          unzip -q assets/fennecdb-android-*.aar 'jni/*' -d assets/aar
           cp -R assets/aar/jni/. integrations/kotlin/android/build/jniLibs/
-          integrations/dart/fenecdb_flutter/prepare.sh
+          integrations/dart/fennecdb_flutter/prepare.sh
 
       # Each published from a copy outside the repository: the repository's
       # .gitignore leaves out the libraries prepare.sh put in the plugin,
@@ -363,7 +363,7 @@ jobs:
           mkdir -p "$HOME/.config/dart"
           printf '%s' "$PUB_CREDENTIALS" > "$HOME/.config/dart/pub-credentials.json"
           version="${RELEASE_TAG#v}"
-          for pkg in fenecdb fenecdb_flutter; do
+          for pkg in fennecdb fennecdb_flutter; do
             if curl -sf "https://pub.dev/api/packages/$pkg/versions/$version" >/dev/null; then
               echo "$pkg $version is on pub.dev already"
               continue
@@ -378,7 +378,7 @@ jobs:
             cp -R "integrations/dart/$pkg" "$out"
             rm -f "$out/pubspec_overrides.yaml"
             cp LICENSE "$out/"
-            # The plugin, published second, resolves `fenecdb` against the
+            # The plugin, published second, resolves `fennecdb` against the
             # package's listing, which can name the new version minutes after
             # the version's own page answers: 0.1.9's plugin and 0.1.11's were
             # refused ("doesn't match any versions") with that page up. So a
@@ -403,7 +403,7 @@ jobs:
             done
           done
 
-  # Homebrew's tap, fenecdb/homebrew-tap (`brew install fenecdb/tap/fenecdb`).
+  # Homebrew's tap, fennec-db/homebrew-tap (`brew install fennec-db/tap/fennecdb`).
   # It follows the published release, as the registries do, and not the tag:
   # the formula names the release's download URLs, and a draft's are not
   # public, so a tap updated by release.yml would send `brew install` to a
@@ -429,7 +429,7 @@ jobs:
       cancel-in-progress: false
     environment:
       name: homebrew
-      url: https://github.com/fenecdb/homebrew-tap
+      url: https://github.com/fennec-db/homebrew-tap
     steps:
       - name: Look for the token, and for a release to offer
         id: go
@@ -476,7 +476,7 @@ jobs:
           set -eu
           mkdir -p "$RUNNER_TEMP/release" "$RUNNER_TEMP/tap-files/Formula"
           gh release download "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" -p SHA256SUMS -D "$RUNNER_TEMP/release"
-          formula="$RUNNER_TEMP/tap-files/Formula/fenecdb.rb"
+          formula="$RUNNER_TEMP/tap-files/Formula/fennecdb.rb"
           python3 tools/homebrew-formula.py --version "${RELEASE_TAG#v}" --sums "$RUNNER_TEMP/release/SHA256SUMS" \
             --repo "$GITHUB_REPOSITORY" -o "$formula"
           cat "$formula"
@@ -509,22 +509,22 @@ jobs:
           # published before a later one finished). Nothing in the tap yet, or
           # the same version, goes on.
           version=${RELEASE_TAG#v}
-          current=$(sed -n 's#^ *url "https://github.com/[^/]*/[^/]*/releases/download/v\([0-9][0-9.]*\)/.*#\1#p' Formula/fenecdb.rb 2>/dev/null | head -n 1)
+          current=$(sed -n 's#^ *url "https://github.com/[^/]*/[^/]*/releases/download/v\([0-9][0-9.]*\)/.*#\1#p' Formula/fennecdb.rb 2>/dev/null | head -n 1)
           if [ -n "$current" ] && [ "$current" != "$version" ] &&
             [ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -n 1)" = "$current" ]; then
-            echo "::warning::the tap holds fenecdb $current, later than $version: it is not moved back"
-            echo "the tap holds fenecdb $current, later than $version: left as it is" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::the tap holds fennecdb $current, later than $version: it is not moved back"
+            echo "the tap holds fennecdb $current, later than $version: left as it is" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           mkdir -p Formula
-          cp "$RUNNER_TEMP/tap-files/Formula/fenecdb.rb" Formula/fenecdb.rb
+          cp "$RUNNER_TEMP/tap-files/Formula/fennecdb.rb" Formula/fennecdb.rb
           cp "$GITHUB_WORKSPACE/packaging/homebrew/README.md" README.md
-          git add Formula/fenecdb.rb README.md
+          git add Formula/fennecdb.rb README.md
           if git diff --cached --quiet; then
             echo "the tap holds this formula already"
             exit 0
           fi
           git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-            commit --quiet -m "fenecdb ${RELEASE_TAG#v}"
+            commit --quiet -m "fennecdb ${RELEASE_TAG#v}"
           git push --quiet origin "HEAD:$branch"
-          echo "fenecdb ${RELEASE_TAG#v} is in $GITHUB_REPOSITORY_OWNER/homebrew-tap, branch $branch" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "fennecdb ${RELEASE_TAG#v} is in $GITHUB_REPOSITORY_OWNER/homebrew-tap, branch $branch" | tee -a "$GITHUB_STEP_SUMMARY"

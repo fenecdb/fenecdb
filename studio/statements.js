@@ -4,7 +4,7 @@
 //
 // A value is never spliced into a statement's text: it goes as a
 // parameter, `$n`, which the server binds. A name cannot be a parameter --
-// FenecQL wants it in the text -- so a name is checked against the lexer's
+// FennecQL wants it in the text -- so a name is checked against the lexer's
 // rule for one (a Unicode letter or `_`, then letters, digits and `_`) and
 // refused otherwise, the way the query builder does (`web/builder.js`). The
 // one text a person types, a `where` clause, is theirs: it runs with their
@@ -18,15 +18,15 @@ export class StatementError extends Error {}
 
 const NAME = /^[\p{Alphabetic}_][\p{Alphabetic}\p{N}_]*$/u;
 
-/** `n` when FenecQL can write it as a name; refused otherwise. */
+/** `n` when FennecQL can write it as a name; refused otherwise. */
 export function name(n, what = 'field') {
   if (typeof n !== 'string' || !NAME.test(n)) {
-    throw new StatementError(`the ${what} name ${JSON.stringify(n)} cannot be written in FenecQL`);
+    throw new StatementError(`the ${what} name ${JSON.stringify(n)} cannot be written in FennecQL`);
   }
   return n;
 }
 
-/** Whether `n` is a name FenecQL can write. */
+/** Whether `n` is a name FennecQL can write. */
 export const writable = (n) => typeof n === 'string' && NAME.test(n);
 
 function whole(n, what) {
@@ -37,7 +37,7 @@ function whole(n, what) {
 /**
  * Whether a typed clause stays inside the parentheses it is put in: every
  * `(` it opens it closes, it never closes one it did not open, and nothing
- * but its strings holds a `;`. Quotes are FenecQL's, `"` and `'`, with `\`
+ * but its strings holds a `;`. Quotes are FennecQL's, `"` and `'`, with `\`
  * escaping the next character.
  */
 export function enclosed(text) {

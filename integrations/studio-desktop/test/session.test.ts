@@ -42,10 +42,10 @@ globalThis.location = { origin: ${JSON.stringify(pageOrigin)} };
 globalThis.sessionStorage = { getItem: () => null, setItem: (k) => stored.push(k), removeItem: () => {} };
 vm.runInThisContext(${JSON.stringify(script)});
 const c = await import(${JSON.stringify(connect)});
-const h = globalThis.fenecHost;
-const d = h && Object.getOwnPropertyDescriptor(globalThis, "fenecHost");
+const h = globalThis.fennecHost;
+const d = h && Object.getOwnPropertyDescriptor(globalThis, "fennecHost");
 let replaceThrows = false;
-try { Object.defineProperty(globalThis, "fenecHost", { value: {} }); } catch { replaceThrows = true; }
+try { Object.defineProperty(globalThis, "fennecHost", { value: {} }); } catch { replaceThrows = true; }
 let mutateHolds = true;
 try { if (h) { h.session.token = "stolen"; mutateHolds = h.session.token !== "stolen"; } } catch { mutateHolds = true; }
 c.save({ server: "x", token: "t", tenant: null });
@@ -110,7 +110,7 @@ test("a token that tries to break out of the script cannot", () => {
 
 test("a page that cannot define the property is left alone, no error reaches it", () => {
 	// The studio then says it was handed nothing, which is true.
-	const seen = inPage(`Object.defineProperty(globalThis, "fenecHost", { value: "taken" });${sessionPreload(session)}`, session.origin);
+	const seen = inPage(`Object.defineProperty(globalThis, "fennecHost", { value: "taken" });${sessionPreload(session)}`, session.origin);
 	assert.equal(seen.hosted, false, "a host that is not an object is no host");
 });
 

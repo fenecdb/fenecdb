@@ -1,19 +1,19 @@
 # The kit's three binaries for Linux, and the two images its checks run:
 #
-#   docker build -f deploy/Dockerfile --target kit -t fenec-kit .       # make drill
-#   docker build -f deploy/Dockerfile --target systemd -t fenec-kit-systemd .  # make deploy-check
+#   docker build -f deploy/Dockerfile --target kit -t fennec-kit .       # make drill
+#   docker build -f deploy/Dockerfile --target systemd -t fennec-kit-systemd . # make deploy-check
 #
-# `kit` is fenec-server, fenec-shard and fenec on Alpine -- a shell for the
+# `kit` is fennec-server, fennec-shard and fennec on Alpine -- a shell for the
 # drill's checks, nothing else -- one container a process, as the drill
 # runs a deployment's machines. `systemd` is the same binaries where the
 # units go, under a real systemd (deploy/test/units.py boots it).
 #
-# Built as the repository's Dockerfile builds fenec-server: statically with
+# Built as the repository's Dockerfile builds fennec-server: statically with
 # musl, so the binaries run on any Linux, glibc or not, and through
 # tools/image-cargo.sh on the same cache mount, so a build after it compiles
 # only what it did not -- and every binary is held to the sources this build
 # was given before it is copied out (the script says why: a branch's image
-# once carried main's fenec-shard).
+# once carried main's fennec-shard).
 
 # ----------------------------------------------------------------- build
 FROM rust:alpine AS build
@@ -31,8 +31,8 @@ RUN rm -f rust-toolchain.toml
 # those COPYs by binaries a stale target/ had made, and could hand a
 # build of the same sources another tree's layer (the script says how).
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,id=fenec-image-cargo,target=/work,sharing=locked \
-    tools/image-cargo.sh /built --release -p fenec-server -p fenec-shard -p fenec-cli
+    --mount=type=cache,id=fennec-image-cargo,target=/work,sharing=locked \
+    tools/image-cargo.sh /built --release -p fennec-server -p fennec-shard -p fennec-cli
 
 # ------------------------------------------------------------------- kit
 FROM alpine:3 AS kit
@@ -41,7 +41,7 @@ COPY --from=build /built/ /usr/local/bin/
 # The drill's containers run as root inside: their data are named volumes
 # the drill removes, and nothing here is a deployment's hardening -- that
 # is the units' (deploy/systemd/), which `systemd` below holds.
-CMD ["fenec-server", "--help"]
+CMD ["fennec-server", "--help"]
 
 # --------------------------------------------------------------- systemd
 # Debian, since systemd: python3 is the checks' HTTP client, procps their

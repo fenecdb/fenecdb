@@ -23,7 +23,7 @@ body:
     attributes:
       label: The proposal
       description: >
-        What the surface would look like -- the FenecQL syntax, the endpoint,
+        What the surface would look like -- the FennecQL syntax, the endpoint,
         the flag. Concrete enough to argue with.
     validations:
       required: true

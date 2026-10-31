@@ -1,4 +1,4 @@
-// The studio in a headless Chrome against a real fenec-server: signed in
+// The studio in a headless Chrome against a real fennec-server: signed in
 // with the server's token it browses, sorts, filters, edits and deletes;
 // signed in as one user, no other user's row reaches the grid, a count or
 // a facet. Embedded in an app, it takes the session the app hands over
@@ -7,7 +7,7 @@
 //
 //   cd studio && npm ci && npm run e2e      (make studio-test)
 //
-// The server is target/debug/fenec-server unless FENEC_SERVER names one;
+// The server is target/debug/fennec-server unless FENNEC_SERVER names one;
 // Chrome is CHROME_PATH, or the one puppeteer keeps (harness.mjs).
 
 import test from 'node:test';
@@ -156,7 +156,7 @@ test('with the server token: browse, sort, filter, edit, insert and delete', asy
   await waitCount(p, ROWS);
 
   // A cell written in place: its value goes as a parameter, so a text
-  // shaped as FenecQL is stored as it reads.
+  // shaped as FennecQL is stored as it reads.
   const note = 'she said "hi"); del orders where (true';
   await cell(p, 0, 'note');
   await p.click('.row[aria-rowindex="3"] .cell:nth-child(7)');
@@ -564,7 +564,7 @@ test('the query editor: parameters, the plan, a batch refused at its statement',
   assert.match(plan.flat().join(' '), /hash index on owner/);
   assert.ok(plan.some(([kind]) => kind === 'facet status'), JSON.stringify(plan));
 
-  // A write: its Fenec-Seq beside the answer.
+  // A write: its Fennec-Seq beside the answer.
   await runQuery(p, 'set odd {ölçü: $1} where limit = 2', '[3.25]');
   await p.waitForFunction(() => /Wrote 1 row/.test(document.querySelector('.ed-out')?.textContent ?? ''), { timeout: 10_000 });
   assert.match(await p.$eval('.ed-meta', (e) => e.textContent), /change\d+/);
@@ -588,7 +588,7 @@ test('the query editor: parameters, the plan, a batch refused at its statement',
   await p.type('#save-name', 'refused batch');
   await p.click('dialog[open] button[type=submit]');
   await p.waitForFunction(() => /refused batch/.test(document.querySelector('.ed-list')?.textContent ?? ''));
-  const kept = await p.evaluate(() => [localStorage.getItem('fenec-studio-saved'), localStorage.getItem('fenec-studio-history'), JSON.stringify(localStorage)]);
+  const kept = await p.evaluate(() => [localStorage.getItem('fennec-studio-saved'), localStorage.getItem('fennec-studio-history'), JSON.stringify(localStorage)]);
   assert.match(kept[0], /get nope/);
   assert.match(kept[1], /owner = \$1/);
   assert.ok(!kept[2].includes(TOKEN), 'the token reached localStorage');
@@ -710,7 +710,7 @@ test('as one user: no admin view, and the live view shows no other user\'s row',
 });
 
 /**
- * A page as an app's window opens one: `window.fenecHost` written before
+ * A page as an app's window opens one: `window.fennecHost` written before
  * the studio's modules run, as a preload writes it, and every request the
  * page sends recorded.
  */
@@ -721,7 +721,7 @@ async function hosted(session, { frozen = true } = {}) {
   await p.evaluateOnNewDocument(
     (session, frozen) => {
       const s = frozen ? Object.freeze({ ...session }) : { ...session };
-      Object.defineProperty(window, 'fenecHost', { value: Object.freeze({ session: s }) });
+      Object.defineProperty(window, 'fennecHost', { value: Object.freeze({ session: s }) });
     },
     session,
     frozen,
@@ -746,7 +746,7 @@ test('embedded in an app: the session it hands over, never stored, and no form t
   // A reload takes it from the app again, and a session a tab's storage
   // holds -- another token's -- is not the app's, and is not taken.
   const alice = jwt({ sub: 'alice', role: 'analyst' });
-  await p.evaluate((s) => sessionStorage.setItem('fenec-studio', s), JSON.stringify({ server: server.url, token: alice, tenant: null }));
+  await p.evaluate((s) => sessionStorage.setItem('fennec-studio', s), JSON.stringify({ server: server.url, token: alice, tenant: null }));
   await p.reload();
   await p.waitForSelector('.row:not(.pending)');
   assert.equal(await p.$eval('.who-name', (e) => e.textContent), 'Server token');

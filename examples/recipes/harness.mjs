@@ -1,4 +1,4 @@
-// What the demos share: a fenec-server on a port the system picks (found by
+// What the demos share: a fennec-server on a port the system picks (found by
 // the `listening on:` line on its stderr), the waits, and the clean-up.
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -7,8 +7,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const here = dirname(fileURLToPath(import.meta.url));
-export const binary = process.env.FENEC_SERVER ?? join(here, '../../target/debug/fenec-server');
-export const dir = mkdtempSync(join(tmpdir(), 'fenec-recipes-'));
+export const binary = process.env.FENNEC_SERVER ?? join(here, '../../target/debug/fennec-server');
+export const dir = mkdtempSync(join(tmpdir(), 'fennec-recipes-'));
 
 const children = [];
 const onExit = [];
@@ -23,7 +23,7 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => cleanup().then(()
 
 /** A server over a new file in the demo's directory; resolves to its URL. */
 export function server(name, args) {
-  const child = spawn(binary, ['--file', join(dir, `${name}.fenec`), '--http', '127.0.0.1:0', ...args],
+  const child = spawn(binary, ['--file', join(dir, `${name}.fennec`), '--http', '127.0.0.1:0', ...args],
     { stdio: ['ignore', 'ignore', 'pipe'] });
   children.push(child);
   return new Promise((resolve, reject) => {
@@ -33,7 +33,7 @@ export function server(name, args) {
       const m = err.match(/listening on: (http:\/\/\S+)/);
       if (m) resolve(m[1]);
     });
-    child.on('exit', (code) => reject(new Error(`fenec-server exited ${code}: ${err}`)));
+    child.on('exit', (code) => reject(new Error(`fennec-server exited ${code}: ${err}`)));
   });
 }
 

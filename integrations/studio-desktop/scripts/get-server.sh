@@ -1,11 +1,11 @@
 #!/bin/sh
-# Puts the fenec-server the app bundles at bin/fenec-server, and the `fenec`
-# shell it takes, verifies and restores backups with at bin/fenec, where
+# Puts the fennec-server the app bundles at bin/fennec-server, and the `fennec`
+# shell it takes, verifies and restores backups with at bin/fennec, where
 # electrobun.config.ts copies them into the app.
 #
 #   scripts/get-server.sh           build them from this checkout
-#                                   (cargo build --release -p fenec-server,
-#                                   cargo build --profile cli -p fenec-cli)
+#                                   (cargo build --release -p fennec-server,
+#                                   cargo build --profile cli -p fennec-cli)
 #   scripts/get-server.sh 0.1.12    download release v0.1.12's asset for this
 #                                   machine, which holds both, and check its
 #                                   SHA-256 against the release's own SHA256SUMS
@@ -15,16 +15,16 @@
 # the pipe on its stdin is gone, however it ended. A release older than those
 # is refused here, not found out by a window that never opens: the first with
 # --studio is 0.1.11, and the first with both is 0.1.12. And the shell must
-# have `fenec verify` and --key-file, which the backups use.
+# have `fennec verify` and --key-file, which the backups use.
 #
 #   CARGO               the cargo to build with (the Makefile's: ~/.cargo/bin/cargo
 #                       where it exists, which has the wasm32 target the repository's
 #                       rust-toolchain.toml asks for, else the one on PATH)
-#   FENEC_RELEASES      where releases are downloaded from (a test points it at a
+#   FENNEC_RELEASES     where releases are downloaded from (a test points it at a
 #                       directory with file://), default
-#                       https://github.com/fenecdb/fenecdb/releases/download
-#   FENEC_SERVER_OUT    where the server goes, default bin/fenec-server
-#   FENEC_CLI_OUT       where the shell goes, default `fenec` beside the server
+#                       https://github.com/fennec-db/fennecdb/releases/download
+#   FENNEC_SERVER_OUT   where the server goes, default bin/fennec-server
+#   FENNEC_CLI_OUT      where the shell goes, default `fennec` beside the server
 #   TARGET_TRIPLE       the release asset's target, default this machine's
 set -eu
 cd "$(dirname "$0")/.."
@@ -35,8 +35,8 @@ die() {
   exit 1
 }
 
-out=${FENEC_SERVER_OUT:-bin/fenec-server}
-cli_out=${FENEC_CLI_OUT:-$(dirname "$out")/fenec}
+out=${FENNEC_SERVER_OUT:-bin/fennec-server}
+cli_out=${FENNEC_CLI_OUT:-$(dirname "$out")/fennec}
 mkdir -p "$(dirname "$out")" "$(dirname "$cli_out")"
 # Written beside the targets and moved into place only once both have passed,
 # so a refused server or shell never replaces one that works.
@@ -59,9 +59,9 @@ if [ -z "$version" ]; then
   fi
   # The shell in the profile a release builds it with (panic = abort), as the
   # release's own tarball carries it.
-  (cd "$root" && "$CARGO" build --release -p fenec-server && "$CARGO" build --profile cli -p fenec-cli)
-  cp "$root/target/release/fenec-server" "$stage"
-  cp "$root/target/cli/fenec" "$cli_stage"
+  (cd "$root" && "$CARGO" build --release -p fennec-server && "$CARGO" build --profile cli -p fennec-cli)
+  cp "$root/target/release/fennec-server" "$stage"
+  cp "$root/target/cli/fennec" "$cli_stage"
 else
   # The version goes into a URL and a file name: only what a release is called.
   case "$version" in
@@ -77,9 +77,9 @@ else
       *) die "no release asset for $(uname -s) $(uname -m); set TARGET_TRIPLE" ;;
     esac
   fi
-  base=${FENEC_RELEASES:-https://github.com/fenecdb/fenecdb/releases/download}/v$version
-  asset=fenec-v$version-$triple.tar.gz
-  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fenec-server.XXXXXX")
+  base=${FENNEC_RELEASES:-https://github.com/fennec-db/fennecdb/releases/download}/v$version
+  asset=fennec-v$version-$triple.tar.gz
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fennec-server.XXXXXX")
   curl -fsSL "$base/SHA256SUMS" -o "$tmp/SHA256SUMS" || die "could not download $base/SHA256SUMS (is there a release v$version?)"
   curl -fsSL "$base/$asset" -o "$tmp/$asset" || die "could not download $base/$asset"
   # `sha256sum`'s lines: "<hash>  <file>". The asset must be listed: a release
@@ -92,10 +92,10 @@ else
     got=$(shasum -a 256 "$tmp/$asset" | cut -d' ' -f1)
   fi
   [ "$got" = "$want" ] || die "SHA-256 of $asset is $got, the release says $want: not using it"
-  tar -xzf "$tmp/$asset" -C "$tmp" "fenec-v$version-$triple/fenec-server" || die "$asset holds no fenec-server"
-  tar -xzf "$tmp/$asset" -C "$tmp" "fenec-v$version-$triple/fenec" || die "$asset holds no fenec shell"
-  cp "$tmp/fenec-v$version-$triple/fenec-server" "$stage"
-  cp "$tmp/fenec-v$version-$triple/fenec" "$cli_stage"
+  tar -xzf "$tmp/$asset" -C "$tmp" "fennec-v$version-$triple/fennec-server" || die "$asset holds no fennec-server"
+  tar -xzf "$tmp/$asset" -C "$tmp" "fennec-v$version-$triple/fennec" || die "$asset holds no fennec shell"
+  cp "$tmp/fennec-v$version-$triple/fennec-server" "$stage"
+  cp "$tmp/fennec-v$version-$triple/fennec" "$cli_stage"
   echo "get-server: $asset, SHA-256 $got matches the release's SHA256SUMS"
 fi
 
@@ -103,12 +103,12 @@ chmod +x "$stage" "$cli_stage"
 help=$("$stage" --help 2>&1 || true)
 for flag in --studio --exit-on-stdin-close; do
   printf '%s\n' "$help" | grep -q -- "$flag" ||
-    die "this fenec-server has no $flag, which the app starts it with (the first release with --studio is 0.1.11, and with both flags 0.1.12): build the one in this checkout with scripts/get-server.sh, or name a release that has both"
+    die "this fennec-server has no $flag, which the app starts it with (the first release with --studio is 0.1.11, and with both flags 0.1.12): build the one in this checkout with scripts/get-server.sh, or name a release that has both"
 done
 cli_help=$("$cli_stage" backup --help 2>&1 || true)
-for word in "fenec verify" --key-file; do
+for word in "fennec verify" --key-file; do
   printf '%s\n' "$cli_help" | grep -q -- "$word" ||
-    die "this fenec shell has no \`$word\`, which the app's backups use: build the one in this checkout with scripts/get-server.sh, or name a release that has it"
+    die "this fennec shell has no \`$word\`, which the app's backups use: build the one in this checkout with scripts/get-server.sh, or name a release that has it"
 done
 mv "$stage" "$out"
 mv "$cli_stage" "$cli_out"

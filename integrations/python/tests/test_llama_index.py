@@ -17,12 +17,12 @@ from llama_index.core.vector_stores.types import (
 )
 
 from conftest import TOKEN, URL, fresh
-from fenecdb.llama_index import FenecVectorStore
+from fennecdb.llama_index import FennecVectorStore
 
 
 @pytest.fixture()
 def store():
-    s = FenecVectorStore(
+    s = FennecVectorStore(
         fresh("li"),
         url=URL,
         token=TOKEN,
@@ -58,7 +58,7 @@ def ids(result):
 
 
 def test_class():
-    names = [b.__name__ for b in FenecVectorStore.__mro__]
+    names = [b.__name__ for b in FennecVectorStore.__mro__]
     assert BasePydanticVectorStore.__name__ in names
 
 
@@ -147,7 +147,7 @@ def test_filters(store, nodes):
 def test_an_index_on_top(store):
     embed = MockEmbedding(embed_dim=8)
     index = VectorStoreIndex.from_documents(
-        [Document(text="fenecdb is a database", doc_id="d1"), Document(text="a desert fox", doc_id="d2")],
+        [Document(text="fennecdb is a database", doc_id="d1"), Document(text="a desert fox", doc_id="d2")],
         storage_context=StorageContext.from_defaults(vector_store=store),
         embed_model=embed,
     )
@@ -160,7 +160,7 @@ def test_an_index_on_top(store):
 
 @pytest.fixture()
 def worded():
-    s = FenecVectorStore(
+    s = FennecVectorStore(
         fresh("li"),
         url=URL,
         token=TOKEN,
@@ -204,6 +204,6 @@ def test_modes_are_refused_without_their_index(store, nodes):
     with pytest.raises(ValueError):
         store.query(VectorStoreQuery(query_str="lorem", similarity_top_k=1, mode="text_search"))
     with pytest.raises(ValueError):
-        FenecVectorStore(fresh("li"), url=URL, token=TOKEN, metric="l2", quant="bit")
+        FennecVectorStore(fresh("li"), url=URL, token=TOKEN, metric="l2", quant="bit")
     with pytest.raises(ValueError):
-        FenecVectorStore(fresh("li"), url=URL, token=TOKEN, quant="pq")
+        FennecVectorStore(fresh("li"), url=URL, token=TOKEN, quant="pq")

@@ -1,0 +1,381 @@
+<!--
+title: FennecQL — fennecdb
+description: FennecQL, the query language of fennecdb: a tour from the first write to a lookup and a total, run in the shell, then the reference by family of statements and the full grammar.
+-->
+
+{{moved_script}}
+
+<h1>FennecQL</h1>
+<p class="kicker">The query language you use to create collections, write
+documents and search them by vector, by text or by filter.</p>
+
+<p>FennecQL is a small language: one statement reads or writes a collection of
+documents, and the same text runs in the browser, in an app, in the shell and
+over HTTP. This page is a tour of it and the grammar; the reference is a page
+for each family of statements, listed <a href="#pages">below the tour</a>.
+<a href="#statements">Jump to the grammar.</a></p>
+
+<p>An example of the reference with tabs shows the same statement written
+with each language's <a href="languages.html#builder">query builder</a>,
+<code>db</code> a client of the server or the database in an app, and the
+statement that code sends. Each tab's code is run by that language's tests,
+as shown, and held to the statement.</p>
+
+<h2 id="tour">A tour</h2>
+
+<p>One database, built in the shell a step at a time. Each step is a few
+statements as written with the shell's answer under them; the timings are from
+one run, and yours differ. To follow along, open a file with <code>fennec
+books.fennec</code> (<a href="install.html">Install</a> has the download, and <a
+href="shell.html#quickstart">The shell</a> the first steps) and type each line
+at the prompt. A write ends at a <code>;</code>.</p>
+
+<h3 id="tour-write">Make a collection and write to it</h3>
+
+<p>A collection has typed fields. <code>put</code> writes documents, and the database gives each an <code>id</code>.</p>
+
+<pre data-lang="text">fennec&gt; create collection books (title text, year int, author int, copies int);
+collection `books` created
+fennec&gt; put books [{title: "Desert Dunes", year: 2019, author: 1, copies: 3}, {title: "Night Oasis", year: 2024, author: 2, copies: 1}, {title: "Fennec Ears", year: 2021, author: 1, copies: 0}, {title: "Oasis Maps", year: 2016, author: 2, copies: 5}];
+4 records (132.88µs)
+</pre>
+
+<p>More in <a href="fennecql-writing.html">Writing data</a>.</p>
+
+<h3 id="tour-read">Read it back</h3>
+
+<p><code>get</code> with nothing after it is every row.</p>
+
+<pre data-lang="text">fennec&gt; get books
+id  title         year  author  copies
+--  ------------  ----  ------  ------
+1   Desert Dunes  2019  1       3
+2   Night Oasis   2024  2       1
+3   Fennec Ears   2021  1       0
+4   Oasis Maps    2016  2       5
+(4 rows, 102.58µs)
+</pre>
+
+<p>More in <a href="fennecql-reading.html">Reading data</a>.</p>
+
+<h3 id="tour-filter">Filter and order</h3>
+
+<p><code>select</code> names the fields to return, <code>where</code> keeps the rows, <code>order</code> sorts them and <code>limit</code> takes a page.</p>
+
+<pre data-lang="text">fennec&gt; get books select title, year where year &gt;= 2020 order year desc
+title        year
+-----------  ----
+Night Oasis  2024
+Fennec Ears  2021
+(2 rows, 147.79µs)
+fennec&gt; get books select title, copies where copies &gt; 0 order year limit 2
+title         copies
+------------  ------
+Oasis Maps    5
+Desert Dunes  3
+(2 rows, 157.21µs)
+</pre>
+
+<p>More in <a href="fennecql-reading.html">Reading data</a>.</p>
+
+<h3 id="tour-change">Change it</h3>
+
+<p>A <code>set</code> can read the row it writes, and <code>require 1</code> refuses the statement unless exactly one row changed. <code>insert … returning id</code> answers the id it made.</p>
+
+<pre data-lang="text">fennec&gt; set books {copies: copies + 2} where title = "Fennec Ears" require 1;
+1 records (156.21µs)
+fennec&gt; insert books {title: "Salt Roads", year: 2022, author: 1, copies: 4} returning id;
+id
+--
+5
+(1 rows, 110.04µs)
+</pre>
+
+<p>More in <a href="fennecql-writing.html">Writing data</a>.</p>
+
+<h3 id="tour-index">Index it</h3>
+
+<p>A filter works without an index, by reading the rows; an index makes one kind of question fast. <code>explain</code> runs a query and says how it ran: here the ordered index is walked and stops at the page.</p>
+
+<pre data-lang="text">fennec&gt; create index on books (year) @sorted;
+index built on `books.year`
+fennec&gt; explain get books where year &gt;= 2020 order year desc limit 2
+plan
+----------------------------------------------------
+order: walked the ordered index on year desc, 2 rows
+rows: 2
+(2 rows, 250.79µs)
+</pre>
+
+<p>More in <a href="fennecql-indexes.html">Indexes</a>.</p>
+
+<h3 id="tour-search">Search the words</h3>
+
+<p>A <code>@text</code> index lets <code>match</code> rank rows by how well their words match. <code>fuzzy</code> finds a word typed wrong, and <code>highlight()</code> says where in the text the words are.</p>
+
+<pre data-lang="text">fennec&gt; create index on books (title) @text;
+index built on `books.title`
+fennec&gt; get books select title match title "oasis"
+title        _score
+-----------  ------
+Night Oasis  0.8755
+Oasis Maps   0.8755
+(2 rows, 258.04µs)
+fennec&gt; get books select title, highlight(title) match title "oasys" fuzzy
+title        highlight(title)  _score
+-----------  ----------------  ------
+Night Oasis  [[6, 11]]         0.8755
+Oasis Maps   [[0, 5]]          0.8755
+(2 rows, 404.92µs)
+</pre>
+
+<p>More in <a href="fennecql-search.html">Text search</a>.</p>
+
+<h3 id="tour-lookup">Follow a key into another collection</h3>
+
+<p><code>lookup</code> attaches another collection's rows to each row, by a key that collection indexes. The shell prints them as joined rows; over JSON they nest under <code>books</code>.</p>
+
+<pre data-lang="text">fennec&gt; create collection authors (name text, country text);
+collection `authors` created
+fennec&gt; put authors [{name: "Ada", country: "UK"}, {name: "Bo", country: "TR"}];
+2 records (92.46µs)
+fennec&gt; create index on books (author) @hash;
+index built on `books.author`
+fennec&gt; get authors select name lookup books on author select title order year
+name  books.title
+----  ------------
+Ada   Desert Dunes
+Ada   Fennec Ears
+Ada   Salt Roads
+Bo    Oasis Maps
+Bo    Night Oasis
+(5 rows, 181.67µs)
+</pre>
+
+<p>More in <a href="fennecql-lookup.html">Lookup and subqueries</a>.</p>
+
+<h3 id="tour-aggregate">Count and group</h3>
+
+<p>An aggregate in the select list folds rows into one, and <code>group</code> makes one row per key.</p>
+
+<pre data-lang="text">fennec&gt; get books select author, count(*) as books, sum(copies) as copies group author order books desc
+author  books  copies
+------  -----  ------
+1       3      9
+2       2      6
+(2 rows, 154.25µs)
+</pre>
+
+<p>More in <a href="fennecql-aggregates.html">Aggregates and grouping</a>.</p>
+
+<p>Not in the tour: <a href="fennecql-vector.html">vector search</a>, which
+finds the rows whose embedding is closest to one you pass, and
+<a href="fennecql-schema.html">types</a> such as <code>json</code>,
+<code>timestamp</code> and <code>geo</code>.</p>
+
+<h2 id="pages">The reference pages</h2>
+
+<p>A page for each family of statements: what it is for, a run you can repeat,
+then every rule, with the measurements and the internals folded under a
+line that says what is inside.</p>
+
+<ul class="cards">
+  <li><a href="fennecql-reading.html">Reading data</a>
+    <p><code>get</code>, <code>where</code>, <code>order</code>, <code>limit</code>; pages by parameters, columns worked out, <code>explain</code>.</p></li>
+  <li><a href="fennecql-writing.html">Writing data</a>
+    <p><code>put</code>, <code>insert</code>, <code>set</code>, <code>del</code>; upserts, <code>require</code>, <code>returning</code>, writes that pick their rows.</p></li>
+  <li><a href="fennecql-schema.html">Collections and types</a>
+    <p><code>json</code> fields and paths, points, time, collation, <code>nocase</code>, <code>alter collection</code>.</p></li>
+  <li><a href="fennecql-indexes.html">Indexes</a>
+    <p>Hash, ordered and unique indexes, indexes over several fields, rows that expire.</p></li>
+  <li><a href="fennecql-lookup.html">Lookup and subqueries</a>
+    <p>Attach another collection's rows to each row, or filter by them.</p></li>
+  <li><a href="fennecql-aggregates.html">Aggregates and grouping</a>
+    <p><code>count</code>, <code>sum</code>, <code>group</code>, <code>having</code>, <code>bucket</code> and time zones.</p></li>
+  <li><a href="fennecql-search.html">Text search</a>
+    <p><code>match</code>, typos, highlights, facets and hybrid search.</p></li>
+  <li><a href="fennecql-vector.html">Vector search</a>
+    <p><code>near</code>, quantized indexes and sparse vectors.</p></li>
+</ul>
+
+<h2 id="statements">Statements</h2>
+
+<p>FennecQL is a small language with vectors in the core. It is not SQL and
+does not try to be, but it reads SQL's everyday spellings as the statements
+they mean — <code>select … from</code>, <code>CREATE TABLE</code>,
+<code>INSERT INTO … VALUES</code>, <code>UPDATE … SET a = …</code>,
+<code>JOIN</code> as a <code>lookup</code>, <code>IN (…)</code>,
+<code>EXISTS</code>, <code>DISTINCT</code>, <code>BETWEEN</code>,
+<code>LIKE</code>, <code>ON CONFLICT</code> — and refuses the rest saying
+what to write: see <a href="/docs/sql">From SQL</a>. These are all its
+statements.</p>
+
+<pre data-lang="fennecql">create collection [if not exists] &lt;name&gt; ( &lt;field&gt; &lt;type&gt; [required] [collate und|tr] [nocase] [@index], ...
+                                         [, @sorted(&lt;field&gt; [desc], ...) | @unique(&lt;field&gt;, ...)] )
+drop collection [if exists] &lt;name&gt;
+create index [if not exists] on &lt;name&gt; (&lt;field&gt; | &lt;path&gt;) @index
+create index [if not exists] on &lt;name&gt; (&lt;field&gt; [desc], &lt;field&gt; [desc], ...) @sorted | @unique
+drop index [if exists] on &lt;name&gt; (&lt;field&gt;, &lt;field&gt;, ...)
+alter collection &lt;name&gt; add field &lt;field&gt; &lt;type&gt; [collate und|tr] [nocase] [@index]
+alter collection &lt;name&gt; drop field &lt;field&gt;
+alter collection &lt;name&gt; rename field &lt;field&gt; to &lt;new name&gt;
+alter collection &lt;name&gt; alter field &lt;field&gt; @ttl(&lt;duration&gt;) | @sorted
+
+put &lt;name&gt; { field: value, ... }              -- or [ {...}, {...} ]
+insert [into] &lt;name&gt; { field: value, ... }     -- as put, refusing an id that is taken
+put &lt;name&gt; { field: value, ... } if absent     -- a held id or @unique value passed over, and not counted
+put &lt;name&gt; { ... } if absent else set { n: n + new.n }   -- an upsert: the row holding it set, new.f the document's
+put &lt;name&gt; $1 [if absent ...]                -- the documents a parameter holds: an object, or a list of them
+insert into &lt;name&gt; (a, b) values (1, 'x'), ... [on conflict do nothing | do update set a = ...]  -- SQL's spelling
+update &lt;name&gt; set a = &lt;expr&gt;, b = &lt;expr&gt; [where ...]   -- SQL's spelling of set
+get &lt;name&gt; [select a, b] [where &lt;expr&gt;]
+           [near &lt;field&gt; &lt;vector&gt; [ef N] [exact]]
+           [match &lt;field&gt; &lt;text&gt; [fuzzy [N]] [prefix]] [rerank &lt;field&gt; &lt;vector&gt; [candidates N]]
+           [fuse [k N] [candidates N]]             -- match and near, both ranking
+           [order &lt;key&gt; [collate und|tr] [asc|desc], ...] [limit N] [offset N]   -- N or a parameter, $2
+                                                   -- a key: a field, or an expression, distance(loc, $1)
+           [facet &lt;field&gt; [top N | ranges [..]] [disjunctive], ...]   -- value counts over every matched row
+           [lookup &lt;name&gt; on &lt;child&gt; [= &lt;parent&gt;] [required] &lt;clauses...&gt;]...
+           [lookup &lt;name&gt; on (&lt;child&gt;, ...) = (&lt;parent&gt;, ...) ...]   -- a key over several fields
+get &lt;name&gt; select a, highlight(f [, pre, post]), snippet(f, N [, ellipsis [, pre, post]])
+           match &lt;field&gt; &lt;text&gt; ...           -- where the words matched
+get &lt;name&gt; where &lt;field&gt; in (get &lt;name&gt; select &lt;field&gt; ...)  -- a subquery's list
+get &lt;name&gt; [where &lt;expr&gt;] count               -- number of matching rows
+get &lt;name&gt; select [&lt;key&gt;,] count(*), count(distinct e), sum(e), avg(e), min(e), max(e),
+           first(e [by k]), last(e [by k]), approx_count_distinct(e),
+           hll_accumulate(e), hll_combine(sketch) [as &lt;name&gt;], ... [where &lt;expr&gt;]
+           [group &lt;key&gt;, ... [having &lt;expr&gt;] [order &lt;column&gt; [desc]] [limit N] [offset N] [count]]
+get &lt;name&gt; select a, &lt;expr&gt; as &lt;name&gt; ...     -- a column worked out over each row
+explain get &lt;name&gt; ...                         -- the path the query took
+select a, b from &lt;name&gt; [where ...]           -- the classic SQL order works too
+set &lt;name&gt; { field: value, path: value } [where &lt;expr&gt;]  -- a value may read the row: {n: n + 1}
+del &lt;name&gt; [where &lt;expr&gt;]
+&lt;set | del ...&gt; [order &lt;key&gt; [desc], ...] [limit N] [returning * | a, b]   -- the page a get answers, written and answered
+&lt;put | insert ...&gt; [returning * | a, b]       -- the rows written, ids and all, in the documents' order
+&lt;put | insert | set | del ...&gt; require N [else '&lt;reason&gt;']   -- refused, and its batch put back, unless it wrote N rows
+get &lt;name&gt; ... require N [else '&lt;reason&gt;'] [lookup ...]      -- refused, and its batch put back, unless it answered N rows; the reason is said
+
+collections | describe &lt;name&gt; | compact [&lt;name&gt;]
+
+-- a path, meta.source.rank, reads into a json field wherever a field is read
+</pre>
+
+<ul>
+  <li><b>Every document gets an <code>id</code></b> on its own. Give one in a
+    <code>put</code> and it writes over the document with that id.</li>
+  <li><b><code>insert</code> never writes over.</b> If an id is taken, the
+    whole statement is refused; <code>put … if absent</code> passes over it
+    instead, and the answer counts what was written; <code>put … if absent
+    else set {n: n + new.n}</code> sets the row holding it instead, an upsert
+    in one statement, <code>new.f</code> the document's field.</li>
+  <li><b>A <code>set</code> can read the row it writes.</b>
+    <code>set hits {n: n + 1} where key = "ip1"</code> is an increment, made
+    under the write lock — see <a href="fennecql-writing.html#writes">Writes that read the
+    row</a>.</li>
+  <li><b>A <code>set</code> or a <code>del</code> can pick its rows and answer
+    them.</b> <code>order</code> and <code>limit</code> write the page a
+    <code>get</code> with them would answer, and <code>returning</code> hands
+    it back: a job queue's claim in one statement — see
+    <a href="fennecql-writing.html#pick">Writes that pick their rows</a>. A <code>put</code> or
+    an <code>insert</code> answers the rows it wrote with
+    <code>returning</code>, the ids it made among them.</li>
+  <li><b>A page's numbers take a parameter.</b> <code>limit $2 offset
+    $3</code>, and a facet's <code>top $4</code>: every page of a list is
+    one statement, which a server parses once — see <a href="fennecql-reading.html#paging">Pages
+    by parameters</a>.</li>
+  <li><b><code>require N</code> makes a count a condition.</b> A write that
+    does not write exactly <code>N</code> rows, or a <code>get</code> that
+    does not answer exactly <code>N</code>, is refused, and the batch it is
+    in is put back whole — see <a href="fennecql-writing.html#require">Writes that must find
+    their rows</a>. <code>else '&lt;reason&gt;'</code> after the count says
+    why, a text written in the statement (never a parameter, at most 200
+    bytes, no backtick), which a caller reads back as <code>reason</code> — see <a href="fennecql-writing.html#require-reason">A
+    reason for the refusal</a>.</li>
+  <li><b><code>alter collection</code> rewrites no document.</b> A field
+    added reads <code>null</code> in the documents already there; a field's
+    type does not change — see <a href="fennecql-schema.html#changing-a-collection">Changing a
+    collection</a>.</li>
+  <li><b>A statement ends where the next one begins, or at a
+    <code>;</code>.</b> No separator is needed, and a statement may run
+    over several lines: the parser reads where each ends. A
+    <code>;</code> ends the statement before it, so no clause goes on past
+    one — <code>del notes; where id = 3</code> is refused, not read as one
+    statement, and so is a <code>;</code> inside brackets, <code>in (get
+    … ;)</code>. A clause that is a statement too begins one after it:
+    <code>get a lookup b on k; select z</code> is two statements, the
+    second a read of <code>z</code>. A query string's <code>select=</code>,
+    <code>group=</code> and <code>facet=</code> take a <code>;</code> after
+    their list as they always did. How the shell runs statements written
+    over lines is in <a href="shell.html#statements-over-lines">The
+    shell</a>.</li>
+</ul>
+
+<h3 id="named-statements">Named statements, not built yet</h3>
+
+<p>A named statement is a statement, or a block of them, defined once in a
+database and called by name with typed arguments, running with its own
+text's authority — PostgreSQL's function used as an API, with FennecQL for
+its body. Its forms are read, and every one is refused, as <i>named
+statements are not built yet</i>, until the slices that store, check and
+scope them land: a statement defined with nothing to check it, or called
+with nothing to scope it, is never run.</p>
+
+<pre data-lang="fennecql">create [or replace] statement &lt;name&gt;($p &lt;type&gt; [= &lt;literal&gt;], ...)
+       [claims (&lt;c&gt; &lt;type&gt; [from "&lt;claim&gt;"], ...)] [public] [scans] [comment '&lt;text&gt;'] [check &lt;expr&gt;]
+       as &lt;statement&gt; | as begin &lt;statement&gt;; ... end   -- $p and $jwt.&lt;c&gt; in the body
+drop statement [if exists] &lt;name&gt; | statements | describe statement &lt;name&gt;
+call &lt;name&gt; [{p: value, ...} | $1] [as {c: value, ...}]   -- SQL's CALL &lt;name&gt;(v, ..., p =&gt; v)
+</pre>
+
+<p>A body holds <code>get</code>, <code>insert</code>, and <code>set</code>
+and <code>del</code> with a <code>where</code> or a pick, and its last
+statement names the fields it answers; a <code>put</code>, a parameter's
+documents, a schema change, a <code>call</code> or a collection whose name
+starts with <code>_</code> is refused as the definition is read. A
+<code>$name</code> outside a definition is refused: a statement sent alone
+numbers its parameters, <code>$1</code>. <code>statements</code> lists
+none, and <code>describe statement</code> finds none. The browser module
+reads none of these forms, refusing them as <i>named statements are a
+server's</i>.</p>
+
+<details class="deep"><summary>How insert and put treat an id</summary>
+<p>The <code>id</code> field is automatic. Supplying <code>id</code> inside a
+<code>put</code> turns it into an upsert. <code>insert</code> makes documents
+and never writes over one: a document naming an id that is taken refuses the
+statement, and nothing of it is written — <code>409</code> over HTTP, as
+PostgreSQL's <code>INSERT</code> refuses a taken key. Without an <code>id</code> the
+two are the same. A retried write that must not be made twice either way
+sends an <a href="/docs/http#idempotency"><code>Idempotency-Key</code></a>.</p>
+</details>
+
+<h2 id="reference">Reference</h2>
+
+<p>Types, indexes, operators and functions at a glance.</p>
+
+<div class="tbl">
+<table>
+<tbody>
+<tr><td><b>Types</b></td><td><code>bool</code> <code>int</code> <code>float</code> <code>text</code> <code>bytes</code> <code>timestamp</code> <code>vector&lt;N[, f16]&gt;</code> <code>sparse&lt;N&gt;</code> <code>[type]</code> <code>json</code> <code>geo</code> (a point, <code>[lon, lat]</code> — see <a href="fennecql-schema.html#geo">Points</a>)</td></tr>
+<tr><td><b>Case</b></td><td><code>email text nocase</code> compares by its case fold wherever it is compared — <code>=</code>, its indexes, <code>order</code>, <code>group</code> — and keeps what was written — see <a href="fennecql-schema.html#nocase">Case-insensitive text</a></td></tr>
+<tr><td><b>Paths</b></td><td><code>meta.source.rank</code> reads into a <code>json</code> field in <code>where</code>, <code>select</code>, <code>order</code> and <code>set</code>, and takes <code>@hash</code>, <code>@unique</code> and <code>@sorted</code> — see <a href="fennecql-schema.html#json">Objects and paths</a></td></tr>
+<tr><td><b>Indexes</b></td><td><code>@sorted(owner, created desc)</code> and <code>@unique(org, slug)</code> over several fields (see <a href="fennecql-indexes.html#composite">Indexes over several fields</a>), <code>@hash</code>, <code>@unique</code>, <code>@sorted</code>, <code>@ttl(30m)</code> (a <code>timestamp</code> field's rows expire — see <a href="fennecql-indexes.html#ttl">Rows that expire</a>), <code>@text(k1=.., b=.., prefix=.., chars)</code>, <code>@hnsw(metric, m=.., ef_construction=.., ef_search=.., quant=int8|bit)</code>, <code>@inverted</code> (a <code>sparse&lt;N&gt;</code> field's), <code>@geo</code> (a <code>geo</code> field's)</td></tr>
+<tr><td><b>Defaults</b></td><td><code>@hnsw(cosine, m=16, ef_construction=200, ef_search=100)</code>; <code>ef_search=200</code> with <code>quant=bit</code></td></tr>
+<tr><td><b>Metrics</b></td><td><code>cosine</code> <code>l2</code> <code>dot</code></td></tr>
+<tr><td><b>Operators</b></td><td><code>=</code> <code>!=</code> (or <code>&lt;&gt;</code>) <code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code>, <code>~</code> text contains (case-insensitive), <code>has</code> list contains, <code>in [..]</code> (or <code>in (..)</code>), <code>in (get …)</code> — see <a href="fennecql-lookup.html#subqueries">Subqueries</a>, <code>is null</code>, <code>between a and b</code>, <code>like</code> and <code>ilike</code> with <code>%</code> and <code>_</code>, <code>not in</code>, <code>not like</code>, <code>not between</code> — see <a href="/docs/sql">From SQL</a></td></tr>
+<tr><td><b>Arithmetic</b></td><td><code>+</code> <code>-</code> <code>*</code> <code>/</code> on numbers, a <code>timestamp</code> moved by milliseconds, and <code>+</code> (or <code>||</code>) joining two texts — in a <code>set</code>'s values and in <code>where</code>; see <a href="fennecql-writing.html#writes">Writes that read the row</a></td></tr>
+<tr><td><b>Logic</b></td><td><code>and</code> <code>or</code> <code>not</code> — <code>and</code> binds tighter</td></tr>
+<tr><td><b>Parameters</b></td><td><code>$1</code>, <code>$2</code>, … as in PostgreSQL, wherever a value goes, and as <code>limit</code>, <code>offset</code> and a facet's <code>top</code> — see <a href="fennecql-reading.html#paging">Pages by parameters</a></td></tr>
+<tr><td><b>Functions</b></td><td><code>lower</code> <code>upper</code> <code>len</code> <code>coalesce</code> <code>greatest</code> <code>least</code> <code>now</code> <code>expired</code> (<a href="fennecql-indexes.html#reaper">rows past their <code>@ttl</code></a>) <code>timestamp</code> <code>bucket(at, 15m [, zone])</code> <code>cosine</code> <code>l2</code> <code>dot</code> <code>norm</code> <code>normalize</code> <code>distance(loc, p)</code> <code>within(loc, box)</code> (<a href="fennecql-schema.html#geo">Points</a>), <code>case when … then … else … end</code>, plus plugins — see <a href="fennecql-reading.html#functions">Functions over a row</a></td></tr>
+<tr><td><b>Ordering</b></td><td><code>order year desc, title asc</code> — a tie on the first key is decided by the second; <code>id</code> can be ordered too; a key may be any expression over the row, <code>order distance(loc, $1)</code>, <code>order price * qty desc</code> (see <a href="fennecql-reading.html#order-by-expression">Ordering by an expression</a>); <code>order name collate und</code> puts text in Unicode's order for every language and <code>collate tr</code> in Turkish order, and a field declared <code>name text collate und</code> is in it wherever it compares — see <a href="fennecql-schema.html#collation">Collation</a></td></tr>
+<tr><td><b>Picking</b></td><td><code>set … order run_at limit 10 returning *</code> writes the rows a <code>get</code> with the clauses answers and hands them back, as written; <code>del … returning</code> as they were; <code>insert … returning id</code> the rows it made — see <a href="fennecql-writing.html#pick">Writes that pick their rows</a></td></tr>
+<tr><td><b>Explain</b></td><td><code>explain get ...</code> runs the query and returns the path it took, one row a step — see <a href="fennecql-reading.html#explain">Explain</a></td></tr>
+<tr><td><b>Typos</b></td><td><code>match body $1 fuzzy</code> matches each word within the edits its length allows, a word as typed ranking first; <code>prefix</code> matches the last word as the start of one, as a search box is typed into — see <a href="fennecql-search.html#typos">Typos and words begun</a></td></tr>
+<tr><td><b>Highlights</b></td><td><code>highlight(body)</code> and <code>snippet(body, 20)</code> in the select list mark the words a <code>match</code> found, as UTF-16 offsets or between tags you pass — see <a href="fennecql-search.html#highlights">Highlights and snippets</a></td></tr>
+<tr><td><b>Facets</b></td><td><code>facet brand, color top 10</code> counts each value over every row the query matches, beside the page — see <a href="fennecql-search.html#facets">Facets</a></td></tr>
+<tr><td><b>Counting</b></td><td><code>count</code> returns one row with one column; it does not combine with <code>select</code>, <code>near</code>, <code>match</code>, <code>order</code>, <code>limit</code> or <code>offset</code></td></tr>
+<tr><td><b>Aggregates</b></td><td><code>count(*)</code> <code>count(…)</code> (the rows it is not null in) <code>count(distinct …)</code> <code>sum</code> <code>avg</code> <code>min</code> <code>max</code> <code>first(… by …)</code> <code>last(… by …)</code> <code>approx_count_distinct</code> <code>hll_accumulate</code> <code>hll_combine</code> over fields, paths or expressions, whole or per <code>group</code> of one key or several, the groups kept by <code>having</code> — see <a href="fennecql-aggregates.html#aggregates">Aggregates</a> and the <a href="/docs/analytics">analytics and market-data recipes</a></td></tr>
+<tr><td><b>Columns</b></td><td><code>select px * qty as notional</code>: an expression over the row, named with <code>as</code> — see <a href="fennecql-reading.html#columns">Columns worked out</a></td></tr>
+<tr><td><b>Ceilings</b></td><td><code>near</code>, <code>match</code> and <code>fuse</code> at most 10 000 rows (<code>limit + offset</code>, a parameter's as a number written), <code>rerank</code> at most 10 000 candidates, <code>fuse</code> 10 000 a side; a word of a <code>fuzzy</code> or <code>prefix</code> <code>match</code> 10 000 words of the index; expression depth 512 levels; a <code>json</code> value 64 levels deep, a path 64 keys; <code>in (get …)</code> 100 000 values and 4 levels — see <a href="limits.html">Limits</a></td></tr>
+</tbody>
+</table>
+</div>

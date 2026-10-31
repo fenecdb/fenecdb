@@ -1,7 +1,7 @@
 // The journal streamed to a sink outside the database -- here a file of
 // JSON lines, standing in for a warehouse or a message bus.
 //
-// fenec-server keeps the consumer's place (`/_changes/consumers/<name>`),
+// fennec-server keeps the consumer's place (`/_changes/consumers/<name>`),
 // and a consumer moves it only after the lines it read are in the sink and
 // synced. So each write reaches the sink at least once: a crash between the
 // sink's sync and the commit hands the same writes over again. The entry's
@@ -25,7 +25,7 @@ export interface SinkLine {
 }
 
 export interface SinkOptions {
-  /** fenec-server's base, `http://host:port/t/<tenant>` on a tenant node. */
+  /** fennec-server's base, `http://host:port/t/<tenant>` on a tenant node. */
   base: string;
   /** The operator's token. */
   token: string;
@@ -128,7 +128,7 @@ export class Sink {
       return 0;
     }
     if (!res.ok) throw new Error(`/_changes: ${res.status} ${await res.text()}`);
-    const next = Number(res.headers.get('fenec-next') ?? this.cursor);
+    const next = Number(res.headers.get('fennec-next') ?? this.cursor);
     let n = 0;
     let writes = 0;
     let out = '';
@@ -189,7 +189,7 @@ export class Sink {
     const body = JSON.stringify({ query: 'get journal' });
     const res = await this.#req('/batch', { method: 'POST', body });
     if (!res.ok) throw new Error(`backfill: ${res.status} ${await res.text()}`);
-    const seq = Number(res.headers.get('fenec-seq'));
+    const seq = Number(res.headers.get('fennec-seq'));
     const json = (await res.json()) as { results: { rows: Record<string, unknown>[] }[] };
     let out = '';
     for (const doc of json.results[0].rows) out += this.#line(doc, 0);

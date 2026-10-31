@@ -1,0 +1,21 @@
+name: fennecdb_flutter_example
+description: A todo list kept in a fennecdb file, its list a live query.
+publish_to: none
+version: 0.1.12
+
+environment:
+  sdk: ^3.4.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  fennecdb_flutter:
+    path: ../
+  path_provider: ^2.1.0
+
+dependency_overrides:
+  fennecdb:
+    path: ../../fennecdb
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,691 @@
+//! `GET /_metrics`: what the server has done and what it holds, in
+//! Prometheus's text format.
+//!
+//! A statement is counted from its arrival to its answer -- the wait for the
+//! lock and, under `--sync always`, for the disk included, since that is the
+//! latency a client sees -- by whether it wrote. The counters are process-wide atomics, spread over shards a
+//! thread each: every connection is a thread, and eight of them counting
+//! into one set of counters cost a statement 720 ns in a tight loop, where
+//! one alone costs 6.4 ns -- the cache line went from core to core. With a
+//! shard each, eight cost 6.7 ns. A thread takes the next shard as it
+//! starts, and a scrape adds them up.
+//!
+//! The path carries an underscore, as `/_admin` and `/_replication` do: a
+//! collection may well be called `metrics`, and `GET /metrics` is how its
+//! rows are read. Prometheus takes the path as `metrics_path`.
+//!
+//! The gauges are read under the database's shared lock, which a scrape
+//! holds as briefly as a `count` does. The counters are one set per process
+//! -- `fennec-server` serves one database, or one directory of tenants, per
+//! process -- and a tenant node counts its tenants, not what they hold: a
+//! tenant's collection names are not the node's to publish.
+
+use crate::http::{Request, Response};
+use crate::replication::Replication;
+use crate::tenants::Stats;
+use crate::{constant_eq, Config};
+use fennec_core::prelude::*;
+use std::cell::Cell;
+use std::fmt::{Display, Write as _};
+use std::sync::atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering};
+use std::sync::OnceLock;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+/// Upper bounds of the latency buckets, in microseconds: 100 µs, where a
+/// point read over HTTP lands, to 10 s, where a full rebuild does.
+pub const BUCKETS: [u64; 16] = [
+    100, 250, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000, 500_000,
+    1_000_000, 2_500_000, 5_000_000, 10_000_000,
+];
+
+#[allow(clippy::declare_interior_mutable_const)]
+const ZERO: AtomicU64 = AtomicU64::new(0);
+
+/// Durations, as a Prometheus histogram counts them: how many, their sum,
+/// and a count a bucket of `bounds` (microseconds). A bucket counts only its
+/// own range; the exposition adds them up, as Prometheus's buckets are
+/// cumulative. The router counts its requests with these as a node counts
+/// its statements.
+pub struct Timings {
+    bounds: &'static [u64; 16],
+    count: AtomicU64,
+    micros: AtomicU64,
+    buckets: [AtomicU64; 16],
+}
+
+impl Timings {
+    pub const fn new(bounds: &'static [u64; 16]) -> Timings {
+        Timings {
+            bounds,
+            count: ZERO,
+            micros: ZERO,
+            buckets: [ZERO; 16],
+        }
+    }
+
+    pub fn add(&self, took: Duration) {
+        let micros = took.as_micros().min(u64::MAX as u128) as u64;
+        self.count.fetch_add(1, Ordering::Relaxed);
+        self.micros.fetch_add(micros, Ordering::Relaxed);
+        if let Some(b) = self.bounds.iter().position(|&le| micros <= le) {
+            self.buckets[b].fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+/// The histogram `name` with `labels`, over the same series of each shard.
+/// Shards are read one after another while counting goes on, so a total can
+/// be one short of a bucket read a moment later -- as any scrape of a
+/// running server can be.
+pub fn histogram(out: &mut Text, name: &str, labels: &[(&str, &str)], shards: &[&Timings]) {
+    let Some(first) = shards.first() else {
+        return;
+    };
+    let total =
+        |f: &dyn Fn(&Timings) -> &AtomicU64| -> u64 { shards.iter().map(|t| load(f(t))).sum() };
+    let bucket = format!("{name}_bucket");
+    let with = |le: &str, n: u64, out: &mut Text| {
+        let mut all = labels.to_vec();
+        all.push(("le", le));
+        out.sample(&bucket, &all, n);
+    };
+    let mut below = 0;
+    for (i, le) in first.bounds.iter().enumerate() {
+        below += total(&|t| &t.buckets[i]);
+        with(&format!("{}", *le as f64 / 1e6), below, out);
+    }
+    let count = total(&|t| &t.count);
+    with("+Inf", count, out);
+    let micros = total(&|t| &t.micros);
+    out.sample(&format!("{name}_sum"), labels, micros as f64 / 1e6);
+    out.sample(&format!("{name}_count"), labels, count);
+}
+
+/// The statements of one kind.
+struct Series {
+    timings: Timings,
+    errors: AtomicU64,
+}
+
+#[allow(clippy::declare_interior_mutable_const)]
+const SERIES: Series = Series {
+    timings: Timings::new(&BUCKETS),
+    errors: ZERO,
+};
+
+#[allow(clippy::declare_interior_mutable_const)]
+const ROW: [Series; 2] = [SERIES; 2];
+
+/// One thread's counters -- a few threads' past sixteen. Aligned so that no
+/// two shards share a cache line (128 bytes: Apple's cores fetch two lines
+/// of 64 at once).
+#[repr(align(128))]
+struct Shard {
+    /// `[wrote]`.
+    statements: [Series; 2],
+    slow: AtomicU64,
+}
+
+#[allow(clippy::declare_interior_mutable_const)]
+const SHARD: Shard = Shard {
+    statements: ROW,
+    slow: ZERO,
+};
+
+static SHARDS: [Shard; SHARD_COUNT] = [SHARD; SHARD_COUNT];
+static NEXT_SHARD: AtomicUsize = AtomicUsize::new(0);
+static CONNECTIONS: AtomicI64 = AtomicI64::new(0);
+/// `--slow-ms` in microseconds; `u64::MAX` is off, 0 every statement.
+static SLOW_MICROS: AtomicU64 = AtomicU64::new(u64::MAX);
+static STARTED: OnceLock<u64> = OnceLock::new();
+
+thread_local! {
+    /// Whether the statement this thread is running wrote. A connection is
+    /// a thread and runs one statement at a time, so the flag is set where
+    /// the write lock is taken and read where the statement is counted,
+    /// with no signature between the two having to carry it.
+    static WROTE: Cell<bool> = const { Cell::new(false) };
+    /// The change the last block this thread landed left its database at,
+    /// since the request it is answering began: what a tenant's answer
+    /// after a lapsed lease names (`handle_admitted`). Set by the engine's
+    /// watcher, which runs on the thread that commits (`Hub::landed`).
+    static LANDED: Cell<Option<u64>> = const { Cell::new(None) };
+    /// This thread's shard, handed out in turn.
+    static MINE: usize = NEXT_SHARD.fetch_add(1, Ordering::Relaxed) % SHARDS.len();
+}
+
+/// Counters are kept in this many shards, a thread each and a few threads'
+/// past it.
+pub const SHARD_COUNT: usize = 16;
+
+/// This thread's shard, below [`SHARD_COUNT`]: for counters of a process's
+/// own kept as these are, the router's.
+pub fn shard() -> usize {
+    MINE.with(|m| *m)
+}
+
+/// Notes that the statement this thread is running writes.
+pub fn wrote() {
+    WROTE.with(|w| w.set(true));
+}
+
+/// Whether the statement this thread is running writes ([`wrote`]): what a
+/// tenant's answer is asked after a lease that lapsed under it.
+pub fn writing() -> bool {
+    WROTE.with(Cell::get)
+}
+
+/// Notes that a block landed on this thread, leaving its database at `seq`.
+pub fn landed(seq: u64) {
+    LANDED.with(|l| l.set(Some(seq)));
+}
+
+/// Where the last block this request landed left its database, if one did
+/// ([`landed`]).
+pub fn landed_at() -> Option<u64> {
+    LANDED.with(Cell::get)
+}
+
+/// A request begins on this thread: what the one before it wrote is not
+/// its. Cleared by [`record`] alone, the flag outlived a request answered
+/// on a path that records none -- `POST /_admin/tenants/<t>/schema` -- and
+/// the next request on its keep-alive connection, a read, was asked of a
+/// write it never made.
+pub fn begin_request() {
+    WROTE.with(|w| w.set(false));
+    LANDED.with(|l| l.set(None));
+}
+
+/// Statements that took `ms` or longer are logged with their text: `--slow-ms`.
+/// 0 logs every statement, as PostgreSQL's `log_min_duration_statement`
+/// does: a log collector's pipeline is tried out on what a server answers
+/// now, not on what it answers slowly some day.
+pub fn set_slow(ms: u64) {
+    SLOW_MICROS.store(ms.saturating_mul(1000), Ordering::Relaxed);
+}
+
+/// The process's start, for `fennec_start_time_seconds`. Called when a
+/// server starts; the first call wins.
+pub fn started() {
+    STARTED.get_or_init(now_secs);
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// Counts a statement that took `took`, and logs it when it is slow. `text`
+/// is asked for only then.
+pub fn record(took: Duration, failed: bool, tenant: Option<&str>, text: impl FnOnce() -> String) {
+    let wrote = WROTE.with(|w| w.replace(false));
+    let shard = &SHARDS[shard()];
+    let s = &shard.statements[wrote as usize];
+    let micros = took.as_micros().min(u64::MAX as u128) as u64;
+    s.timings.add(took);
+    if failed {
+        s.errors.fetch_add(1, Ordering::Relaxed);
+    }
+    if micros >= SLOW_MICROS.load(Ordering::Relaxed) {
+        shard.slow.fetch_add(1, Ordering::Relaxed);
+        let mut text = text();
+        // A statement can be a bulk `put` of megabytes; the log wants what
+        // it was, not all of it.
+        if text.len() > 1000 {
+            let mut end = 1000;
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            text.truncate(end);
+            text.push_str("...");
+        }
+        slow_line(micros, wrote, failed, tenant, &text);
+    }
+}
+
+/// A slow statement's JSON line on stderr: the audit log's shape
+/// ([`crate::audit::line`]), so that a log collector reads both with one
+/// parser and joins either to the request by its `request_id`. Text, as it
+/// was, needed a pattern of its own in every collector.
+fn slow_line(micros: u64, wrote: bool, failed: bool, tenant: Option<&str>, text: &str) {
+    use crate::audit::{Field, Level};
+    let mut fields = vec![
+        ("duration_ms", Field::Num(micros as f64 / 1000.0)),
+        ("kind", Field::Text(if wrote { "write" } else { "read" })),
+        ("failed", Field::Bool(failed)),
+    ];
+    if let Some(t) = tenant {
+        fields.push(("tenant", Field::Text(t)));
+    }
+    fields.push(("statement", Field::Text(text)));
+    let line = crate::audit::line("slow", Level::Warn, &fields);
+    let _ = std::io::Write::write_all(&mut std::io::stderr(), line.as_bytes());
+}
+
+/// A connection, counted open for as long as this lives.
+pub struct Connection(());
+
+impl Connection {
+    pub fn open() -> Connection {
+        CONNECTIONS.fetch_add(1, Ordering::Relaxed);
+        Connection(())
+    }
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+/// What a scrape reports on besides the counters.
+pub(crate) enum Source<'a> {
+    Single {
+        db: &'a std::sync::RwLock<Database>,
+        repl: Option<&'a Replication>,
+    },
+    Tenants(Stats),
+}
+
+/// The server's token or the admin token may read the metrics; with neither
+/// and no JSON Web Tokens, the server is open and so are they. A JWT is not
+/// taken: a scoped user must not learn the other collections' names.
+pub(crate) fn handle(cfg: &Config, req: &Request, source: Source) -> Response {
+    if !allowed(cfg, req, false) {
+        return Response::error(401, "invalid or missing token")
+            .header("WWW-Authenticate", "Bearer");
+    }
+    Response {
+        status: 200,
+        body: render(source).into_bytes(),
+        content_type: "text/plain; version=0.0.4; charset=utf-8",
+        extra: Vec::new(),
+        seq: None,
+        history: None,
+        version: None,
+    }
+}
+
+/// Whether `req` may read what the node counts: its server token or the
+/// admin token, or anyone on a server with neither and no JSON Web Tokens.
+/// `admin` asks for the admin token alone, as a tenant node's statements
+/// do: they name the tenants' collections. A JWT is never taken: a scoped
+/// user must not learn the other collections' names.
+pub(crate) fn allowed(cfg: &Config, req: &Request, admin: bool) -> bool {
+    let tokens = match admin {
+        true => [None, cfg.admin_token.as_deref()],
+        false => [cfg.token.as_deref(), cfg.admin_token.as_deref()],
+    };
+    let open = !admin
+        && [cfg.token.as_deref(), cfg.admin_token.as_deref()]
+            .iter()
+            .all(Option::is_none)
+        && cfg.access.is_none();
+    let given = req
+        .header("authorization")
+        .and_then(|v| v.strip_prefix("Bearer "));
+    let taken = given.is_some_and(|g| {
+        tokens
+            .iter()
+            .flatten()
+            .any(|t| constant_eq(g.as_bytes(), t.as_bytes()))
+    });
+    // Open, a scrape verifies nothing, whatever it carries.
+    if taken {
+        crate::audit::verified();
+    }
+    open || taken
+}
+
+/// The version running and when the process started, which every
+/// exposition begins with, the router's too.
+pub fn head(out: &mut Text) {
+    out.family(
+        "fennec_build_info",
+        "gauge",
+        "The version running, as a label.",
+    );
+    out.sample("fennec_build_info", &[("version", fennec_core::VERSION)], 1);
+    out.family(
+        "fennec_start_time_seconds",
+        "gauge",
+        "When the process started, in seconds since the epoch.",
+    );
+    out.sample(
+        "fennec_start_time_seconds",
+        &[],
+        *STARTED.get_or_init(now_secs),
+    );
+}
+
+/// The exposition: counters, then what the source holds.
+fn render(source: Source) -> String {
+    let mut out = Text::new();
+    head(&mut out);
+
+    let kinds = |w: usize| [("kind", ["read", "write"][w])];
+    out.family(
+        "fennec_statements_total",
+        "counter",
+        "Statements answered, by whether they wrote.",
+    );
+    for w in 0..2 {
+        let n = sum(w, |s| &s.timings.count);
+        out.sample("fennec_statements_total", &kinds(w), n)
+    }
+    out.family(
+        "fennec_statement_errors_total",
+        "counter",
+        "Statements answered with an error, the client's or the server's.",
+    );
+    for w in 0..2 {
+        let n = sum(w, |s| &s.errors);
+        out.sample("fennec_statement_errors_total", &kinds(w), n)
+    }
+    out.family(
+        "fennec_statement_duration_seconds",
+        "histogram",
+        "From a statement's arrival to its answer: lock waits and, under --sync always, the disk included.",
+    );
+    for w in 0..2 {
+        let shards: Vec<&Timings> = SHARDS.iter().map(|s| &s.statements[w].timings).collect();
+        histogram(
+            &mut out,
+            "fennec_statement_duration_seconds",
+            &kinds(w),
+            &shards,
+        );
+    }
+    out.family(
+        "fennec_slow_statements_total",
+        "counter",
+        "Statements over --slow-ms, each also logged with its text.",
+    );
+    let slow: u64 = SHARDS.iter().map(|s| load(&s.slow)).sum();
+    out.sample("fennec_slow_statements_total", &[], slow);
+    out.family(
+        "fennec_refused_total",
+        "counter",
+        "Requests refused for their token (401), each also in the audit log.",
+    );
+    out.sample("fennec_refused_total", &[], crate::audit::refused());
+    out.family(
+        "fennec_auto_compactions_total",
+        "counter",
+        "Compacts the server ran on its own (--auto-compact), every database it serves together.",
+    );
+    out.sample(
+        "fennec_auto_compactions_total",
+        &[],
+        crate::link::AUTO_COMPACTIONS.load(Ordering::Relaxed),
+    );
+    out.family("fennec_connections", "gauge", "Connections open now.");
+    out.sample(
+        "fennec_connections",
+        &[],
+        CONNECTIONS.load(Ordering::Relaxed),
+    );
+    connections_refused(&mut out, "fennec_connections_refused_total");
+    let held = crate::waits::totals();
+    out.family(
+        "fennec_held_requests",
+        "gauge",
+        "Writes held now until they can write (Fennec-Wait), each a connection.",
+    );
+    out.sample("fennec_held_requests", &[], held.held);
+    out.family(
+        "fennec_held_looks_total",
+        "counter",
+        "Looks for a group of held writes, all made by the one held request looking for every group, at a write or a row's time.",
+    );
+    out.sample("fennec_held_looks_total", &[], held.looks);
+    out.family(
+        "fennec_held_runs_total",
+        "counter",
+        "Held writes run again after a look found a row for them.",
+    );
+    out.sample("fennec_held_runs_total", &[], held.runs);
+    crate::trace::metrics(&mut out);
+    crate::mcp::metrics(&mut out);
+
+    match source {
+        Source::Single { db, repl } => {
+            let g = db.read().unwrap_or_else(|e| e.into_inner());
+            let stats = g.stats();
+            out.family("fennec_documents", "gauge", "Documents in a collection.");
+            for c in &stats {
+                out.sample("fennec_documents", &[("collection", &c.name)], c.documents);
+            }
+            out.family(
+                "fennec_data_bytes",
+                "gauge",
+                "A collection's live records, in bytes.",
+            );
+            for c in &stats {
+                out.sample("fennec_data_bytes", &[("collection", &c.name)], c.bytes);
+            }
+            out.family(
+                "fennec_dead_bytes",
+                "gauge",
+                "A collection's overwritten and deleted records, which compact gives back.",
+            );
+            for c in &stats {
+                out.sample(
+                    "fennec_dead_bytes",
+                    &[("collection", &c.name)],
+                    c.dead_bytes,
+                );
+            }
+            out.family(
+                "fennec_memory_bytes",
+                "gauge",
+                "The data footprint --max-memory holds to: records, indexes and graphs. Not RSS.",
+            );
+            out.sample("fennec_memory_bytes", &[], g.memory_bytes());
+            let garbage = g.garbage();
+            out.family(
+                "fennec_file_bytes",
+                "gauge",
+                "The database's file as written: live records, dead ones and the graphs.",
+            );
+            out.sample("fennec_file_bytes", &[], garbage.file);
+            out.family(
+                "fennec_reclaimable_bytes",
+                "gauge",
+                "What a compact would give back of the file now; --auto-compact runs one past its share.",
+            );
+            out.sample("fennec_reclaimable_bytes", &[], garbage.dead());
+            out.family(
+                "fennec_change_sequence",
+                "gauge",
+                "The last write's sequence number; a replica's trails its primary's by its lag.",
+            );
+            let seq = g.change_seq();
+            out.sample("fennec_change_sequence", &[], seq);
+            out.family(
+                "fennec_storage_failed",
+                "gauge",
+                "1 once the disk refused a write: writes stop until the file is reopened.",
+            );
+            out.sample("fennec_storage_failed", &[], g.failure().is_some() as u8);
+            unlinked(&mut out, g.unlinked());
+            drop(g);
+            if let Some(repl) = repl {
+                repl.metrics(&mut out, seq);
+            }
+        }
+        Source::Tenants(s) => {
+            out.family("fennec_tenants", "gauge", "Tenants on disk.");
+            out.sample("fennec_tenants", &[], s.tenants);
+            out.family("fennec_tenants_open", "gauge", "Tenants open in memory.");
+            out.sample("fennec_tenants_open", &[], s.open.len());
+            out.family(
+                "fennec_tenants_disk_bytes",
+                "gauge",
+                "Every tenant's file, together.",
+            );
+            out.sample("fennec_tenants_disk_bytes", &[], s.disk);
+            out.family(
+                "fennec_memory_bytes",
+                "gauge",
+                "The open tenants' data footprint, together. Not RSS.",
+            );
+            out.sample(
+                "fennec_memory_bytes",
+                &[],
+                s.open.iter().map(|(_, m, _)| m).sum::<usize>(),
+            );
+            // By quota, never by tenant: a tenant's name is the admin
+            // API's to tell (`GET /_admin/quotas`), not a label's.
+            out.family(
+                "fennec_quota_refused_total",
+                "counter",
+                "Requests refused for a tenant's quota, by the quota: 507 for bytes and rows, 429 for the rest.",
+            );
+            for k in crate::quota::KINDS {
+                out.sample(
+                    "fennec_quota_refused_total",
+                    &[("quota", k.name())],
+                    crate::quota::refused(k),
+                );
+            }
+            out.family(
+                "fennec_copies_refused_total",
+                "counter",
+                "Copies of a tenant that refused a primary of another lineage -- its name made again -- and deleted themselves.",
+            );
+            out.sample(
+                "fennec_copies_refused_total",
+                &[],
+                crate::tenants::copies_refused(),
+            );
+            unlinked(&mut out, s.unlinked);
+            if let Some(n) = s.node_streams {
+                out.family(
+                    "fennec_node_streams",
+                    "gauge",
+                    "Streams of every tenant connected now (POST /_replication/tenants): a node's archivers.",
+                );
+                out.sample("fennec_node_streams", &[], n);
+            }
+        }
+    }
+    out.0
+}
+
+/// The connections answered 503 on the accepting thread and closed, by
+/// why ([`crate::accept::Refusal`]), as `name`: a node's family, and the
+/// router's under its own.
+pub fn connections_refused(out: &mut Text, name: &str) {
+    use crate::accept::{refused, Refusal, REFUSALS};
+    out.family(
+        name,
+        "counter",
+        "Connections answered 503 with Retry-After as they were taken, unserved, by reason: ceiling (past --max-connections), no_thread (the process could make no thread for it: at its thread limit -- a cgroup's pids.max, systemd's TasksMax=, ulimit -u).",
+    );
+    for (r, reason) in [Refusal::Ceiling, Refusal::NoThread]
+        .into_iter()
+        .zip(REFUSALS)
+    {
+        out.sample(name, &[("reason", reason)], refused(r));
+    }
+}
+
+/// How far linking the vectors an open left out of the graph has to go
+/// (`link::beside`); 0 once it is done.
+fn unlinked(out: &mut Text, n: usize) {
+    out.family(
+        "fennec_vectors_unlinked",
+        "gauge",
+        "Vectors the open left out of the graph: near measures each until they are linked.",
+    );
+    out.sample("fennec_vectors_unlinked", &[], n);
+}
+
+/// One counter of `[wrote]`, over every shard. Shards are read
+/// one after another while statements go on, so a total can be a statement
+/// short of a bucket read a moment later -- as any scrape of a running
+/// server can be.
+fn sum(w: usize, field: impl Fn(&Series) -> &AtomicU64) -> u64 {
+    SHARDS.iter().map(|s| load(field(&s.statements[w]))).sum()
+}
+
+fn load(n: &AtomicU64) -> u64 {
+    n.load(Ordering::Relaxed)
+}
+
+/// Prometheus's text format, written by hand: one `# HELP` and `# TYPE`
+/// per family, then its samples.
+pub struct Text(String);
+
+impl Default for Text {
+    fn default() -> Text {
+        Text::new()
+    }
+}
+
+impl Text {
+    pub fn new() -> Text {
+        Text(String::with_capacity(8 << 10))
+    }
+
+    pub fn finish(self) -> String {
+        self.0
+    }
+
+    pub fn family(&mut self, name: &str, kind: &str, help: &str) {
+        let _ = writeln!(self.0, "# HELP {name} {help}\n# TYPE {name} {kind}");
+    }
+
+    pub fn sample(&mut self, name: &str, labels: &[(&str, &str)], value: impl Display) {
+        self.0.push_str(name);
+        for (i, (k, v)) in labels.iter().enumerate() {
+            self.0.push(if i == 0 { '{' } else { ',' });
+            self.0.push_str(k);
+            self.0.push_str("=\"");
+            for c in v.chars() {
+                match c {
+                    '\\' => self.0.push_str("\\\\"),
+                    '"' => self.0.push_str("\\\""),
+                    '\n' => self.0.push_str("\\n"),
+                    c => self.0.push(c),
+                }
+            }
+            self.0.push('"');
+        }
+        if !labels.is_empty() {
+            self.0.push('}');
+        }
+        let _ = writeln!(self.0, " {value}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn samples_are_written_as_prometheus_reads_them() {
+        let mut t = Text(String::new());
+        t.family("x_total", "counter", "What x counts.");
+        t.sample("x_total", &[], 3);
+        t.sample("x_total", &[("a", "b"), ("c", "d\"e\\f\ng")], 1.5);
+        assert_eq!(
+            t.0,
+            "# HELP x_total What x counts.\n# TYPE x_total counter\n\
+             x_total 3\n\
+             x_total{a=\"b\",c=\"d\\\"e\\\\f\\ng\"} 1.5\n"
+        );
+    }
+
+    #[test]
+    fn a_bucket_holds_its_upper_bound() {
+        // `le` is "less than or equal": a statement of exactly 1 ms is in the
+        // 1 ms bucket, one a microsecond over it is not.
+        let at = |micros: u64| BUCKETS.iter().position(|&le| micros <= le);
+        assert_eq!(at(1_000), Some(3));
+        assert_eq!(at(1_001), Some(4));
+        assert_eq!(at(10_000_001), None);
+    }
+}

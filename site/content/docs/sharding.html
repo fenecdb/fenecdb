@@ -1,5 +1,5 @@
 <!--
-title: Tenants and sharding — fenecdb
+title: Tenants and sharding — fennecdb
 description: Start two nodes and a router, make a tenant, stop its node and fail it over to the other, with what each command prints; and where each part of tenants and sharding is explained.
 -->
 
@@ -7,7 +7,7 @@ description: Start two nodes and a router, make a tenant, stop its node and fail
 
 <h1>Tenants and sharding</h1>
 <p class="kicker">When one machine is not enough, give each tenant a file of its
-own, spread the files over nodes, and put <code>fenec-shard</code> in front.</p>
+own, spread the files over nodes, and put <code>fennec-shard</code> in front.</p>
 
 <p>This page runs a small deployment on one machine: two nodes, a router in front
 of them, a tenant, and the loss of the node that holds it. Each command is shown
@@ -20,15 +20,15 @@ the rest.</p>
 <p>Start two nodes and a router, tell the router about the nodes, create a
 tenant, and use it through the router.</p>
 
-<p>A node is <code>fenec-server --dir</code>, a server over a directory of tenant
-files, one for each tenant; the router is <code>fenec-shard</code>. The release
+<p>A node is <code>fennec-server --dir</code>, a server over a directory of tenant
+files, one for each tenant; the router is <code>fennec-shard</code>. The release
 archives hold the server but not the router, so build both from a clone
 (<a href="build.html">Build from source</a> has what that needs).</p>
 
 <ol class="steps-doc">
   <li>
     <p>Build both, in the clone.</p>
-<pre data-lang="bash">cargo build --release -p fenec-server -p fenec-shard</pre>
+<pre data-lang="bash">cargo build --release -p fennec-server -p fennec-shard</pre>
   </li>
   <li>
     <p>Make an empty directory to run them from. The nodes and the router make
@@ -45,28 +45,28 @@ export PATH="/path/to/the/clone/target/release:$PATH"</pre>
     for copying tenants from one to another, and <code>--sync always</code> puts
     every write on disk before it is answered, so that a failover loses
     none.</p>
-<pre data-lang="bash" data-label="terminal 1">fenec-server --dir n1 --http 127.0.0.1:8081 --admin-token a1 \
+<pre data-lang="bash" data-label="terminal 1">fennec-server --dir n1 --http 127.0.0.1:8081 --admin-token a1 \
     --replication-token r1 --sync always</pre>
 <pre data-lang="text" data-label="prints">serving tenants from: n1  (0 on disk)
 each tenant may hold 25 streams and 25 held writes of the node's 100 connections
-fenec-http {{version}} listening on: http://127.0.0.1:8081  [no auth]</pre>
+fennec-http {{version}} listening on: http://127.0.0.1:8081  [no auth]</pre>
   </li>
   <li>
     <p>In another, start the second node. <code>--replica-of</code> has it
     follow the first node's tenants.</p>
-<pre data-lang="bash" data-label="terminal 2">fenec-server --dir n2 --http 127.0.0.1:8082 --admin-token a2 \
+<pre data-lang="bash" data-label="terminal 2">fennec-server --dir n2 --http 127.0.0.1:8082 --admin-token a2 \
     --replication-token r1 --replica-of http://127.0.0.1:8081</pre>
 <pre data-lang="text" data-label="prints">serving tenants from: n2  (0 on disk)
 each tenant may hold 25 streams and 25 held writes of the node's 100 connections
 following the tenants of: http://127.0.0.1:8081
-fenec-http {{version}} listening on: http://127.0.0.1:8082  [no auth]</pre>
+fennec-http {{version}} listening on: http://127.0.0.1:8082  [no auth]</pre>
   </li>
   <li>
     <p>In a third, start the router. <code>--directory</code> is the file that
     records which node holds which tenant, and <code>--token</code> guards its
     <code>/_shard/</code> routes.</p>
-<pre data-lang="bash" data-label="terminal 3">fenec-shard --listen 127.0.0.1:8090 --directory shard.fenec --token root</pre>
-<pre data-lang="text" data-label="prints">fenec-shard {{version}} listening on: http://127.0.0.1:8090  [0 node(s), 0 tenant(s)]</pre>
+<pre data-lang="bash" data-label="terminal 3">fennec-shard --listen 127.0.0.1:8090 --directory shard.fennec --token root</pre>
+<pre data-lang="text" data-label="prints">fennec-shard {{version}} listening on: http://127.0.0.1:8090  [0 node(s), 0 tenant(s)]</pre>
     <p>None of the three was given a token for data requests, which is why they
     answer one without. They listen on loopback; on any other address they ask
     for one (<a href="sharding-reference.html#tokens">Tokens</a>).</p>
@@ -106,10 +106,10 @@ fenec-http {{version}} listening on: http://127.0.0.1:8082  [no auth]</pre>
 <pre data-lang="bash">ls n1 n2
 curl localhost:8090/_shard/tenants/acme -H 'Authorization: Bearer root'</pre>
 <pre data-lang="text" data-label="prints">n1:
-acme.fenec
+acme.fennec
 
 n2:
-acme.fenec
+acme.fennec
 {"name":"acme","node":"n1","state":"active","standby":"n2"}</pre>
   </li>
 </ol>
@@ -120,9 +120,9 @@ acme.fenec
 </ul>
 
 <details class="deep"><summary>What splitting by tenant changes for a client</summary>
-<p>A single fenecdb is bounded by one machine's memory and one writer. Past
+<p>A single fennecdb is bounded by one machine's memory and one writer. Past
 that, the data is split by tenant: each tenant is a file of its own, a node
-holds many of them, and <code>fenec-shard</code> knows which node holds
+holds many of them, and <code>fennec-shard</code> knows which node holds
 which.</p>
 
 <p>Below <code>/t/&lt;tenant&gt;</code> the surface is exactly the

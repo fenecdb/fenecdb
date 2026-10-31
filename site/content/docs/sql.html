@@ -1,31 +1,31 @@
 <!--
-title: From SQL — fenecdb
-description: The SQL spellings FenecQL reads as written — CREATE TABLE and CREATE INDEX, INSERT … VALUES, UPDATE … SET, JOIN, IN (…), EXISTS, DISTINCT, BETWEEN, LIKE and ILIKE, ON CONFLICT, pgvector's <-> — each the statement it means, what is refused with the FenecQL to write instead, and where the meaning differs from SQL's: nulls, double quotes, text, joins.
+title: From SQL — fennecdb
+description: The SQL spellings FennecQL reads as written — CREATE TABLE and CREATE INDEX, INSERT … VALUES, UPDATE … SET, JOIN, IN (…), EXISTS, DISTINCT, BETWEEN, LIKE and ILIKE, ON CONFLICT, pgvector's <-> — each the statement it means, what is refused with the FennecQL to write instead, and where the meaning differs from SQL's: nulls, double quotes, text, joins.
 -->
 
 <h1>From SQL</h1>
-<p class="kicker">The SQL you write by habit, read as the FenecQL it means
+<p class="kicker">The SQL you write by habit, read as the FennecQL it means
 — and refused, saying what to write, where it has no exact meaning
 here.</p>
 
-<p>FenecQL is not SQL, but the everyday spellings of SQL are FenecQL too.
+<p>FennecQL is not SQL, but the everyday spellings of SQL are FennecQL too.
 The parser reads <code>CREATE TABLE</code>, <code>INSERT INTO …
 VALUES</code>, <code>UPDATE … SET a = …</code>, <code>JOIN</code>,
 <code>IN (…)</code>, <code>EXISTS</code>, <code>DISTINCT</code>,
 <code>LIKE</code> and the rest of the tables below into the very
-statements FenecQL writes, so a text in either reaches the engine the same
+statements FennecQL writes, so a text in either reaches the engine the same
 way — over HTTP, through <a href="/docs/mcp">MCP</a>, in the
-<code>fenec</code> shell, in the page and in an app. There is no SQL mode
+<code>fennec</code> shell, in the page and in an app. There is no SQL mode
 and no second parser: the two spellings mix in one statement. What would
 answer otherwise than SQL does — a <code>RIGHT JOIN</code>, an aggregate
 over two tables' rows, a <code>DEFAULT</code>, a transaction left open — is
-refused with the FenecQL that does it, so an agent writing SQL by habit
+refused with the FennecQL that does it, so an agent writing SQL by habit
 learns the language from its first error.</p>
 
 <p>Every SQL text on this page is run by a test
-(<code>crates/fenec-core/tests/sql_docs.rs</code>): the session below
+(<code>crates/fennec-core/tests/sql_docs.rs</code>): the session below
 statement by statement, each <code>-- → x</code> the answer it checks, and
-each line of the tables held to the FenecQL beside it — the two parse to
+each line of the tables held to the FennecQL beside it — the two parse to
 the same statement — or refused.</p>
 
 <h2 id="session">A session written as SQL</h2>
@@ -68,12 +68,12 @@ is <code>near</code>, by the cosine distance the index measures.</p>
 
 <h2 id="read">Read as written</h2>
 
-<p>Each line is the SQL and the FenecQL it is — the same statement, to the
+<p>Each line is the SQL and the FennecQL it is — the same statement, to the
 last expression.</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>SQL</th><th>FenecQL</th><th>Notes</th></tr></thead>
+<thead><tr><th>SQL</th><th>FennecQL</th><th>Notes</th></tr></thead>
 <tbody>
 <tr data-same><td><code>INSERT INTO t (a, b) VALUES (1, 'x'), (2, 'y')</code></td><td><code>insert t [{a: 1, b: "x"}, {a: 2, b: "y"}]</code></td><td>a document a row; the fields are named (<a href="#insert">below</a>)</td></tr>
 <tr data-same><td><code>INSERT INTO t (a) VALUES ($1) RETURNING id, a</code></td><td><code>insert t {a: $1} returning id, a</code></td><td>the rows written, the ids made among them</td></tr>
@@ -86,14 +86,14 @@ last expression.</p>
 <tr data-same><td><code>SELECT k, count(*) AS n FROM t GROUP BY k HAVING count(*) &gt; 1</code></td><td><code>get t select k, count(*) as n group k having count(*) &gt; 1</code></td><td></td></tr>
 <tr data-same><td><code>SELECT * FROM t WHERE x IN (1, 2, 3)</code></td><td><code>get t where x in [1, 2, 3]</code></td><td>through <code>@hash</code> as <code>in [..]</code> is</td></tr>
 <tr data-same><td><code>SELECT * FROM t WHERE x NOT IN ('a', 'b')</code></td><td><code>get t where not (x in ["a", "b"])</code></td><td>a null <code>x</code> is taken in (<a href="#nulls">below</a>)</td></tr>
-<tr data-same><td><code>SELECT * FROM t WHERE x IN (SELECT y FROM u WHERE z = 1)</code></td><td><code>get t where x in (get u select y where z = 1)</code></td><td>a <a href="/docs/fenecql-lookup#subqueries">subquery</a>, run once</td></tr>
+<tr data-same><td><code>SELECT * FROM t WHERE x IN (SELECT y FROM u WHERE z = 1)</code></td><td><code>get t where x in (get u select y where z = 1)</code></td><td>a <a href="/docs/fennecql-lookup#subqueries">subquery</a>, run once</td></tr>
 <tr data-same><td><code>SELECT * FROM t WHERE x IN (SELECT DISTINCT y FROM u)</code></td><td><code>get t where x in (get u select y)</code></td><td><code>DISTINCT</code> changes nothing there</td></tr>
 <tr data-same><td><code>SELECT * FROM t WHERE x BETWEEN 1 AND 3 AND y = 2</code></td><td><code>get t where x &gt;= 1 and x &lt;= 3 and y = 2</code></td><td>both bounds in; the first <code>AND</code> is <code>BETWEEN</code>'s</td></tr>
 <tr data-same><td><code>SELECT * FROM t WHERE x NOT BETWEEN 1 AND 3</code></td><td><code>get t where not (x &gt;= 1 and x &lt;= 3)</code></td><td></td></tr>
 <tr data-same><td><code>SELECT * FROM t WHERE name LIKE 'A%'</code></td><td><code>get t where name like "A%"</code></td><td><code>%</code> any run of characters, <code>_</code> one (<a href="#like">below</a>)</td></tr>
 <tr data-same><td><code>SELECT * FROM t WHERE name NOT ILIKE '%!_%' ESCAPE '!'</code></td><td><code>get t where not (name ilike "%!_%" escape "!")</code></td><td><code>ILIKE</code> by the case fold</td></tr>
 <tr data-same><td><code>SELECT * FROM t WHERE x &lt;&gt; 1</code></td><td><code>get t where x != 1</code></td><td></td></tr>
-<tr data-same><td><code>SELECT * FROM t WHERE x IS DISTINCT FROM $1</code></td><td><code>get t where x != $1</code></td><td>FenecQL's <code>=</code> and <code>!=</code> take a null as a value</td></tr>
+<tr data-same><td><code>SELECT * FROM t WHERE x IS DISTINCT FROM $1</code></td><td><code>get t where x != $1</code></td><td>FennecQL's <code>=</code> and <code>!=</code> take a null as a value</td></tr>
 <tr data-same><td><code>SELECT * FROM t WHERE x IS NOT DISTINCT FROM $1</code></td><td><code>get t where x = $1</code></td><td></td></tr>
 <tr data-same><td><code>SELECT * FROM t WHERE done IS NOT TRUE</code></td><td><code>get t where not (done = true)</code></td><td></td></tr>
 <tr data-same><td><code>SELECT count(*), count(age) FROM users</code></td><td><code>get users select count(*), count(age)</code></td><td><code>count(age)</code> the rows where <code>age</code> is not null</td></tr>
@@ -114,22 +114,22 @@ last expression.</p>
 <tr data-same><td><code>SELECT * FROM users u WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id)</code></td><td><code>get users where not (id in (get orders select user_id))</code></td><td>a row whose key is null has no match: kept, as SQL keeps it</td></tr>
 <tr data-same><td><code>SELECT * FROM t WHERE at = (SELECT max(at) FROM t)</code></td><td><code>get t where at in (get t select max(at))</code></td><td>a query's one value: an aggregate, or <code>LIMIT 1</code></td></tr>
 <tr data-same><td><code>UPDATE jobs SET owner = $1 WHERE id = (SELECT id FROM jobs ORDER BY run_at LIMIT 1)</code></td><td><code>set jobs {owner: $1} where id in (get jobs select id order run_at limit 1)</code></td><td></td></tr>
-<tr data-same><td><code>CREATE TABLE users (id serial PRIMARY KEY, name text NOT NULL, email varchar(200) UNIQUE, age integer, tags text[], meta jsonb)</code></td><td><code>create collection users (name text required, email text @unique, age int, tags [text], meta json)</code></td><td>the row's <code>id</code> is the database's; types as <a href="/docs/import"><code>fenec import</code></a> maps them (<a href="#create-table">below</a>)</td></tr>
+<tr data-same><td><code>CREATE TABLE users (id serial PRIMARY KEY, name text NOT NULL, email varchar(200) UNIQUE, age integer, tags text[], meta jsonb)</code></td><td><code>create collection users (name text required, email text @unique, age int, tags [text], meta json)</code></td><td>the row's <code>id</code> is the database's; types as <a href="/docs/import"><code>fennec import</code></a> maps them (<a href="#create-table">below</a>)</td></tr>
 <tr data-same><td><code>CREATE TABLE lines (order_id int, n int, sku text, PRIMARY KEY (order_id, n))</code></td><td><code>create collection lines (order_id int required, n int required, sku text, @unique(order_id, n))</code></td><td>a primary key is its rules: unique, and present</td></tr>
 <tr data-same><td><code>CREATE INDEX users_age ON users (age)</code></td><td><code>create index on users (age) @sorted</code></td><td>a btree is <code>@sorted</code>; the index's name is not kept</td></tr>
 <tr data-same><td><code>CREATE UNIQUE INDEX ON users (email)</code></td><td><code>create index on users (email) @unique</code></td><td></td></tr>
 <tr data-same><td><code>CREATE INDEX ON orders USING hash (user_id)</code></td><td><code>create index on orders (user_id) @hash</code></td><td></td></tr>
 <tr data-same><td><code>CREATE INDEX ON posts (owner, created DESC)</code></td><td><code>create index on posts (owner, created desc) @sorted</code></td><td>over several columns, an index over several fields</td></tr>
 <tr data-same><td><code>CREATE INDEX ON docs USING hnsw (emb vector_cosine_ops) WITH (m = 16)</code></td><td><code>create index on docs (emb) @hnsw(cosine, m=16)</code></td><td>pgvector's operator class names the distance</td></tr>
-<tr data-same><td><code>CREATE INDEX ON docs USING gin (to_tsvector('english', body))</code></td><td><code>create index on docs (body) @text</code></td><td>full text, for <a href="/docs/fenecql-search#the-text-clause"><code>match</code></a></td></tr>
-<tr data-same><td><code>CALL transfer(from =&gt; 1, to =&gt; 2, amount =&gt; 300)</code></td><td><code>call transfer {from: 1, to: 2, amount: 300}</code></td><td>a named statement's call; read, and refused until named statements are built (<a href="/docs/fenecql#named-statements">named statements</a>)</td></tr>
+<tr data-same><td><code>CREATE INDEX ON docs USING gin (to_tsvector('english', body))</code></td><td><code>create index on docs (body) @text</code></td><td>full text, for <a href="/docs/fennecql-search#the-text-clause"><code>match</code></a></td></tr>
+<tr data-same><td><code>CALL transfer(from =&gt; 1, to =&gt; 2, amount =&gt; 300)</code></td><td><code>call transfer {from: 1, to: 2, amount: 300}</code></td><td>a named statement's call; read, and refused until named statements are built (<a href="/docs/fennecql#named-statements">named statements</a>)</td></tr>
 </tbody>
 </table>
 </div>
 
 <h2 id="joins">Joins</h2>
 
-<p>A <code>JOIN</code> on a key is a <a href="/docs/fenecql-lookup#the-lookup-clause"><code>lookup</code></a>
+<p>A <code>JOIN</code> on a key is a <a href="/docs/fennecql-lookup#the-lookup-clause"><code>lookup</code></a>
 from each row of the first table to its matches in the next, answered as
 SQL answers it: flat rows, a row a pair — and, for a <code>LEFT
 JOIN</code>, a row of <code>null</code>s where nothing matched — the
@@ -137,12 +137,12 @@ columns the list names under SQL's names. Where only one table's columns
 are answered and each of its rows is answered once — the other table found
 by its <code>id</code>, or <code>DISTINCT</code> — it is that table's
 <code>get</code>, the other's rows a filter. Each line below is the
-FenecQL it parses to; a <code>lookup</code>'s line answers flat, which no
-FenecQL text asks for.</p>
+FennecQL it parses to; a <code>lookup</code>'s line answers flat, which no
+FennecQL text asks for.</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>SQL</th><th>FenecQL</th><th>Notes</th></tr></thead>
+<thead><tr><th>SQL</th><th>FennecQL</th><th>Notes</th></tr></thead>
 <tbody>
 <tr data-as><td><code>SELECT o.id, u.name FROM orders o JOIN users u ON u.id = o.user_id WHERE o.total &gt; 100 ORDER BY o.placed DESC LIMIT 20</code></td><td><code>get orders select id where total &gt; 100 order placed desc limit 20 lookup users on id = user_id required select name</code></td><td>each order's user; <code>required</code> keeps an order only where a user matched</td></tr>
 <tr data-as><td><code>SELECT u.name, o.total FROM users u LEFT JOIN orders o ON o.user_id = u.id AND o.status = 'paid' ORDER BY u.name</code></td><td><code>get users select name order name lookup orders on user_id select total where status = "paid"</code></td><td>a user with no paid order is a row, <code>total</code> null</td></tr>
@@ -220,16 +220,16 @@ FenecQL text asks for.</p>
 
 <h2 id="refused">Refused, and what to write</h2>
 
-<p>Each is refused with the FenecQL in its error.</p>
+<p>Each is refused with the FennecQL in its error.</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>SQL</th><th>FenecQL</th><th>Why</th></tr></thead>
+<thead><tr><th>SQL</th><th>FennecQL</th><th>Why</th></tr></thead>
 <tbody>
 <tr data-refused><td><code>ALTER TABLE t ADD COLUMN a int</code></td><td><code>alter collection t add field a int</code></td><td></td></tr>
 <tr data-refused><td><code>DROP TABLE t</code></td><td><code>drop collection t</code></td><td></td></tr>
 <tr data-refused><td><code>TRUNCATE t</code></td><td><code>del t</code></td><td></td></tr>
-<tr data-refused><td><code>BEGIN</code></td><td>a <code>/batch</code></td><td>no transaction is held open across requests; a <a href="/docs/http#batches"><code>/batch</code></a> lands whole or not at all, and <a href="/docs/fenecql-writing#require"><code>require</code></a> makes a count its condition</td></tr>
+<tr data-refused><td><code>BEGIN</code></td><td>a <code>/batch</code></td><td>no transaction is held open across requests; a <a href="/docs/http#batches"><code>/batch</code></a> lands whole or not at all, and <a href="/docs/fennecql-writing#require"><code>require</code></a> makes a count its condition</td></tr>
 <tr data-refused><td><code>CREATE TABLE t (n int DEFAULT 0, u int REFERENCES users(id))</code></td><td><code>create collection t (n int, u int @hash)</code></td><td>no default, foreign key or <code>CHECK</code>: dropped, the collection would take writes SQL refuses (<a href="#create-table">below</a>)</td></tr>
 <tr data-refused><td><code>CREATE TABLE t (price numeric(10, 2))</code></td><td><code>create collection t (price_cents int)</code></td><td>no decimal: an <code>int</code> of the smallest unit keeps it exact</td></tr>
 <tr data-refused><td><code>CREATE TABLE t (id uuid PRIMARY KEY, n int)</code></td><td><code>create collection t (uuid text required @unique, n int)</code></td><td>a row's <code>id</code> is an int the database makes</td></tr>
@@ -242,7 +242,7 @@ FenecQL text asks for.</p>
 <tr data-refused><td><code>SELECT (SELECT name FROM products p WHERE p.id = l.product_id) AS name FROM lines l</code></td><td><code>select p.name from lines l join products p on p.id = l.product_id</code></td><td>another table's row beside each row is a join</td></tr>
 <tr data-refused><td><code>SELECT * FROM t WHERE meta-&gt;&gt;'source' = 'web'</code></td><td><code>get t where meta.source = 'web'</code></td><td>a json field's member is a path; <code>json_extract(meta, '$.source')</code> is answered so too</td></tr>
 <tr data-refused><td><code>SELECT id, emb &lt;-&gt; $1 AS d FROM docs ORDER BY emb &lt;-&gt; $1 LIMIT 5</code></td><td><code>get docs select id near emb $1 limit 5</code></td><td>each row's <code>_score</code> holds what the distance is turned into: the L2 distance, the cosine similarity, the inner product (<a href="#pgvector">below</a>)</td></tr>
-<tr data-refused><td><code>SELECT * FROM docs WHERE to_tsvector(body) @@ to_tsquery('rust')</code></td><td><code>get docs match body "rust"</code></td><td>full text is <a href="/docs/fenecql-search#the-text-clause"><code>match</code></a> over an <code>@text</code> field; MySQL's <code>MATCH … AGAINST</code> too</td></tr>
+<tr data-refused><td><code>SELECT * FROM docs WHERE to_tsvector(body) @@ to_tsquery('rust')</code></td><td><code>get docs match body "rust"</code></td><td>full text is <a href="/docs/fennecql-search#the-text-clause"><code>match</code></a> over an <code>@text</code> field; MySQL's <code>MATCH … AGAINST</code> too</td></tr>
 <tr data-refused><td><code>SELECT * FROM users WHERE email ~ '@example\.org$'</code></td><td><code>get users where email like '%@example.org'</code></td><td><code>~</code> is <i>contains</i>, not a regular expression (<a href="#tilde">below</a>)</td></tr>
 <tr data-refused><td><code>SELECT * FROM t ORDER BY x NULLS LAST</code></td><td><code>get t order x is null, x</code></td><td>a null comes first ascending</td></tr>
 <tr data-refused><td><code>INSERT INTO t VALUES (1, 'x')</code></td><td><code>insert into t (a, b) values (1, 'x')</code></td><td>the fields are named (<a href="#insert">below</a>)</td></tr>
@@ -250,7 +250,7 @@ FenecQL text asks for.</p>
 <tr data-refused><td><code>INSERT INTO t (a) SELECT a FROM u</code></td><td><code>get u select a</code>, then <code>insert t $1</code></td><td>an insert writes documents, not a query's rows</td></tr>
 <tr data-refused><td><code>INSERT INTO t (k) VALUES ('a') ON CONFLICT ON CONSTRAINT t_k DO NOTHING</code></td><td><code>insert into t (k) values ('a') on conflict (k) do nothing</code></td><td>the target is the unique field (<a href="#upsert">below</a>)</td></tr>
 <tr data-refused><td><code>INSERT INTO t (k, n) VALUES ('a', 1) ON CONFLICT DO UPDATE SET n = 1 WHERE t.n &lt; 3</code></td><td><code>insert t {k: "a", n: 1} if absent else set {n: case when n &lt; 3 then 1 else n end}</code></td><td>the upsert sets the row it finds, with no <code>WHERE</code></td></tr>
-<tr data-refused><td><code>CREATE FUNCTION transfer(a int) RETURNS void LANGUAGE sql AS '…'</code></td><td><code>create statement transfer($a int) claims (sub text) as set accounts {balance: balance - $a} where owner = $jwt.sub</code></td><td>SQL's routine runs as its caller unless told, a named statement with its own text's authority; <code>SELECT transfer(…)</code> and <code>SELECT * FROM transfer(…)</code> are refused naming <code>call</code> (<a href="/docs/fenecql#named-statements">named statements</a>, not built yet)</td></tr>
+<tr data-refused><td><code>CREATE FUNCTION transfer(a int) RETURNS void LANGUAGE sql AS '…'</code></td><td><code>create statement transfer($a int) claims (sub text) as set accounts {balance: balance - $a} where owner = $jwt.sub</code></td><td>SQL's routine runs as its caller unless told, a named statement with its own text's authority; <code>SELECT transfer(…)</code> and <code>SELECT * FROM transfer(…)</code> are refused naming <code>call</code> (<a href="/docs/fennecql#named-statements">named statements</a>, not built yet)</td></tr>
 <tr data-refused><td><code>SELECT * FROM t WHERE "name" = 'Ada'</code></td><td><code>get t where name = 'Ada'</code></td><td><code>"name"</code> is text here (<a href="#quotes">below</a>)</td></tr>
 </tbody>
 </table>
@@ -267,18 +267,18 @@ placeholders (<code>$1</code> is a parameter).</p>
 <h3 id="nulls">Nulls: two values, not three</h3>
 
 <p>SQL's logic has three values: a comparison with a null is unknown, and
-<code>WHERE</code> keeps only what is true. FenecQL's has two. A null is
+<code>WHERE</code> keeps only what is true. FennecQL's has two. A null is
 equal to a null and to nothing else, so <code>=</code> and <code>!=</code>
 take it as a value — they are SQL's <code>IS NOT DISTINCT FROM</code> and
 <code>IS DISTINCT FROM</code> — while <code>&lt;</code>,
 <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>,
 <code>LIKE</code> and <code>BETWEEN</code> are false with a null on either
 side, and <code>NOT</code> makes a false true. Where SQL's unknown leaves
-a row out, FenecQL may take it in:</p>
+a row out, FennecQL may take it in:</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>Where <code>x</code> is null</th><th>SQL</th><th>FenecQL</th></tr></thead>
+<thead><tr><th>Where <code>x</code> is null</th><th>SQL</th><th>FennecQL</th></tr></thead>
 <tbody>
 <tr><td><code>x = NULL</code></td><td>never true</td><td>true: it is <code>x IS NULL</code></td></tr>
 <tr><td><code>x &lt;&gt; 1</code>, <code>NOT (x &gt; 1)</code></td><td>left out</td><td>taken in</td></tr>
@@ -301,17 +301,17 @@ is read after <code>ASC</code> and <code>NULLS LAST</code> after
 'a%'</code> in a select list is null for a null.</p>
 
 <p><b><code>&lt;&gt;</code> is <code>!=</code>, null and all.</b> One could
-read <code>&lt;&gt;</code> as SQL's and keep <code>!=</code> FenecQL's, but
+read <code>&lt;&gt;</code> as SQL's and keep <code>!=</code> FennecQL's, but
 not exactly: SQL's unknown runs through every <code>NOT</code> above it,
 which no rewrite of the one comparison carries, so the two would part
 somewhere else instead. Two operators that differ on null alone would be
-the subtler trap, and FenecQL read <code>&lt;&gt;</code> as
+the subtler trap, and FennecQL read <code>&lt;&gt;</code> as
 <code>!=</code> before it read any other SQL, so a text that used it would
 change its answer. One meaning, then, written here.</p>
 
 <h3 id="quotes">Double quotes are text</h3>
 
-<p>In SQL <code>"name"</code> is a column; in FenecQL it is text, as
+<p>In SQL <code>"name"</code> is a column; in FennecQL it is text, as
 <code>'name'</code> is. Where only a name can stand — a collection, the
 fields of an <code>INSERT</code>, a field <code>SET</code> assigns,
 <code>RETURNING</code>, an index's fields, a facet — <code>"name"</code> is
@@ -337,7 +337,7 @@ text <code>b</code>, where SQL would copy the column <code>b</code>.</p>
 
 <h3 id="tilde"><code>~</code> is <i>contains</i></h3>
 
-<p>In PostgreSQL <code>~</code> matches a regular expression; in FenecQL
+<p>In PostgreSQL <code>~</code> matches a regular expression; in FennecQL
 it finds the text as written, case-insensitively: <code>email ~
 "@example.org"</code>. Written as a pattern, it would run and match
 nothing — and an agent that ran <code>email ~ '@example\.org$'</code>
@@ -353,7 +353,7 @@ taken as the text it is.</p>
 <p><code>%</code> stands for any run of characters and <code>_</code> for
 one character — of however many bytes. There is no escape character
 unless <code>ESCAPE</code> names one, as in standard SQL and SQLite;
-PostgreSQL's default is <code>\</code>, and a FenecQL string reads
+PostgreSQL's default is <code>\</code>, and a FennecQL string reads
 <code>\</code> as an escape of its own, so <code>'50\%'</code> is the text
 <code>50%</code>: write <code>LIKE '50!%' ESCAPE '!'</code>. A pattern
 that ends in its escape is refused.</p>
@@ -361,11 +361,11 @@ that ends in its escape is refused.</p>
 <p>A <code>nocase</code> field compares by its case fold wherever it is
 compared, <code>LIKE</code> too, as PostgreSQL's <code>citext</code> does.
 <code>ILIKE</code> compares the case folds — Unicode's full fold, the one
-<a href="/docs/fenecql-schema#nocase"><code>nocase</code></a> uses — so
+<a href="/docs/fennecql-schema#nocase"><code>nocase</code></a> uses — so
 <code>'Straße' ILIKE 'STRASSE'</code>, and <code>_</code> stands for one
 character of the fold. Its escape takes no character with a case. A
 collated field's <code>LIKE</code> compares its bytes, as its
-<code>=</code> does. <code>~</code>, FenecQL's own, is a
+<code>=</code> does. <code>~</code>, FennecQL's own, is a
 case-insensitive <i>contains</i>.</p>
 
 <p><code>LIKE</code> reads every row the rest of the filter leaves: no
@@ -385,7 +385,7 @@ names the row's id; one that is taken is refused, as a key is, unless
 
 <h3 id="upsert"><code>ON CONFLICT</code></h3>
 
-<p>FenecQL's upsert is held by any unique key — the <code>id</code>, or a
+<p>FennecQL's upsert is held by any unique key — the <code>id</code>, or a
 <code>@unique</code> value, a field's or several fields' — and
 <code>ON CONFLICT</code> is read with no target, as SQLite reads it:
 <code>DO NOTHING</code> passes a row over where any of them is held, and
@@ -412,13 +412,13 @@ refused.</p>
   <li><b>Text compares by its bytes</b>, as <code>COLLATE "C"</code> does.
     A field declared <code>collate tr</code> or <code>und</code> orders by
     that collation, and its <code>=</code> and <code>LIKE</code> compare
-    bytes — see <a href="/docs/fenecql-schema#collation">Collation</a>.</li>
+    bytes — see <a href="/docs/fennecql-schema#collation">Collation</a>.</li>
   <li><b>Division between integers is whole</b>, toward zero:
     <code>7 / 2</code> is <code>3</code>, as in PostgreSQL and SQLite
     (MySQL's is <code>3.5</code>); an integer and a float make a
     float.</li>
   <li><b>Every row has an <code>id</code></b>, an int the database makes
-    and no field declares; <code>/_schema?as=fenecql</code> and the MCP
+    and no field declares; <code>/_schema?as=fennecql</code> and the MCP
     <code>schema</code> tool say so in a comment. <code>rowid</code> and
     <code>_id</code> are refused naming it.</li>
   <li><b>Errors name what to write.</b> <code>contains(…)</code>,
@@ -437,7 +437,7 @@ it lists it changes nothing, and <code>DISTINCT ON</code> is refused:
 <code>first(name by signup)</code> is the row of each key it asks for.
 <code>ORDER BY 2</code> and <code>GROUP BY 1</code> name the list's items
 by their places — written with <code>BY</code>, as SQL writes them: in
-FenecQL's <code>order 1</code> and <code>group 1</code> the number is a
+FennecQL's <code>order 1</code> and <code>group 1</code> the number is a
 key, as it always was. Over <code>*</code>, whose places the parser
 reading no schema cannot count, a number is refused, saying to name the
 columns; one naming an aggregate as a group's key is refused as SQL
@@ -453,19 +453,19 @@ the query's own, as SQL reads it first. Correlated any other way, it is
 refused. <code>= (SELECT …)</code> is the same list where its query answers
 one row — an aggregate with no group, or <code>LIMIT 1</code> — and refused
 where it may answer several, which SQL would refuse at the second; where
-it answers none, SQL's comparison is unknown and FenecQL's <code>in</code>
+it answers none, SQL's comparison is unknown and FennecQL's <code>in</code>
 false, the same under <code>NOT</code> as <a href="#nulls"><code>NOT
 IN</code></a>.</p>
 
 <h3 id="create-table"><code>CREATE TABLE</code></h3>
 
-<p>Each column's type is the one <a href="/docs/import"><code>fenec
+<p>Each column's type is the one <a href="/docs/import"><code>fennec
 import</code></a> gives a column of it — one table for both, PostgreSQL's
 names and then SQLite's affinity rules for any other word:</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>SQL</th><th>FenecQL</th></tr></thead>
+<thead><tr><th>SQL</th><th>FennecQL</th></tr></thead>
 <tbody>
 <tr><td><code>smallint</code> <code>integer</code> <code>bigint</code> <code>serial</code>, SQLite's <code>INT…</code></td><td><code>int</code></td></tr>
 <tr><td><code>real</code> <code>double precision</code> <code>float</code></td><td><code>float</code></td></tr>
@@ -504,7 +504,7 @@ names and then SQLite's affinity rules for any other word:</p>
     a timestamp, which keeps a time written with it; <code>smallint</code>
     and <code>integer</code> take any 64-bit int, past their 16 and 32 bits;
     <code>real</code> is a 64-bit float, more precise than its 32 bits.</li>
-  <li><b>What fenecdb has no rule of is refused</b> rather than dropped,
+  <li><b>What fennecdb has no rule of is refused</b> rather than dropped,
     which would take writes SQL refuses: <code>DEFAULT</code>,
     <code>REFERENCES</code> and <code>FOREIGN KEY</code>, <code>CHECK</code>,
     a computed column, a sequence on another column. A key a join reads is

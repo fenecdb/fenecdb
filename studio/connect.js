@@ -9,7 +9,7 @@
 // the one `--studio-connect` gave.
 //
 // An app embedding the studio hands its session over instead, frozen, as
-// `window.fenecHost.session` before these modules run -- on the server's
+// `window.fennecHost.session` before these modules run -- on the server's
 // origin alone, which only the app can see to -- and it is never
 // stored: the app holds the connection, and a session written into
 // sessionStorage for the page to find was a private contract on a key that
@@ -17,15 +17,15 @@
 
 import { connect } from './client.js';
 
-const KEY = 'fenec-studio';
+const KEY = 'fennec-studio';
 
 /** This page's own server: the studio is served by the server it reads. */
 export const here = () => location.origin;
 
 // Read once, as the modules load, so nothing the page draws later stands in
-// for it: an element with the id `fenecHost` is `window.fenecHost` too.
+// for it: an element with the id `fennecHost` is `window.fennecHost` too.
 const HOST = (() => {
-  const h = globalThis.fenecHost;
+  const h = globalThis.fennecHost;
   return h && typeof h === 'object' && [Object.prototype, null].includes(Object.getPrototypeOf(h)) ? h : null;
 })();
 
@@ -109,7 +109,7 @@ export class ConnectError extends Error {}
  *
  *   {mode: 'single',  who}             one database
  *   {mode: 'tenants', who, tenants}    a node of tenants, `/t/<t>/`
- *   {mode: 'router',  tenants}         fenec-shard in front of the nodes
+ *   {mode: 'router',  tenants}         fennec-shard in front of the nodes
  *
  * `who` is `/_whoami`'s answer. `tenants` is what the token may reach: the
  * ones its claim names, else the node's or the router's list where the
@@ -134,7 +134,7 @@ export async function probe(server, token) {
   }
   const router = got.status === 404 && /\/t\/<tenant>/.test(got.body?.error ?? '');
   if (router) return { mode: 'router', tenants: await tenantList(server, token, null, '/_shard/tenants') };
-  throw new ConnectError(`${server} did not answer as a fenecdb server (${got.status}): ${got.body?.error ?? 'no /_whoami'}`);
+  throw new ConnectError(`${server} did not answer as a fennecdb server (${got.status}): ${got.body?.error ?? 'no /_whoami'}`);
 }
 
 async function tenantList(server, token, who, path) {
@@ -160,7 +160,7 @@ export function clientFor(server, token, tenant) {
 }
 
 /**
- * A database on a server, as the studio reads one: `FenecHttp`'s `run`,
+ * A database on a server, as the studio reads one: `FennecHttp`'s `run`,
  * `batch` and `subscribe`, a view's whole answer (`request`, whose code
  * comes with the views, kit.js) and the file's sizes. local.js's database
  * in the page has the same surface.
@@ -234,14 +234,14 @@ export async function metrics(base, token) {
 export function parseMetrics(text) {
   const out = { file: null, reclaimable: null, data: {}, dead: {} };
   for (const line of text.split('\n')) {
-    const m = /^(fenec_[a-z_]+)(?:\{collection="((?:[^"\\]|\\.)*)"\})?\s+(\S+)$/.exec(line);
+    const m = /^(fennec_[a-z_]+)(?:\{collection="((?:[^"\\]|\\.)*)"\})?\s+(\S+)$/.exec(line);
     if (!m) continue;
     const [, metric, collection, value] = m;
     const n = Number(value);
-    if (metric === 'fenec_file_bytes' && !collection) out.file = n;
-    else if (metric === 'fenec_reclaimable_bytes' && !collection) out.reclaimable = n;
-    else if (metric === 'fenec_data_bytes' && collection !== undefined) out.data[collection] = n;
-    else if (metric === 'fenec_dead_bytes' && collection !== undefined) out.dead[collection] = n;
+    if (metric === 'fennec_file_bytes' && !collection) out.file = n;
+    else if (metric === 'fennec_reclaimable_bytes' && !collection) out.reclaimable = n;
+    else if (metric === 'fennec_data_bytes' && collection !== undefined) out.data[collection] = n;
+    else if (metric === 'fennec_dead_bytes' && collection !== undefined) out.dead[collection] = n;
   }
   return out;
 }

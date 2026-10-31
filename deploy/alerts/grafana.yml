@@ -1,5 +1,5 @@
-# deploy/alerts/fenecdb.rules.yml as Grafana-managed alert rules, over the
-# Prometheus data source Grafana reads fenecdb's metrics through (uid
+# deploy/alerts/fennecdb.rules.yml as Grafana-managed alert rules, over the
+# Prometheus data source Grafana reads fennecdb's metrics through (uid
 # `prometheus`, as monitoring/grafana/provisioning/datasources/prometheus.yml
 # provisions it). Copy it into Grafana's provisioning/alerting/ beside
 # monitoring/'s own rule. Evaluated every 30 s, the shortest `for` among
@@ -11,17 +11,17 @@
 # series it returns (is_number), whatever its value -- 0 for an archiver
 # count below 1. No series is no alert (noDataState: OK).
 #
-# crates/fenec-shard/tests/datadog.rs holds every rule here to its
+# crates/fennec-shard/tests/datadog.rs holds every rule here to its
 # Prometheus twin, title to alert and expression to expression.
 apiVersion: 1
 groups:
   - orgId: 1
-    name: fenecdb-deployment
-    folder: fenecdb
+    name: fennecdb-deployment
+    folder: fennecdb
     interval: 30s
     rules:
-      - uid: fenec-node-down
-        title: FenecNodeDown
+      - uid: fennec-node-down
+        title: FennecNodeDown
         condition: B
         data:
           - refId: A
@@ -32,7 +32,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: up{job="fenecdb-node"} == 0
+              expr: up{job="fennecdb-node"} == 0
           - refId: B
             datasourceUid: __expr__
             model:
@@ -47,8 +47,8 @@ groups:
         annotations:
           summary: "Node {{ $labels.instance }} does not answer: its router fails its tenants over as its lease lapses, and its replicas are gone"
           runbook: deploy/RUNBOOK.md#a-node-lost
-      - uid: fenec-primary-router-down
-        title: FenecPrimaryRouterDown
+      - uid: fennec-primary-router-down
+        title: FennecPrimaryRouterDown
         condition: B
         data:
           - refId: A
@@ -59,7 +59,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: up{job=~"fenecdb-router|fenecdb-global"} == 0 and on (instance) last_over_time(fenec_router_following[1h]) == 0
+              expr: up{job=~"fennecdb-router|fennecdb-global"} == 0 and on (instance) last_over_time(fennec_router_following[1h]) == 0
           - refId: B
             datasourceUid: __expr__
             model:
@@ -74,8 +74,8 @@ groups:
         annotations:
           summary: "Router {{ $labels.instance }} keeps its directory and does not answer: promote its standby"
           runbook: deploy/RUNBOOK.md#a-router-lost
-      - uid: fenec-standby-router-down
-        title: FenecStandbyRouterDown
+      - uid: fennec-standby-router-down
+        title: FennecStandbyRouterDown
         condition: B
         data:
           - refId: A
@@ -86,7 +86,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: up{job=~"fenecdb-router|fenecdb-global"} == 0 and on (instance) last_over_time(fenec_router_following[1h]) == 1
+              expr: up{job=~"fennecdb-router|fennecdb-global"} == 0 and on (instance) last_over_time(fennec_router_following[1h]) == 1
           - refId: B
             datasourceUid: __expr__
             model:
@@ -101,8 +101,8 @@ groups:
         annotations:
           summary: "Standby router {{ $labels.instance }} does not answer: its directory has no standby to promote"
           runbook: deploy/RUNBOOK.md#a-router-lost
-      - uid: fenec-router-down
-        title: FenecRouterDown
+      - uid: fennec-router-down
+        title: FennecRouterDown
         condition: B
         data:
           - refId: A
@@ -113,7 +113,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: up{job=~"fenecdb-router|fenecdb-global"} == 0 unless on (instance) last_over_time(fenec_router_following[1h])
+              expr: up{job=~"fennecdb-router|fennecdb-global"} == 0 unless on (instance) last_over_time(fennec_router_following[1h])
           - refId: B
             datasourceUid: __expr__
             model:
@@ -128,8 +128,8 @@ groups:
         annotations:
           summary: "Router {{ $labels.instance }} does not answer, and has not in the hour"
           runbook: deploy/RUNBOOK.md#a-router-lost
-      - uid: fenec-scrape-missing
-        title: FenecScrapeMissing
+      - uid: fennec-scrape-missing
+        title: FennecScrapeMissing
         condition: B
         data:
           - refId: A
@@ -140,7 +140,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: absent(up{job="fenecdb-node"}) or absent(up{job="fenecdb-router"}) or absent(up{job="fenecdb-global"}) or absent(up{job="node-exporter"})
+              expr: absent(up{job="fennecdb-node"}) or absent(up{job="fennecdb-router"}) or absent(up{job="fennecdb-global"}) or absent(up{job="node-exporter"})
           - refId: B
             datasourceUid: __expr__
             model:
@@ -155,8 +155,8 @@ groups:
         annotations:
           summary: "Prometheus scrapes no target of job {{ $labels.job }}: every alert over it is blind"
           runbook: deploy/RUNBOOK.md#alerts
-      - uid: fenec-connections-near-ceiling
-        title: FenecConnectionsNearCeiling
+      - uid: fennec-connections-near-ceiling
+        title: FennecConnectionsNearCeiling
         condition: B
         data:
           - refId: A
@@ -167,7 +167,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: fenec_connections > 3200 or fenec_router_connections > 800
+              expr: fennec_connections > 3200 or fennec_router_connections > 800
           - refId: B
             datasourceUid: __expr__
             model:
@@ -182,8 +182,8 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} holds {{ $values.A.Value }} connections, near its --max-connections"
           runbook: deploy/RUNBOOK.md#adding-a-node
-      - uid: fenec-no-thread-for-connection
-        title: FenecNoThreadForConnection
+      - uid: fennec-no-thread-for-connection
+        title: FennecNoThreadForConnection
         condition: B
         data:
           - refId: A
@@ -194,7 +194,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: sum by (instance) (increase(fenec_connections_refused_total{reason="no_thread"}[5m])) > 0 or sum by (instance) (increase(fenec_router_connections_refused_total{reason="no_thread"}[5m])) > 0
+              expr: sum by (instance) (increase(fennec_connections_refused_total{reason="no_thread"}[5m])) > 0 or sum by (instance) (increase(fennec_router_connections_refused_total{reason="no_thread"}[5m])) > 0
           - refId: B
             datasourceUid: __expr__
             model:
@@ -209,8 +209,8 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} could make no thread for a connection and refused it 503: it is at its thread limit"
           runbook: deploy/RUNBOOK.md#installing-a-machine
-      - uid: fenec-node-failed-over
-        title: FenecNodeFailedOver
+      - uid: fennec-node-failed-over
+        title: FennecNodeFailedOver
         condition: B
         data:
           - refId: A
@@ -221,7 +221,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: fenec_router_node_failed_over == 1
+              expr: fennec_router_node_failed_over == 1
           - refId: B
             datasourceUid: __expr__
             model:
@@ -236,8 +236,8 @@ groups:
         annotations:
           summary: "Node {{ $labels.node }} ({{ $labels.region }}) was failed over and has not answered since"
           runbook: deploy/RUNBOOK.md#a-node-lost
-      - uid: fenec-auto-failover-incomplete
-        title: FenecAutoFailoverIncomplete
+      - uid: fennec-auto-failover-incomplete
+        title: FennecAutoFailoverIncomplete
         condition: B
         data:
           - refId: A
@@ -248,7 +248,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: fenec_router_tenants > 0 and on (instance, node) fenec_router_node_failed_over == 1
+              expr: fennec_router_tenants > 0 and on (instance, node) fennec_router_node_failed_over == 1
           - refId: B
             datasourceUid: __expr__
             model:
@@ -263,8 +263,8 @@ groups:
         annotations:
           summary: "Node {{ $labels.node }} ({{ $labels.region }}) was failed over with tenants still placed on it ({{ $values.A.Value }}): they take no writes"
           runbook: deploy/RUNBOOK.md#a-node-lost
-      - uid: fenec-auto-failover
-        title: FenecAutoFailover
+      - uid: fennec-auto-failover
+        title: FennecAutoFailover
         condition: B
         data:
           - refId: A
@@ -275,7 +275,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: increase(fenec_router_auto_failovers_total{outcome="done"}[10m]) > 0
+              expr: increase(fennec_router_auto_failovers_total{outcome="done"}[10m]) > 0
           - refId: B
             datasourceUid: __expr__
             model:
@@ -290,8 +290,8 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} failed a node over in the last 10 minutes"
           runbook: deploy/RUNBOOK.md#a-node-lost
-      - uid: fenec-lease-renewal-late
-        title: FenecLeaseRenewalLate
+      - uid: fennec-lease-renewal-late
+        title: FennecLeaseRenewalLate
         condition: B
         data:
           - refId: A
@@ -302,7 +302,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: max_over_time(fenec_router_lease_age_seconds[5m]) > 3 unless on (instance, node) max_over_time(fenec_router_node_failed_over[10m]) == 1
+              expr: max_over_time(fennec_router_lease_age_seconds[5m]) > 3 unless on (instance, node) max_over_time(fennec_router_node_failed_over[10m]) == 1
           - refId: B
             datasourceUid: __expr__
             model:
@@ -317,8 +317,8 @@ groups:
         annotations:
           summary: "Node {{ $labels.node }} went {{ $values.A.Value }} s without a lease in the last five minutes"
           runbook: deploy/RUNBOOK.md#a-lease-late
-      - uid: fenec-tenants-without-replica
-        title: FenecTenantsWithoutReplica
+      - uid: fennec-tenants-without-replica
+        title: FennecTenantsWithoutReplica
         condition: B
         data:
           - refId: A
@@ -329,7 +329,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: fenec_router_tenants_unreplicated > 0 and on (instance) fenec_router_following == 0
+              expr: fennec_router_tenants_unreplicated > 0 and on (instance) fennec_router_following == 0
           - refId: B
             datasourceUid: __expr__
             model:
@@ -344,8 +344,8 @@ groups:
         annotations:
           summary: "{{ $values.A.Value }} tenants on {{ $labels.instance }}{{ if $labels.region }} in {{ $labels.region }}{{ end }} have no copy to fail over to"
           runbook: deploy/RUNBOOK.md#tenants-without-a-replica
-      - uid: fenec-files-left-on-nodes
-        title: FenecFilesLeftOnNodes
+      - uid: fennec-files-left-on-nodes
+        title: FennecFilesLeftOnNodes
         condition: B
         data:
           - refId: A
@@ -356,7 +356,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: fenec_router_files_left > 0 and on (instance) fenec_router_following == 0
+              expr: fennec_router_files_left > 0 and on (instance) fennec_router_following == 0
           - refId: B
             datasourceUid: __expr__
             model:
@@ -371,8 +371,8 @@ groups:
         annotations:
           summary: "{{ $values.A.Value }} files {{ $labels.instance }} may have left on nodes are placed by nothing"
           runbook: deploy/RUNBOOK.md#files-left-on-nodes
-      - uid: fenec-same-zone-copies
-        title: FenecSameZoneCopies
+      - uid: fennec-same-zone-copies
+        title: FennecSameZoneCopies
         condition: B
         data:
           - refId: A
@@ -383,7 +383,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: fenec_router_same_zone_copies > 0 and on (instance) fenec_router_following == 0
+              expr: fennec_router_same_zone_copies > 0 and on (instance) fennec_router_following == 0
           - refId: B
             datasourceUid: __expr__
             model:
@@ -398,8 +398,8 @@ groups:
         annotations:
           summary: "{{ $values.A.Value }} tenants of {{ $labels.region }} keep their copy in their own zone"
           runbook: deploy/RUNBOOK.md#adding-a-node
-      - uid: fenec-read-replicas-given-up
-        title: FenecReadReplicasGivenUp
+      - uid: fennec-read-replicas-given-up
+        title: FennecReadReplicasGivenUp
         condition: B
         data:
           - refId: A
@@ -410,7 +410,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: fenec_router_read_replicas_given_up > 0
+              expr: fennec_router_read_replicas_given_up > 0
           - refId: B
             datasourceUid: __expr__
             model:
@@ -425,8 +425,8 @@ groups:
         annotations:
           summary: "{{ $values.A.Value }} read replicas on {{ $labels.instance }} were lost three times and are made again no more"
           runbook: deploy/RUNBOOK.md#read-replicas
-      - uid: fenec-tenants-moving
-        title: FenecTenantsMoving
+      - uid: fennec-tenants-moving
+        title: FennecTenantsMoving
         condition: B
         data:
           - refId: A
@@ -437,7 +437,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: fenec_router_tenants_moving > 0 and on (instance) fenec_router_following == 0
+              expr: fennec_router_tenants_moving > 0 and on (instance) fennec_router_following == 0
           - refId: B
             datasourceUid: __expr__
             model:
@@ -452,8 +452,8 @@ groups:
         annotations:
           summary: "A move on {{ $labels.instance }} has not recorded done in 15 minutes"
           runbook: deploy/RUNBOOK.md#placing-and-moving-a-tenant
-      - uid: fenec-node-unreachable
-        title: FenecNodeUnreachable
+      - uid: fennec-node-unreachable
+        title: FennecNodeUnreachable
         condition: B
         data:
           - refId: A
@@ -464,7 +464,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: sum by (instance, node) (rate(fenec_router_upstream_errors_total[5m])) > 0
+              expr: sum by (instance, node) (rate(fennec_router_upstream_errors_total[5m])) > 0
           - refId: B
             datasourceUid: __expr__
             model:
@@ -479,8 +479,8 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} cannot reach node {{ $labels.node }}: its requests are answered 502"
           runbook: deploy/RUNBOOK.md#a-node-lost
-      - uid: fenec-router5xx
-        title: FenecRouter5xx
+      - uid: fennec-router5xx
+        title: FennecRouter5xx
         condition: B
         data:
           - refId: A
@@ -491,7 +491,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: sum by (instance) (rate(fenec_router_requests_total{route="tenant",code="5xx"}[5m])) / sum by (instance) (rate(fenec_router_requests_total{route="tenant"}[5m])) > 0.01
+              expr: sum by (instance) (rate(fennec_router_requests_total{route="tenant",code="5xx"}[5m])) / sum by (instance) (rate(fennec_router_requests_total{route="tenant"}[5m])) > 0.01
           - refId: B
             datasourceUid: __expr__
             model:
@@ -506,8 +506,8 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} answers more than 1% of tenants' requests 5xx"
           runbook: deploy/RUNBOOK.md#errors-and-refusals
-      - uid: fenec-entry-mark-refused
-        title: FenecEntryMarkRefused
+      - uid: fennec-entry-mark-refused
+        title: FennecEntryMarkRefused
         condition: B
         data:
           - refId: A
@@ -518,7 +518,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: sum by (instance, outcome) (rate(fenec_router_entry_clients_total{outcome=~"bad_mark|stale"}[5m])) > 0
+              expr: sum by (instance, outcome) (rate(fennec_router_entry_clients_total{outcome=~"bad_mark|stale"}[5m])) > 0
           - refId: B
             datasourceUid: __expr__
             model:
@@ -533,8 +533,8 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} does not believe the entry's client marks ({{ $labels.outcome }})"
           runbook: deploy/RUNBOOK.md#the-entry-token
-      - uid: fenec-entry-mark-absent
-        title: FenecEntryMarkAbsent
+      - uid: fennec-entry-mark-absent
+        title: FennecEntryMarkAbsent
         condition: B
         data:
           - refId: A
@@ -545,7 +545,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: sum by (instance) (rate(fenec_router_entry_clients_total{outcome="absent"}[5m])) > 0
+              expr: sum by (instance) (rate(fennec_router_entry_clients_total{outcome="absent"}[5m])) > 0
           - refId: B
             datasourceUid: __expr__
             model:
@@ -560,8 +560,8 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} takes tenants' requests that name no client: the entry's ENTRY_TOKEN unset, or a client past the entry"
           runbook: deploy/RUNBOOK.md#the-entry-token
-      - uid: fenec-router-refusals
-        title: FenecRouterRefusals
+      - uid: fennec-router-refusals
+        title: FennecRouterRefusals
         condition: B
         data:
           - refId: A
@@ -572,7 +572,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: sum by (instance) (rate(fenec_router_refused_total[5m])) > 1
+              expr: sum by (instance) (rate(fennec_router_refused_total[5m])) > 1
           - refId: B
             datasourceUid: __expr__
             model:
@@ -587,8 +587,8 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} refuses more than one token a second (401)"
           runbook: deploy/RUNBOOK.md#errors-and-refusals
-      - uid: fenec-replica-disconnected
-        title: FenecReplicaDisconnected
+      - uid: fennec-replica-disconnected
+        title: FennecReplicaDisconnected
         condition: B
         data:
           - refId: A
@@ -599,7 +599,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: fenec_replica_connected == 0
+              expr: fennec_replica_connected == 0
           - refId: B
             datasourceUid: __expr__
             model:
@@ -614,8 +614,8 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} lost its primary: a standby router that cannot be promoted up to date"
           runbook: deploy/RUNBOOK.md#a-router-lost
-      - uid: fenec-replica-behind
-        title: FenecReplicaBehind
+      - uid: fennec-replica-behind
+        title: FennecReplicaBehind
         condition: B
         data:
           - refId: A
@@ -626,7 +626,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: fenec_replica_behind > 1000
+              expr: fennec_replica_behind > 1000
           - refId: B
             datasourceUid: __expr__
             model:
@@ -641,8 +641,8 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} is {{ $values.A.Value }} writes behind its primary"
           runbook: deploy/RUNBOOK.md#a-router-lost
-      - uid: fenec-replica-silent
-        title: FenecReplicaSilent
+      - uid: fennec-replica-silent
+        title: FennecReplicaSilent
         condition: B
         data:
           - refId: A
@@ -653,7 +653,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: fenec_replica_last_contact_seconds > 60
+              expr: fennec_replica_last_contact_seconds > 60
           - refId: B
             datasourceUid: __expr__
             model:
@@ -668,8 +668,8 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} has not heard from its primary in {{ $values.A.Value }} s"
           runbook: deploy/RUNBOOK.md#a-router-lost
-      - uid: fenec-directory-unreplicated
-        title: FenecDirectoryUnreplicated
+      - uid: fennec-directory-unreplicated
+        title: FennecDirectoryUnreplicated
         condition: B
         data:
           - refId: A
@@ -680,7 +680,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: fenec_replicas{job="fenecdb-router"} == 0 and on (instance) fenec_router_following{job="fenecdb-router"} == 0
+              expr: fennec_replicas{job="fennecdb-router"} == 0 and on (instance) fennec_router_following{job="fennecdb-router"} == 0
           - refId: B
             datasourceUid: __expr__
             model:
@@ -695,8 +695,8 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} keeps a directory no standby follows"
           runbook: deploy/RUNBOOK.md#a-router-lost
-      - uid: fenec-quota-refusals
-        title: FenecQuotaRefusals
+      - uid: fennec-quota-refusals
+        title: FennecQuotaRefusals
         condition: B
         data:
           - refId: A
@@ -707,7 +707,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: sum by (instance, quota) (increase(fenec_quota_refused_total[15m])) > 0
+              expr: sum by (instance, quota) (increase(fennec_quota_refused_total[15m])) > 0
           - refId: B
             datasourceUid: __expr__
             model:
@@ -722,8 +722,8 @@ groups:
         annotations:
           summary: "A tenant of {{ $labels.instance }} was refused for its quota of {{ $labels.quota }}"
           runbook: deploy/RUNBOOK.md#quotas
-      - uid: fenec-node-refusals
-        title: FenecNodeRefusals
+      - uid: fennec-node-refusals
+        title: FennecNodeRefusals
         condition: B
         data:
           - refId: A
@@ -734,7 +734,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: sum by (instance) (rate(fenec_refused_total[5m])) > 1
+              expr: sum by (instance) (rate(fennec_refused_total[5m])) > 1
           - refId: B
             datasourceUid: __expr__
             model:
@@ -749,8 +749,8 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} refuses more than one token a second (401)"
           runbook: deploy/RUNBOOK.md#errors-and-refusals
-      - uid: fenec-statement-errors
-        title: FenecStatementErrors
+      - uid: fennec-statement-errors
+        title: FennecStatementErrors
         condition: B
         data:
           - refId: A
@@ -761,7 +761,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: sum by (instance) (rate(fenec_statement_errors_total[5m])) / sum by (instance) (rate(fenec_statements_total[5m])) > 0.05
+              expr: sum by (instance) (rate(fennec_statement_errors_total[5m])) / sum by (instance) (rate(fennec_statements_total[5m])) > 0.05
           - refId: B
             datasourceUid: __expr__
             model:
@@ -776,8 +776,8 @@ groups:
         annotations:
           summary: "More than 5% of {{ $labels.instance }}'s statements end in an error"
           runbook: deploy/RUNBOOK.md#errors-and-refusals
-      - uid: fenec-storage-failed
-        title: FenecStorageFailed
+      - uid: fennec-storage-failed
+        title: FennecStorageFailed
         condition: B
         data:
           - refId: A
@@ -788,7 +788,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: fenec_storage_failed == 1
+              expr: fennec_storage_failed == 1
           - refId: B
             datasourceUid: __expr__
             model:
@@ -803,8 +803,8 @@ groups:
         annotations:
           summary: "{{ $labels.instance }}'s disk refused a write: it takes none until restarted"
           runbook: deploy/RUNBOOK.md#errors-and-refusals
-      - uid: fenec-archive-sync-stale
-        title: FenecArchiveSyncStale
+      - uid: fennec-archive-sync-stale
+        title: FennecArchiveSyncStale
         condition: B
         data:
           - refId: A
@@ -815,7 +815,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: time() - fenec_archive_sync_last_success_timestamp_seconds > 1800
+              expr: time() - fennec_archive_sync_last_success_timestamp_seconds > 1800
           - refId: B
             datasourceUid: __expr__
             model:
@@ -830,8 +830,8 @@ groups:
         annotations:
           summary: "Node {{ $labels.node }}'s archive has not reached the bucket in {{ $values.A.Value }} s"
           runbook: deploy/RUNBOOK.md#archives-and-restores
-      - uid: fenec-textfile-unread
-        title: FenecTextfileUnread
+      - uid: fennec-textfile-unread
+        title: FennecTextfileUnread
         condition: B
         data:
           - refId: A
@@ -857,8 +857,8 @@ groups:
         annotations:
           summary: "node_exporter on {{ $labels.instance }} cannot read a file of its textfile collector, the archive sync's success perhaps"
           runbook: deploy/RUNBOOK.md#archives-and-restores
-      - uid: fenec-archive-sync-unreported
-        title: FenecArchiveSyncUnreported
+      - uid: fennec-archive-sync-unreported
+        title: FennecArchiveSyncUnreported
         condition: B
         data:
           - refId: A
@@ -869,7 +869,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: absent(fenec_archive_sync_last_success_timestamp_seconds)
+              expr: absent(fennec_archive_sync_last_success_timestamp_seconds)
           - refId: B
             datasourceUid: __expr__
             model:
@@ -884,8 +884,8 @@ groups:
         annotations:
           summary: "No archive sync has reported a success to node_exporter in an hour"
           runbook: deploy/RUNBOOK.md#archives-and-restores
-      - uid: fenec-archiver-disconnected
-        title: FenecArchiverDisconnected
+      - uid: fennec-archiver-disconnected
+        title: FennecArchiverDisconnected
         condition: B
         data:
           - refId: A
@@ -896,7 +896,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: fenec_node_streams < 1
+              expr: fennec_node_streams < 1
           - refId: B
             datasourceUid: __expr__
             model:
@@ -911,8 +911,8 @@ groups:
         annotations:
           summary: "No archiver follows {{ $labels.instance }}: its writes reach no archive"
           runbook: deploy/RUNBOOK.md#archives-and-restores
-      - uid: fenec-copies-refused
-        title: FenecCopiesRefused
+      - uid: fennec-copies-refused
+        title: FennecCopiesRefused
         condition: B
         data:
           - refId: A
@@ -923,7 +923,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: increase(fenec_copies_refused_total[1h]) > 0
+              expr: increase(fennec_copies_refused_total[1h]) > 0
           - refId: B
             datasourceUid: __expr__
             model:

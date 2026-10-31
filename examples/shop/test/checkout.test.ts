@@ -3,7 +3,7 @@
 // catalog's prices summed.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ADMIN, FENEC, ROOT, SHOP, Shopper, key, rows, someProduct, stock } from './helpers';
+import { ADMIN, FENNEC, ROOT, SHOP, Shopper, key, rows, someProduct, stock } from './helpers';
 
 type Inv = { available: number; reserved: number; sold: number };
 const inv = async (sku: string) => (await rows<Inv>('get inventory select available, reserved, sold where sku = $1', [sku]))[0];
@@ -173,7 +173,7 @@ test('a checkout block with a price that changed is put back whole', async () =>
     { query: 'set inventory {available: available - $1, reserved: reserved + $1} where sku = $2 and available >= $1 require 1', params: [1, p.sku] },
     { query: 'get products select sku where sku = $1 and price = $2 limit 1 require 1', params: [p.sku, p.price + 1] },
   ];
-  const res = await fetch(`${FENEC}/batch`, {
+  const res = await fetch(`${FENNEC}/batch`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-ndjson', authorization: `Bearer ${ROOT}` },
     body: lines.map((l) => JSON.stringify(l)).join('\n'),

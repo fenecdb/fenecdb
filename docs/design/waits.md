@@ -1,15 +1,15 @@
 # Held writes
 
-The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *Held writes*: `Fenec-Wait`, the writes that wake held ones, the bids that settle a row, and the leader's looks. Each section below is a paragraph moved word for word from CLAUDE.md, which keeps its rule in a few sentences and links here; "above" and "below" in them refer to the order the invariants had there, which [README.md](README.md#the-original-order) lists.
+The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *Held writes*: `Fennec-Wait`, the writes that wake held ones, the bids that settle a row, and the leader's looks. Each section below is a paragraph moved word for word from CLAUDE.md, which keeps its rule in a few sentences and links here; "above" and "below" in them refer to the order the invariants had there, which [README.md](README.md#the-original-order) lists.
 
-## Fenec-Wait
+## Fennec-Wait
 
-**`Fenec-Wait` holds a `set` or a `del` that writes nothing until it
-can** (`fenec_http::waits`, `Database::wakes_at` in `engine/wake.rs`). A
+**`Fennec-Wait` holds a `set` or a `del` that writes nothing until it
+can** (`fennec_http::waits`, `Database::wakes_at` in `engine/wake.rs`). A
 worker whose claim found no job slept and claimed again: late by its
 sleep, or a claim under the write lock every few milliseconds a worker.
-Sent to `/query` or `/batch` with `Fenec-Wait: <ms>` (30 s at most; beside
-`Fenec-After` the header stays that read's wait), a request whose `set`s
+Sent to `/query` or `/batch` with `Fennec-Wait: <ms>` (30 s at most; beside
+`Fennec-After` the header stays that read's wait), a request whose `set`s
 and `del`s wrote nothing -- no row, or a `require` unmet, its block put
 back -- is held and run again once it may write: the same request at a
 later moment, answered with what it wrote, or at the end of the wait with
@@ -60,7 +60,7 @@ answers every one at once with its last answer before the sync
 (sent again it waits again), a replica refuses it as any write, and the
 router waits `--upstream-timeout` plus the wait (`Pool::send_held`: cut
 at the timeout, a 502 while the node leased the job to no one). `/_metrics`
-counts `fenec_held_requests` and the heads' looks and runs. A job
+counts `fennec_held_requests` and the heads' looks and runs. A job
 enqueued reached one of 8 held workers in 0.38 ms p50, 0.76 p99, against
 0.83/10.1 polling every 10 ms (ten times the claims) and 15.5/85.8 every
 100 ms; a delayed job 0.04/1.9 ms after its time against 1.2/8.4 and
@@ -222,5 +222,5 @@ busy workers beside 16 claims 149 000-167 000 jobs a second against
 of another collection beside 150 claims 23 us either way, a delayed job
 p99 0.0 ms after its time against 1.5-2.2, and a thousand held claims
 use no CPU and 46 KB each against 63, their threads no longer each
-running a pick. `fenec-server` grew 16.2 KB (aarch64-apple-darwin), and
+running a pick. `fennec-server` grew 16.2 KB (aarch64-apple-darwin), and
 the browser module not by a byte: `wake.rs` is native only.

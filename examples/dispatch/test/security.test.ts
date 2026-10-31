@@ -10,11 +10,11 @@ import assert from 'node:assert/strict';
 import { startWorld, tandem, hopper, cast, sleep, type World } from './harness';
 import { claimNearest, readyNear } from '../lib/dispatch';
 import { cancel, placeOrder } from '../lib/orders';
-import { appDb, asUser, FenecError, one, operatorDb, rows } from '../lib/db';
+import { appDb, asUser, FennecError, one, operatorDb, rows } from '../lib/db';
 import { mint, tokenFor, type Who } from '../lib/tokens';
 import { addresses } from '../lib/city';
 import { nodeFetch } from '../lib/fetch';
-import { connect } from '@fenecdb/web/client';
+import { connect } from '@fennecdb/web/client';
 import type { Job } from '../lib/dispatch';
 
 let world: World;
@@ -55,7 +55,7 @@ const refusal = async (p: Promise<unknown>): Promise<number> => {
     await p;
     return 200;
   } catch (e) {
-    if (e instanceof FenecError && e.status !== undefined) return e.status;
+    if (e instanceof FennecError && e.status !== undefined) return e.status;
     throw e;
   }
 };
@@ -129,7 +129,7 @@ test("a courier reads a ready order's pickup and not its door until they claim i
   ] as const) {
     const why = await db.run(q, [...params]).then(
       () => 'answered',
-      (e: FenecError) => `${e.status} ${e.message}`,
+      (e: FennecError) => `${e.status} ${e.message}`,
     );
     assert.match(why, /^403 .*this token sees `(dropoff_addr|dropoff|customer)`/, q);
   }

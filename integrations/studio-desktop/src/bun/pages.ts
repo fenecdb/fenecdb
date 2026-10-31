@@ -51,9 +51,9 @@ async function pick(kind: "file" | "folder" | "key", startingFolder: string): Pr
 	}
 	const paths = await Utils.openFileDialog({
 		startingFolder,
-		// A database is a .fenec file (a comma-separated list of extensions, which
+		// A database is a .fennec file (a comma-separated list of extensions, which
 		// the native panel takes as it is); a folder and a key file are any.
-		allowedFileTypes: kind === "file" ? "fenec" : "*",
+		allowedFileTypes: kind === "file" ? "fennec" : "*",
 		canChooseFiles: kind !== "folder",
 		canChooseDirectory: kind === "folder",
 		allowsMultipleSelection: false,
@@ -197,7 +197,7 @@ export async function showLauncher() {
 	}
 	const hooks = __TESTABLE__ ? await import("./testhooks.ts") : null;
 	launcher = new BrowserWindow({
-		title: "fenec studio",
+		title: "fennec studio",
 		url: "views://launcher/index.html",
 		rpc: launcherRPC,
 		frame: pageFrame(1280, 800),

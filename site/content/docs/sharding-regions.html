@@ -1,5 +1,5 @@
 <!--
-title: Sharding: regions — fenecdb
+title: Sharding: regions — fennecdb
 description: How to put nodes in regions and zones, keep a tenant and its replica in one region, and give a region a directory of its own so that it goes on taking writes when it is cut off from the others.
 -->
 
@@ -48,7 +48,7 @@ so a move or a failover changes it with the node and there is no second
 record to drift. <code>PUT /_shard/tenants/&lt;t&gt;</code> takes
 <code>region</code>, <code>node</code> or both, which must agree
 (<code>409</code> otherwise). With neither it goes to the region
-<code>fenec-shard --default-region</code> names, and without that flag to the
+<code>fennec-shard --default-region</code> names, and without that flag to the
 node with the fewest bytes whatever its region, as before. <code>GET
 /_shard/tenants/&lt;t&gt;</code> answers its node, state, region and zone, its
 copy's node — a replica of its own or its node's standby — and
@@ -69,7 +69,7 @@ with it. A zone not recorded is ranked between, neither known to be another
 nor the same. Where every free node of the region is in the primary's zone,
 the replica goes there all the same: the router logs it, the tenant answers
 <code>"same_zone": true</code>, and
-<code>fenec_router_same_zone_copies{region}</code> counts it for as long as it
+<code>fennec_router_same_zone_copies{region}</code> counts it for as long as it
 stays. A region with no other node gives none (<code>"unreplicated": "there is
 no other node in region `eu` to keep it"</code>) until a repair finds one. A
 pair's standby must be in its node's region (<code>409</code> otherwise), and
@@ -103,11 +103,11 @@ turns: following costs a request nothing (<code>make shard-bench
 ARGS=standby</code>, node and routers in one process on loopback).</p>
 
 <pre data-lang="bash"># eu: the primary router, its directory replicated to the others
-fenec-shard --listen 0.0.0.0:8090 --token $ROOT --directory shard.fenec \
+fennec-shard --listen 0.0.0.0:8090 --token $ROOT --directory shard.fennec \
             --replication-token $DIR --replicas --default-region eu
 
 # us and tr: a standby router each, following it
-fenec-shard --listen 0.0.0.0:8090 --token $ROOT --directory standby.fenec \
+fennec-shard --listen 0.0.0.0:8090 --token $ROOT --directory standby.fennec \
             --replication-token $DIR --replica-of http://router.eu.internal:8090
 
 # every region's nodes, two zones each, recorded through the primary
@@ -158,8 +158,8 @@ nodes and tenants. That router leases the region's nodes and fails them
 over, so the region goes on taking writes — and fails a node over inside
 itself — while it is cut off from every other region.</p>
 
-<pre data-lang="bash"># us: the region's router, its directory in us.fenec, the global one followed from eu
-fenec-shard --listen 0.0.0.0:8090 --token $ROOT --directory us.fenec \
+<pre data-lang="bash"># us: the region's router, its directory in us.fennec, the global one followed from eu
+fennec-shard --listen 0.0.0.0:8090 --token $ROOT --directory us.fennec \
             --replication-token $DIR --replicas --auto-failover 5 \
             --region us --global http://router.eu.internal:8090
 

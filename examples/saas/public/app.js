@@ -1,13 +1,13 @@
 // Trellis in the browser. The page holds no secret but a five-minute access
 // token in memory: the refresh token is an HttpOnly cookie only
 // /api/auth/ ever sees. With the access token it reads and writes its
-// organisation straight from fenecdb (through /db/, a pipe to the router),
+// organisation straight from fennecdb (through /db/, a pipe to the router),
 // and opens subscriptions there for the live board -- the database holds
 // every request to the person's role and teams.
 //
 // Everything here is drawn with DOM calls, never innerHTML over data: a
 // task title is text, whatever it holds.
-import { connect, FenecError } from '/vendor/fenec/client.js';
+import { connect, FennecError } from '/vendor/fennec/client.js';
 
 const app = document.getElementById('app');
 
@@ -150,7 +150,7 @@ async function write(access, statements) {
     try {
       return await dbOf(access).batch(statements, { idempotencyKey: key });
     } catch (err) {
-      const retry = !(err instanceof FenecError) || err.status === undefined || err.status >= 500;
+      const retry = !(err instanceof FennecError) || err.status === undefined || err.status >= 500;
       if (!retry || attempt >= 6) throw err;
       await new Promise((r) => setTimeout(r, 200 * 2 ** attempt));
     }

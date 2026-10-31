@@ -1,0 +1,103 @@
+[package]
+name = "fennec-shard"
+description = "Tenant router for fennecdb: one HTTP front for many fennec-server --dir nodes"
+version.workspace = true
+edition.workspace = true
+autotests = false
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+fennec-core = { workspace = true, features = ["std-fs", "full"] }
+fennec-ql.workspace = true
+fennec-http = { workspace = true, features = ["studio"] }
+# `<file>.lock` over the directory file, as `fennec-server --file` and the
+# shell take a file's: in the workspace, as fennec-http already takes it.
+fennec-abi.workspace = true
+
+[[bin]]
+name = "fennec-shard"
+path = "src/main.rs"
+
+[[test]]
+name = "all"
+path = "tests/all.rs"
+
+# Apart: reads the process's own counts.
+[[test]]
+name = "metrics"
+path = "tests/metrics.rs"
+
+# Apart: the count of connections refused as they were taken is the
+# process's own, a node's in it as well as the router's.
+[[test]]
+name = "refused_counts"
+path = "tests/refused_counts.rs"
+
+# Apart: the wait after a refusal is counted by the process.
+[[test]]
+name = "refusals"
+path = "tests/refusals.rs"
+
+[[test]]
+name = "datadog"
+path = "tests/datadog.rs"
+
+[[test]]
+name = "request_id"
+path = "tests/request_id.rs"
+
+# Apart: tracing is turned on for the whole process.
+[[test]]
+name = "tracing"
+path = "tests/tracing.rs"
+
+# Apart: the counts of refusals, the audit log and tracing are the
+# process's, and the routers and nodes there share them.
+[[test]]
+name = "entry"
+path = "tests/entry.rs"
+
+# Apart: each test holds threads for its whole run -- lookups a stand-in
+# resolver never answers, connections a hung node swallows -- and `all`
+# stands near macOS's 2 048 threads a process: beside them it ran out.
+[[test]]
+name = "lease_stalls"
+path = "tests/lease_stalls.rs"
+
+# Apart, as `lease_stalls`: three nodes and a router a test, and
+# connections kept open unanswered.
+[[test]]
+name = "late_grants"
+path = "tests/late_grants.rs"
+
+# Apart: each test holds a thread a request beside three nodes, their
+# replication and a router.
+[[test]]
+name = "cuts"
+path = "tests/cuts.rs"
+
+# Apart, as `cuts`: two routers a test besides.
+[[test]]
+name = "follower_cuts"
+path = "tests/follower_cuts.rs"
+
+# Apart: two or three nodes, a proxy and a router a test, a thread each
+# request the proxy carries -- in `all`, near macOS's threads a process
+# already, other tests' spawns failed beside them.
+[[test]]
+name = "replica_retries"
+path = "tests/replica_retries.rs"
+
+# Apart: each test's nodes, routers and links serve on until the process
+# ends, and these leave some 1 200 threads. In `all` beside the rest the
+# process stood at 1 939-2 047 of macOS's 2 048 threads a process under
+# load, and a server that could make no thread for a connection dropped it
+# unanswered: a reset to whichever test was asking, 7 runs of 20 beside
+# busy loops. Apart, `all` peaks at 870 and these at 1 200.
+[[test]]
+name = "read_replicas"
+path = "tests/read_replicas.rs"

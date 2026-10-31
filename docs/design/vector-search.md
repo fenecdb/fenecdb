@@ -10,7 +10,7 @@ bit.** `.cargo/config.toml` turns on `simd128` for that target, and
 built at `opt-level = "z"`, where LLVM does not vectorise the scalar strips
 (a 20 000 x 384 HNSW build went 28.0 -> 9.95 s). They keep the scalar loop's
 eight accumulators and reduction order, so a graph built in the browser is the
-graph built natively; `web/fenec.test.js` checks that order against a
+graph built natively; `web/fennec.test.js` checks that order against a
 `Math.fround` reference. The same config links the module with
 `--compress-relocations`: wasm-ld wrote each call's function index and each
 address the code takes as a padded five-byte LEB, 36 KB of the module and
@@ -98,13 +98,13 @@ stays out of it: there it was 474 bytes brotli for nothing.
 
 ## Vector parameters
 
-**A vector parameter goes into the module as `f32`s.** `web/fenec.js`'s
+**A vector parameter goes into the module as `f32`s.** `web/fennec.js`'s
 `run` takes each parameter that is a typed array or an array of finite
 numbers -- which the module reads as a vector either way -- out of the
 JSON, where it leaves `null`, and hands it over beside it: its place, its
-length and its values (`vectorsApart`; `fenec_query`'s two arguments
+length and its values (`vectorsApart`; `fennec_query`'s two arguments
 before its last, the clock; `with_vectors`). A `-0` goes over as `0`, as JSON writes it,
-so the file is the same either way (`web/fenec.test.js`). 200 768-dim
+so the file is the same either way (`web/fennec.test.js`). 200 768-dim
 vectors went in in 21.9 ms as JSON and take 4.4, and `make wasm-speed`
 builds 10 000 128-dim ones with their graph in 1 165 ms against 1 307.
 
@@ -219,8 +219,8 @@ browser module grew 2.9 KB, 1.0 KB brotli.
 **`sparse<N>` is pgvector's `sparsevec`, and `@inverted` answers exactly.** A
 sparse vector is held as its non-zero entries, `(index, weight)` ascending
 with indices from 0, and travels everywhere in pgvector's text form,
-`{1:0.5,3:0.25}/N` with indices from 1 -- a JSON string, a FenecQL
-literal, an imported `sparsevec` -- so a pgvector table and `fenec import`
+`{1:0.5,3:0.25}/N` with indices from 1 -- a JSON string, a FennecQL
+literal, an imported `sparsevec` -- so a pgvector table and `fennec import`
 carry the same vector.
 Every way in goes through `sparse::normalise` (order, an index given twice
 refused, zeros dropped), and the index relies on it. `@inverted` is the text

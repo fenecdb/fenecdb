@@ -1,6 +1,6 @@
 <!--
-title: How it works — fenecdb
-description: The design decisions under fenecdb — no buffer pool of its own, a mapped file, vectors in the language, one writer — and what each one costs.
+title: How it works — fennecdb
+description: The design decisions under fennecdb — no buffer pool of its own, a mapped file, vectors in the language, one writer — and what each one costs.
 -->
 
 <h1>How it works</h1>
@@ -10,14 +10,14 @@ this page gives what each one bought and what it cost.</p>
 <span id="no-page-cache"></span>
 <h2 id="no-buffer-pool">No buffer pool of its own</h2>
 
-<p>The operating system keeps the pages of the file in memory, and fenecdb
+<p>The operating system keeps the pages of the file in memory, and fennecdb
 reads a row straight from them: it copies nothing in between, so there is
 no buffer pool of its own to warm, evict or keep in step with the file. A
 page read often stays in memory with nothing to configure; one that is not
 there is read from the disk by the system, as for any file.</p>
 
 <p>The <b>page cache</b> on these pages is the operating system's, which
-every file has. What fenecdb leaves out is a <b>buffer pool</b>: the copy of
+every file has. What fennecdb leaves out is a <b>buffer pool</b>: the copy of
 the file's pages that a database keeps in memory of its own, with an eviction
 policy to run it.</p>
 
@@ -34,7 +34,7 @@ policy to run it.</p>
 pool in user space. The eviction policy, dirty-page tracking, checkpoints and
 most of the locking cost all follow from that one structure.</p>
 
-<p>fenecdb skips the layer:</p>
+<p>fennecdb skips the layer:</p>
 
 <ul>
   <li>Segments are <b>immutable</b>. A write only appends to the active one,
@@ -51,7 +51,7 @@ most of the locking cost all follow from that one structure.</p>
 <p>No eviction policy, no dirty pages, no buffer pool to warm. The system's page
 cache is cold after a restart, as for any file, and a page's first read comes
 from the disk. Dead bytes are reclaimed by <code>compact</code>, which
-<code>fenec-server</code> and the native library run on their own
+<code>fennec-server</code> and the native library run on their own
 (<a href="/docs/server#compaction">Compaction</a>): left to grow, a file of
 updated rows spreads its live records thin over pages of dead ones, and reads
 wait for the disk. What this means for a cache in front of the server, with
@@ -69,7 +69,7 @@ larger than the machine's memory can be opened this way.</p>
   <li><b>Replace a file by rename, never by copying over it.</b> A copy over
     an open file, or a disk read that fails, ends the process.</li>
   <li><b>Opening still takes time in proportion to the file.</b></li>
-  <li><b><code>fenec-server --no-mmap</code></b> reads the file into memory
+  <li><b><code>fennec-server --no-mmap</code></b> reads the file into memory
     instead, for network file systems.</li>
 </ul>
 
@@ -99,7 +99,7 @@ documents written since the open until they amount to 16 MB.</p>
 reading it cannot: that would want about 20 GB. The trade is the one every
 mapped file makes: a page the disk cannot read ends the process rather than
 the query, and a file copied over in place while it is open does too —
-replace one by rename, as fenecdb's own rewrites do. What it does not change is the
+replace one by rename, as fennecdb's own rewrites do. What it does not change is the
 open's cost — the records are still walked to build the offset index and the
 indexes are still built from the documents, so opening is proportional to the
 file either way.</p>
@@ -134,7 +134,7 @@ call: Linux's give a large block back when it is freed, so the process holds
 what the engine counts, while macOS's keeps hundreds of megabytes of them in
 a cache of its own.</p>
 
-<p><code>fenec-server --no-mmap</code> reads the file into memory instead — a
+<p><code>fennec-server --no-mmap</code> reads the file into memory instead — a
 replicated one, and every tenant of a <code>--dir</code> node, as well — over
 a network file system, where mapping is a bad bet, or to have
 <code>--max-memory</code> cover the data as well as the indexes.</p>
@@ -145,7 +145,7 @@ a network file system, where mapping is a bad bet, or to have
 <p>Vectors are part of the language, not a plugin: <code>vector&lt;N&gt;</code>
 is a type, <code>@hnsw</code> an index and <code>near</code> a clause.</p>
 
-<pre data-lang="fenecql">get articles where year >= 2024 near embed $1 ef 200 limit 10
+<pre data-lang="fennecql">get articles where year >= 2024 near embed $1 ef 200 limit 10
 get articles near embed $1 exact limit 10        -- exact scan, for verification
 </pre>
 
@@ -173,7 +173,7 @@ get articles near embed $1 exact limit 10        -- exact scan, for verification
 rows that pass the filter, however the filter and the vectors relate. An index
 on the filtered field makes a selective filter fast.</p>
 
-<pre data-lang="fenecql">get articles where year >= 2020 near embed $1 limit 10</pre>
+<pre data-lang="fennecql">get articles where year >= 2020 near embed $1 limit 10</pre>
 
 <ul>
   <li><b>A filter matching many rows is cheap:</b> 1.1 ms for 23% of
@@ -231,7 +231,7 @@ page is full, and <code>explain</code> says which ran.</p>
 <p>Store vectors in 16-bit floats to halve their size on disk and in memory,
 for a slightly slower search and almost no recall loss.</p>
 
-<pre data-lang="fenecql">create collection docs (embed vector&lt;768, f16&gt; @hnsw(cosine))
+<pre data-lang="fennecql">create collection docs (embed vector&lt;768, f16&gt; @hnsw(cosine))
 </pre>
 
 <p>Same data, 100 000 × 128:</p>
@@ -280,7 +280,7 @@ itself: a byte a component with <code>quant=int8</code>, a bit a component
 with <code>quant=bit</code>. The index shrinks a lot, and the scores stay
 exact because the final order comes from the real vectors.</p>
 
-<pre data-lang="fenecql">create collection docs (embed vector&lt;768, f16&gt; @hnsw(cosine, quant=int8))
+<pre data-lang="fennecql">create collection docs (embed vector&lt;768, f16&gt; @hnsw(cosine, quant=int8))
 </pre>
 
 <ul>
@@ -394,7 +394,7 @@ it never uses. <code>sparse&lt;N&gt;</code> stores one, and
 <code>@inverted</code> indexes it so that <code>near</code> returns the exact
 top results.</p>
 
-<pre data-lang="fenecql">create collection passages (body text @text, splade sparse&lt;30522&gt; @inverted)
+<pre data-lang="fennecql">create collection passages (body text @text, splade sparse&lt;30522&gt; @inverted)
 get passages near splade $1 limit 10
 </pre>
 
@@ -461,7 +461,7 @@ file.</p>
 in. The load is then a plain append, and the graph is built in one parallel
 pass.</p>
 
-<pre data-lang="fenecql">create collection docs (title text, embed vector&lt;768&gt;)
+<pre data-lang="fennecql">create collection docs (title text, embed vector&lt;768&gt;)
 put docs [ ... 100 000 documents ... ]
 create index on docs (embed) @hnsw(cosine)
 </pre>
@@ -471,7 +471,7 @@ create index on docs (embed) @hnsw(cosine)
 Building it afterwards turns the write path into a pure append and builds the
 graph in one parallel pass.</p>
 
-<p>This is already the recommended order for SQLite and PostgreSQL. In fenecdb
+<p>This is already the recommended order for SQLite and PostgreSQL. In fennecdb
 <code>create index</code> exists for exactly this reason, and the comparison in
 <a href="benchmarks-vector.html#method">Vector search benchmarks</a> uses that order for all three engines.</p>
 </details>
@@ -490,11 +490,11 @@ of powers of five, which is a twelfth of the module and incompressible. The
 reason is
 the WebAssembly output — it has to stay small and auditable.</p>
 
-<p>The rule covers <code>fenec-core</code>, <code>fenec-ql</code>,
-<code>fenec-wasm</code>, <code>fenec-http</code>, <code>fenec-server</code>,
-<code>fenec-wire</code>, <code>fenec-import</code> and
-<code>fenec-shard</code>. <code>fenec-core</code> does dev-depend on
-<code>fenec-ql</code>, which Cargo permits through a dev dependency, so tests
+<p>The rule covers <code>fennec-core</code>, <code>fennec-ql</code>,
+<code>fennec-wasm</code>, <code>fennec-http</code>, <code>fennec-server</code>,
+<code>fennec-wire</code>, <code>fennec-import</code> and
+<code>fennec-shard</code>. <code>fennec-core</code> does dev-depend on
+<code>fennec-ql</code>, which Cargo permits through a dev dependency, so tests
 can be written as real queries.</p>
 
 <p><b>What it costs.</b> Every bug is ours, and so is every protocol detail:
@@ -511,16 +511,16 @@ file a server can open.</p>
 <ul>
   <li><b><code>persist</code> / <code>restore</code></b> keep it in
     IndexedDB, saving only what changed.</li>
-  <li><b><code>openFile</code></b>, in a worker, keeps it as a real fenecdb
+  <li><b><code>openFile</code></b>, in a worker, keeps it as a real fennecdb
     file in the origin private file system.</li>
 </ul>
 
 <details class="deep"><summary>The glue without wasm-bindgen, and how persist works</summary>
-<p><code>fenec-wasm</code> exposes a C ABI and there is no
+<p><code>fennec-wasm</code> exposes a C ABI and there is no
 <code>wasm-bindgen</code>. The glue is about 605 lines of JavaScript inside
-<code>web/fenec.js</code>, alongside persistence and the sync layer; the
+<code>web/fennec.js</code>, alongside persistence and the sync layer; the
 query builder and the HTTP client are dependency-free modules of their own
-it imports, which <code>@fenecdb/web/client</code> loads without the rest
+it imports, which <code>@fennecdb/web/client</code> loads without the rest
 (<a href="javascript.html#packages">Which package</a>).</p>
 
 <p><code>persist(db)</code> and <code>restore(db)</code> move the database in
@@ -537,7 +537,7 @@ rebuilt.</p>
 
 <p>In a worker, <code>openFile(db, name)</code> keeps it in a file of the
 origin private file system instead, which is the file itself: the bytes
-<code>fenec-server</code> keeps, so <code>fenec</code> opens a page's file and a
+<code>fennec-server</code> keeps, so <code>fennec</code> opens a page's file and a
 page loads a server's. The same journal feeds it, a statement at a time:
 <code>run</code> appends the writes and flushes the file before it answers,
 0.56 ms a row in Chrome and 0.36 ms in Safari, statement included, and the
@@ -555,7 +555,7 @@ crash leaves one of the two whole.</p>
 <h2>Single writer</h2>
 
 <p>Many readers can work at once, but only one write runs at a time. Every
-write lands whole or not at all, which is what lets fenecdb do without the
+write lands whole or not at all, which is what lets fennecdb do without the
 bookkeeping other databases need for concurrent writers.</p>
 
 <ul>
@@ -569,7 +569,7 @@ bookkeeping other databases need for concurrent writers.</p>
 
 <div class="note trap">
   <p><b>Two processes opening the same file corrupts it.</b> This is why the
-  HTTP endpoint is a second listener inside <code>fenec-server</code> and never its
+  HTTP endpoint is a second listener inside <code>fennec-server</code> and never its
   own binary — one process, one file, one sync policy, one shutdown signal.</p>
 </div>
 
@@ -654,9 +654,9 @@ should live.</p>
 <thead><tr><th>Target</th><th>What you get</th><th>Size</th></tr></thead>
 <tbody>
 <tr><td>Browser</td><td>WebAssembly module plus a dependency-free ES client</td><td class="n">330 KB gzip<br><small>the wasm module</small></td></tr>
-<tr><td>Command line</td><td>The <code>fenec</code> shell, <code>fenec import</code>, <code>fenec types</code>, <code>fenec backup</code> and <code>restore</code></td><td class="n">1880–3013 KB</td></tr>
-<tr><td>Server</td><td><code>fenec-server</code>: HTTP, replication and tenants in one process</td><td class="n">2.99 MB image</td></tr>
-<tr><td>Embedded</td><td><code>fenec-core</code> as a Rust library</td><td class="n">zero dependencies</td></tr>
+<tr><td>Command line</td><td>The <code>fennec</code> shell, <code>fennec import</code>, <code>fennec types</code>, <code>fennec backup</code> and <code>restore</code></td><td class="n">1880–3013 KB</td></tr>
+<tr><td>Server</td><td><code>fennec-server</code>: HTTP, replication and tenants in one process</td><td class="n">2.99 MB image</td></tr>
+<tr><td>Embedded</td><td><code>fennec-core</code> as a Rust library</td><td class="n">zero dependencies</td></tr>
 </tbody>
 </table>
 </div>
@@ -669,23 +669,23 @@ dependencies at all.</p>
 <details class="deep"><summary>The crates and what each depends on</summary>
 <p>Dependencies point one way. Nothing points back up.</p>
 
-<pre data-lang="text">fenec-core   storage, indexes, plan executor, plugins, JSON, calendar, changes
+<pre data-lang="text">fennec-core   storage, indexes, plan executor, plugins, JSON, calendar, changes
      |       std only, zero dependencies
-fenec-ql     FenecQL lexer and parser              fenec-wasm   browser ABI
+fennec-ql     FennecQL lexer and parser              fennec-wasm browser ABI
      |                                                          (no wasm-bindgen)
      |
-fenec-http   REST/JSON surface, SSE subscriptions, replication, tenants
+fennec-http  REST/JSON surface, SSE subscriptions, replication, tenants
      |
-fenec-wire   the PostgreSQL client the importer reads with
+fennec-wire  the PostgreSQL client the importer reads with
      |
-fenec-import SQLite file reader, PostgreSQL COPY source, --follow
+fennec-import SQLite file reader, PostgreSQL COPY source, --follow
      |
-fenec-server the server: HTTP, replication, tenants, the --follow mirror
+fennec-server the server: HTTP, replication, tenants, the --follow mirror
      |
-fenec-cli    the `fenec` shell
+fennec-cli   the `fennec` shell
 </pre>
 
-<p><code>fenec-bench</code> is a measurement harness and the only crate allowed
+<p><code>fennec-bench</code> is a measurement harness and the only crate allowed
 external dependencies — that is where <code>rusqlite</code> and
 <code>postgres</code> live, so the comparisons in
 <a href="benchmarks.html">Benchmarks</a> can run against the real engines.</p>

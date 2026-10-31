@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static site generator for fenecdb.
+"""Static site generator for fennecdb.
 
 Standard library only, on purpose: the repo's hard rule is zero dependencies,
 and the site is the first thing a reader sees. A generator exists at all
@@ -28,7 +28,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(ROOT)
 OUT = os.path.join(ROOT, "dist")
 
-REPO_URL = "https://github.com/fenecdb/fenecdb"
+REPO_URL = "https://github.com/fennec-db/fennecdb"
 
 # esbuild, when it happens to be on PATH. The generator itself stays
 # stdlib-only -- the repo's zero-dependency rule -- so a missing esbuild is a
@@ -85,14 +85,14 @@ NAV = [
         ("docs/mobile", "Mobile and native apps"),
         ("docs/http", "HTTP endpoint"),
         ("docs/embedding", "Embedded Rust"),
-        # A way to talk to a file, which the FenecQL tour is run in.
+        # A way to talk to a file, which the FennecQL tour is run in.
         ("docs/shell", "The shell"),
         ("docs/integrations", "Integrations"),
         ("docs/mcp", "Agents and MCP"),
     ]),
     ("Guides", [
         ("docs/sync", "Sync"),
-        # What a backend platform bundles, done with fenecdb and a standard
+        # What a backend platform bundles, done with fennecdb and a standard
         # service, each run against a real server: sign-in from the identity
         # provider an app already has, files in an object store, and code
         # that reacts to a write. No server feature of their own.
@@ -111,20 +111,20 @@ NAV = [
         ("docs/import", "Import"),
     ]),
     ("Reference", [
-        ("docs/fenecql", "FenecQL"),
+        ("docs/fennecql", "FennecQL"),
         # The reference this page once held, a page a family of statements,
         # the general-database ones first and vectors last (the tour on
-        # docs/fenecql lists them); labelled as the pages are titled, since
+        # docs/fennecql lists them); labelled as the pages are titled, since
         # the group says what they are. A fragment of the old page is
         # followed to its new one by moved.json.
-        ("docs/fenecql-reading", "Reading data"),
-        ("docs/fenecql-writing", "Writing data"),
-        ("docs/fenecql-schema", "Collections and types"),
-        ("docs/fenecql-indexes", "Indexes"),
-        ("docs/fenecql-lookup", "Lookup and subqueries"),
-        ("docs/fenecql-aggregates", "Aggregates and grouping"),
-        ("docs/fenecql-search", "Text search"),
-        ("docs/fenecql-vector", "Vector search"),
+        ("docs/fennecql-reading", "Reading data"),
+        ("docs/fennecql-writing", "Writing data"),
+        ("docs/fennecql-schema", "Collections and types"),
+        ("docs/fennecql-indexes", "Indexes"),
+        ("docs/fennecql-lookup", "Lookup and subqueries"),
+        ("docs/fennecql-aggregates", "Aggregates and grouping"),
+        ("docs/fennecql-search", "Text search"),
+        ("docs/fennecql-vector", "Vector search"),
         ("docs/sql", "From SQL"),
         # What `docs/http` once held beyond the way in (which is HTTP
         # endpoint, in Clients): the routes and everything a request can
@@ -200,7 +200,7 @@ def is_benchmark(key):
 # ---------------------------------------------------------------- highlighting
 
 KEYWORDS = {
-    "fenecql": """create drop collection index if not exists get put set del select
+    "fennecql": """create drop collection index if not exists get put set del select
         from where near order limit offset count ef exact asc desc and or in has is
         null true false collections describe compact begin commit on match fuse
         lookup group insert set del rerank absent returning fuzzy prefix like ilike
@@ -252,10 +252,10 @@ KEYWORDS = {
 KEYWORDS["html"] = KEYWORDS["js"]
 
 TYPES = """bool int float text bytes timestamp vector f16 cosine l2 dot
-    Fenec FenecSync Database Collection Value Error String Vec Option Result""".split()
+    Fennec FennecSync Database Collection Value Error String Vec Option Result""".split()
 
 COMMENT = {
-    "fenecql": r"--[^\n]*",
+    "fennecql": r"--[^\n]*",
     "js": r"//[^\n]*|/\*[\s\S]*?\*/",
     "ts": r"//[^\n]*|/\*[\s\S]*?\*/",
     "rust": r"//[^\n]*|/\*[\s\S]*?\*/",
@@ -328,7 +328,7 @@ def highlight(code, lang):
 
 # The languages a page highlights as they are typed: the playground's. Every
 # other code on the site is highlighted above, as it is built.
-JS_LANGS = ("fenecql",)
+JS_LANGS = ("fennecql",)
 
 
 def highlight_js(langs=JS_LANGS):
@@ -537,7 +537,7 @@ def filled(raw, page=None):
     docs index's map of every page; the HTTP endpoint page's tabs of
     languages; and, for a page that was split (`page` is its NAV key), the
     script that sends a reader to where a section went (`{{moved_script}}`);
-    and a FenecQL example's tabs of the same query in each SDK's builder
+    and a FennecQL example's tabs of the same query in each SDK's builder
     (`{{builder "case" ...}}` over the block, `builder_tabs.py`), each case
     held to its statement. Claims are checked against this text, as it is
     read."""
@@ -621,9 +621,9 @@ def prev_next(active, base):
 # Not everything measured is in here. The container image's size is written
 # into four files and cannot be checked from a site build, which has neither a
 # daemon nor the registry; it drifted from 1.25 MB to a claimed 1.55 before
-# anyone noticed. `docker image inspect ghcr.io/fenecdb/fenec-server:<v>` is the
+# anyone noticed. `docker image inspect ghcr.io/fennec-db/fennec-server:<v>` is the
 # way to settle it by hand.
-# Not in here, and deliberately: the `fenec` and `fenec-server` binary sizes. They
+# Not in here, and deliberately: the `fennec` and `fennec-server` binary sizes. They
 # are quoted for an Apple M-series and CI is Linux, so a check would compare
 # two different numbers and fail honest builds. They are re-measured by hand at
 # each release, next to the version bump -- 0.1.4 moved them 636/717/863 KB ->
@@ -633,9 +633,9 @@ COMPRESSED = {"kb_gz", "kb_br", "kb_client_gz", "kb_client_br", "kb_br_all",
               "kb_lite_gz", "kb_lite_br", "kb_min_gz", "kb_min_br",
               "kb_app_br", "kb_app_gz", "kb_app_client_br", "kb_app_client_gz", "kb_studio_gz"}
 # The browser client's modules, each after those it imports: what
-# `@fenecdb/web` ships of JavaScript. client.js is `@fenecdb/web/client`,
+# `@fennecdb/web` ships of JavaScript. client.js is `@fennecdb/web/client`,
 # builder.js and http.js without the engine.
-CLIENT_MODULES = ("builder.js", "http.js", "client.js", "fenec.js")
+CLIENT_MODULES = ("builder.js", "http.js", "client.js", "fennec.js")
 # An app that runs its queries on a server, bundled as an app is (esbuild,
 # minified): `connect`, a builder query and its rows, through the package
 # and through its client entry.
@@ -652,12 +652,12 @@ BENCH = "site/content/docs/benchmarks.html"
 BENCH_YCSB = "site/content/docs/benchmarks-ycsb.html"
 BENCH_SIZE = "site/content/docs/benchmarks-size.html"
 CLAIMS = [
-    # fenec studio's first load, which studio/test/statements.test.mjs holds
+    # fennec studio's first load, which studio/test/statements.test.mjs holds
     # under 120 KB.
     ("site/content/docs/studio.html", r"first load is (\d+) KB of JavaScript and CSS, gzipped", "kb_studio_gz", 0),
     ("README.md", r"\*\*Runtime size\*\* \| (\d+) KB gzip wasm", "kb_gz", 0),
     ("README.md", r"gzip wasm \+ (\d+) KB gzip client", "kb_client_gz", 0),
-    ("README.md", r"fenec-server:(\d+\.\d+\.\d+)", "version", 0),
+    ("README.md", r"fennec-server:(\d+\.\d+\.\d+)", "version", 0),
     ("README.md", r"(\d+) KB of gzipped WebAssembly and", "kb_gz", 0),
     ("README.md", r"as (\d+) KB of\s+gzipped WebAssembly", "kb_gz", 0),
     ("README.md", r"and a (\d+) KB gzipped client", "kb_client_gz", 0),
@@ -683,23 +683,23 @@ CLAIMS = [
      r"browser pays is\s*\n?\s*<b>(\d+) KB brotli</b>", "kb_br_all", 0),
     # The comparison pages set the module beside another engine's files.
     ("site/content/docs/vs-sqlite.html",
-     r'<code>fenec\.wasm</code> [\d.]+</td><td class="n"><b>(\d+) KB</b>', "kb_br", 0),
+     r'<code>fennec\.wasm</code> [\d.]+</td><td class="n"><b>(\d+) KB</b>', "kb_br", 0),
     ("site/content/docs/vs-sqlite.html",
-     r'<code>fenec\.wasm</code> [\d.]+</td><td class="n"><b>\d+ KB</b></td><td class="n"><b>(\d+) KB</b>',
+     r'<code>fennec\.wasm</code> [\d.]+</td><td class="n"><b>\d+ KB</b></td><td class="n"><b>(\d+) KB</b>',
      "kb_gz", 0),
     ("site/content/docs/vs-sqlite.html",
      r"<tr><td>Browser module, brotli</td>\s*<td>(\d+) KB", "kb_br", 0),
     ("site/content/docs/vs-pglite.html",
-     r'<code>fenec\.wasm</code> [\d.]+</td><td class="n"><b>(\d+) KB</b>', "kb_br", 0),
+     r'<code>fennec\.wasm</code> [\d.]+</td><td class="n"><b>(\d+) KB</b>', "kb_br", 0),
     ("site/content/docs/vs-pglite.html",
-     r'<code>fenec\.wasm</code> [\d.]+</td><td class="n"><b>\d+ KB</b></td><td class="n"><b>(\d+) KB</b>',
+     r'<code>fennec\.wasm</code> [\d.]+</td><td class="n"><b>\d+ KB</b></td><td class="n"><b>(\d+) KB</b>',
      "kb_gz", 0),
     ("site/content/docs/vs-pglite.html",
      r"<tr><td>Download, brotli</td>\s*<td>(\d+) KB", "kb_br", 0),
     # The packages a page picks between (javascript.html#packages), and
     # wherever else their sizes are quoted.
     ("site/content/docs/javascript.html",
-     r'<code>@fenecdb/web/client</code>: <code>connect</code>, no module</td><td class="n">(\d+) KB</td>',
+     r'<code>@fennecdb/web/client</code>: <code>connect</code>, no module</td><td class="n">(\d+) KB</td>',
      "kb_app_client_br", 0),
     ("site/content/docs/javascript.html",
      r"<code>sync\(\)</code> loads it too</td><td class=\"n\">(\d+) KB</td>", "kb_br", 0),
@@ -710,26 +710,26 @@ CLAIMS = [
      r"make wasm FEATURES=none SCHEMA=0       # no feature at all: (\d+) KB", "kb_min_br", 0),
     ("site/content/docs/javascript.html", r"modules it\s+imports, (\d+) KB brotli", "kb_client_br", 0),
     ("site/content/docs/javascript.html", r"bundles to\s+(\d+) KB brotli through it", "kb_app_client_br", 0),
-    ("site/content/docs/javascript.html", r"and to (\d+) KB through <code>@fenecdb/web</code>", "kb_app_br", 0),
+    ("site/content/docs/javascript.html", r"and to (\d+) KB through <code>@fennecdb/web</code>", "kb_app_br", 0),
     ("site/content/docs/integrations.html", r"no module, (\d+) KB brotli of client", "kb_app_client_br", 0),
-    ("site/content/docs/integrations.html", r"<td><code>fenec.wasm</code>, (\d+) KB brotli</td>", "kb_br", 0),
+    ("site/content/docs/integrations.html", r"<td><code>fennec.wasm</code>, (\d+) KB brotli</td>", "kb_br", 0),
     (BENCH,
-     r'<code>fenec.wasm</code></td><td class="n"><b>(\d+) KB</b></td>', "kb_br", 0),
+     r'<code>fennec.wasm</code></td><td class="n"><b>(\d+) KB</b></td>', "kb_br", 0),
     (BENCH,
-     r'<code>fenec.wasm</code></td><td class="n"><b>\d+ KB</b></td><td class="n">(\d+) KB</td>', "kb_gz", 0),
+     r'<code>fennec.wasm</code></td><td class="n"><b>\d+ KB</b></td><td class="n">(\d+) KB</td>', "kb_gz", 0),
     (BENCH,
-     r'<code>fenec.js</code> and its modules</td><td class="n">(\d+) KB</td>', "kb_client_br", 0),
+     r'<code>fennec.js</code> and its modules</td><td class="n">(\d+) KB</td>', "kb_client_br", 0),
     (BENCH,
-     r'<code>fenec.js</code> and its modules</td><td class="n">\d+ KB</td><td class="n">(\d+) KB</td>',
+     r'<code>fennec.js</code> and its modules</td><td class="n">\d+ KB</td><td class="n">(\d+) KB</td>',
      "kb_client_gz", 0),
     (BENCH,
-     r"in an app's bundle, <code>@fenecdb/web/client</code></td><td class=\"n\">(\d+) KB</td>", "kb_app_client_br", 0),
+     r"in an app's bundle, <code>@fennecdb/web/client</code></td><td class=\"n\">(\d+) KB</td>", "kb_app_client_br", 0),
     (BENCH_SIZE,
-     r"<code>@fenecdb/web/client</code> in an app's bundle, <code>connect</code> and a query's rows, esbuild, minified</td><td class=\"n\">(\d+) KB</td>", "kb_app_client", 0),
+     r"<code>@fennecdb/web/client</code> in an app's bundle, <code>connect</code> and a query's rows, esbuild, minified</td><td class=\"n\">(\d+) KB</td>", "kb_app_client", 0),
     (BENCH_SIZE,
-     r"<code>@fenecdb/web/client</code> in an app's bundle, <code>connect</code> and a query's rows, esbuild, minified</td><td class=\"n\">\d+ KB</td><td class=\"n\">(\d+) KB</td>", "kb_app_client_br", 0),
+     r"<code>@fennecdb/web/client</code> in an app's bundle, <code>connect</code> and a query's rows, esbuild, minified</td><td class=\"n\">\d+ KB</td><td class=\"n\">(\d+) KB</td>", "kb_app_client_br", 0),
     (BENCH_SIZE,
-     r"<code>@fenecdb/web/client</code> in an app's bundle, <code>connect</code> and a query's rows, esbuild, minified</td><td class=\"n\">\d+ KB</td><td class=\"n\">\d+ KB</td><td class=\"n\">(\d+) KB</td>",
+     r"<code>@fennecdb/web/client</code> in an app's bundle, <code>connect</code> and a query's rows, esbuild, minified</td><td class=\"n\">\d+ KB</td><td class=\"n\">\d+ KB</td><td class=\"n\">(\d+) KB</td>",
      "kb_app_client_gz", 0),
     (BENCH_SIZE,
      r'<code>make wasm FEATURES=language SCHEMA=0</code></td><td class="n">(\d+) KB</td>', "kb_lite", 0),
@@ -747,25 +747,25 @@ CLAIMS = [
     (BENCH_SIZE,
      r'<code>make wasm FEATURES=none SCHEMA=0</code></td><td class="n">\d+ KB</td><td class="n">\d+ KB</td><td class="n">(\d+) KB</td>',
      "kb_min_gz", 0),
-    ("README.md", r"`@fenecdb/web/client`, (\d+) KB brotli\s+in its bundle", "kb_app_client_br", 0),
-    ("web/README.md", r"`fenec.wasm` \|[^\n]*: (\d+) KB brotli", "kb_br", 0),
-    ("web/README.md", r"`@fenecdb/web/client`, (\d+) KB brotli in an app's bundle", "kb_app_client_br", 0),
+    ("README.md", r"`@fennecdb/web/client`, (\d+) KB brotli\s+in its bundle", "kb_app_client_br", 0),
+    ("web/README.md", r"`fennec.wasm` \|[^\n]*: (\d+) KB brotli", "kb_br", 0),
+    ("web/README.md", r"`@fennecdb/web/client`, (\d+) KB brotli in an app's bundle", "kb_app_client_br", 0),
     ("CLAUDE.md", r"WASM glue \(~(\d+) lines\)", "glue", 8),
     ("AGENTS.md", r"WASM glue \(~(\d+) lines\)", "glue", 8),
     ("site/content/docs/concepts.html", r"glue is about (\d+) lines", "glue", 8),
     # YCSB, in thousands of operations a second (`ycsb_facts`).
-    ("README.md", r"fenecdb does B with 16 threads at ([\d.]+) k operations", "ycsb:fenec:buffered:B:16", 0),
+    ("README.md", r"fennecdb does B with 16 threads at ([\d.]+) k operations", "ycsb:fennec:buffered:B:16", 0),
     ("README.md", r"second against SQLite's ([\d.]+) k, and C on one thread", "ycsb:sqlite:buffered:B:16", 0),
-    ("README.md", r"and C on one thread at ([\d.]+) k against", "ycsb:fenec:buffered:C:1", 0),
+    ("README.md", r"and C on one thread at ([\d.]+) k against", "ycsb:fennec:buffered:C:1", 0),
     ("README.md", r"k against\s+([\d.]+) k, its file compacted", "ycsb:sqlite:buffered:C:1", 0),
     ("README.md", r"does B at 16 clients, durable, at ([\d.]+) k against", "ycsb:server-docker:durable:B:16", 0),
     ("README.md", r"durable, at [\d.]+ k against\s+PostgreSQL's ([\d.]+) k, both in Docker", "ycsb:pg:durable:B:16", 0),
     # The benchmarks page's glance, ahead of the section the cells are in.
-    (BENCH, r"B, 95% reads, 16 threads, buffered</td><td class=\"n\"><b>([\d.]+) k", "ycsb:fenec:buffered:B:16", 0),
+    (BENCH, r"B, 95% reads, 16 threads, buffered</td><td class=\"n\"><b>([\d.]+) k", "ycsb:fennec:buffered:B:16", 0),
     (BENCH, r"B, 95% reads, 16 threads, buffered</td><td[^>]*><b>[\d.]+ k</b></td><td class=\"n\">([\d.]+) k", "ycsb:sqlite:buffered:B:16", 0),
-    (BENCH, r"C, reads, one thread, after the updates</td><td class=\"n\"><b>([\d.]+) k", "ycsb:fenec:buffered:C:1", 0),
+    (BENCH, r"C, reads, one thread, after the updates</td><td class=\"n\"><b>([\d.]+) k", "ycsb:fennec:buffered:C:1", 0),
     (BENCH, r"C, reads, one thread, after the updates</td><td[^>]*><b>[\d.]+ k</b></td><td class=\"n\">([\d.]+) k", "ycsb:sqlite:buffered:C:1", 0),
-    (BENCH, r"A, 50% updates, 16 threads, durable</td><td class=\"n\"><b>([\d.]+) k", "ycsb:fenec:durable:A:16", 0),
+    (BENCH, r"A, 50% updates, 16 threads, durable</td><td class=\"n\"><b>([\d.]+) k", "ycsb:fennec:durable:A:16", 0),
     (BENCH, r"A, 50% updates, 16 threads, durable</td><td[^>]*><b>[\d.]+ k</b></td><td class=\"n\">([\d.]+) k", "ycsb:sqlite:durable:A:16", 0),
     (BENCH, r"B, 95% reads, 16 clients</td><td class=\"n\"><b>([\d.]+) k", "ycsb:server-docker:durable:B:16", 0),
     (BENCH, r"B, 95% reads, 16 clients</td><td[^>]*><b>[\d.]+ k</b></td><td class=\"n\">([\d.]+) k", "ycsb:pg:durable:B:16", 0),
@@ -778,11 +778,11 @@ CLAIMS = [
     (BENCH, r"A, 50% updates, one client</td>(?:<td[^>]*>(?:<b>)?[\d.]+ k(?:</b>)?</td>){2}<td class=\"n\">([\d.]+) k", "ycsb:mongo:durable:A:1", 0),
     ("site/content/index.html", r"YCSB B over HTTP, 16 clients, durable</dt><dd><b>([\d.]+) k ops/s", "ycsb:server-docker:durable:B:16", 0),
     ("site/content/index.html", r"PostgreSQL ([\d.]+) k, both in Docker", "ycsb:pg:durable:B:16", 0),
-    ("site/content/docs/vs-sqlite.html", r"B, 95% reads, 16 threads, buffered</td><td class=\"n\"><b>([\d.]+) k", "ycsb:fenec:buffered:B:16", 0),
+    ("site/content/docs/vs-sqlite.html", r"B, 95% reads, 16 threads, buffered</td><td class=\"n\"><b>([\d.]+) k", "ycsb:fennec:buffered:B:16", 0),
     ("site/content/docs/vs-sqlite.html", r"B, 95% reads, 16 threads, buffered</td><td[^>]*><b>[\d.]+ k</b></td><td class=\"n\">([\d.]+) k", "ycsb:sqlite:buffered:B:16", 0),
-    ("site/content/docs/vs-sqlite.html", r"A, 50% updates, 16 threads, durable</td><td class=\"n\"><b>([\d.]+) k", "ycsb:fenec:durable:A:16", 0),
+    ("site/content/docs/vs-sqlite.html", r"A, 50% updates, 16 threads, durable</td><td class=\"n\"><b>([\d.]+) k", "ycsb:fennec:durable:A:16", 0),
     ("site/content/docs/vs-sqlite.html", r"A, 50% updates, 16 threads, durable</td><td[^>]*><b>[\d.]+ k</b></td><td class=\"n\">([\d.]+) k", "ycsb:sqlite:durable:A:16", 0),
-    ("site/content/docs/vs-sqlite.html", r"C, reads, one thread, after the updates</td><td class=\"n\"><b>([\d.]+) k", "ycsb:fenec:buffered:C:1", 0),
+    ("site/content/docs/vs-sqlite.html", r"C, reads, one thread, after the updates</td><td class=\"n\"><b>([\d.]+) k", "ycsb:fennec:buffered:C:1", 0),
     ("site/content/docs/vs-sqlite.html", r"C, reads, one thread, after the updates</td><td[^>]*><b>[\d.]+ k</b></td><td class=\"n\">([\d.]+) k", "ycsb:sqlite:buffered:C:1", 0),
     ("site/content/docs/vs-postgres.html", r"B, 95% reads, 16 clients</td><td class=\"n\"><b>([\d.]+) k", "ycsb:server-docker:durable:B:16", 0),
     ("site/content/docs/vs-postgres.html", r"B, 95% reads, 16 clients</td><td[^>]*><b>[\d.]+ k</b></td><td class=\"n\">([\d.]+) k", "ycsb:pg:durable:B:16", 0),
@@ -797,8 +797,8 @@ CLAIMS = [
     ("site/content/docs/vs-postgres.html", r"C, reads alone, one client, buffered</td><td class=\"n\">([\d.]+) k", "ycsb:server-docker:buffered:C:1", 0),
     ("site/content/docs/vs-postgres.html", r"C, reads alone, one client, buffered</td><td class=\"n\">[\d.]+ k</td><td class=\"n\"><b>([\d.]+) k", "ycsb:pg:buffered:C:1", 0),
     ("site/content/docs/vs-postgres.html", r"its median now ([\d.]+) k", "ycsb:pg:buffered:C:1", 0),
-    ("site/content/docs/vs-postgres.html", r"fenec-server leads C,\s+([\d.]+) k", "ycsb:server-docker:buffered:C:16", 0),
-    ("site/content/docs/vs-postgres.html", r"fenec-server leads C,\s+[\d.]+ k against ([\d.]+) k", "ycsb:pg:buffered:C:16", 0),
+    ("site/content/docs/vs-postgres.html", r"fennec-server leads C,\s+([\d.]+) k", "ycsb:server-docker:buffered:C:16", 0),
+    ("site/content/docs/vs-postgres.html", r"fennec-server leads C,\s+[\d.]+ k against ([\d.]+) k", "ycsb:pg:buffered:C:16", 0),
     (BENCH_YCSB, r"buffered C ([\d.]+) k against [\d.]+ k and F", "ycsb:server-docker:buffered:C:1", 0),
     (BENCH_YCSB, r"buffered C [\d.]+ k against ([\d.]+) k and F", "ycsb:pg:buffered:C:1", 0),
     (BENCH_YCSB, r"here it does ([\d.]+) k against\s+PostgreSQL's [\d.]+ k buffered", "ycsb:server-docker:buffered:E:1", 0),
@@ -810,12 +810,12 @@ CLAIMS = [
     (BENCH_YCSB, r"and F ([\d.]+) k against [\d.]+ k\. A read", "ycsb:server-docker:buffered:F:1", 0),
     (BENCH_YCSB, r"and F [\d.]+ k against ([\d.]+) k\. A read", "ycsb:pg:buffered:F:1", 0),
     (BENCH_YCSB, r"2026-10-05, ([\d.]+) k here", "ycsb:pg:buffered:C:1", 0),
-    (BENCH_YCSB, r"fenec-server's [\d.]+ k and ([\d.]+) k\. E was", "ycsb:server-docker:buffered:C:1", 0),
+    (BENCH_YCSB, r"fennec-server's [\d.]+ k and ([\d.]+) k\. E was", "ycsb:server-docker:buffered:C:1", 0),
     (BENCH_YCSB, r"A ([\d.]+) k at one client and [\d.]+ k at 16, F", "ycsb:server:durable:A:1", 0),
     (BENCH_YCSB, r"A [\d.]+ k at one client and ([\d.]+) k at 16, F", "ycsb:server:durable:A:16", 0),
     (BENCH_YCSB, r"at 16, F ([\d.]+) k and [\d.]+ k\. Half", "ycsb:server:durable:F:1", 0),
     (BENCH_YCSB, r"at 16, F [\d.]+ k and ([\d.]+) k\. Half", "ycsb:server:durable:F:16", 0),
-    # A cache in front of fenec-server (concepts.html tells the architecture,
+    # A cache in front of fennec-server (concepts.html tells the architecture,
     # these pages the comparison with Redis): the cells they quote, their
     # latencies, the count of cells Redis led in and the read by key taken
     # apart, each held to what the results (or benchmarks-requests.html's
@@ -839,13 +839,13 @@ CLAIMS = [
     ("site/content/docs/redis.html", r"B: 95% read, 5% update, 16 clients, durable</td>(?:<td[^>]*>.*?</td>){1}<td class=\"n\">[\d.]+ k<br><small>p99 ([\d.]+) ms", "ycsbms:redis:durable:B:16:slowest_p99", 0),
     ("site/content/docs/redis.html", r"(none)\s+of\s+the\s+\d+\s+cells\s+measured\s+both\s+ways", "redis:lost", 0),
     ("site/content/docs/redis.html", r"none\s+of\s+the\s+(\d+)\s+cells\s+measured\s+both\s+ways", "redis:both", 0),
-    ("site/content/docs/redis.html", r"behind\s+fenec-server\s+buffered\s+in\s+(none)\s+of\s+the\s+\d+\s+cells", "redis:snapshot_lost", 0),
-    ("site/content/docs/redis.html", r"behind\s+fenec-server\s+buffered\s+in\s+none\s+of\s+the\s+(\d+)\s+cells", "redis:snapshot_both", 0),
-    ("site/content/docs/redis.html", r"takes\s+([\d.]+) ms\s+at\s+the\s+median\s+from\s+fenec-server", "ycsbms:server-docker:buffered:C:1:READ_p50", 0),
+    ("site/content/docs/redis.html", r"behind\s+fennec-server\s+buffered\s+in\s+(none)\s+of\s+the\s+\d+\s+cells", "redis:snapshot_lost", 0),
+    ("site/content/docs/redis.html", r"behind\s+fennec-server\s+buffered\s+in\s+none\s+of\s+the\s+(\d+)\s+cells", "redis:snapshot_both", 0),
+    ("site/content/docs/redis.html", r"takes\s+([\d.]+) ms\s+at\s+the\s+median\s+from\s+fennec-server", "ycsbms:server-docker:buffered:C:1:READ_p50", 0),
     ("site/content/docs/redis.html", r"and\s+([\d.]+) ms\s+from\s+Redis", "ycsbms:redis:buffered:C:1:READ_p50", 0),
     ("site/content/docs/redis.html", r"spends\s+([\d.]+) ms\s+inside\s+the\s+server\s+of\s+a\s+[\d.]+ ms\s+round\s+trip", "rt:docker:read:inside", 0),
     ("site/content/docs/redis.html", r"inside\s+the\s+server\s+of\s+a\s+([\d.]+) ms\s+round\s+trip", "rt:docker:read:round_trip", 0),
-    ("README.md", r"fenec-server's C at 16 clients, buffered, is ([\d.]+) k against", "ycsb:server-docker:buffered:C:16", 0),
+    ("README.md", r"fennec-server's C at 16 clients, buffered, is ([\d.]+) k against", "ycsb:server-docker:buffered:C:16", 0),
     ("README.md", r"buffered, is [\d.]+ k against Redis's ([\d.]+) k, and its B", "ycsb:redis:buffered:C:16", 0),
     ("README.md", r"and its B, durable, ([\d.]+) k against [\d.]+ k \(one node", "ycsb:server-docker:durable:B:16", 0),
     ("README.md", r"and its B, durable, [\d.]+ k against ([\d.]+) k \(one node", "ycsb:redis:durable:B:16", 0),
@@ -859,10 +859,13 @@ CLAIMS = [
 # number copied by hand from a terminal is how the sizes above drifted.
 # Its fact is `ycsb:<system>:<mode>:<workload>:<threads>`, written in
 # thousands of operations a second, held to the last digit it shows.
-YCSB_RESULTS = os.path.join(REPO, "crates", "fenec-bench", "ycsb", "results.tsv")
+YCSB_RESULTS = os.path.join(REPO, "crates", "fennec-bench", "ycsb", "results.tsv")
 # The runs a later one replaced, by run and system: their lines stay in the
 # results, which are only appended to, and count in no median.
-YCSB_SUPERSEDED = os.path.join(REPO, "crates", "fenec-bench", "ycsb", "superseded.tsv")
+YCSB_SUPERSEDED = os.path.join(REPO, "crates", "fennec-bench", "ycsb", "superseded.tsv")
+# The system's name in the lines written before fenecdb became fennecdb:
+# the files keep their bytes, and those cells are fennec's.
+YCSB_RENAMED = {"fenec": "fennec"}
 
 
 YCSB_WORKLOADS = ("A", "B", "C", "D", "E", "F")
@@ -886,10 +889,11 @@ def ycsb_cells():
     if os.path.exists(YCSB_SUPERSEDED):
         for line in open(YCSB_SUPERSEDED, encoding="utf-8").read().splitlines()[1:]:
             run, system = line.split("\t")[:2]
-            superseded.add((run, system))
+            superseded.add((run, YCSB_RENAMED.get(system, system)))
     latest = {}
     for line in lines[1:]:
         f = line.split("\t")
+        f[col["system"]] = YCSB_RENAMED.get(f[col["system"]], f[col["system"]])
         if (f[col["run"]], f[col["system"]]) in superseded:
             continue
         key = tuple(f[col[c]] for c in ("system", "mode", "workload", "threads"))
@@ -925,7 +929,7 @@ def ycsb_latency_facts():
     last digit it shows: `ycsbms:<system>:<mode>:<workload>:<threads>:<stat>`,
     the stat being `slowest_p99` (the p99 the tables put under a figure) or
     an operation's `READ_p50` or `READ_p99`. The pages that say what a cache
-    in front of fenec-server can and cannot take off a read quote these, so
+    in front of fennec-server can and cannot take off a read quote these, so
     they cannot drift from the results they rest on."""
     out = {}
     for key, cell in ycsb_cells().items():
@@ -940,15 +944,15 @@ def ycsb_latency_facts():
     return out
 
 
-# fenec-server's mode against Redis's: the same against the same, and
-# fenec-server buffered against Redis with its snapshots alone (no append-only
+# fennec-server's mode against Redis's: the same against the same, and
+# fennec-server buffered against Redis with its snapshots alone (no append-only
 # file), which keeps no log and is the nearest to a cache.
 SAME_MODE = (("durable", "durable"), ("buffered", "buffered"))
 AGAINST_SNAPSHOTS = (("buffered", "snapshot"),)
 
 
 def redis_compared(cells, modes=SAME_MODE):
-    """The cells measured for fenec-server in Docker and for Redis alike, as
+    """The cells measured for fennec-server in Docker and for Redis alike, as
     (mode, workload, clients, ours, theirs), durable first: the same mode
     against the same, or whatever `modes` pairs (ours, Redis's)."""
     out = []
@@ -1075,13 +1079,13 @@ def redis_figure(cell, bold):
 
 
 def redis_tables(cells):
-    """fenec-server in Docker beside Redis, mode for mode, at 1 and 16
+    """fennec-server in Docker beside Redis, mode for mode, at 1 and 16
     clients, each pair's leader in bold; Redis's snapshots alone beside the
     buffered pair, against neither."""
     get = lambda system, mode, wl, n: cells.get((system, mode, wl, str(n)))
     out = []
     for mode, caption, extra in (
-        ("durable", "<p>Durable: fenec-server's <code>--sync always</code> against Redis's "
+        ("durable", "<p>Durable: fennec-server's <code>--sync always</code> against Redis's "
                     "<code>appendfsync always</code>, an fsync before each answer, both in "
                     "Docker's virtual machine:</p>", None),
         ("buffered", "<p>Buffered, both in Docker as well: <code>--sync 250</code> against <code>appendfsync "
@@ -1091,7 +1095,7 @@ def redis_tables(cells):
         head = []
         for n in (1, 16):
             clients = "1 client" if n == 1 else f"{n} clients"
-            head.append(f'<th class="n">fenec-server, {clients}</th><th class="n">Redis, {clients}</th>')
+            head.append(f'<th class="n">fennec-server, {clients}</th><th class="n">Redis, {clients}</th>')
             if extra:
                 head.append(f'<th class="n">Redis, snapshots, {clients}</th>')
         rows = []
@@ -1116,7 +1120,7 @@ def redis_tables(cells):
 
 def redis_lost(cells):
     """Every cell in which Redis does more operations a second than
-    fenec-server in Docker, the same mode against the same mode."""
+    fennec-server in Docker, the same mode against the same mode."""
     compared = redis_compared(cells)
     lost = []
     for mode, wl, n, ours, theirs in compared:
@@ -1134,7 +1138,7 @@ def redis_lost(cells):
 def redis_memory(cells):
     """What each server held after A, B, C, F and D, on disk and in memory
     (its container's anonymous and shared memory), mode by mode."""
-    systems = (("server-docker", "fenec-server in Docker"), ("redis", "Redis"),
+    systems = (("server-docker", "fennec-server in Docker"), ("redis", "Redis"),
                ("pg", "PostgreSQL"), ("mongo", "MongoDB"))
     modes = [m for m in ("durable", "buffered", "snapshot")
              if any(k[1] == m and k[2] == "memory-ABCFD" for k in cells)]
@@ -1184,9 +1188,9 @@ def ycsb_redis(body):
 
 
 def glue_lines():
-    """Lines in the `Fenec` class -- the wasm glue the docs put a number on."""
-    src = open(os.path.join(REPO, "web", "fenec.js"), encoding="utf-8").read().splitlines()
-    start = next(i for i, ln in enumerate(src) if ln.startswith("export class Fenec {"))
+    """Lines in the `Fennec` class -- the wasm glue the docs put a number on."""
+    src = open(os.path.join(REPO, "web", "fennec.js"), encoding="utf-8").read().splitlines()
+    start = next(i for i, ln in enumerate(src) if ln.startswith("export class Fennec {"))
     end = next(i for i in range(start + 1, len(src)) if src[i] == "}")
     return end - start + 1
 
@@ -1240,7 +1244,7 @@ def app_bundle(entry):
 
 
 def studio_gz():
-    """fenec studio's first load, in KB: its page, and each stylesheet and
+    """fennec studio's first load, in KB: its page, and each stylesheet and
     module the page names (`client.js`, `builder.js` and `http.js` are
     web/'s, which the server serves beside the studio's own), each gzipped
     as a proxy in front would send it."""
@@ -1256,7 +1260,7 @@ def studio_gz():
 def check_claims():
     """Compares every number in CLAIMS against the thing it describes."""
     web = lambda name: os.path.join(REPO, "web", name)
-    wasm = web("fenec.wasm")
+    wasm = web("fennec.wasm")
     if not os.path.exists(wasm):
         # The copy step above already said so. The bench's figures and the
         # studio's need no module, so they are still held to their truth.
@@ -1266,7 +1270,7 @@ def check_claims():
                               lambda f: f.startswith(BENCH_FACTS) or f == "kb_studio_gz")
     size = os.path.getsize(wasm)
     wasm_gz, wasm_br = compressed(wasm)
-    # The client is fenec.js and the two modules it imports, as a page loads
+    # The client is fennec.js and the two modules it imports, as a page loads
     # them with no build step.
     client = b"".join(open(web(n), "rb").read() for n in CLIENT_MODULES if n != "client.js")
     client_gz, client_br = compressed_bytes(client)
@@ -1276,14 +1280,14 @@ def check_claims():
     # test builds no package ships, whose sizes the docs quote as build
     # options, where they were built: a claim on one missing says so.
     other = {}
-    for key, name in (("lite", "fenec-lite.wasm"), ("min", "fenec-min.wasm")):
+    for key, name in (("lite", "fennec-lite.wasm"), ("min", "fennec-min.wasm")):
         if os.path.exists(web(name)):
             gz, br = compressed(web(name))
             other[f"kb_{key}"] = kb(os.path.getsize(web(name)))
             other[f"kb_{key}_gz"] = kb(gz)
             other[f"kb_{key}_br"] = kb(br)
     apps = {}
-    for key, entry in (("kb_app", "fenec.js"), ("kb_app_client", "client.js")):
+    for key, entry in (("kb_app", "fennec.js"), ("kb_app_client", "client.js")):
         bundle = app_bundle(entry)
         gz, br = (None, None) if bundle is None else compressed_bytes(bundle)
         apps[key] = None if bundle is None else kb(len(bundle))
@@ -1317,16 +1321,16 @@ def check_claims():
     return claims_against({**truth, **bench}, unit, lambda f: True)
 
 
-# The flags of fenec-shard, which docs/sharding-reference lists in a table of
+# The flags of fennec-shard, which docs/sharding-reference lists in a table of
 # their own: a flag added to its usage and not to the table fails the build
 # (as a number that drifted does), since nothing else would say the page was
 # behind the program.
-SHARD_MAIN = os.path.join(REPO, "crates", "fenec-shard", "src", "main.rs")
+SHARD_MAIN = os.path.join(REPO, "crates", "fennec-shard", "src", "main.rs")
 SHARD_FLAGS_PAGE = os.path.join(ROOT, "content", "docs", "sharding-reference.html")
 
 
 def check_router_flags():
-    """The flags `fenec-shard --help` lists that the first column of the
+    """The flags `fennec-shard --help` lists that the first column of the
     reference's table of them lacks, and the rows of it for a flag the
     usage no longer has."""
     usage = re.search(r'const USAGE: &str = "\\\n([\s\S]*?)\n";', open(SHARD_MAIN, encoding="utf-8").read())
@@ -1334,14 +1338,14 @@ def check_router_flags():
         return [f"{os.path.relpath(SHARD_MAIN, REPO)}: no USAGE to hold sharding-reference.html's flags to"]
     flags = re.findall(r"^(?: {2}-\w, | {6})(--[a-z][a-z0-9-]*)", usage.group(1), re.M)
     if not flags:
-        return ["fenec-shard's usage lists no flag: the pattern that reads it is out of date"]
+        return ["fennec-shard's usage lists no flag: the pattern that reads it is out of date"]
     page = open(SHARD_FLAGS_PAGE, encoding="utf-8").read()
     # only its own section: the page has other tables
     page = re.search(r'<h2 id="router-flags">[\s\S]*?(?=<h2)', page)
     page = page.group(0) if page else ""
     listed = re.findall(r"<tr><td><code>(?:-\w, )?(--[a-z][a-z0-9-]*)", page)
-    return ([f"docs/sharding-reference.html has no row for fenec-shard's {f}" for f in flags if f not in listed]
-            + [f"docs/sharding-reference.html has a row for {f}, which fenec-shard's usage no longer has"
+    return ([f"docs/sharding-reference.html has no row for fennec-shard's {f}" for f in flags if f not in listed]
+            + [f"docs/sharding-reference.html has a row for {f}, which fennec-shard's usage no longer has"
                for f in listed if f not in flags])
 
 
@@ -1408,8 +1412,8 @@ def check_fold_labels():
 
 
 # The names benchmarks-ycsb.html#ycsb's full grid gives each system.
-YCSB_NAMES = {"fenec": "fenecdb", "sqlite": "SQLite", "server": "fenec-server",
-              "server-docker": "fenec-server in Docker", "pg": "PostgreSQL", "mongo": "MongoDB",
+YCSB_NAMES = {"fennec": "fennecdb", "sqlite": "SQLite", "server": "fennec-server",
+              "server-docker": "fennec-server in Docker", "pg": "PostgreSQL", "mongo": "MongoDB",
               "redis": "Redis"}
 
 
@@ -1450,7 +1454,7 @@ def claims_against(truth, unit, wanted):
                 else "a module `make wasm-lite` did not build" if fact not in truth
                 else "a brotli size and `brotli` is not installed"
             )
-            why = ("a YCSB cell crates/fenec-bench/ycsb/results.tsv does not hold"
+            why = ("a YCSB cell crates/fennec-bench/ycsb/results.tsv does not hold"
                    if fact.startswith(("ycsb:", "ycsbms:", "redis:")) else
                    "a row of benchmarks-requests.html's round-trip table it no longer has"
                    if fact.startswith("rt:") else why)
@@ -1498,7 +1502,7 @@ def claims_against(truth, unit, wanted):
 # ------------------------------------------------------------------ llms.txt
 #
 # Most new databases are now created by coding agents, and no model has seen
-# FenecQL: left alone, an agent writes SQL at it. /llms.txt is the short brief
+# FennecQL: left alone, an agent writes SQL at it. /llms.txt is the short brief
 # an agent reads first (https://llmstxt.org), /llms-full.txt the whole
 # reference as one text file. Both are rendered from the pages on every build,
 # so they cannot drift from the docs the way a hand-kept copy would.
@@ -1506,16 +1510,16 @@ def claims_against(truth, unit, wanted):
 SITE = "https://fenecdb.com"
 
 LLMS_BRIEF = """\
-# fenecdb
+# fennecdb
 
 > Minimal embedded document database: one file, live queries an app's
 > screens follow, a replica on the device that syncs with a server, a server
 > over HTTP with a file per tenant, and search built in -- BM25 over text,
 > with typos, highlights and facets, and HNSW vectors for meaning. It runs in
 > the browser as WebAssembly, in an app, and as a server. Its query language
-> is FenecQL, which is not SQL but reads SQL's everyday spellings.
+> is FennecQL, which is not SQL but reads SQL's everyday spellings.
 
-Writing FenecQL -- the reference below spells it out in full:
+Writing FennecQL -- the reference below spells it out in full:
 
 - It is not SQL, but it reads SQL's everyday spellings as the statements
   they mean: `CREATE TABLE` and `CREATE INDEX`, `INSERT INTO t (a, b)
@@ -1525,7 +1529,7 @@ Writing FenecQL -- the reference below spells it out in full:
   (https://fenecdb.com/docs/sql). A double-quoted word is text, never a
   column: a field is written bare, `where name = 'Ada'`. Every row has an
   `id` (an int the database makes; no `rowid`, no `_id`). A JOIN on a
-  key is read as `lookup`, which FenecQL writes `get orders lookup users on
+  key is read as `lookup`, which FennecQL writes `get orders lookup users on
   id = user_id` -- each order with its user nested; the clauses after
   `lookup` are the looked-up collection's -- and a filter by another
   collection's rows is an uncorrelated
@@ -1584,7 +1588,7 @@ Writing FenecQL -- the reference below spells it out in full:
 
 Every statement, by example:
 
-```fenecql
+```fennecql
 create collection articles (title text @hash, views int, tags [text], published timestamp @sorted, body text @text, embed vector<4> @hnsw(cosine))
 put articles {title: "Rust", views: 10, tags: ["lang"], published: "2026-09-01T10:00:00Z", body: "Ownership and borrowing", embed: [0.1, 0.2, 0.3, 0.4]}
 put articles [{title: "Zig", views: 3}, {title: "Go", views: 7}]
@@ -1609,7 +1613,7 @@ drop collection articles
 ```
 
 From JavaScript, `db.from('articles').where('views', '<', 100).order('published', 'desc')
-.limit(10).rows()` builds the same FenecQL with every value a parameter, and
+.limit(10).rows()` builds the same FennecQL with every value a parameter, and
 `db.live(query, draw)` runs it again after every write to what it reads.
 """
 
@@ -1672,7 +1676,7 @@ def llms_texts():
 
 # ------------------------------------------------------------------ search
 #
-# The site's search is fenecdb itself, in the visitor's browser: every page cut
+# The site's search is fennecdb itself, in the visitor's browser: every page cut
 # into its sections, written into a database by the module the site ships,
 # and its image served beside the pages. Nothing is asked of a server and
 # nothing is loaded until the search is opened. The documents are built here
@@ -1764,9 +1768,9 @@ def search_documents(rendered):
         kind = ("benchmark" if is_benchmark(key)
                 else "compare" if key == "docs/compare" or key.startswith("docs/vs-")
                 else "doc")
-        title = re.sub(r"\s+—\s+fenecdb$", "", meta.get("title", "")).strip()
+        title = re.sub(r"\s+—\s+fennecdb$", "", meta.get("title", "")).strip()
         if key == "index":
-            title = "fenecdb"
+            title = "fennecdb"
         # The URL as the pages link it (`clean_links`): no `.html`, and an
         # index is its directory.
         url = key[: -len("index")] if key.endswith("index") else key
@@ -1796,7 +1800,7 @@ def search_index(docs, wasm, dest, dest_vectors):
     Fails the build on an index missing or empty, and on a known query that
     does not find its page first (`search.test.mjs`)."""
     if not os.path.exists(wasm):
-        raise SystemExit("  the search index needs web/fenec.wasm: run `make wasm`")
+        raise SystemExit("  the search index needs web/fennec.wasm: run `make wasm`")
     node = shutil.which("node")
     if node is None:
         raise SystemExit("  the search index is written by node, which is not on PATH")
@@ -1827,8 +1831,8 @@ def search_index(docs, wasm, dest, dest_vectors):
     test = subprocess.run([node, "--test", "--test-reporter=spec",
                            os.path.join(ROOT, "search.test.mjs"), os.path.join(ROOT, "worker.test.mjs")],
                           capture_output=True, text=True,
-                          env={**os.environ, "FENEC_SEARCH_INDEX": dest,
-                               "FENEC_SEARCH_VECTORS": dest_vectors, "FENEC_WASM": wasm})
+                          env={**os.environ, "FENNEC_SEARCH_INDEX": dest,
+                               "FENNEC_SEARCH_VECTORS": dest_vectors, "FENNEC_WASM": wasm})
     if test.returncode != 0:
         raise SystemExit(f"  the search does not find what it should:\n{test.stdout}{test.stderr}")
     return held[0]
@@ -1888,7 +1892,7 @@ SCARP = (
 # by the sidebar's own scrollTop, so the page itself never moves.
 SIDE_RESTORE = (
     "<script>(function(){var s=document.getElementById('side'),h=s.querySelector('a.here'),k=null;"
-    "try{k=sessionStorage.getItem('fenec-side')}catch(e){}"
+    "try{k=sessionStorage.getItem('fennec-side')}catch(e){}"
     "if(k!==null)s.scrollTop=+k;"
     # What of the sidebar shows: at the top of a page it starts below the
     # dunes, so its foot is under the fold until the page is scrolled.
@@ -1963,14 +1967,14 @@ def build():
     # the site itself loads, and those can be cached forever. Only the hashed
     # pair is minified -- whoever follows a link from the docs gets readable
     # source. They are deliberately kept out of `assets`: that dict drives a
-    # page-wide replace and the docs are full of `./fenec.js` inside code
+    # page-wide replace and the docs are full of `./fennec.js` inside code
     # examples, which must not be rewritten.
     #
-    # fenec.js imports builder.js and http.js, and client.js the two of
+    # fennec.js imports builder.js and http.js, and client.js the two of
     # them: each module's hashed copy imports the others' hashed copies,
     # so the imported are made first.
     engine = {}
-    for name in CLIENT_MODULES + ("fenec.wasm",):
+    for name in CLIENT_MODULES + ("fennec.wasm",):
         src = os.path.join(REPO, "web", name)
         if not os.path.exists(src):
             print(f"  note: web/{name} missing -- run `make wasm` for the playground")
@@ -2026,18 +2030,18 @@ def build():
         meta, body = read_page(path)
         rendered.append((key, meta, headings(render_code_blocks(body))[0]))
     docs = search_documents(rendered)
-    index_path = os.path.join(OUT, "search.fenec")
-    vectors_path = os.path.join(OUT, "search-vectors.fenec")
-    held = search_index(docs, os.path.join(REPO, "web", "fenec.wasm"), index_path, vectors_path)
+    index_path = os.path.join(OUT, "search.fennec")
+    vectors_path = os.path.join(OUT, "search-vectors.fennec")
+    held = search_index(docs, os.path.join(REPO, "web", "fennec.wasm"), index_path, vectors_path)
     # Shipped gzipped, and opened in the page with DecompressionStream: a
     # file of no type the edge knows is served as it lies, and as it lies the
     # image is three times what it is gzipped.
-    for key, path in (("search.fenec", index_path), ("search-vectors.fenec", vectors_path)):
+    for key, path in (("search.fennec", index_path), ("search-vectors.fennec", vectors_path)):
         image = open(path, "rb").read()
         os.remove(path)
         packed = gziplib.compress(image, 9, mtime=0)
-        stem = key[: -len(".fenec")]
-        name = f"{stem}.{hashlib.sha256(image).hexdigest()[:10]}.fenec.gz"
+        stem = key[: -len(".fennec")]
+        name = f"{stem}.{hashlib.sha256(image).hexdigest()[:10]}.fennec.gz"
         open(os.path.join(OUT, name), "wb").write(packed)
         engine[key] = name
         _, br = compressed_bytes(image)
@@ -2058,10 +2062,10 @@ def build():
     search_js = module("search.js", {
         "./search-query.js": search_query, "./search-meaning.js": search_meaning,
         "./search-vectors.js": search_vectors,
-        "./search.css": search_css, "./search.fenec": engine["search.fenec"],
-        "./search-vectors.fenec": engine["search-vectors.fenec"],
-        "./fenec.js": engine.get("fenec.js", "fenec.js"),
-        "./fenec.wasm": engine.get("fenec.wasm", "fenec.wasm"),
+        "./search.css": search_css, "./search.fennec": engine["search.fennec"],
+        "./search-vectors.fennec": engine["search-vectors.fennec"],
+        "./fennec.js": engine.get("fennec.js", "fennec.js"),
+        "./fennec.wasm": engine.get("fennec.wasm", "fennec.wasm"),
     })
 
     script = open(os.path.join(ROOT, "site.js"), encoding="utf-8").read()
@@ -2114,7 +2118,7 @@ def build():
         is_docs = key.startswith("docs/")
         page = template
         page = page.replace("{{lang_class}}", "docs" if is_docs else "home")
-        page = page.replace("{{title}}", html.escape(meta.get("title", "fenecdb")))
+        page = page.replace("{{title}}", html.escape(meta.get("title", "fennecdb")))
         page = page.replace("{{description}}", html.escape(meta.get("description", "")))
         page = page.replace("{{base}}", base)
         page = page.replace("{{repo}}", REPO_URL)
@@ -2154,7 +2158,7 @@ def build():
     # Cloudflare reads this from the asset directory; it is not served itself.
     # Hashed assets can be cached forever because a change gives a new name --
     # that now includes the engine the playground loads.
-    # The stable `fenec.js` / `fenec.wasm` names exist for the docs links, and
+    # The stable `fennec.js` / `fennec.wasm` names exist for the docs links, and
     # those revalidate: a stale engine would silently be the wrong one.
     rules = ["/*",
              "  X-Content-Type-Options: nosniff",
@@ -2171,7 +2175,7 @@ def build():
         if hashed.endswith("/"):
             hashed += "*"
         rules += [f"/{hashed}", "  Cache-Control: public, max-age=31536000, immutable", ""]
-    for stable in CLIENT_MODULES + ("fenec.wasm", "collate/*"):
+    for stable in CLIENT_MODULES + ("fennec.wasm", "collate/*"):
         rules += [f"/{stable}", "  Cache-Control: public, max-age=3600, must-revalidate", ""]
     # The installer, served as plain text: a browser shows it, which is how
     # someone reads it before `curl | sh`, where a .sh would be saved. Five
@@ -2219,13 +2223,13 @@ def build():
 
 
 STUDIO_HIGHLIGHT = os.path.join(REPO, "studio", "highlight.js")
-# The Grafana data source's query editor colours FenecQL by the same rules
+# The Grafana data source's query editor colours FennecQL by the same rules
 # (integrations/grafana): its Monaco tokenizer reads `tokens` from a copy.
-GRAFANA_HIGHLIGHT = os.path.join(REPO, "integrations", "grafana", "src", "fenecql", "highlight.js")
+GRAFANA_HIGHLIGHT = os.path.join(REPO, "integrations", "grafana", "src", "fennecql", "highlight.js")
 
 # ------------------------------------------------------------------ the studio
 #
-# The playground is fenec studio -- the files fenec-server embeds with
+# The playground is fennec studio -- the files fennec-server embeds with
 # `--studio`, not a copy of them -- over a database in the page. Its page is
 # `dist/studio/`, which the playground frames between the site's header and
 # footer: the studio's stylesheet and the site's name the same classes and
@@ -2251,7 +2255,7 @@ def build_studio(engine, assets):
     sources.update({n: os.path.join(ROOT, n) for n in STUDIO_SITE})
     # The web client and the module are the site's own hashed copies, a
     # directory up; a font and the mark too.
-    up = {n: f"../{engine[n]}" for n in CLIENT_MODULES + ("fenec.wasm", "collate/") if n in engine}
+    up = {n: f"../{engine[n]}" for n in CLIENT_MODULES + ("fennec.wasm", "collate/") if n in engine}
     for weight in ("400", "500"):
         up[f"plex-mono-{weight}.woff2"] = f"../{assets[f'fonts/plex-mono-{weight}-latin.woff2']}"
     named = {}
@@ -2272,7 +2276,7 @@ def build_studio(engine, assets):
             return m.group(0)
 
         body = STUDIO_REF.sub(ref, body)
-        for plain in ("../fenec.wasm", "../collate/"):
+        for plain in ("../fennec.wasm", "../collate/"):
             target = plain[3:]
             if f"'{plain}'" in body:
                 if target not in up:
@@ -2303,12 +2307,12 @@ def build_studio(engine, assets):
 
     must('<script type="module" src="app.js"></script>',
          "\n".join(f'<link rel="modulepreload" href="{n}">' for n in ("local.js", "playground-data.js"))
-         + f'\n<link rel="preload" href="{up["fenec.wasm"]}" as="fetch" crossorigin>'
+         + f'\n<link rel="preload" href="{up["fennec.wasm"]}" as="fetch" crossorigin>'
          + '\n<script type="module" src="playground.js"></script>')
     must('<div id="app" class="booting">', '<div id="app" class="booting" data-mode="local">')
-    must('<title>fenec studio</title>',
-         '<title>fenec studio, in this tab</title>\n<meta name="robots" content="noindex">\n'
-         '<meta name="description" content="fenec studio over a fenecdb database in this tab: the playground.">')
+    must('<title>fennec studio</title>',
+         '<title>fennec studio, in this tab</title>\n<meta name="robots" content="noindex">\n'
+         '<meta name="description" content="fennec studio over a fennecdb database in this tab: the playground.">')
     must('href="mark.svg"', 'href="../favicon.svg"')
     must('<link rel="stylesheet" href="app.css">', '<link rel="stylesheet" href="app.css">\n<link rel="stylesheet" href="local.css">')
 
@@ -2326,7 +2330,7 @@ def build_studio(engine, assets):
 
 
 def studio_highlight():
-    """fenec studio's copy of the editor's highlighter, the rules written in
+    """fennec studio's copy of the editor's highlighter, the rules written in
     as for the site: the server embeds the studio's files as they are in the
     repository, with no Python at `cargo build`, so the generated file is
     kept there, and `site/test_highlight.py` refuses one that is not what
@@ -2348,7 +2352,7 @@ if __name__ == "__main__":
             if a == "--port" and i + 1 < len(sys.argv):
                 port = int(sys.argv[i + 1])
         class Handler(http.server.SimpleHTTPRequestHandler):
-            """Resolve `/docs/fenecql` to `docs/fenecql.html`, the way the
+            """Resolve `/docs/fennecql` to `docs/fennecql.html`, the way the
             Cloudflare asset router does, so preview and production agree."""
 
             def translate_path(self, path):

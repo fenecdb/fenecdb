@@ -10,7 +10,7 @@ import (
 
 // answers keeps the last answer to each statement and its parameters with
 // the ETag it came with, so the same request asked again goes out with
-// If-None-Match and a 304 is answered from here. The tag fenec-server gives
+// If-None-Match and a 304 is answered from here. The tag fennec-server gives
 // names a change, not the statement: an answer is only ever matched to the
 // request it answered (cacheKey), never to another one's tag.
 //

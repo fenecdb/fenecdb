@@ -1,0 +1,1258 @@
+use crate::case::CaseFold;
+use crate::codec::*;
+use crate::collate::{Collation, TextOrder};
+use crate::error::{Error, Result};
+use crate::value::{DataType, MAX_PATH_KEYS};
+
+/// Vector similarity metric.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Metric {
+    Cosine,
+    L2,
+    Dot,
+}
+
+impl Metric {
+    pub fn parse(s: &str) -> Option<Metric> {
+        match s.to_ascii_lowercase().as_str() {
+            "cosine" | "cos" => Some(Metric::Cosine),
+            "l2" | "euclidean" => Some(Metric::L2),
+            "dot" | "ip" => Some(Metric::Dot),
+            _ => None,
+        }
+    }
+    pub fn name(&self) -> &'static str {
+        match self {
+            Metric::Cosine => "cosine",
+            Metric::L2 => "l2",
+            Metric::Dot => "dot",
+        }
+    }
+    fn code(&self) -> u8 {
+        match self {
+            Metric::Cosine => 0,
+            Metric::L2 => 1,
+            Metric::Dot => 2,
+        }
+    }
+    fn from_code(c: u8) -> Result<Metric> {
+        Ok(match c {
+            0 => Metric::Cosine,
+            1 => Metric::L2,
+            2 => Metric::Dot,
+            _ => return Err(Error::Corrupt(format!("unknown metric {c}"))),
+        })
+    }
+}
+
+/// What a vector index holds of each vector (`quant=` in `@hnsw`). The
+/// documents keep their vectors whole either way: a search over codes
+/// orders the candidates it found again by the documents' own vectors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Quant {
+    /// The vector itself, at the field's precision.
+    #[default]
+    None,
+    /// A byte a component, over a scale a vector: a quarter of `f32`.
+    Int8,
+    /// A bit a component and nine bytes a vector, about a thirtieth of
+    /// `f32`: the signs of the unit vector's distance from the nearest of
+    /// the centres the index learns, so cosine only.
+    Bit,
+}
+
+impl Quant {
+    pub fn parse(s: &str) -> Option<Quant> {
+        match s.to_ascii_lowercase().as_str() {
+            "none" => Some(Quant::None),
+            "int8" | "i8" => Some(Quant::Int8),
+            "bit" | "binary" => Some(Quant::Bit),
+            _ => None,
+        }
+    }
+    pub fn name(&self) -> &'static str {
+        match self {
+            Quant::None => "none",
+            Quant::Int8 => "int8",
+            Quant::Bit => "bit",
+        }
+    }
+    pub fn code(&self) -> u8 {
+        match self {
+            Quant::None => 0,
+            Quant::Int8 => 1,
+            Quant::Bit => 2,
+        }
+    }
+    pub fn from_code(c: u8) -> Option<Quant> {
+        match c {
+            0 => Some(Quant::None),
+            1 => Some(Quant::Int8),
+            2 => Some(Quant::Bit),
+            _ => None,
+        }
+    }
+}
+
+/// `ef_search` for a `quant=bit` index that names none. A bit code bounds
+/// nothing, so the whole beam is read, and it estimates less closely than
+/// an int8 code: over a million clustered 768-dimension vectors a beam of
+/// 100 held 97.9% of the true ten and one of 200 99.7%, where int8 codes
+/// held 97.1% at 100 and full vectors 97.4%; spread in every dimension, 100
+/// held 89.7% and 200 97.5%, full vectors 97.8% at 100 (`make
+/// quant-bench`). It was 400 while the codes were the vectors' own signs,
+/// which a beam of 400 held 98.4% of the million's ten with, in 2.16 ms
+/// where 200 takes 0.66 now, the query cut to bit planes (`QUERY_BITS`).
+pub const BIT_EF_SEARCH: usize = 200;
+
+/// `ef_search` for every other index that names none. recall@10 measured at
+/// 100 is 100%; at 64 it is 99%. ANN latency rises from 0.10 -> 0.13 ms,
+/// which is still ~7x faster than the engines we compare against. The
+/// accuracy is worth the trade.
+pub const DEFAULT_EF_SEARCH: usize = 100;
+
+/// HNSW parameters. The defaults were picked targeting ~95% recall /
+/// a few hundred microseconds on 1M-scale collections.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VectorIndexSpec {
+    pub metric: Metric,
+    /// Number of connections per layer.
+    pub m: usize,
+    /// Candidate list width during construction.
+    pub ef_construction: usize,
+    /// Default candidate list width at query time. 0 -- what `Default`
+    /// gives -- until a schema or an index takes the spec, which settles it
+    /// by the codes ([`VectorIndexSpec::resolved`]).
+    pub ef_search: usize,
+    /// What the index holds of each vector.
+    pub quant: Quant,
+}
+
+impl VectorIndexSpec {
+    /// The spec with `ef_search` settled: one left at 0 takes the beam its
+    /// codes want, [`BIT_EF_SEARCH`] over bit codes and
+    /// [`DEFAULT_EF_SEARCH`] otherwise. Only the parser used to know the bit
+    /// beam, so an index built through the Rust API with `quant: Bit`
+    /// searched a beam of 100: 82.5% of the true ten over a million
+    /// vectors, where 400 held 98.4%, over the signs bit codes were then.
+    /// Settled wherever a spec comes in -- a schema, a `create index`, a
+    /// graph -- the file holds the number.
+    pub fn resolved(mut self) -> VectorIndexSpec {
+        if self.ef_search == 0 {
+            self.ef_search = match self.quant {
+                Quant::Bit => BIT_EF_SEARCH,
+                _ => DEFAULT_EF_SEARCH,
+            };
+        }
+        self
+    }
+
+    /// `, quant=int8` for a quantized index and nothing for the rest: how
+    /// the option is written back wherever the others are.
+    pub fn quant_arg(&self) -> &'static str {
+        match self.quant {
+            Quant::None => "",
+            Quant::Int8 => ", quant=int8",
+            Quant::Bit => ", quant=bit",
+        }
+    }
+}
+
+impl Default for VectorIndexSpec {
+    fn default() -> Self {
+        VectorIndexSpec {
+            metric: Metric::Cosine,
+            m: 16,
+            ef_construction: 200,
+            // Settled by the codes when a schema or an index takes it.
+            ef_search: 0,
+            quant: Quant::None,
+        }
+    }
+}
+
+/// BM25 parameters.
+///
+/// Held in hundredths rather than as `f32` so the schema can stay `Eq`:
+/// `Field` and `Schema` derive it, and `Database::load` compares decoded
+/// schemas against live ones. Two tuning knobs are not worth taking that
+/// away from every caller. The defaults are the pair BEIR standardised on,
+/// and the numbers in `text.rs` were measured with them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextIndexSpec {
+    /// Term-frequency saturation, in hundredths. BEIR's k1 = 0.9 -> 90.
+    pub k1_pct: u16,
+    /// Length normalisation, in hundredths. BEIR's b = 0.4 -> 40.
+    pub b_pct: u16,
+    /// Longest word prefix also indexed as a term; 0 turns the whole thing
+    /// off, which is the default.
+    ///
+    /// Word-boundary matching is a poor fit for a language that inflects by
+    /// gluing suffixes on: `kitap`, `kitabı`, `kitapların` are three terms
+    /// that share a stem the index never sees. Indexing each word's prefixes
+    /// alongside it is a stemmer that needs no dictionary and no language
+    /// setting.
+    ///
+    /// Measured on the Turkish WebFAQ retrieval set (144 846 documents,
+    /// 10 000 queries) through the engine: `prefix=6` moves nDCG@10 from
+    /// 0.4841 to 0.5547, +14.6%, and closes about two fifths of the distance
+    /// to a 278M-parameter multilingual transformer (0.650) with no model at
+    /// all. It is not free -- the index goes 58 MB -> 182 MB and a query
+    /// 82 -> 485 us, both roughly the 3.4x more postings it indexes.
+    ///
+    /// Character n-grams were measured against it and lost on cost: 4-grams
+    /// score about the same for 6.0x the postings, and 3..5-grams cost 15.6x
+    /// to score slightly *less*. On English SciFact the whole option is worth
+    /// +0.0137, which is why it is off unless asked for -- the corpus decides
+    /// this trade, not the engine.
+    pub prefix_max: u8,
+    /// Shortest prefix indexed. Below 3 the terms stop discriminating.
+    pub prefix_min: u8,
+    /// Whether each character of a script written without spaces -- Han,
+    /// kana, Hangul, Thai -- is indexed as well as each pair of them (`text`).
+    ///
+    /// Pairs find a word written in a longer run, and a query of one
+    /// character finds only a run of one. On C-MTEB's EcomRetrieval, whose
+    /// documents are product titles, characters as well move nDCG@10 0.439
+    /// -> 0.528; on its CovidRetrieval, news, 0.868 -> 0.872, and on the
+    /// Japanese JaGovFaqs 0.582 -> 0.576. For 1.6 to 1.9x the postings and a
+    /// query 3 to 8x slower, so it is off unless asked for.
+    pub chars: bool,
+}
+
+impl Default for TextIndexSpec {
+    fn default() -> Self {
+        TextIndexSpec {
+            k1_pct: 90,
+            b_pct: 40,
+            prefix_max: 0,
+            prefix_min: 3,
+            chars: false,
+        }
+    }
+}
+
+impl TextIndexSpec {
+    pub fn k1(&self) -> f32 {
+        self.k1_pct as f32 / 100.0
+    }
+    pub fn b(&self) -> f32 {
+        self.b_pct as f32 / 100.0
+    }
+    /// The options as `@text(...)` spells them: what every listing of a
+    /// schema and every statement generated from one prints, so that an
+    /// index made again from it is the same index.
+    pub fn args(&self) -> String {
+        let mut out = String::from("k1=");
+        crate::num::f32_into(&mut out, self.k1());
+        out.push_str(", b=");
+        crate::num::f32_into(&mut out, self.b());
+        if self.prefix_max != 0 {
+            out.push_str(&format!(", prefix={}", self.prefix_max));
+            if self.prefix_min != 3 {
+                out.push_str(&format!(", prefix_min={}", self.prefix_min));
+            }
+        }
+        if self.chars {
+            out.push_str(", chars");
+        }
+        out
+    }
+
+    /// The prefix lengths to index, `None` when the option is off.
+    pub fn prefixes(&self) -> Option<std::ops::RangeInclusive<usize>> {
+        if self.prefix_max == 0 || self.prefix_max < self.prefix_min {
+            return None;
+        }
+        Some(self.prefix_min as usize..=self.prefix_max as usize)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IndexKind {
+    None,
+    /// Hash index for equality lookups. `unique` (`@unique`) refuses a
+    /// second document holding a value one already holds, `null` aside: an
+    /// index that only finds documents could be told nothing new, so the
+    /// write path asks the bucket it would file the value under
+    /// (`Database::unique_clash`).
+    Hash {
+        unique: bool,
+    },
+    /// Approximate nearest neighbour index (HNSW).
+    Vector(VectorIndexSpec),
+    /// Inverted index with BM25 scoring, behind `match`.
+    Text(TextIndexSpec),
+    /// Ordered index: ranges, equality, and `order ... limit` walked in
+    /// order (see [`crate::sorted`]). With a `ttl` (`@ttl(30m)`, a
+    /// timestamp field's), a row is gone that long after its value: every
+    /// read leaves it out at once, and a server's sweeper deletes it later
+    /// a range of this index at a time -- which is why the expiry is an
+    /// ordered index's and not a field's own: the sweep walks the rows
+    /// past their time rather than scan for them.
+    Sorted {
+        /// Milliseconds a row lives past its value; `None` for `@sorted`.
+        ttl: Option<u64>,
+    },
+    /// Inverted index over a sparse vector's dimensions, behind `near` on a
+    /// `sparse<N>` field (see [`crate::sparse`]).
+    Inverted,
+    /// A point's index (`@geo`), behind `distance(loc, $1) <= r`,
+    /// `within(loc, $1)` and `near` on a `geo` field (see [`crate::geo`]).
+    Geo,
+}
+
+impl IndexKind {
+    /// `@hash`.
+    pub const HASH: IndexKind = IndexKind::Hash { unique: false };
+    /// `@unique`.
+    pub const UNIQUE: IndexKind = IndexKind::Hash { unique: true };
+    /// `@sorted`.
+    pub const SORTED: IndexKind = IndexKind::Sorted { ttl: None };
+
+    /// How long a row lives past the field's value, in milliseconds
+    /// (`@ttl`).
+    pub fn ttl(&self) -> Option<u64> {
+        match self {
+            IndexKind::Sorted { ttl } => *ttl,
+            _ => None,
+        }
+    }
+
+    /// Whether it refuses a second document holding a value (`@unique`).
+    pub fn is_unique(&self) -> bool {
+        matches!(self, IndexKind::Hash { unique: true })
+    }
+
+    /// The kind with a vector index's `ef_search` settled
+    /// ([`VectorIndexSpec::resolved`]).
+    pub fn resolved(&self) -> IndexKind {
+        match self {
+            IndexKind::Vector(spec) => IndexKind::Vector(spec.resolved()),
+            other => other.clone(),
+        }
+    }
+
+    /// Whether this index can be built over `field`, of type `ty`: the one
+    /// rule `create collection`, `create index` and `fennec import --index`
+    /// all go through. `quant=bit` was refused with l2 and dot only where a
+    /// collection was created, and a `create index` taking it silently
+    /// answered `near` from candidates chosen by sign alone.
+    pub fn check(&self, field: &str, ty: &DataType) -> Result<()> {
+        // A path reads a value of no declared type: equality and order are
+        // what it takes, and the text, vector and sparse indexes stay on
+        // the fields that declare their type.
+        if field.contains('.') && !matches!(self, IndexKind::Hash { .. } | IndexKind::Sorted { .. })
+        {
+            return Err(Error::Query(format!(
+                "`{field}` is a path: it takes @hash, @unique or @sorted"
+            )));
+        }
+        match self {
+            IndexKind::Vector(spec) => {
+                if !matches!(ty, DataType::Vector(..)) {
+                    return Err(Error::Type(format!(
+                        "field `{field}` is not vector<N>, no vector index can be built"
+                    )));
+                }
+                if spec.quant == Quant::Bit && spec.metric != Metric::Cosine {
+                    return Err(Error::Query(format!(
+                        "`{field}`: quant=bit keeps the signs of unit vectors, so it needs \
+                         the cosine metric, not {}",
+                        spec.metric.name()
+                    )));
+                }
+            }
+            IndexKind::Text(_) if !matches!(ty, DataType::Text) => {
+                return Err(Error::Type(format!(
+                    "field `{field}` is not text, no full-text index can be built"
+                )));
+            }
+            // An expiry reads the field as a time: a row of a field of any
+            // other type would never know when it is gone. A path reads a
+            // value of no declared type, and was refused above.
+            IndexKind::Sorted { ttl: Some(ms) } if *ty != DataType::Timestamp || *ms == 0 => {
+                return Err(Error::Type(format!(
+                    "`{field}`: @ttl takes a timestamp field and a duration past zero"
+                )));
+            }
+            IndexKind::Sorted { .. } if !crate::sorted::orderable(ty) => {
+                return Err(Error::Type(format!(
+                    "field `{field}` is not int, float, timestamp, text or json, no ordered \
+                     index can be built"
+                )));
+            }
+            IndexKind::Inverted if !matches!(ty, DataType::Sparse(_)) => {
+                return Err(Error::Type(format!(
+                    "field `{field}` is not sparse<N>, no inverted index can be built \
+                     (a text field's is @text)"
+                )));
+            }
+            IndexKind::Geo if *ty != DataType::Geo => {
+                return Err(Error::Type(format!(
+                    "field `{field}` is not geo, no @geo index can be built"
+                )));
+            }
+            // A point's equality and order are its two numbers', which no
+            // question about where it lies asks: its index is `@geo`.
+            IndexKind::Hash { .. } if *ty == DataType::Geo => {
+                return Err(Error::Type(format!("`{field}` is a point: it takes @geo")));
+            }
+            _ => {}
+        }
+        if let DataType::Sparse(d) = ty {
+            if *d == 0 || *d > crate::sparse::MAX_DIM {
+                return Err(Error::Type(format!(
+                    "`{field}`: a sparse vector's dimension is 1 to {}",
+                    crate::sparse::MAX_DIM
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Field {
+    pub name: String,
+    pub ty: DataType,
+    pub index: IndexKind,
+    pub required: bool,
+    /// `collate tr`: the order its text compares in, wherever it compares
+    /// -- `order`, `<` and `>`, `min` and `max`, a `@sorted` index -- rather
+    /// than the order of its bytes. Equality stays the bytes', since the
+    /// collation tells every two different strings apart.
+    pub collate: Option<Collation>,
+    /// `nocase`: its text compares by its case fold wherever it compares
+    /// -- `=` and `in`, every index's keys, `order`, `group`, `facet` --
+    /// and is kept as written. A text field's alone ([`Schema::new`]).
+    pub nocase: bool,
+}
+
+impl Field {
+    pub fn new(name: impl Into<String>, ty: DataType) -> Field {
+        Field {
+            name: name.into(),
+            ty,
+            index: IndexKind::None,
+            required: false,
+            collate: None,
+            nocase: false,
+        }
+    }
+    pub fn indexed(mut self, kind: IndexKind) -> Field {
+        self.index = kind;
+        self
+    }
+    pub fn required(mut self) -> Field {
+        self.required = true;
+        self
+    }
+    pub fn collated(mut self, c: Collation) -> Field {
+        self.collate = Some(c);
+        self
+    }
+    /// `nocase`.
+    pub fn nocase(mut self) -> Field {
+        self.nocase = true;
+        self
+    }
+
+    /// The fold its text compares by: Turkish's in `collate tr`,
+    /// Unicode's otherwise; `None` for a field that is not `nocase`.
+    #[cfg(feature = "nocase")]
+    pub fn case_fold(&self) -> Option<CaseFold> {
+        self.nocase.then_some(match self.collate {
+            Some(Collation::Turkish) => CaseFold::Turkish,
+            _ => CaseFold::Unicode,
+        })
+    }
+
+    /// None in a build without the `nocase` feature, which has no fold to
+    /// give and refuses the statements over a `nocase` field's collection.
+    #[cfg(not(feature = "nocase"))]
+    pub fn case_fold(&self) -> Option<CaseFold> {
+        None
+    }
+
+    /// How its text compares wherever it compares.
+    pub fn text_order(&self) -> TextOrder {
+        TextOrder {
+            coll: self.collate,
+            fold: self.case_fold(),
+        }
+    }
+}
+
+/// The most parts an index over several fields takes: past a handful, a key
+/// is wider than the rows a prefix of it narrows to are worth.
+pub const MAX_COMPOSITE_KEYS: usize = 8;
+
+/// An index over several fields: `@sorted(owner, created desc)` in a
+/// `create collection`, or `create index on posts (owner, created desc)
+/// @sorted`. Its keys are compared part by part, each in its field's order
+/// and collation, the way `order owner, created desc` puts two rows -- so
+/// an equality on its first parts and a range or an `order` on the next one
+/// is a run of its entries, and `limit` stops the walk at the page.
+/// `unique` (`@unique(org, slug)`) refuses a second document holding the
+/// same values in every part, a `null` in any part being no value, as a
+/// `@unique` field's is.
+///
+/// A collection's, not a field's: a field keeps its one index of its own
+/// beside the composites it is a part of, and the schema writes them after
+/// its fields ([`Schema::encode`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Composite {
+    /// Each part: a field, or a path into a json field, and whether it
+    /// descends.
+    pub keys: Vec<(String, bool)>,
+    pub unique: bool,
+}
+
+impl Composite {
+    /// What it goes by among a collection's indexes -- the names `warm`
+    /// takes and `unbuilt` lists: its fields joined by `+`, which no field
+    /// name holds. Two composites over the same fields in the same order
+    /// are one, whatever their directions.
+    pub fn name(&self) -> String {
+        let mut s = String::new();
+        for (i, (k, _)) in self.keys.iter().enumerate() {
+            if i > 0 {
+                s.push('+');
+            }
+            s.push_str(k);
+        }
+        s
+    }
+
+    /// Its parts as `create index` writes them: `owner, created desc`.
+    pub fn keys_text(&self) -> String {
+        let mut s = String::new();
+        for (i, (k, desc)) in self.keys.iter().enumerate() {
+            if i > 0 {
+                s.push_str(", ");
+            }
+            s.push_str(k);
+            if *desc {
+                s.push_str(" desc");
+            }
+        }
+        s
+    }
+
+    /// Whether `field` -- a field, or a path into one -- is one of its
+    /// parts, or the field a path part reads into.
+    pub fn reads(&self, field: &str) -> bool {
+        self.keys
+            .iter()
+            .any(|(k, _)| k == field || split_path(k).is_some_and(|(f, _)| f == field))
+    }
+}
+
+/// Whether a field of type `ty` can be a part of an index over several
+/// fields: what `@sorted` orders, and `bool`, whose two values an equality
+/// prefix names -- `(done, created)` is a to-do list's every page.
+pub fn composite_part(ty: &DataType) -> bool {
+    *ty == DataType::Bool || crate::sorted::orderable(ty)
+}
+
+/// Refuses a second `@ttl` among `fields`: a row expires by one time, and
+/// the sweep walks one index for it.
+pub fn one_expiry<'a>(collection: &str, fields: impl Iterator<Item = &'a Field>) -> Result<()> {
+    let mut ttl = fields.filter(|f| f.index.ttl().is_some());
+    match (ttl.next(), ttl.next()) {
+        (Some(a), Some(b)) => Err(Error::Query(format!(
+            "`{collection}`'s rows expire by one field: `{}` and `{}` both have @ttl",
+            a.name, b.name
+        ))),
+        _ => Ok(()),
+    }
+}
+
+/// A ttl as `@ttl(..)` spells it: in the largest of days, hours, minutes
+/// and seconds -- or milliseconds -- it is a whole number of, so `ttl(30m)`
+/// reads back as it was written and a schema printed parses as the one it
+/// came from. Whole numbers only: a float written out brought the standard
+/// library's float formatting into the browser module, 18.7 KB of it.
+pub fn ttl_text(ms: u64) -> String {
+    let units = [
+        ("d", 86_400_000),
+        ("h", 3_600_000),
+        ("m", 60_000),
+        ("s", 1_000),
+    ];
+    for (unit, n) in units {
+        if ms.is_multiple_of(n) {
+            return format!("{}{unit}", ms / n);
+        }
+    }
+    format!("{ms}ms")
+}
+
+/// Text, or a list of it -- which compares element by element: what a
+/// collation orders.
+pub fn collatable(t: &DataType) -> bool {
+    match t {
+        DataType::Text => true,
+        DataType::List(t) => **t == DataType::Text,
+        _ => false,
+    }
+}
+
+/// A collection's schema as its collection holds it: natively an `Arc`, so
+/// a write takes it for its statement by a count -- `put`, `set` and `del`
+/// each copied it whole, its fields' names and all, 17% of a put's time in
+/// a block of 1 000 -- and a block prepared beside the readers knows its
+/// schema is the one it was prepared against: the preparation holds it, so
+/// a change copies it ([`std::sync::Arc::make_mut`]) and the two are no
+/// longer one. In the browser a plain value, as it was: its module the
+/// same, with no preparation to hold one.
+#[cfg(not(target_arch = "wasm32"))]
+pub type SchemaCell = std::sync::Arc<Schema>;
+
+/// [`SchemaCell`] in the browser: the schema itself, behind the calls an
+/// `Arc` answers.
+#[cfg(target_arch = "wasm32")]
+#[derive(Debug, Clone)]
+pub struct SchemaCell(Schema);
+
+#[cfg(target_arch = "wasm32")]
+impl SchemaCell {
+    pub fn new(s: Schema) -> SchemaCell {
+        SchemaCell(s)
+    }
+
+    pub fn make_mut(this: &mut SchemaCell) -> &mut Schema {
+        &mut this.0
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl std::ops::Deref for SchemaCell {
+    type Target = Schema;
+
+    fn deref(&self) -> &Schema {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Schema {
+    pub name: String,
+    /// The fields a document holds, in the order it holds them -- the
+    /// positions every reader of a field passes the store.
+    pub fields: Vec<Field>,
+    /// The indexes on paths into `json` fields (`create index on docs
+    /// (meta.lang) @hash`), each a field of type `json` named by its whole
+    /// path, in the order of the fields they read into. Beside the fields
+    /// rather than among them: a document holds no value for one, so a
+    /// position in `fields` stays a place in the payload. The schema writes
+    /// each with the field it reads into ([`Schema::encode`]).
+    pub paths: Vec<Field>,
+    /// Where a dropped field's value still is in the documents written
+    /// before its drop, ascending: a document is a run of values in field
+    /// order, so `alter ... drop field` leaves the place, skipped on read
+    /// and written as `null`, rather than rewrite every document under the
+    /// write lock. `compact` writes the documents without them and empties
+    /// this. Every field after one sits a place further in the documents
+    /// than in `fields` ([`Schema::place`]).
+    pub dropped: Vec<usize>,
+    /// The indexes over several fields, in the order they were made.
+    pub composites: Vec<Composite>,
+}
+
+/// A name read as a path: the field and the keys past it (`meta` and
+/// `source.rank` of `meta.source.rank`), `None` for a plain field's name.
+/// A field's name holds no dot ([`Schema::new`]), so the first one ends it.
+/// A field a collection does not hold, refused: SQLite's `rowid` and
+/// MongoDB's `_id`, which an agent reaches for, told the id is `id`.
+#[inline(never)]
+pub fn no_field(name: &str) -> Error {
+    let hint = match name {
+        "rowid" | "_id" | "oid" | "_rowid_" => ": a row's id is `id`",
+        // `orders.total`: a `lookup` level's, named with its collection.
+        _ if name.contains('.') => AFTER_LOOKUP,
+        _ => "",
+    };
+    Error::NotFound(format!("field `{name}`{hint}"))
+}
+
+/// What a field a `lookup` level does not hold is said with: agents put
+/// the rows above's `where` after the `lookup`, where it reads the child.
+pub const AFTER_LOOKUP: &str = ": the clauses after `lookup` are the looked-up collection's, and \
+                                a filter of the rows above goes before it";
+
+pub fn split_path(name: &str) -> Option<(&str, &str)> {
+    name.split_once('.')
+}
+
+/// Where the field at `pos` is in a document, past the `dropped` places
+/// before it (ascending): what the store and the schema both work out.
+#[inline]
+pub fn place(dropped: &[usize], pos: usize) -> usize {
+    let mut at = pos;
+    for &d in dropped {
+        if d > at {
+            break;
+        }
+        at += 1;
+    }
+    at
+}
+
+impl Schema {
+    pub fn new(name: impl Into<String>, mut fields: Vec<Field>) -> Result<Schema> {
+        let name = name.into();
+        let mut seen = Vec::new();
+        for f in &mut fields {
+            f.index = f.index.resolved();
+            if f.name == "id" {
+                return Err(Error::Query(
+                    "`id` is a reserved field, it cannot be declared in a schema".into(),
+                ));
+            }
+            // A dot is where a path starts (`meta.lang`): a field named
+            // with one could not be told from a path into another.
+            if f.name.contains('.') || f.name.is_empty() {
+                return Err(Error::Query(format!(
+                    "`{}` cannot name a field: a name holds no dot, which starts a path",
+                    f.name
+                )));
+            }
+            if matches!(&f.ty, DataType::List(t) if **t == DataType::Json) {
+                return Err(Error::Type(format!(
+                    "`{}`: a list of json is a json field holding a list",
+                    f.name
+                )));
+            }
+            if seen.contains(&f.name) {
+                return Err(Error::Exists(format!("duplicate field `{}`", f.name)));
+            }
+            if let Some(c) = f.collate.filter(|_| !collatable(&f.ty)) {
+                return Err(Error::Query(format!(
+                    "`collate {}` orders text; `{}` is {}",
+                    c.name(),
+                    f.name,
+                    f.ty.name()
+                )));
+            }
+            // A text's alone: a list's elements are met by `has`, each
+            // index's per element and a facet's a value at a time, places
+            // a fold would have to reach one by one for no key anyone asked
+            // for -- `email`, `handle`, `slug` are one text each.
+            if f.nocase && f.ty != DataType::Text {
+                return Err(Error::Query(format!(
+                    "`nocase` compares a text by its case fold; `{}` is {}",
+                    f.name,
+                    f.ty.name()
+                )));
+            }
+            f.index.check(&f.name, &f.ty)?;
+            seen.push(f.name.clone());
+        }
+        one_expiry(&name, fields.iter())?;
+        Ok(Schema {
+            name,
+            fields,
+            paths: Vec::new(),
+            dropped: Vec::new(),
+            composites: Vec::new(),
+        })
+    }
+
+    /// The type of what a composite's part `key` reads: a field's, or
+    /// `json` for a path into one. Refused where there is no such field or
+    /// path.
+    pub fn part_type(&self, key: &str) -> Result<DataType> {
+        if self.path_of(key)?.is_some() {
+            return Ok(DataType::Json);
+        }
+        self.field(key)
+            .map(|f| f.ty.clone())
+            .ok_or_else(|| Error::NotFound(format!("field `{key}` in `{}`", self.name)))
+    }
+
+    /// The checks an index over several fields meets -- each part a field
+    /// or a path there is, of a type with an order, named once, two parts
+    /// at least -- and the composite over the same fields already there,
+    /// if one is.
+    pub fn check_composite(&self, c: &Composite) -> Result<Option<&Composite>> {
+        let n = c.keys.len();
+        if n < 2 {
+            return Err(Error::Query(
+                "an index of one field is that field's own: `@sorted`, which walks both ways, \
+                 or `@unique`"
+                    .into(),
+            ));
+        }
+        if n > MAX_COMPOSITE_KEYS {
+            return Err(Error::Query(format!(
+                "an index takes at most {MAX_COMPOSITE_KEYS} fields, not {n}"
+            )));
+        }
+        for (i, (k, _)) in c.keys.iter().enumerate() {
+            if c.keys[..i].iter().any(|(o, _)| o == k) {
+                return Err(Error::Query(format!("`{k}` is named twice in one index")));
+            }
+            let ty = self.part_type(k)?;
+            if !composite_part(&ty) {
+                return Err(Error::Type(format!(
+                    "`{k}` is {}: an index over several fields orders bool, int, float, \
+                     timestamp, text and json",
+                    ty.name()
+                )));
+            }
+        }
+        Ok(self
+            .composites
+            .iter()
+            .find(|o| o.keys.len() == n && o.keys.iter().zip(&c.keys).all(|(a, b)| a.0 == b.0)))
+    }
+
+    /// Adds an index over several fields, refused where [`Self::check_composite`]
+    /// refuses it or one over the same fields is there.
+    pub fn add_composite(&mut self, c: Composite) -> Result<()> {
+        if self.check_composite(&c)?.is_some() {
+            return Err(Error::Exists(format!(
+                "an index on `{}` ({})",
+                self.name,
+                c.keys_text()
+            )));
+        }
+        self.composites.push(c);
+        Ok(())
+    }
+
+    /// Whether a write is asked for a value another document holds: a
+    /// `@unique` field, path or composite.
+    /// Refuses `on`, SQL's conflict target, unless it is the one unique
+    /// key an upsert into this collection can find a row by: a `@unique`
+    /// field's, an index's over several fields (in any order), or `id`
+    /// where there is no other. An upsert is held by any of them, so with
+    /// a second the target and it would part -- SQL refuses a clash on a
+    /// key the target does not name. `names_id`: a document names an
+    /// `id`, which is then a key too.
+    pub fn arbiter(&self, on: &[String], names_id: bool) -> Result<()> {
+        let mut keys: Vec<Vec<&str>> = Vec::new();
+        for f in self.fields.iter().chain(&self.paths) {
+            if f.index.is_unique() {
+                keys.push(vec![&f.name]);
+            }
+        }
+        for c in self.composites.iter().filter(|c| c.unique) {
+            keys.push(c.keys.iter().map(|(k, _)| k.as_str()).collect());
+        }
+        if names_id || keys.is_empty() {
+            keys.push(vec!["id"]);
+        }
+        let named = |k: &Vec<&str>| k.len() == on.len() && on.iter().all(|o| k.contains(&&**o));
+        if keys.len() == 1 && named(&keys[0]) {
+            return Ok(());
+        }
+        let mut held = String::new();
+        for k in &keys {
+            held.push_str(if held.is_empty() { "(" } else { ", (" });
+            for (i, f) in k.iter().enumerate() {
+                held.push_str(if i > 0 { ", " } else { "" });
+                held.push_str(f);
+            }
+            held.push(')');
+        }
+        Err(Error::Query(format!(
+            "`on conflict` names the one unique key a row of `{}` is found by, and its rows \
+             are found by {held}: name it, or none to be held by any",
+            self.name
+        )))
+    }
+
+    pub fn has_unique(&self) -> bool {
+        self.fields
+            .iter()
+            .chain(&self.paths)
+            .any(|f| f.index.is_unique())
+            || self.composites.iter().any(|c| c.unique)
+    }
+
+    /// The field a path reads into, by its position, and the keys past it:
+    /// `None` for a name with no dot. Refused where the field is not there
+    /// or not `json`, where a key is empty, and past [`MAX_PATH_KEYS`] keys,
+    /// which no value nests deep enough to answer.
+    pub fn path_of<'a>(&self, name: &'a str) -> Result<Option<(usize, &'a str)>> {
+        let Some((field, keys)) = split_path(name) else {
+            return Ok(None);
+        };
+        // `users.email`: SQL's column named with its table, which reads
+        // into a json field here.
+        let pos = self.field_pos(field).ok_or_else(|| {
+            Error::NotFound(format!(
+                "field `{field}`: `{name}` reads into a json field, and a field is named bare"
+            ))
+        })?;
+        if self.fields[pos].ty != DataType::Json {
+            return Err(Error::Type(format!(
+                "`{name}` is a path, and `{field}` is {}: a path reads into a json field",
+                self.fields[pos].ty.name()
+            )));
+        }
+        let mut n = 0;
+        for k in keys.split('.') {
+            if k.is_empty() {
+                return Err(Error::Query(format!("`{name}`: a path's keys are names")));
+            }
+            n += 1;
+        }
+        if n > MAX_PATH_KEYS {
+            return Err(Error::Query(format!(
+                "`{name}`: a path names at most {MAX_PATH_KEYS} keys past its field"
+            )));
+        }
+        Ok(Some((pos, keys)))
+    }
+
+    /// The index on a path, by the path's whole name.
+    pub fn path(&self, name: &str) -> Option<&Field> {
+        self.paths.iter().find(|f| f.name == name)
+    }
+
+    /// A field, or an index on a path, by name: what carries an index of
+    /// that name.
+    pub fn indexed(&self, name: &str) -> Option<&Field> {
+        match split_path(name) {
+            None => self.field(name),
+            Some(_) => self.path(name),
+        }
+    }
+
+    /// Puts an index on a path among the others, after those of the fields
+    /// before its own and of its own: the order [`Schema::decode`] gives
+    /// them back in, which keeps a schema read from the file equal to the
+    /// one written.
+    pub fn add_path(&mut self, f: Field) {
+        let field = |n: &str| split_path(n).and_then(|(h, _)| self.field_pos(h));
+        let mine = field(&f.name);
+        let at = self
+            .paths
+            .iter()
+            .position(|p| field(&p.name) > mine)
+            .unwrap_or(self.paths.len());
+        self.paths.insert(at, f);
+    }
+
+    /// Where the field at `pos` of [`Self::fields`] is in a document: past
+    /// every dropped place before it.
+    pub fn place(&self, pos: usize) -> usize {
+        place(&self.dropped, pos)
+    }
+
+    /// The places a document holds: its fields and the dropped ones.
+    pub fn width(&self) -> usize {
+        self.fields.len() + self.dropped.len()
+    }
+
+    /// The values of a document's payload as its fields', a dropped place
+    /// passed over and a field the payload ends before -- one added after
+    /// it was written -- `null`.
+    pub fn read_doc(&self, id: crate::value::DocId, buf: &[u8]) -> Result<crate::value::Document> {
+        let mut fields = Vec::with_capacity(self.fields.len());
+        let (mut pos, mut at) = (0, 0);
+        for (i, f) in self.fields.iter().enumerate() {
+            let want = self.place(i);
+            while at < want {
+                skip_field(buf, &mut pos)?;
+                at += 1;
+            }
+            let v = match pos < buf.len() {
+                true => decode_value(buf, &mut pos)?,
+                false => crate::value::Value::Null,
+            };
+            at += 1;
+            fields.push((f.name.clone(), v));
+        }
+        Ok(crate::value::Document { id, fields })
+    }
+
+    /// A payload without its dropped places: what `compact` writes. Each
+    /// value kept is copied as its bytes stand.
+    pub fn without_dropped(&self, buf: &[u8]) -> Result<Vec<u8>> {
+        let mut out = Vec::with_capacity(buf.len());
+        let (mut pos, mut at) = (0, 0);
+        while pos < buf.len() {
+            let from = pos;
+            skip_value(buf, &mut pos)?;
+            if !self.dropped.contains(&at) {
+                out.extend_from_slice(&buf[from..pos]);
+            }
+            at += 1;
+        }
+        Ok(out)
+    }
+
+    pub fn field(&self, name: &str) -> Option<&Field> {
+        self.fields.iter().find(|f| f.name == name)
+    }
+
+    pub fn field_pos(&self, name: &str) -> Option<usize> {
+        self.fields.iter().position(|f| f.name == name)
+    }
+
+    /// Fields carrying a full-text index.
+    pub fn text_fields(&self) -> Vec<(usize, &Field, TextIndexSpec)> {
+        self.fields
+            .iter()
+            .enumerate()
+            .filter_map(|(i, f)| match &f.index {
+                IndexKind::Text(spec) => Some((i, f, *spec)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Fields carrying a vector index (name, dimension, spec).
+    pub fn vector_fields(&self) -> Vec<(usize, &Field, VectorIndexSpec)> {
+        self.fields
+            .iter()
+            .enumerate()
+            .filter_map(|(i, f)| match &f.index {
+                IndexKind::Vector(spec) => Some((i, f, *spec)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        encode_str(&mut out, &self.name);
+        let extra = !self.composites.is_empty() as usize;
+        put_uvarint(&mut out, (self.width() + extra) as u64);
+        let mut fields = self.fields.iter();
+        for at in 0..self.width() {
+            // A dropped place where it stands, nameless, behind a type tag
+            // of its own: a version that knows no drop refuses the file
+            // rather than read every field after it one place early.
+            if self.dropped.contains(&at) {
+                encode_str(&mut out, "");
+                out.push(TAG_DROPPED);
+                continue;
+            }
+            let Some(f) = fields.next() else { break };
+            encode_str(&mut out, &f.name);
+            if let Some(c) = f.collate {
+                out.push(TAG_COLLATED);
+                out.push(c.code());
+            }
+            if f.nocase {
+                out.push(TAG_NOCASE);
+            }
+            encode_type(&mut out, &f.ty);
+            out.push(f.required as u8);
+            encode_index(&mut out, &f.index);
+            // The indexes on paths into a json field go with it, each its
+            // keys and its kind. Inside the field rather than after the
+            // fields: a version that knows no json refuses the field's type
+            // before it reaches them, and none can read them as something
+            // else.
+            if f.ty == DataType::Json {
+                let mine: Vec<&Field> = self
+                    .paths
+                    .iter()
+                    .filter(|p| split_path(&p.name).is_some_and(|(h, _)| h == f.name))
+                    .collect();
+                put_uvarint(&mut out, mine.len() as u64);
+                for p in mine {
+                    let keys = split_path(&p.name).map_or("", |(_, k)| k);
+                    encode_str(&mut out, keys);
+                    encode_index(&mut out, &p.index);
+                }
+            }
+        }
+        // The indexes over several fields, as one place more past the last,
+        // nameless, behind a type tag of its own, as a dropped place is: a
+        // version that knows none refuses the file rather than open it
+        // without them and take a duplicate a unique one would refuse.
+        if !self.composites.is_empty() {
+            encode_str(&mut out, "");
+            out.push(TAG_COMPOSITES);
+            put_uvarint(&mut out, self.composites.len() as u64);
+            for c in &self.composites {
+                out.push(c.unique as u8);
+                put_uvarint(&mut out, c.keys.len() as u64);
+                for (k, desc) in &c.keys {
+                    encode_str(&mut out, k);
+                    out.push(*desc as u8);
+                }
+            }
+        }
+        out
+    }
+
+    pub fn decode(buf: &[u8], pos: &mut usize) -> Result<Schema> {
+        let name = decode_str(buf, pos)?;
+        let n = get_uvarint(buf, pos)? as usize;
+        let mut fields = Vec::with_capacity(n.min(buf.len()));
+        let mut paths = Vec::new();
+        let mut dropped = Vec::new();
+        let mut composites = Vec::new();
+        for at in 0..n {
+            let fname = decode_str(buf, pos)?;
+            if buf.get(*pos) == Some(&TAG_DROPPED) {
+                *pos += 1;
+                dropped.push(at);
+                continue;
+            }
+            // Nameless, as it is written: a field's type is never this tag.
+            if fname.is_empty() && buf.get(*pos) == Some(&TAG_COMPOSITES) {
+                *pos += 1;
+                let ended = || Error::Corrupt("schema ended early".into());
+                for _ in 0..get_uvarint(buf, pos)? {
+                    let unique = *buf.get(*pos).ok_or_else(ended)? != 0;
+                    *pos += 1;
+                    let parts = get_uvarint(buf, pos)? as usize;
+                    let mut keys = Vec::with_capacity(parts.min(MAX_COMPOSITE_KEYS));
+                    for _ in 0..parts {
+                        let k = decode_str(buf, pos)?;
+                        let desc = *buf.get(*pos).ok_or_else(ended)? != 0;
+                        *pos += 1;
+                        keys.push((k, desc));
+                    }
+                    composites.push(Composite { keys, unique });
+                }
+                continue;
+            }
+            let collate = match buf.get(*pos) {
+                Some(&TAG_COLLATED) => {
+                    let c = *buf
+                        .get(*pos + 1)
+                        .ok_or_else(|| Error::Corrupt("schema ended early".into()))?;
+                    *pos += 2;
+                    Some(
+                        Collation::from_code(c)
+                            .ok_or_else(|| Error::Corrupt(format!("unknown collation {c}")))?,
+                    )
+                }
+                _ => None,
+            };
+            let nocase = buf.get(*pos) == Some(&TAG_NOCASE);
+            *pos += nocase as usize;
+            let ty = decode_type(buf, pos)?;
+            let required = *buf
+                .get(*pos)
+                .ok_or_else(|| Error::Corrupt("schema ended early".into()))?
+                != 0;
+            *pos += 1;
+            let index = decode_index(buf, pos)?;
+            if ty == DataType::Json {
+                let n = get_uvarint(buf, pos)? as usize;
+                for _ in 0..n {
+                    let keys = decode_str(buf, pos)?;
+                    let index = decode_index(buf, pos)?;
+                    paths
+                        .push(Field::new(format!("{fname}.{keys}"), DataType::Json).indexed(index));
+                }
+            }
+            fields.push(Field {
+                name: fname,
+                ty,
+                index,
+                required,
+                collate,
+                nocase,
+            });
+        }
+        Ok(Schema {
+            name,
+            fields,
+            paths,
+            dropped,
+            composites,
+        })
+    }
+}
+
+/// An index's kind as a schema writes it, behind its field.
+fn encode_index(out: &mut Vec<u8>, index: &IndexKind) {
+    match index {
+        IndexKind::None => out.push(0),
+        // A unique one is a kind of its own, as a quantized graph is: a
+        // version that knows no `@unique` refuses the file rather than open
+        // it as a plain hash and take the duplicates it would have refused.
+        IndexKind::Hash { unique } => out.push(if *unique { 8 } else { 1 }),
+        IndexKind::Vector(spec) => {
+            // A quantized index is a kind of its own, so that a version that
+            // knows no quantization refuses the file rather than reading it
+            // as full vectors; every other index is written as it always
+            // was.
+            out.push(if spec.quant == Quant::None { 2 } else { 5 });
+            out.push(spec.metric.code());
+            put_uvarint(out, spec.m as u64);
+            put_uvarint(out, spec.ef_construction as u64);
+            put_uvarint(out, spec.ef_search as u64);
+            if spec.quant != Quant::None {
+                out.push(spec.quant.code());
+            }
+        }
+        IndexKind::Text(spec) => {
+            // One that indexes characters is a kind of its own, as a
+            // quantized index is: a version that knows no `chars` refuses
+            // the file rather than index pairs alone and answer a query of
+            // one character with nothing.
+            out.push(if spec.chars { 7 } else { 3 });
+            put_uvarint(out, spec.k1_pct as u64);
+            put_uvarint(out, spec.b_pct as u64);
+            put_uvarint(out, spec.prefix_max as u64);
+            put_uvarint(out, spec.prefix_min as u64);
+        }
+        // An expiry is a kind of its own, as `@unique` is: a version that
+        // knows none refuses the file rather than open it as a plain
+        // ordered index and hand out the rows past their time.
+        IndexKind::Sorted { ttl: None } => out.push(4),
+        IndexKind::Sorted { ttl: Some(ms) } => {
+            out.push(9);
+            put_uvarint(out, *ms);
+        }
+        IndexKind::Inverted => out.push(6),
+        IndexKind::Geo => out.push(10),
+    }
+}
+
+/// An index's kind as [`encode_index`] wrote it.
+fn decode_index(buf: &[u8], pos: &mut usize) -> Result<IndexKind> {
+    let ended = || Error::Corrupt("schema ended early".into());
+    let kind = *buf.get(*pos).ok_or_else(ended)?;
+    *pos += 1;
+    Ok(match kind {
+        0 => IndexKind::None,
+        1 | 8 => IndexKind::Hash { unique: kind == 8 },
+        2 | 5 => {
+            let metric = Metric::from_code(*buf.get(*pos).ok_or_else(ended)?)?;
+            *pos += 1;
+            let mut spec = VectorIndexSpec {
+                metric,
+                m: get_uvarint(buf, pos)? as usize,
+                ef_construction: get_uvarint(buf, pos)? as usize,
+                ef_search: get_uvarint(buf, pos)? as usize,
+                quant: Quant::None,
+            };
+            if kind == 5 {
+                let c = *buf.get(*pos).ok_or_else(ended)?;
+                *pos += 1;
+                spec.quant = Quant::from_code(c)
+                    .ok_or_else(|| Error::Corrupt(format!("unknown quantization {c}")))?;
+            }
+            IndexKind::Vector(spec.resolved())
+        }
+        3 | 7 => IndexKind::Text(TextIndexSpec {
+            k1_pct: get_uvarint(buf, pos)? as u16,
+            b_pct: get_uvarint(buf, pos)? as u16,
+            prefix_max: get_uvarint(buf, pos)? as u8,
+            prefix_min: get_uvarint(buf, pos)? as u8,
+            chars: kind == 7,
+        }),
+        4 => IndexKind::SORTED,
+        9 => IndexKind::Sorted {
+            ttl: Some(get_uvarint(buf, pos)?),
+        },
+        6 => IndexKind::Inverted,
+        10 => IndexKind::Geo,
+        o => return Err(Error::Corrupt(format!("unknown index kind {o}"))),
+    })
+}

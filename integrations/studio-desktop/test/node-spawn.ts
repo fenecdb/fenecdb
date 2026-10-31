@@ -1,4 +1,4 @@
-// Node's spawn and a runner of `fenec`, as process.ts and backups.ts take them,
+// Node's spawn and a runner of `fennec`, as process.ts and backups.ts take them,
 // so `node --test` drives the real binaries through the app's own code (the
 // app hands in Bun's: server.ts). Not a test file of its own.
 
@@ -9,8 +9,8 @@ import type { Child, Spawn } from "../src/bun/process.ts";
 
 const BIN = new URL("../bin/", import.meta.url).pathname;
 /** The binaries `make studio-desktop` puts in bin/ (scripts/get-server.sh). */
-export const SERVER = process.env["FENEC_SERVER_BIN"] || `${BIN}fenec-server`;
-export const CLI = process.env["FENEC_CLI_BIN"] || `${BIN}fenec`;
+export const SERVER = process.env["FENNEC_SERVER_BIN"] || `${BIN}fennec-server`;
+export const CLI = process.env["FENNEC_CLI_BIN"] || `${BIN}fennec`;
 /** Why a test that needs them cannot run, or "" when it can. */
 export const missing = () => [SERVER, CLI].filter((b) => !existsSync(b)).map((b) => `${b} is not there: run scripts/get-server.sh`).join("; ");
 
@@ -30,7 +30,7 @@ export const nodeSpawn: Spawn = (argv, env): Child => {
 	};
 };
 
-/** `fenec` with `args`, its output whole. */
+/** `fennec` with `args`, its output whole. */
 export const nodeRun: Run = (args, env) =>
 	new Promise((resolve) => {
 		const p = spawn(CLI, args, { env, stdio: ["ignore", "pipe", "pipe"] });

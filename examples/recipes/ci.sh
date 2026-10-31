@@ -1,15 +1,15 @@
 #!/bin/sh
 # The recipes, held to what the docs paste (`make recipes-test`): auth.sh, the
 # files demo against an S3-compatible store in Docker and the functions demo,
-# each against this checkout's fenec-server and -- through
-# examples/run-tests.sh -- this checkout's @fenecdb/web, and their outputs held to
+# each against this checkout's fennec-server and -- through
+# examples/run-tests.sh -- this checkout's @fennecdb/web, and their outputs held to
 # golden/*.txt, which the pages of the docs are held to in turn. Small: one
 # server at a time, no clients in numbers.
 #
 #   examples/run-tests.sh recipes          packs web/, installs, runs this
 #   RECIPES_UPDATE=1 ... recipes           writes golden/*.txt again
 #
-#   FENEC_SERVER   the server binary          (default target/debug/fenec-server)
+#   FENNEC_SERVER  the server binary          (default target/debug/fennec-server)
 #   RECIPES_GOLDEN where golden/ is            (default beside this script; run-tests.sh points it
 #                  into the checkout, so that an update is written there and not into a copy)
 #   RECIPES_PAGES  site/content/docs          (the pages the golden is held to; none: not checked)
@@ -20,7 +20,7 @@
 # Under CI a tool that is missing fails the run. Elsewhere its recipe is skipped.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
-export FENEC_SERVER=${FENEC_SERVER:-$here/../../target/debug/fenec-server}
+export FENNEC_SERVER=${FENNEC_SERVER:-$here/../../target/debug/fennec-server}
 golden=${RECIPES_GOLDEN:-$here/golden}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT INT TERM
@@ -73,7 +73,7 @@ held() {
 for tool in node curl jq python3; do
     has "$tool" || { missing "$tool not found" "the recipes"; exit "$failed"; }
 done
-[ -x "$FENEC_SERVER" ] || { echo "no $FENEC_SERVER: cargo build -p fenec-server"; exit 1; }
+[ -x "$FENNEC_SERVER" ] || { echo "no $FENNEC_SERVER: cargo build -p fennec-server"; exit 1; }
 [ -d "$here/node_modules/@aws-sdk" ] || { echo "no node_modules: npm install (examples/run-tests.sh does)"; exit 1; }
 
 echo "== auth"

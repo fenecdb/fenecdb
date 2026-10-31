@@ -1,5 +1,5 @@
 <!--
-title: HTTP security and scoped access — fenecdb
+title: HTTP security and scoped access — fennecdb
 description: A bearer token, CORS and a read-only endpoint, JSON Web Tokens held to a policy file down to the rows, and the keys that verify them, with rotation and identity providers.
 -->
 
@@ -13,7 +13,7 @@ the <a href="http-reference.html">HTTP reference</a>.</p>
 <p>Protect the endpoint with a bearer token, and put a TLS terminator in front
 of it on an open network.</p>
 
-<pre data-lang="bash">fenec-server --file data.fenec --http 127.0.0.1:8080 \
+<pre data-lang="bash">fennec-server --file data.fennec --http 127.0.0.1:8080 \
          --http-cors 'http://localhost:8787' \
          --http-token "$TOKEN" \
          --http-read-only
@@ -23,8 +23,8 @@ of it on an open network.</p>
 <table>
 <tbody>
 <tr><td><code>--http-token &lt;value&gt;</code></td><td>every request needs <code>Authorization: Bearer &lt;value&gt;</code>, compared in constant time</td></tr>
-<tr><td><code>--http-cors &lt;origin&gt;</code></td><td>sets <code>Access-Control-Allow-Origin</code>; without it no CORS header is sent at all. A browser&rsquo;s preflight (<code>OPTIONS</code>) from that origin, or any with <code>*</code>, is answered 204 before a token is asked for -- the browser sends none with it -- on a single database and under <code>/t/&lt;tenant&gt;/</code>. Every answer exposes <code>Fenec-Seq</code>, <code>X-Request-Id</code> and <code>Retry-After</code> and lets <code>Idempotency-Key</code> in. Through <code>fenec-shard</code>, give the router the flag: it answers the preflight itself and puts its headers on its own answers and in place of the node's (<a href="/docs/sharding-reference#cors">Tenants and sharding</a>)</td></tr>
-<tr><td><code>--http-read-only</code></td><td>write endpoints return 403; <code>fenec-server</code>'s own path is unaffected</td></tr>
+<tr><td><code>--http-cors &lt;origin&gt;</code></td><td>sets <code>Access-Control-Allow-Origin</code>; without it no CORS header is sent at all. A browser&rsquo;s preflight (<code>OPTIONS</code>) from that origin, or any with <code>*</code>, is answered 204 before a token is asked for -- the browser sends none with it -- on a single database and under <code>/t/&lt;tenant&gt;/</code>. Every answer exposes <code>Fennec-Seq</code>, <code>X-Request-Id</code> and <code>Retry-After</code> and lets <code>Idempotency-Key</code> in. Through <code>fennec-shard</code>, give the router the flag: it answers the preflight itself and puts its headers on its own answers and in place of the node's (<a href="/docs/sharding-reference#cors">Tenants and sharding</a>)</td></tr>
+<tr><td><code>--http-read-only</code></td><td>write endpoints return 403; <code>fennec-server</code>'s own path is unaffected</td></tr>
 <tr><td>a replica</td><td>every write returns 403, whatever the flags: its writes come from its primary</td></tr>
 <tr><td>non-loopback address</td><td>refuses to bind without a token, unless <code>--insecure</code> is given</td></tr>
 </tbody>
@@ -32,13 +32,13 @@ of it on an open network.</p>
 </div>
 
 <details class="deep"><summary>TLS, unfiltered writes, body limits and what a shape leaks</summary>
-<p>There is no TLS, the same rule as <code>fenec-server</code>: on an open network
+<p>There is no TLS, the same rule as <code>fennec-server</code>: on an open network
 it needs a TLS terminator in front. A <code>PATCH</code> or <code>DELETE</code>
 without a filter is refused, and covering a whole collection needs a separate
 <b>path</b> rather than a flag — a key like <code>?all=true</code> would
 collide with a field named <code>all</code>.</p>
 
-<p>Limits are shared with <code>fenec-server</code> (<code>--max-connections</code>,
+<p>Limits are shared with <code>fennec-server</code> (<code>--max-connections</code>,
 <code>--idle-timeout</code>: a connection silent that long between requests is
 closed with nothing written, and one that went silent part way through a
 request is answered 408); the body ceiling is 64 MiB and the header block
@@ -47,7 +47,7 @@ request is answered 408); the body ceiling is 64 MiB and the header block
 (<code>select</code>, <code>order</code>, <code>limit</code>,
 <code>offset</code>, <code>count</code>, <code>where</code>,
 <code>group</code>) cannot be filtered
-over HTTP; the FenecQL and <code>fenec-server</code> paths are unaffected.</p>
+over HTTP; the FennecQL and <code>fennec-server</code> paths are unaffected.</p>
 
 <div class="note trap">
   <p><b>A shape alone is not a security boundary.</b> Under the server's own
@@ -108,9 +108,9 @@ positions      read           where courier in (get orders select courier where 
 </ul>
 
 <p>A whole product built on these rules is
-<a href="https://github.com/fenecdb/fenecdb/tree/main/examples/saas">examples/saas</a>:
+<a href="https://github.com/fennec-db/fennecdb/tree/main/examples/saas">examples/saas</a>:
 sign-up and sessions owned by the app, a tenant per organisation behind
-<code>fenec-shard</code>, roles and teams as grants and list claims, live
+<code>fennec-shard</code>, roles and teams as grants and list claims, live
 boards and search under each person's token, with its threat model and the
 attacks its tests try.</p>
 
@@ -121,10 +121,10 @@ held to the rules of a <code>--policy</code> file, collection by collection and
 down to the rows, so a browser can talk to the database directly with a token
 per user:</p>
 
-<pre data-lang="bash">fenec-server --file data.fenec --http 0.0.0.0:8080 --http-token "$ROOT" \
+<pre data-lang="bash">fennec-server --file data.fennec --http 0.0.0.0:8080 --http-token "$ROOT" \
          --jwt-secret-file jwt.secret --policy policy.txt
 
-fenec-server --jwt-secret-file jwt.secret --mint-token '{"sub":"alice","exp":1893456000}'
+fennec-server --jwt-secret-file jwt.secret --mint-token '{"sub":"alice","exp":1893456000}'
 </pre>
 
 <ul>
@@ -173,7 +173,7 @@ fenec-server --jwt-secret-file jwt.secret --mint-token '{"sub":"alice","exp":189
     field of the token's notes and the title of anyone's. A token may insert into a collection it cannot read, such as an event
     stream: its reads of it are refused with 403 and it is not listed.
     <code>expired</code> grants the rows past their <code>@ttl</code>, which
-    <code>expired()</code> reads (<a href="/docs/fenecql-indexes#reaper">the
+    <code>expired()</code> reads (<a href="/docs/fennecql-indexes#reaper">the
     reaper</a>): a statement asking it is held to the filters of the rules
     granting <code>expired</code> beside the ones its operation needs, and
     neither <code>write</code> nor <code>*</code> grants it — a lapsed hold
@@ -266,7 +266,7 @@ orders  update(status, delivered_at, run_at, claim)  where courier = $jwt.sub an
     <code>set</code> of one row over HTTP on loopback took 5.0 µs more
     than the server token's 45 µs under a plain rule, 5.7–5.9 under a
     field list and 6.1–6.8 under a transition
-    (<a href="https://github.com/fenecdb/fenecdb/tree/main/crates/fenec-http/examples/policy.rs"><code>make
+    (<a href="https://github.com/fennec-db/fennecdb/tree/main/crates/fennec-http/examples/policy.rs"><code>make
     policy-bench</code></a>).</li>
   <li><b><code>append-only</code></b> is a line of its own,
     <code>journal append-only</code>, with no filter and no role. No scoped
@@ -359,7 +359,7 @@ messages   read,insert  where room in (get members select room where user = $jwt
     under a rule naming the courier as a claim, every scoped stream
     looking at every write either way. A token with no such rule runs as
     it did (<a
-    href="https://github.com/fenecdb/fenecdb/tree/main/crates/fenec-http/examples/policy.rs"><code>make
+    href="https://github.com/fennec-db/fennecdb/tree/main/crates/fennec-http/examples/policy.rs"><code>make
     policy-bench</code></a>, <code>ARGS=streams</code>).</li>
   <li><b><code>match</code> scores over the rows the token may read.</b>
     BM25's statistics — how many documents, their mean length, how many
@@ -431,16 +431,16 @@ messages   read,insert  where room in (get members select room where user = $jwt
     <code>event: error</code> and
     <code>{"error":"the token has expired","status":401}</code>: the
     client takes it as a refused request, fetches a fresh token and opens
-    the stream again (<code>FenecHttp.live</code>, <code>subscribe</code>,
+    the stream again (<code>FennecHttp.live</code>, <code>subscribe</code>,
     the sync layer, Go's <code>*Error</code> and .NET's
     <code>Event.Status</code>). Without it a stream outlived its token, and
     a member taken off a team heard the team until the client went away.
     No other request is held open past its token, nor before it: a read,
     a subscription or a <code>/_changes</code> page sent with
-    <code>Fenec-After</code> waits only once its token is taken
+    <code>Fennec-After</code> waits only once its token is taken
     — one the server refuses is answered 401 at once, never after the
     wait — and is checked again once its wait ends, a write
-    held by <code>Fenec-Wait</code> asks its token again each time it runs,
+    held by <code>Fennec-Wait</code> asks its token again each time it runs,
     and <code>/_changes</code> takes no scoped token.</li>
   <li><b>Refusals</b> tell a scoped token only what it may read: a
     <code>@unique</code> clash (409) names the field, not the document
@@ -475,7 +475,7 @@ the server the issuer and the audience of yours
 
 <pre data-lang="bash"># the provider's public keys, as it publishes them
 curl -s https://example.auth0.com/.well-known/jwks.json &gt; jwks.json
-fenec-server --file data.fenec --http 0.0.0.0:8080 --jwt-keys jwks.json --policy policy.txt
+fennec-server --file data.fennec --http 0.0.0.0:8080 --jwt-keys jwks.json --policy policy.txt
 </pre>
 
 <details class="deep"><summary>How keys, algorithms and token checks work, timed</summary>
@@ -530,7 +530,7 @@ signature says who issued a token, not that it was issued for this
 database. Given the issuer and the audience, the server takes only the
 tokens issued for it:</p>
 
-<pre data-lang="bash">fenec-server --file data.fenec --http 0.0.0.0:8080 --jwt-keys jwks.json --policy policy.txt \
+<pre data-lang="bash">fennec-server --file data.fennec --http 0.0.0.0:8080 --jwt-keys jwks.json --policy policy.txt \
          --jwt-issuer https://acme.us.auth0.com/ --jwt-audience https://api.example.com
 </pre>
 
@@ -574,7 +574,7 @@ of them, the server takes any token its keys sign, as it always did; with
 <code>--jwt-keys</code> it says so on stderr as it starts. Every
 <code>--jwt-*</code> flag but the keys' is refused at the start where no
 <code>--jwt-secret</code> or <code>--jwt-keys</code> is given. Behind
-<code>fenec-shard</code> the nodes check them; the router holds no keys and
+<code>fennec-shard</code> the nodes check them; the router holds no keys and
 forwards the token as it came.</p>
 
 <div class="note trap">

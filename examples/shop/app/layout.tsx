@@ -62,7 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </p>
             <p className="muted">
               A demonstration shop: every product, maker and review here is generated, and no card is charged. It runs on{' '}
-              <a href="https://github.com/fenecdb/fenecdb/tree/main/examples/shop">fenecdb</a>.
+              <a href="https://github.com/fennec-db/fennecdb/tree/main/examples/shop">fennecdb</a>.
             </p>
           </div>
         </footer>

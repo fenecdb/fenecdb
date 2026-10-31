@@ -1,4 +1,4 @@
-import FenecDB
+import FennecDB
 import Foundation
 
 public struct Note: Codable, Sendable, Identifiable, Hashable {
@@ -10,17 +10,17 @@ public struct Note: Codable, Sendable, Identifiable, Hashable {
     public var at: String
 }
 
-/// The notes in a fenecdb file: the schema, the seeds, the queries.
+/// The notes in a fennecdb file: the schema, the seeds, the queries.
 public final class Notes: Sendable {
-    public let db: Fenec
+    public let db: Fennec
 
-    init(db: Fenec) { self.db = db }
+    init(db: Fennec) { self.db = db }
 
-    /// Opens (or makes) the file, brings its schema up to schema.fenecql and
+    /// Opens (or makes) the file, brings its schema up to schema.fennecql and
     /// seeds an empty collection.
     public static func open(_ url: URL) async throws -> Notes {
-        let db = try await Fenec.open(url)
-        let schema = try String(contentsOf: Bundle.module.url(forResource: "schema", withExtension: "fenecql")!)
+        let db = try await Fennec.open(url)
+        let schema = try String(contentsOf: Bundle.module.url(forResource: "schema", withExtension: "fennecql")!)
         try await db.schema(schema)
         let notes = Notes(db: db)
         if try await db.from("notes").count() == 0 {
@@ -29,19 +29,19 @@ public final class Notes: Sendable {
         return notes
     }
 
-    /// Application Support/Notes/notes.fenec: backed up, never shown in Files.
+    /// Application Support/Notes/notes.fennec: backed up, never shown in Files.
     public static func defaultURL() throws -> URL {
         let dir = try FileManager.default
             .url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             .appendingPathComponent("Notes")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("notes.fenec")
+        return dir.appendingPathComponent("notes.fennec")
     }
 
     public func add(title: String, body: String, tags: [String], done: Bool = false, at: String? = nil) async throws {
         try await db.from("notes").insert([
             "title": .string(title), "body": .string(body), "tags": .array(tags.map { .string($0) }),
-            "done": .bool(done), "at": try at.map(Value.string) ?? Date().fenecValue(),
+            "done": .bool(done), "at": try at.map(Value.string) ?? Date().fennecValue(),
             "embed": .floats(embed("\(title) \(body)")),
         ] as Row)
     }

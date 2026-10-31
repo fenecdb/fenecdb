@@ -1,5 +1,5 @@
 <!--
-title: Sharding: read replicas — fenecdb
+title: Sharding: read replicas — fennecdb
 description: How to answer a client's reads from a replica in its own region while its writes go to the tenant's home.
 -->
 
@@ -20,11 +20,11 @@ curl -X PUT router.eu.internal:8090/_shard/tenants/acme/read-replicas/ap \
 {"region":"ap","node":"ap1","follows":"http://10.1.0.11:8081"}
 
 # ap's router stands in ap: a marked read of a tenant with a replica there goes to it
-fenec-shard --listen 0.0.0.0:8090 --token $ROOT --directory standby.fenec \
+fennec-shard --listen 0.0.0.0:8090 --token $ROOT --directory standby.fennec \
             --replication-token $DIR --replica-of http://router.eu.internal:8090 --near ap
 </pre>
 
-<pre data-lang="ts">import { connect } from '@fenecdb/web/client';
+<pre data-lang="ts">import { connect } from '@fennecdb/web/client';
 
 // Through ap's router: reads near, writes home.
 const db = connect('https://ap.example.com/t/acme', { token: 'a token', reads: 'nearest' });
@@ -36,7 +36,7 @@ const mine = await db.from('orders').rows();               // ap's replica, afte
   <li><b>A read never comes from before the client's own write.</b> A client
     reading near sends each read after the furthest position home named to
     it — the change and the history it is a change of
-    (<code>Fenec-After</code>, <code>Fenec-History</code>) — and the replica
+    (<code>Fennec-After</code>, <code>Fennec-History</code>) — and the replica
     answers once it holds that change of that history; one it cannot in the
     wait goes home. A failover that loses a write does not fool it: the copy
     left on the old branch holds a change of that number, of another
@@ -45,7 +45,7 @@ const mine = await db.from('orders').rows();               // ap's replica, afte
     moment ago, its image still to come — or reopened, or pointed at a new
     primary, until that primary has said hello — sends the read home.</li>
   <li><b>Only a read the client marks goes near</b>
-    (<code>Fenec-Read: replica</code>): the router parses no statement. The
+    (<code>Fennec-Read: replica</code>): the router parses no statement. The
     SDKs mark the builder's reads, and a text the caller says reads; every
     other request goes home, as it always did.</li>
   <li><b>A read replica is never promoted.</b> A failover of the tenant's home
@@ -101,16 +101,16 @@ reached named in <code>failed</code>.</p>
 
 <p><b>Routing.</b> A router stands in a region: <code>--near ap</code>, or the
 region whose directory it keeps (<code>--region</code>). Asked for a request
-marked <code>Fenec-Read: replica</code> of a tenant with a read replica in
+marked <code>Fennec-Read: replica</code> of a tenant with a read replica in
 that region — and not living in it — it forwards the request to the replica;
 every other request goes where it went. A marked read the replica does not
 answer — its node not reached, or the request not written or answered by
-the wait its <code>Fenec-After</code> asks, a <code>/_changes</code> page's
+the wait its <code>Fennec-After</code> asks, a <code>/_changes</code> page's
 own <code>wait</code> for a write, and <code>--replica-timeout</code> past
 them (2 s); not caught up with its primary yet, or going down (<code>503</code>);
 still behind the position it was sent after at the end of the wait
 (<code>504</code>); its file gone from the node (a <code>404</code> with
-<code>Fenec-Tenant: absent</code>) — is sent home, so the client is answered
+<code>Fennec-Tenant: absent</code>) — is sent home, so the client is answered
 either way and from nothing older than its write; and so is one whose answer
 breaks off before its end, the router reading a replica's answer whole
 before any of it goes to the client (a stream's goes on as it comes). A
@@ -125,7 +125,7 @@ wait, go home at once through that router, the trip home a region away in
 place of a wait. A read naming no position, which the copy answers as it
 stands, and one willing to wait longer still go to the copy, home out of
 reach or not. So a client holding a token of the tenant can send its
-positioned reads through that router home: a <code>Fenec-After</code> past
+positioned reads through that router home: a <code>Fennec-After</code> past
 the tenant's last change, with a wait of a second or more, once every 5 s —
 as a failover that lost writes does on its own, its clients' positions on the
 lost branch. What that costs is the trip home, never a wrong answer. Where it took one and did not answer in time, the tenant's
@@ -140,7 +140,7 @@ answers nothing, stopped or deadlocked — and no other tenant waits it
 out. A node that answers its health while every query on it stalls — its
 disk stalled under the queries — costs each tenant with a copy there one
 timeout every 5 s for as long as that lasts.
-<code>fenec_router_replica_reads_total</code> counts marked reads by where
+<code>fennec_router_replica_reads_total</code> counts marked reads by where
 they were answered: <code>outcome="replica"</code>,
 <code>"fallback"</code>, <code>"home"</code>. Every server runs a marked
 request read-only on every route — a statement, REST, <code>/batch</code>, an
@@ -150,14 +150,14 @@ written, never landed; a value the header does not take is <code>400</code>.
 A tenant frozen for a move, or on a node whose lease has lapsed, answers a
 marked read, which can only read.</p>
 
-<p><b>Read your writes.</b> A write's answer carries <code>Fenec-Seq</code>,
-the change it left the tenant at, and <code>Fenec-History</code>,
+<p><b>Read your writes.</b> A write's answer carries <code>Fennec-Seq</code>,
+the change it left the tenant at, and <code>Fennec-History</code>,
 <code>&lt;term&gt;-&lt;id&gt;</code>: the history that change is of, which a
 failover forks where the copy promoted stood, one term more. A replica numbers
 the primary's changes as the primary did, and a read sent with
-<code>Fenec-After: n</code> and that <code>Fenec-History</code> is answered
+<code>Fennec-After: n</code> and that <code>Fennec-History</code> is answered
 once the replica holds change <code>n</code> of that history, 5 s at most
-unless <code>Fenec-Wait</code> says. The history is what makes it hold across a
+unless <code>Fennec-Wait</code> says. The history is what makes it hold across a
 failover: a write the old primary acknowledged and the promoted copy never
 got is lost, the new primary's next write takes its number, and a replica
 still on the old branch holds a change of that number — the lost one. It
@@ -169,14 +169,14 @@ and sends it with every marked read, whose own answers move nothing: it reads
 its own writes and every write before them, and another client's writes after
 its own may or may not be there yet. A marked <code>/query</code> read's
 answer names where the copy that answered it stood as it read
-(<code>Fenec-Seq</code>, <code>Fenec-History</code>), replica or home; the
+(<code>Fennec-Seq</code>, <code>Fennec-History</code>), replica or home; the
 SDKs take nothing of it as the client's, since a replica may be behind home
 or on a branch a failover left, and a JavaScript live query sends its next run
 after it (below). A subscription and a
 <code>/_changes</code> page sent so wait for it as a read does, before their
 head, and go home on the replica's <code>504</code>: a stream is seeded with
 the client's write, never from the copy as it stood behind it, and a page's
-<code>Fenec-Seq</code> is never behind it. Go's <code>Read()</code> and
+<code>Fennec-Seq</code> is never behind it. Go's <code>Read()</code> and
 .NET's <code>AsRead()</code> copies send the position on a subscription and
 <code>/_changes</code> too, and take a stream's <code>504</code> as a
 read's. A marked stream open on a copy that refuses its primary — the
@@ -242,7 +242,7 @@ it with every <code>follow</code> and keeps it across restarts. A copy
 whose primary turns out to be of another lineage takes nothing from it and
 deletes itself, file and <code>.follows</code>, so the deleted tenant's
 rows do not outlive it on the node either
-(<code>fenec_copies_refused_total</code> counts them); a look finding a
+(<code>fennec_copies_refused_total</code> counts them); a look finding a
 replica's tenant of another lineage takes it off rather than point it
 anywhere. So does every other way a record outlives its tenant —
 <code>?forget</code> of a node that comes back, a router lost between a
@@ -258,7 +258,7 @@ word, keeping the lineage before as one the tenant was, and the read
 replicas bound to that one are bound to the new one rather than taken
 off. A copy lost three times in a row anyway is made again no more —
 <code>"given_up": true</code> in its list, counted in
-<code>fenec_router_read_replicas_given_up</code> — until its primary or
+<code>fennec_router_read_replicas_given_up</code> — until its primary or
 lineage changes or it is placed again; its region's marked reads pass it
 by meanwhile, rather than each meet its node's <code>404</code> and go home.
 The router keeps that in memory alone: started again, it makes the copy
@@ -293,27 +293,27 @@ the client's to wait for — are not offered.</p>
 and <code>{ read: true }</code> on <code>run</code> and <code>batch</code>
 (a batch of builder queries alone is marked on its own); Python
 <code>Client(url, reads="nearest")</code> and <code>read=True</code>; Go
-<code>fenecdb.WithReadsNearest()</code> and <code>db.Read()</code>; .NET
+<code>fennecdb.WithReadsNearest()</code> and <code>db.Read()</code>; .NET
 <code>ReadsNearest = true</code> and <code>db.AsRead()</code>; Swift
-<code>Fenec.connect(url:reads: .nearest)</code>, Kotlin
-<code>Fenec.connect(url, reads = FenecRemote.Reads.NEAREST)</code> and Dart
-<code>Fenec.connect(url, reads: Reads.nearest)</code>, each with
+<code>Fennec.connect(url:reads: .nearest)</code>, Kotlin
+<code>Fennec.connect(url, reads = FennecRemote.Reads.NEAREST)</code> and Dart
+<code>Fennec.connect(url, reads: Reads.nearest)</code>, each with
 <code>db.asRead()</code> (<a href="mobile.html#connect">Without a
 file</a>). Each marks the builder's reads and the copy's requests alone,
 and keeps one position for every copy of the client it makes. A
 subscription opened through a Go <code>Read()</code> or a .NET
 <code>AsRead()</code> copy, and its <code>/_changes</code> reads, are marked
 and sent after that position too, and a server holds a stream for
-<code>Fenec-After</code> as it holds a read: the read replica seeds it once
+<code>Fennec-After</code> as it holds a read: the read replica seeds it once
 it has the client's own writes, and where it cannot in the wait its
 <code>504</code> sends the stream home, so no stream is seeded from behind
 them. JavaScript's <code>live</code> keeps its streams home, unmarked, and
 sends each of its runs near: after the furthest of the client's position and
 the one its streams named — a stream's head says where home stood as it
-opened, <code>Fenec-Seq</code> and <code>Fenec-History</code>, and each
+opened, <code>Fennec-Seq</code> and <code>Fennec-History</code>, and each
 event's <code>seq</code> is a change of that history; a stream opened again
 after a failover names the later term, and never sets the position back. A
-run waits a second on the replica (<code>Fenec-Wait: 1000</code>), not five:
+run waits a second on the replica (<code>Fennec-Wait: 1000</code>), not five:
 the replica has a write once home's fsync covers it — 283 ms behind at most
 under <code>--sync 250</code> — and a link later, so one later than that is
 behind, and home answers in a region's round trip; the router then lets the
@@ -322,7 +322,7 @@ every change. The second assumes that: a primary syncing its file every
 second or more slowly (<code>--sync 1000</code> and up), or a link to the
 replica slower than about half a second, has a replica take a write past a
 run's second, and every run of a live query near it misses it — answered
-from home, <code>fenec_router_replica_reads_total{outcome="fallback"}</code>
+from home, <code>fennec_router_replica_reads_total{outcome="fallback"}</code>
 rising where <code>"replica"</code> does not, the rows a round trip home
 later, a second later once every 5 s: right, never stale, but slower than a
 client reading home (<code>reads: 'home'</code>), which such a deployment's
@@ -351,7 +351,7 @@ Kotlin and Dart remotes open none.</p>
 <p><b>What it costs.</b> A marked read through the router of the replica's
 region costs what one sent home does: 67.0 to 67.8 µs p50 against 66.2 to
 66.9, three runs, with each node behind a loopback proxy standing for its
-link, and 67.6 to 68.3 with a <code>Fenec-After</code> the replica holds
+link, and 67.6 to 68.3 with a <code>Fennec-After</code> the replica holds
 already (<code>make shard-bench ARGS=reads</code>, nodes and router in one
 process). A client's read of the write it was just answered took 368 to 379
 µs p50 on the replica — its wait for the write included — against 341 to 342

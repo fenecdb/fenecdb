@@ -1,13 +1,13 @@
-# fenecdb -- the server (`fenec-server`), over HTTP
+# fennecdb -- the server (`fennec-server`), over HTTP
 #
-#   docker build -t fenecdb .
-#   docker run -d --name fenecdb -p 127.0.0.1:8080:8080 -v fenecdata:/data \
-#     -e FENEC_HTTP_TOKEN=secret --memory 1g fenecdb
+#   docker build -t fennecdb .
+#   docker run -d --name fennecdb -p 127.0.0.1:8080:8080 -v fennecdata:/data \
+#     -e FENNEC_HTTP_TOKEN=secret --memory 1g fennecdb
 #   curl -H 'Authorization: Bearer secret' -d '{"query": "collections"}' \
 #     http://127.0.0.1:8080/query
 #
 # Two stages: build statically with musl, then put the result into an *empty*
-# image. fenec-server has no dependencies and runs its own health probe (`--ping`),
+# image. fennec-server has no dependencies and runs its own health probe (`--ping`),
 # so the runtime image holds nothing but the binary: no shell, no package
 # manager, no libc.
 
@@ -27,9 +27,9 @@ RUN rm -f rust-toolchain.toml
 
 # On Alpine the host target is already *-linux-musl: a plain `--release`
 # gives a static binary, and since we name no target, arm64/amd64 both come
-# out of the same Dockerfile. fenec-server is deliberately on the `release` profile
+# out of the same Dockerfile. fennec-server is deliberately on the `release` profile
 # (unwind): a panicking connection thread takes down only its own session.
-# FEATURES: fenec-server's features, e.g. `timing` for `make roundtrip-bench`.
+# FEATURES: fennec-server's features, e.g. `timing` for `make roundtrip-bench`.
 # tools/image-cargo.sh builds in a tree it keeps in the cache mount, by
 # content, and holds the binary to this build's sources before it copies it
 # out: with target/ alone in the cache, a tree whose files were older than
@@ -39,8 +39,8 @@ RUN rm -f rust-toolchain.toml
 # build of the same sources another tree's layer (the script says how).
 ARG FEATURES=""
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,id=fenec-image-cargo,target=/work,sharing=locked \
-    tools/image-cargo.sh /built --release -p fenec-server ${FEATURES:+--features $FEATURES}
+    --mount=type=cache,id=fennec-image-cargo,target=/work,sharing=locked \
+    tools/image-cargo.sh /built --release -p fennec-server ${FEATURES:+--features $FEATURES}
 
 # The empty image has no shell to run `mkdir`: the data directory is prepared
 # here and copied over together with its ownership.
@@ -49,7 +49,7 @@ RUN mkdir -p /data
 # --------------------------------------------------------------- runtime
 FROM scratch
 
-COPY --from=build /built/fenec-server /usr/local/bin/fenec-server
+COPY --from=build /built/fennec-server /usr/local/bin/fennec-server
 # A named volume inherits this directory's ownership, so the non-root process
 # can write to it. With a bind mount the ownership comes from the host:
 #   docker run -v $PWD/data:/data --user $(id -u):$(id -g) ...
@@ -68,11 +68,11 @@ EXPOSE 8080
 # start-period is long: the documents are read before the listener opens
 # (vectors the graph lacks are linked beside the queries after it).
 HEALTHCHECK --interval=10s --timeout=3s --start-period=120s --retries=3 \
-  CMD ["/usr/local/bin/fenec-server", "--ping"]
+  CMD ["/usr/local/bin/fennec-server", "--ping"]
 
-ENTRYPOINT ["/usr/local/bin/fenec-server"]
+ENTRYPOINT ["/usr/local/bin/fennec-server"]
 
-# 0.0.0.0 is outside loopback: fenec-server refuses to listen on that address
-# without a token. Supply FENEC_HTTP_TOKEN (or --jwt-secret and --policy),
+# 0.0.0.0 is outside loopback: fennec-server refuses to listen on that address
+# without a token. Supply FENNEC_HTTP_TOKEN (or --jwt-secret and --policy),
 # or add --insecure deliberately. Overriding CMD drops all of these defaults.
-CMD ["--http", "0.0.0.0:8080", "--file", "/data/data.fenec", "--sync", "250"]
+CMD ["--http", "0.0.0.0:8080", "--file", "/data/data.fennec", "--sync", "250"]

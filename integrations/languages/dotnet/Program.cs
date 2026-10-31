@@ -7,13 +7,13 @@ using System.Text.Json;
 
 var http = new HttpClient
 {
-    BaseAddress = new Uri(Environment.GetEnvironmentVariable("FENEC_URL") ?? "http://127.0.0.1:8080"),
+    BaseAddress = new Uri(Environment.GetEnvironmentVariable("FENNEC_URL") ?? "http://127.0.0.1:8080"),
 };
-var token = Environment.GetEnvironmentVariable("FENEC_TOKEN");
+var token = Environment.GetEnvironmentVariable("FENNEC_TOKEN");
 if (token is not null)
     http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-// One FenecQL statement; a refusal throws with the server's status and message.
+// One FennecQL statement; a refusal throws with the server's status and message.
 async Task<JsonElement> Query(string query, params object[] args)
 {
     // Serialised whole rather than PostAsJsonAsync's stream: the server wants
