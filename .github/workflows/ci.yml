@@ -647,12 +647,30 @@ jobs:
         run: |
           python3 tools/test_homebrew_formula.py
           python3 tools/homebrew-formula.py --check packaging/homebrew/Formula/fennecdb.rb
-          python3 tools/homebrew-formula.py --verify packaging/homebrew/Formula/fennecdb.rb
+
+      # The release before the rename (0.1.12) names its tarballs fenec-v*,
+      # so the two steps reading the latest release's tarballs wait for one
+      # published as fennec. Remove this step and the two `if`s once one is.
+      - name: Whether the latest release is named fennec
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view -R "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' | grep -q '^fennec-v'; then
+            echo "fennec=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::The latest release predates the fennec name: the formula's sums and its packages are checked once one is published."
+          fi
+
+      - name: The Homebrew formula's sums, the latest release's
+        if: steps.latest.outputs.fennec == '1'
+        run: python3 tools/homebrew-formula.py --verify packaging/homebrew/Formula/fennecdb.rb
 
       # The latest release's tarball, packed as it is and again named as a
       # pre-release (0.2.0-rc1 is 0.2.0~rc1 in a package), which the first
       # release of a series would otherwise be the first to meet.
       - name: The .deb and .rpm of the latest release's tarball
+        if: steps.latest.outputs.fennec == '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
