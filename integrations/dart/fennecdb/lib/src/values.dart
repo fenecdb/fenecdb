@@ -11,7 +11,8 @@ Object? normalize(Object? v) => switch (v) {
       DateTime() => iso(v),
       Map() => {for (final e in v.entries) e.key.toString(): normalize(e.value)},
       Iterable() => [for (final x in v) normalize(x)],
-      _ => throw FennecException(FennecCode.builder, 'this object cannot be used as a fennecdb value: ${v.runtimeType}'),
+      _ =>
+        throw FennecException(FennecCode.builder, 'this object cannot be used as a fennecdb value: ${v.runtimeType}'),
     };
 
 /// A vector: a [Float32List] or a [Float64List], or a list of finite
