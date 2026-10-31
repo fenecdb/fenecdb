@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { handle, Budget, dailyTokens, tokensOf } from './worker.js';
 import { EMBED_DIM, MAX_QUERY } from './search-vectors.js';
 
-const SITE = 'https://fenecdb.com';
+const SITE = 'https://fennecdb.com';
 
 /** A fresh set of bindings; `calls` counts what reached the model. */
 function bindings(over = {}) {

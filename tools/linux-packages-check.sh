@@ -109,7 +109,7 @@ f=/pkg/$FILE
 eq "deb Package" "$(dpkg-deb -f "$f" Package)" fennecdb
 eq "deb Version" "$(dpkg-deb -f "$f" Version)" "$PKGVERSION-1"
 eq "deb Architecture" "$(dpkg-deb -f "$f" Architecture)" "$ARCH"
-eq "deb Homepage" "$(dpkg-deb -f "$f" Homepage)" https://fenecdb.com
+eq "deb Homepage" "$(dpkg-deb -f "$f" Homepage)" https://fennecdb.com
 eq "deb Depends" "$(dpkg-deb -f "$f" Depends)" ""
 dpkg -i "$f"
 eq "installed version" "$(dpkg-query -W -f='${Version}' fennecdb)" "$PKGVERSION-1"
@@ -135,7 +135,7 @@ eq "rpm Version" "$(q '%{VERSION}')" "$PKGVERSION"
 eq "rpm Release" "$(q '%{RELEASE}')" 1
 eq "rpm Arch" "$(q '%{ARCH}')" "$RPMARCH"
 eq "rpm License" "$(q '%{LICENSE}')" Apache-2.0
-eq "rpm URL" "$(q '%{URL}')" https://fenecdb.com
+eq "rpm URL" "$(q '%{URL}')" https://fennecdb.com
 eq "rpm requirements besides rpmlib" "$(rpm -qp --requires "$f" | grep -v '^rpmlib(' || true)" ""
 if [ "$VERSION" != "$BASE" ]; then
     eq "rpm: the pre-release sorts before its release" \

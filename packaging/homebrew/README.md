@@ -17,7 +17,7 @@ brew upgrade fennecdb                          # a new release
 brew uninstall fennecdb
 ```
 
-A first query, step by step: [fenecdb.com/docs/quickstart](https://fenecdb.com/docs/quickstart).
+A first query, step by step: [fennecdb.com/docs/quickstart](https://fennecdb.com/docs/quickstart).
 
 ## How this repository is kept
 

@@ -13,7 +13,7 @@
 
 [Unit]
 Description=fennecdb tenant node (fennec-server --dir)
-Documentation=https://fenecdb.com/docs/sharding-reference#deploying file:/usr/local/share/doc/fennecdb/RUNBOOK.md
+Documentation=https://fennecdb.com/docs/sharding-reference#deploying file:/usr/local/share/doc/fennecdb/RUNBOOK.md
 After=network-online.target
 Wants=network-online.target
 # Five failed starts in two minutes -- a flag it refuses, a disk gone -- and

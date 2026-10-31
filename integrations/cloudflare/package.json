@@ -26,7 +26,7 @@
     "workers",
     "vector"
   ],
-  "homepage": "https://fenecdb.com/docs/serverless",
+  "homepage": "https://fennecdb.com/docs/serverless",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/fennec-db/fennecdb.git",

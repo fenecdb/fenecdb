@@ -1507,7 +1507,7 @@ def claims_against(truth, unit, wanted):
 # reference as one text file. Both are rendered from the pages on every build,
 # so they cannot drift from the docs the way a hand-kept copy would.
 
-SITE = "https://fenecdb.com"
+SITE = "https://fennecdb.com"
 
 LLMS_BRIEF = """\
 # fennecdb
@@ -1526,7 +1526,7 @@ Writing FennecQL -- the reference below spells it out in full:
   VALUES (1, 'x')`, `UPDATE t SET a = 1 WHERE ...`, `IN (1, 2)`,
   `BETWEEN`, `LIKE` and `ILIKE`, `ON CONFLICT DO NOTHING` and `DO UPDATE
   SET`, `DISTINCT`, `EXISTS`, single quotes and `||`
-  (https://fenecdb.com/docs/sql). A double-quoted word is text, never a
+  (https://fennecdb.com/docs/sql). A double-quoted word is text, never a
   column: a field is written bare, `where name = 'Ada'`. Every row has an
   `id` (an int the database makes; no `rowid`, no `_id`). A JOIN on a
   key is read as `lookup`, which FennecQL writes `get orders lookup users on
@@ -1902,7 +1902,7 @@ SIDE_RESTORE = (
 
 
 def install_script():
-    """dist/install.sh: the installer `curl -fsSL https://fenecdb.com/install.sh
+    """dist/install.sh: the installer `curl -fsSL https://fennecdb.com/install.sh
     | sh` fetches, as the repository has it. It is a file of its own and not
     a page, so nothing here rewrites it; what is held is the property that
     makes piping it to a shell safe -- everything outside a function is

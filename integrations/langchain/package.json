@@ -14,7 +14,7 @@
     "@fennecdb/web": { "optional": true }
   },
   "keywords": ["fennecdb", "langchain", "vector-store", "rag", "hnsw", "bm25"],
-  "homepage": "https://fenecdb.com/docs/integrations",
+  "homepage": "https://fennecdb.com/docs/integrations",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/fennec-db/fennecdb.git",

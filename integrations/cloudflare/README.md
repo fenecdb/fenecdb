@@ -217,7 +217,7 @@ restore copies each row or value into the module's memory as it reads it
 (`loadParts`): read whole and joined first, a 27.6 MB image (50 000 rows
 of 128) held 60 MB of JavaScript beside the module's 42 at the peak, and
 holds 4. See [Serverless and
-Cloudflare](https://fenecdb.com/docs/serverless).
+Cloudflare](https://fennecdb.com/docs/serverless).
 
 ## The example
 
@@ -330,4 +330,4 @@ paths through, a tenant's replication stream not among them.
 nodes (`entry/cluster.mjs`: a global router, us with a standby router, eu)
 and in front of stand-ins; `make entry-bench` measures it
 (`entry/bench.mjs`). See [One URL for every
-region](https://fenecdb.com/docs/sharding-entry#global-entry).
+region](https://fennecdb.com/docs/sharding-entry#global-entry).

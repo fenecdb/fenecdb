@@ -9,7 +9,7 @@
 
 [Unit]
 Description=fennecdb global router (fennec-shard)
-Documentation=https://fenecdb.com/docs/sharding-reference#deploying file:/usr/local/share/doc/fennecdb/RUNBOOK.md
+Documentation=https://fennecdb.com/docs/sharding-reference#deploying file:/usr/local/share/doc/fennecdb/RUNBOOK.md
 After=network-online.target
 Wants=network-online.target
 # One process on the directory file at a time: two corrupt it.
