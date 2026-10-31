@@ -1,9 +1,9 @@
-// Retrieval for the Vercel AI SDK over fenecdb: its `embed` and `embedMany`
-// make the vectors, fenecdb keeps them and finds the nearest. Nothing here
-// but the SDK and a database: a `Fenec` keeps the index in the page (or a
-// Worker), a `FenecHttp` the server's; both take the same builder.
+// Retrieval for the Vercel AI SDK over fennecdb: its `embed` and `embedMany`
+// make the vectors, fennecdb keeps them and finds the nearest. Nothing here
+// but the SDK and a database: a `Fennec` keeps the index in the page (or a
+// Worker), a `FennecHttp` the server's; both take the same builder.
 //
-//   const db = await Fenec.open('./fenec.wasm');
+//   const db = await Fennec.open('./fennec.wasm');
 //   const model = openai.textEmbeddingModel('text-embedding-3-small');
 //   await index(db, { collection: 'docs', model, documents });
 //   const { text } = await generateText({

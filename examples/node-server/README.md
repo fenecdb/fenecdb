@@ -1,13 +1,13 @@
 # Notes -- Node and TypeScript (server)
 
-A notes CLI over a `fenec-server`, from Node, through
-`@fenecdb/web/client`: the query builder and the HTTP client alone. No
+A notes CLI over a `fennec-server`, from Node, through
+`@fennecdb/web/client`: the query builder and the HTTP client alone. No
 WebAssembly is fetched or loaded; every query runs on the server.
 
 ## What it shows
 
-- the schema declared in code, Drizzle's way (`src/tables.ts`, `fenecTable`
-  from `@fenecdb/web/schema`), brought to the server by
+- the schema declared in code, Drizzle's way (`src/tables.ts`, `fennecTable`
+  from `@fennecdb/web/schema`), brought to the server by
   `connect(url, { schema, migrate: true })`, and four notes seeded into an
   empty collection;
 - every query typed by the table: a misspelt field is a compile error;
@@ -21,15 +21,15 @@ WebAssembly is fetched or loaded; every query runs on the server.
 
 ## Prerequisites
 
-Node 22 or newer, and `fenec-server`: a [release
-binary](https://github.com/fenecdb/fenecdb/releases), or
-`cargo build --release -p fenec-server` at the repository's root
-(`target/release/fenec-server`).
+Node 22 or newer, and `fennec-server`: a [release
+binary](https://github.com/fennec-db/fennecdb/releases), or
+`cargo build --release -p fennec-server` at the repository's root
+(`target/release/fennec-server`).
 
 ## Run
 
 ```sh
-fenec-server --file notes.fenec --http 127.0.0.1:8080 --http-token secret
+fennec-server --file notes.fennec --http 127.0.0.1:8080 --http-token secret
 ```
 
 ```sh
@@ -45,14 +45,14 @@ npm start -- watch                       # Ctrl-C to stop; add a note from anoth
 npm run smoke                            # type-checks, then the whole tour, checked: what CI runs
 ```
 
-`FENEC_URL` and `FENEC_TOKEN` point it at another server; `secret` is a
+`FENNEC_URL` and `FENNEC_TOKEN` point it at another server; `secret` is a
 development default, never one to deploy.
 
 ## The core
 
 ```ts
-import { connect } from '@fenecdb/web/client';   // no engine, no .wasm
-import { notes, embed } from './tables.js';     // fenecTable('notes', { ... })
+import { connect } from '@fennecdb/web/client';   // no engine, no .wasm
+import { notes, embed } from './tables.js';     // fennecTable('notes', { ... })
 
 const db = await connect(url, { token, schema: { notes }, migrate: true });
 await db.from(notes).insert({ title, body, tags: ['home'], done: false, at: new Date(), embed: embed(`${title} ${body}`) });
@@ -75,8 +75,8 @@ real app calls a model here -- an embeddings API, or transformers.js's
 
 ## Against this repository's build
 
-CI installs `@fenecdb/web` packed from `web/` in this checkout rather than
+CI installs `@fennecdb/web` packed from `web/` in this checkout rather than
 npm's: `examples/run-tests.sh node-server` copies the folder, points the
-dependency at the tarball (`npm pkg set dependencies.@fenecdb/web=file:...`),
-installs, and runs `npm run smoke` against a `fenec-server` it builds and
+dependency at the tarball (`npm pkg set dependencies.@fennecdb/web=file:...`),
+installs, and runs `npm run smoke` against a `fennec-server` it builds and
 starts.

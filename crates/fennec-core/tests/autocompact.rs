@@ -1,0 +1,672 @@
+//! A file that compacts on its own: the dead bytes are counted as the
+//! writes land, the policy says when, and the compact runs beside the
+//! database while writes go on (`compact_when_due`, `Compactor`). Every
+//! document has to come out as a twin that made the same writes and never
+//! compacted holds it, and each compact has to bring the file back to what
+//! it holds, but for what the writes it met wrote over.
+
+#![cfg(all(feature = "std-fs", unix, target_pointer_width = "64"))]
+
+use fennec_core::engine::{compact_when_due, CompactPolicy, Compactor, Garbage, Memory};
+use fennec_core::prelude::*;
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
+
+fn exec(db: &mut Database, sql: &str) {
+    db.execute(&fennec_ql::parse_one(sql).expect("parse"))
+        .unwrap_or_else(|e| panic!("{sql}: {e}"));
+}
+
+fn rows(db: &Database, sql: &str) -> Vec<(u64, Vec<Value>)> {
+    let r = db
+        .query(&fennec_ql::parse_one(sql).expect("parse"), &[])
+        .unwrap_or_else(|e| panic!("{sql}: {e}"));
+    r.rows()
+        .unwrap()
+        .rows
+        .iter()
+        .map(|r| (r.id, r.values.clone()))
+        .collect()
+}
+
+fn tmp(tag: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("fennecdb-autocompact-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(format!("{tag}.fennec"));
+    let _ = std::fs::remove_file(&path);
+    path
+}
+
+const SCHEMA: &str = "create collection c (tag text @hash, n int @sorted, \
+                      body text @text, v vector<4> @hnsw(l2, m=8))";
+
+const QUERIES: &[&str] = &[
+    "get c",
+    "get c where tag = \"t3\"",
+    "get c select id, n where n >= 20 and n < 60 order n desc",
+    "get c select id match body \"w7\"",
+    "get c select id, n near v [0.5, 0.5, 0.5, 0.5] exact limit 10000",
+    "get c count",
+];
+
+fn same(a: &Database, b: &Database) {
+    for q in QUERIES {
+        let (mut x, mut y) = (rows(a, q), rows(b, q));
+        // The vectors repeat, and ties come out in the graph's order, which
+        // a compact rebuilds: the same rows, in id order.
+        if q.contains("near") {
+            x.sort_by_key(|r| r.0);
+            y.sort_by_key(|r| r.0);
+        }
+        assert_eq!(x, y, "{q}");
+    }
+}
+
+/// xorshift64*: the writes are the same for the database and its twin.
+struct Rng(u64);
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 >> 12;
+        self.0 ^= self.0 << 25;
+        self.0 ^= self.0 >> 27;
+        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
+    fn below(&mut self, n: u64) -> u64 {
+        self.next() % n
+    }
+}
+
+/// The next write: mostly a document written again, some new ones, some
+/// deleted -- each body a few hundred bytes, so the dead pile up.
+fn write(rng: &mut Rng, ids: u64) -> String {
+    let id = 1 + rng.below(ids);
+    let n = rng.below(100);
+    let body = (0..30)
+        .map(|k| format!("w{}", (n + k) % 13))
+        .collect::<Vec<_>>()
+        .join(" ");
+    match rng.below(20) {
+        0 => format!("del c where id = {id}"),
+        1..=3 => format!(
+            "put c {{id: {}, tag: \"t{}\", n: {n}, body: \"{body}\", v: [{}.0, 1.0, 0.5, 0.25]}}",
+            id + ids,
+            n % 7,
+            n
+        ),
+        // A rewrite that leaves the vector, and one that changes it.
+        4..=13 => format!("set c {{n: {n}, body: \"{body} again\"}} where id = {id}"),
+        _ => format!(
+            "put c {{id: {id}, tag: \"t{}\", n: {n}, body: \"{body}\", v: [{}.0, 0.5, 1.0, 0.25]}}",
+            n % 7,
+            rng.below(1000)
+        ),
+    }
+}
+
+/// The collection and a document an id; the largest record it appended to
+/// the file, 0 for a database with none.
+fn seed(db: &mut Database, ids: u64) -> u64 {
+    exec(db, SCHEMA);
+    let mut largest = 0;
+    for id in 1..=ids {
+        let before = db.garbage().file;
+        exec(
+            db,
+            &format!(
+                "put c {{id: {id}, tag: \"t{}\", n: {}, body: \"w{} seed text of a document\", v: [{}.0, 1.0, 0.0, 0.5]}}",
+                id % 7,
+                id % 100,
+                id % 13,
+                id
+            ),
+        );
+        largest = largest.max(db.garbage().file - before);
+    }
+    largest
+}
+
+/// A policy that compacts a test's few megabytes.
+fn small() -> CompactPolicy {
+    CompactPolicy {
+        ratio: 0.5,
+        floor: 64 << 10,
+        memory: false,
+    }
+}
+
+/// What a writer beside a `Compactor` holds each compact to, at its first
+/// write after the compact ends, the new file in place and nothing written
+/// since: what is dead there is no more than the writes the compact met
+/// could have written over. A compact that kept what was dead when it began
+/// is caught once that outweighs what those writes could have left, and
+/// what one keeps piles up from one compact to the next.
+///
+/// The bound is counted, not timed. A compact copies each document written
+/// meanwhile, a round at a time, and a copy leaves dead at most the version
+/// before it -- the image's, or an earlier round's -- and a delete's few
+/// bytes, less than the record that wrote that version: so no more copies
+/// than the writes it met, each leaving no more than the largest record a
+/// write appended. The writes it met are those since the last one that saw
+/// no compact running (`maintaining()`): that one is in the image of the
+/// next compact, and copied by none.
+///
+/// The file's peak against what it holds measured the machine instead.
+/// Past the point the file is due it grows by every write that lands before
+/// the compact's file takes its place, as many as the writer makes while
+/// the compactor rebuilds the graphs and writes the image: 2.3 to 3.0x
+/// here, idle, beside sixteen busy loops and in containers held to two and
+/// three cores, where the two threads get the same share, and 4.46x on
+/// GitHub's runner against a bound of 4. With the compactor's thread alone
+/// reniced to 10, on two cores beside two busy loops, 5.5 to 7.7x every
+/// run, each compact still bringing the file back to 1.04-1.07x; 16.5x at
+/// 19.
+struct Compacts {
+    mapped: bool,
+    /// The compacts seen to end.
+    ended: u64,
+    /// The writes since the last compact ended, or since the last write
+    /// that saw none running.
+    met: u64,
+    /// The largest record a write appended, the seed's among them.
+    largest: u64,
+}
+
+impl Compacts {
+    fn new(mapped: bool, largest: u64) -> Compacts {
+        Compacts {
+            mapped,
+            ended: 0,
+            met: 0,
+            largest,
+        }
+    }
+
+    /// Runs `stmt` under the write lock, once any compact that ended since
+    /// the last write is held to what it left dead.
+    fn write(&mut self, db: &RwLock<Database>, stmt: &Statement) {
+        let mut g = db.write().unwrap();
+        self.look(&g);
+        let running = g.maintaining();
+        let before = g.garbage().file;
+        g.execute(stmt).unwrap();
+        self.largest = self.largest.max(g.garbage().file - before);
+        self.met = match running {
+            true => self.met + 1,
+            false => 0,
+        };
+    }
+
+    /// Holds a compact that ended since the last look to what it left
+    /// dead: called with nothing written since it ended.
+    fn look(&mut self, g: &Database) {
+        let now = g.compactions();
+        if now == self.ended {
+            return;
+        }
+        let left = g.garbage();
+        assert!(
+            left.dead() <= self.met * self.largest,
+            "mapped {}: compact {now} left {} bytes dead, more than the {} writes \
+             it met could have written over, {} bytes each at the most: {left:?}",
+            self.mapped,
+            left.dead(),
+            self.met,
+            self.largest,
+        );
+        self.ended = now;
+        self.met = 0;
+    }
+}
+
+#[test]
+fn the_dead_bytes_are_counted_as_writes_land_and_found_again_on_open() {
+    for mapped in [true, false] {
+        let path = tmp(&format!("counted-{mapped}"));
+        let mut db = fennec_core::fs::open_with(&path, mapped, Box::new(Ok)).unwrap();
+        seed(&mut db, 200);
+        let fresh = db.garbage();
+        let mut rng = Rng(7);
+        for _ in 0..2_000 {
+            let w = write(&mut rng, 200);
+            exec(&mut db, &w);
+        }
+        db.sync().unwrap();
+        let g = db.garbage();
+        assert!(g.dead() > fresh.dead() + 100_000, "{fresh:?} -> {g:?}");
+        assert_eq!(g.file, std::fs::metadata(&path).unwrap().len());
+        drop(db);
+
+        // The open counts the same from the records it walks.
+        let mut db = fennec_core::fs::open_with(&path, mapped, Box::new(Ok)).unwrap();
+        let again = db.garbage();
+        assert_eq!(
+            (again.file, again.live),
+            (g.file, g.live),
+            "mapped: {mapped}"
+        );
+
+        // A compact leaves nothing dead, and what it kept besides the
+        // documents is not counted as dead after it.
+        exec(&mut db, "compact");
+        let after = db.garbage();
+        assert_eq!(after.dead(), 0, "{after:?}");
+        assert!(after.live <= g.live);
+        assert_eq!(after.file, std::fs::metadata(&path).unwrap().len());
+        assert!(after.file < g.file / 3, "{g:?} -> {after:?}");
+    }
+}
+
+#[test]
+fn the_policy_asks_for_both_a_share_and_a_floor() {
+    let p = CompactPolicy::default();
+    let g = |file: u64, live: u64| Garbage {
+        file,
+        live,
+        kept: 0,
+    };
+    assert!(!p.due(g(100 << 20, 60 << 20)));
+    assert!(p.due(g(200 << 20, 90 << 20)));
+    // Half dead, but a few megabytes.
+    assert!(!p.due(g(10 << 20, 4 << 20)));
+    // What the last compact kept is not dead.
+    assert!(!p.due(Garbage {
+        file: 200 << 20,
+        live: 90 << 20,
+        kept: 30 << 20
+    }));
+    assert!(CompactPolicy::at(0.0).is_err());
+    assert!(CompactPolicy::at(1.0).is_err());
+    assert!(CompactPolicy::at(f64::NAN).is_err());
+    assert_eq!(CompactPolicy::at(0.25).unwrap().ratio, 0.25);
+}
+
+/// A file that nears what the page cache can hold of it is compacted with
+/// a third of what the compact writes dead, where half the file dead waits
+/// until it has outgrown the cache -- but not where the live records alone
+/// would not fit, nor past the floor, nor where the policy does not ask.
+#[test]
+fn the_policy_compacts_sooner_as_the_file_nears_the_room() {
+    let p = CompactPolicy::default();
+    assert!(p.memory);
+    let gb = 1u64 << 30;
+    let g = |file: u64, live: u64| Garbage {
+        file,
+        live,
+        kept: 0,
+    };
+    let room = |r: u64| Memory {
+        room: Some(r),
+        faulting: false,
+    };
+    let faulting = |r: u64| Memory {
+        room: Some(r),
+        faulting: true,
+    };
+    // A third of the file dead: not due by its dead bytes.
+    let x = g(3 * gb / 2, gb);
+    assert!(!p.due(x));
+    assert!(!p.due_in(x, Memory::default()));
+    // At three quarters of a 2 GB room, and not under it -- unless the
+    // process waits for the disk, whatever the room says.
+    assert!(p.due_in(x, room(2 * gb)));
+    assert!(!p.due_in(x, room(3 * gb)));
+    assert!(p.due_in(x, faulting(3 * gb)));
+    // A fifth of what the compact would write is dead: not yet.
+    assert!(!p.due_in(g(5 * gb / 4, gb), room(gb)));
+    assert!(!p.due_in(g(5 * gb / 4, gb), faulting(2 * gb)));
+    // What the last compact kept is written again, and counts.
+    let kept = Garbage {
+        file: 3 * gb / 2,
+        live: gb,
+        kept: gb / 4,
+    };
+    assert!(!p.due_in(kept, room(2 * gb)));
+    // The live records alone past the room: left to the dead bytes.
+    assert!(!p.due_in(g(4 * gb, 29 * gb / 10), room(2 * gb)));
+    assert!(!p.due_in(g(4 * gb, 29 * gb / 10), faulting(2 * gb)));
+    // The floor holds; a system that says nothing, and a policy that does
+    // not ask, are not asked.
+    assert!(!p.due_in(g(90 << 20, 60 << 20), faulting(100 << 20)));
+    let unknown = Memory {
+        room: None,
+        faulting: true,
+    };
+    assert!(!p.due_in(x, unknown));
+    assert!(!CompactPolicy { memory: false, ..p }.due_in(x, faulting(2 * gb)));
+}
+
+/// A compact whose new file would not fit in memory beside the old one
+/// writes it past the page cache and reads it in after the swap
+/// (`fennec_core::cache::room`, assumed here at 200 KB, past the 0.8 MB the
+/// two files hold and above the new one alone): the file it leaves is the
+/// one a compact through the cache leaves, byte for byte, writes made
+/// during it and all, and reads as its twin does before and after an open.
+#[test]
+fn a_compact_past_the_cache_leaves_the_file_one_through_it_does() {
+    const PLAIN: &str = "create collection c (tag text @hash, n int @sorted, body text @text)";
+    let mut files = Vec::new();
+    let mut twin = Database::new();
+    exec(&mut twin, PLAIN);
+    for (i, room) in [None, Some(200 << 10)].into_iter().enumerate() {
+        let path = tmp(&format!("past-{i}"));
+        let mut db = fennec_core::fs::open(&path).unwrap();
+        exec(&mut db, PLAIN);
+        let mut rng = Rng(19);
+        for k in 0..3_000u64 {
+            let id = 1 + rng.below(300);
+            let w = format!(
+                "put c {{id: {id}, tag: \"t{}\", n: {}, body: \"w{} {}\"}}",
+                k % 7,
+                k % 100,
+                k % 13,
+                "x".repeat(200)
+            );
+            exec(&mut db, &w);
+            if i == 0 {
+                exec(&mut twin, &w);
+            }
+        }
+        // Past the room together, and the new file under it alone.
+        let g = db.garbage();
+        assert!(g.file + g.live > 200 << 10 && g.live < 150 << 10, "{g:?}");
+        let db = RwLock::new(db);
+        let compact = fennec_ql::parse_one("compact").unwrap();
+        fennec_core::cache::assume(Some(room));
+        let mut round = 0;
+        Database::maintain_with(&db, &compact, &mut || {
+            round += 1;
+            let w = format!("set c {{n: {}}} where id < 50", 1_000 + round);
+            exec(&mut db.write().unwrap(), &w);
+            if i == 0 {
+                exec(&mut twin, &w);
+            }
+        })
+        .unwrap()
+        .unwrap();
+        fennec_core::cache::assume(None);
+        let mut db = db.into_inner().unwrap();
+        db.sync().unwrap();
+        assert_eq!(db.compactions(), 1);
+        let plain = |a: &Database| {
+            QUERIES
+                .iter()
+                .filter(|q| !q.contains("near"))
+                .map(|q| rows(a, q))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(plain(&db), plain(&twin));
+        drop(db);
+        assert_eq!(plain(&fennec_core::fs::open(&path).unwrap()), plain(&twin));
+        files.push(std::fs::read(&path).unwrap());
+    }
+    assert!(
+        files[0] == files[1],
+        "the two compacts wrote different files"
+    );
+}
+
+/// Writes go on from one thread while a `Compactor` compacts the file
+/// again and again beside them, mapped and read into memory: every
+/// document comes out as the twin holds it, before and after the file is
+/// opened again, and each compact leaves dead only what the writes it met
+/// wrote over ([`Compacts`]).
+#[test]
+fn a_file_compacted_on_its_own_under_writes_holds_what_its_twin_does() {
+    for mapped in [true, false] {
+        let path = tmp(&format!("load-{mapped}"));
+        let mut db = fennec_core::fs::open_with(&path, mapped, Box::new(Ok)).unwrap();
+        let mut twin = Database::new();
+        let mut compacts = Compacts::new(mapped, seed(&mut db, 300));
+        seed(&mut twin, 300);
+        let db = Arc::new(RwLock::new(db));
+        let compactor = Compactor::start_every(&db, small(), Duration::from_millis(2)).unwrap();
+        let mut rng = Rng(42);
+        // 12 000 writes, and on until three compacts have ended: in 12 000
+        // alone a compactor scheduled late ended one. Bounded, should they
+        // never end.
+        let mut writes = 0u64;
+        while writes < 12_000 || compacts.ended < 3 {
+            assert!(
+                writes < 500_000,
+                "mapped {mapped}: {writes} writes and {} compacts",
+                compacts.ended
+            );
+            let w = write(&mut rng, 300);
+            let stmt = fennec_ql::parse_one(&w).unwrap();
+            compacts.write(&db, &stmt);
+            twin.execute(&stmt).unwrap();
+            writes += 1;
+            if writes.is_multiple_of(100) {
+                // Now and then a pause, as a write load has: the compact
+                // lands between writes, not only beside them.
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+        drop(compactor);
+        // A compact the last writes met, which the drop waited out.
+        compacts.look(&db.read().unwrap());
+        while let Some(r) = compact_when_due(&db, &small()) {
+            r.unwrap();
+        }
+        let g = db.read().unwrap().garbage();
+        assert!(!small().due(g), "{g:?}");
+
+        same(&db.read().unwrap(), &twin);
+        let db = Arc::try_unwrap(db).ok().unwrap().into_inner().unwrap();
+        drop(db);
+        let back = fennec_core::fs::open_with(&path, mapped, Box::new(Ok)).unwrap();
+        same(&back, &twin);
+    }
+}
+
+#[test]
+fn nothing_is_due_while_a_maintenance_runs_or_after_a_storage_error() {
+    let path = tmp("due");
+    let mut db = fennec_core::fs::open(&path).unwrap();
+    seed(&mut db, 100);
+    let mut rng = Rng(3);
+    for _ in 0..3_000 {
+        let w = write(&mut rng, 100);
+        exec(&mut db, &w);
+    }
+    assert!(db.compact_due(&small()));
+    // A database with no file has nothing to compact beside.
+    let mut plain = Database::new();
+    seed(&mut plain, 100);
+    for _ in 0..3_000 {
+        let w = write(&mut rng, 100);
+        exec(&mut plain, &w);
+    }
+    assert!(!plain.compact_due(&small()));
+
+    exec(&mut db, "create collection d (x int)");
+    let db = RwLock::new(db);
+    let index = fennec_ql::parse_one("create index on d (x) @hash").unwrap();
+    Database::maintain_with(&db, &index, &mut || {
+        let g = db.read().unwrap();
+        assert!(g.maintaining());
+        assert!(!g.compact_due(&small()));
+    })
+    .unwrap()
+    .unwrap();
+    let mut g = db.write().unwrap();
+    assert!(g.compact_due(&small()));
+    g.fail(&Error::Io("the disk went away".into()));
+    assert!(!g.compact_due(&small()));
+}
+
+/// A replica handed an image while it compacts -- it fell behind its
+/// primary's buffer -- takes the image, and the compact, whose copies are
+/// of the database before it, fails rather than put them back over it.
+#[test]
+fn an_image_adopted_during_a_compact_is_not_written_over() {
+    let path = tmp("adopt");
+    let mut db = fennec_core::fs::open(&path).unwrap();
+    seed(&mut db, 100);
+    let mut rng = Rng(11);
+    for _ in 0..500 {
+        let w = write(&mut rng, 100);
+        exec(&mut db, &w);
+    }
+    let mut other = Database::new();
+    seed(&mut other, 40);
+    exec(&mut other, "set c {n: 99} where id < 10");
+    let image = other.snapshot();
+    let db = RwLock::new(db);
+    let compact = fennec_ql::parse_one("compact").unwrap();
+    for phase in 0..2 {
+        let mut calls = 0;
+        let r = Database::maintain_with(&db, &compact, &mut || {
+            if calls == phase {
+                let mut fresh = Database::new();
+                fresh.load(&image).unwrap();
+                db.write().unwrap().adopt(fresh, &image).unwrap();
+            }
+            calls += 1;
+        });
+        assert!(r.unwrap().is_err(), "adopted at the copy of phase {phase}");
+        same(&db.read().unwrap(), &other);
+    }
+    let db = db.into_inner().unwrap();
+    drop(db);
+    same(&fennec_core::fs::open(&path).unwrap(), &other);
+}
+
+/// A compact beside the writes copies the versions written during it after
+/// the image, which then holds the version each replaced, dead: counted as
+/// dead, not as what the compact kept, or the next compact is due that much
+/// later. Over the native library's thread, a compact during a burst of
+/// updates of 100 rows left 101 KB of them counted as kept, and the file
+/// stood at 307 KB, six times its 53 KB of rows, with nothing due.
+#[test]
+fn what_a_compact_beside_the_writes_leaves_dead_is_counted_dead() {
+    for mapped in [true, false] {
+        let path = tmp(&format!("beside-dead-{mapped}"));
+        let mut db = fennec_core::fs::open_with(&path, mapped, Box::new(Ok)).unwrap();
+        exec(&mut db, "create collection t (n int, body text)");
+        let body = "x".repeat(500);
+        for id in 1..=100 {
+            exec(
+                &mut db,
+                &format!("put t {{id: {id}, n: 0, body: \"{body}\"}}"),
+            );
+        }
+        for round in 1..=10 {
+            exec(&mut db, &format!("set t {{n: {round}}} where id > 0"));
+        }
+        let db = RwLock::new(db);
+        let compact = fennec_ql::parse_one("compact").unwrap();
+        let mut round = 10;
+        Database::maintain_with(&db, &compact, &mut || {
+            round += 1;
+            exec(
+                &mut db.write().unwrap(),
+                &format!("set t {{n: {round}}} where id > 0"),
+            );
+        })
+        .unwrap()
+        .unwrap();
+        let last = round;
+        assert!(last > 10, "no write landed during the compact");
+        let mut db = db.into_inner().unwrap();
+        db.sync().unwrap();
+        let g = db.garbage();
+        assert_eq!(db.compactions(), 1);
+        assert_eq!(g.file, std::fs::metadata(&path).unwrap().len());
+        // The schema and the counters: a few hundred bytes, not the 50 KB
+        // of rows written over during the compact.
+        assert!(g.kept < 4_096, "mapped {mapped}: {g:?}");
+        assert!(g.dead() > 50_000, "mapped {mapped}: {g:?}");
+        // The open counts them dead too, from the records it walks.
+        drop(db);
+        let again = fennec_core::fs::open_with(&path, mapped, Box::new(Ok)).unwrap();
+        assert_eq!(
+            (again.garbage().file, again.garbage().live),
+            (g.file, g.live)
+        );
+        assert_eq!(rows(&again, &format!("get t where n = {last}")).len(), 100);
+    }
+}
+
+/// A look at a compact that is due, made while a write holds the lock,
+/// waits for it rather than pass the compact over until the next look:
+/// under a steady writer the lock is taken at many a look, and a compact
+/// passed over waited 5 s more while the file grew.
+#[test]
+fn a_look_made_while_a_write_holds_the_lock_waits_for_it() {
+    let path = tmp("look-waits");
+    let mut db = fennec_core::fs::open(&path).unwrap();
+    seed(&mut db, 100);
+    let db = Arc::new(RwLock::new(db));
+    let g = {
+        let mut g = db.write().unwrap();
+        let mut rng = Rng(5);
+        for _ in 0..3_000 {
+            let w = write(&mut rng, 100);
+            exec(&mut g, &w);
+        }
+        assert!(g.compact_due(&small()));
+        g
+    };
+    let (tx, rx) = std::sync::mpsc::channel();
+    let looking = Arc::clone(&db);
+    let look = std::thread::spawn(move || {
+        let r = compact_when_due(&looking, &small()).map(|r| r.map(|_| ()));
+        tx.send(()).unwrap();
+        r
+    });
+    // The look cannot end while the lock is held: one that ended meanwhile
+    // passed the compact over. Held a while, then let go.
+    assert!(
+        rx.recv_timeout(Duration::from_millis(200)).is_err(),
+        "the look passed over a due compact while a write held the lock"
+    );
+    drop(g);
+    assert!(matches!(look.join().unwrap(), Some(Ok(()))));
+    assert_eq!(db.read().unwrap().compactions(), 1);
+    assert!(!small().due(db.read().unwrap().garbage()));
+}
+
+/// A writer that never pauses: each compact still runs and ends -- its
+/// catch-up copies the writes made meanwhile while the writer goes on, and
+/// takes the write lock only for the last few -- and the file comes back to
+/// what it holds each time rather than grow with every write: each compact
+/// leaves dead only what the writes it met wrote over ([`Compacts`]).
+#[test]
+fn compacts_keep_up_with_a_writer_that_never_pauses() {
+    for mapped in [true, false] {
+        let path = tmp(&format!("steady-{mapped}"));
+        let mut db = fennec_core::fs::open_with(&path, mapped, Box::new(Ok)).unwrap();
+        let mut twin = Database::new();
+        let mut compacts = Compacts::new(mapped, seed(&mut db, 300));
+        seed(&mut twin, 300);
+        let db = Arc::new(RwLock::new(db));
+        let compactor = Compactor::start_every(&db, small(), Duration::from_millis(2)).unwrap();
+        let mut rng = Rng(77);
+        let mut writes = 0u64;
+        // Until five compacts have ended, each statement parsed before the
+        // lock is taken, as a server's are; bounded, should they never end.
+        while compacts.ended < 5 {
+            assert!(
+                writes < 500_000,
+                "mapped {mapped}: {writes} writes and {} compacts",
+                compacts.ended
+            );
+            let w = write(&mut rng, 300);
+            let stmt = fennec_ql::parse_one(&w).unwrap();
+            compacts.write(&db, &stmt);
+            twin.execute(&stmt).unwrap();
+            writes += 1;
+        }
+        drop(compactor);
+        // A compact the last writes met, which the drop waited out.
+        compacts.look(&db.read().unwrap());
+        while let Some(r) = compact_when_due(&db, &small()) {
+            r.unwrap();
+        }
+        let g = db.read().unwrap().garbage();
+        assert!(!small().due(g), "mapped {mapped}: {g:?}");
+        same(&db.read().unwrap(), &twin);
+    }
+}

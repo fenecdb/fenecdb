@@ -8,13 +8,13 @@ import { randomToken, startServer, type FileServer } from "../src/bun/process.ts
 import { taskPlan, windowPlan } from "../src/bun/serving.ts";
 import { missing, nodeRun, nodeSpawn, SERVER } from "./node-spawn.ts";
 
-// Backups through the real binaries and the app's own code: `fenec backup`
+// Backups through the real binaries and the app's own code: `fennec backup`
 // from a server started as the app starts one, into an archive folder;
-// `fenec verify`; and `fenec restore` into a new file, which is never one that
+// `fennec verify`; and `fennec restore` into a new file, which is never one that
 // is there already -- a file a server serves least of all.
 
 const skip = missing() || false;
-const work = mkdtempSync(join(tmpdir(), "fenec-desktop-backups-"));
+const work = mkdtempSync(join(tmpdir(), "fennec-desktop-backups-"));
 const running: FileServer[] = [];
 after(async () => {
 	await Promise.all(running.map((s) => s.stop()));
@@ -22,7 +22,7 @@ after(async () => {
 });
 
 async function serve(name: string, rows: number): Promise<{ file: string; server: FileServer }> {
-	const file = join(work, `${name}.fenec`);
+	const file = join(work, `${name}.fennec`);
 	writeFileSync(file, "");
 	// Its backups set up: a window's server serves the stream only then.
 	const server = await startServer(nodeSpawn, SERVER, windowPlan(file, "250", true), randomToken());
@@ -68,11 +68,11 @@ test("a backup of a running server, verified, restored into a new file that hold
 	assert.ok(v.ok, v.text);
 	assert.match(v.text, /2 images/);
 
-	const latest = join(work, "restored.fenec");
+	const latest = join(work, "restored.fennec");
 	const back = await restoreArchive(nodeRun, archive, null, latest);
 	assert.ok(back.ok, JSON.stringify(back));
 	assert.equal(await count(latest), 4);
-	const earlier = join(work, "earlier.fenec");
+	const earlier = join(work, "earlier.fennec");
 	assert.ok((await restoreArchive(nodeRun, archive, taken.ok ? taken.change : 0, earlier)).ok);
 	assert.equal(await count(earlier), 3, "as it stood at the first image");
 	noScratch(work);
@@ -98,7 +98,7 @@ test("two restores to one name at once: one makes the file, the other is refused
 	const { server } = await serve("twice", 5);
 	const archive = { dir: join(work, "backups", "twice"), keyFile: null };
 	assert.ok((await takeBackup(nodeRun, { local: server.local, replicationToken: server.replicationToken! }, archive)).ok);
-	const dest = join(work, "twice-restored.fenec");
+	const dest = join(work, "twice-restored.fennec");
 	// The shell writes beside its output (`<out>.restoring`, `<out>.compacting`, its lock): two restores
 	// given one name's scratch broke each other; each now writes in a folder of its own.
 	const both = await Promise.all([restoreArchive(nodeRun, archive, null, dest), restoreArchive(nodeRun, archive, null, dest), restoreArchive(nodeRun, archive, null, dest)]);
@@ -113,7 +113,7 @@ test("a key is kept apart from the backups: not under the folder picked, not on 
 	const at = realpathSync(mkdtempSync(join(work, "keys-")));
 	const picked = join(at, "Backups");
 	const dir = join(picked, "orders");
-	const db = join(at, "data", "orders.fenec");
+	const db = join(at, "data", "orders.fennec");
 	mkdirSync(dir, { recursive: true });
 	mkdirSync(join(at, "data"));
 	mkdirSync(join(at, "elsewhere"));
@@ -165,7 +165,7 @@ test("sealed with a key file: the key is made once, the backup reads only with i
 	assert.ok(!image.subarray(0, 7).equals(Buffer.from("FENECDB")), "the image is not a database in the clear");
 	assert.equal((await verifyArchive(nodeRun, { ...archive, keyFile: null })).ok, false, "without the key it does not read");
 	assert.ok((await verifyArchive(nodeRun, archive)).ok);
-	const out = join(work, "unsealed.fenec");
+	const out = join(work, "unsealed.fennec");
 	assert.equal((await restoreArchive(nodeRun, { ...archive, keyFile: null }, null, out)).ok, false);
 	assert.ok(!existsSync(out), "a failed restore leaves nothing at the name");
 	assert.ok((await restoreArchive(nodeRun, archive, null, out)).ok);
@@ -181,10 +181,10 @@ test("a wrong replication token is a refusal in words", { skip }, async () => {
 });
 
 test("an archive folder's images, newest first; what is not one is passed over", () => {
-	const names = ["image-00000000000000000003-1792968462639.fenec", "segment-1.fenec", "image-00000000000000000007-1792968500000.fenec", ".DS_Store", "image-7-1.fenec"];
+	const names = ["image-00000000000000000003-1792968462639.fennec", "segment-1.fennec", "image-00000000000000000007-1792968500000.fennec", ".DS_Store", "image-7-1.fennec"];
 	assert.deepEqual(imagesIn(names), [
-		{ change: 7, at: 1792968500000, file: "image-00000000000000000007-1792968500000.fenec" },
-		{ change: 3, at: 1792968462639, file: "image-00000000000000000003-1792968462639.fenec" },
+		{ change: 7, at: 1792968500000, file: "image-00000000000000000007-1792968500000.fennec" },
+		{ change: 3, at: 1792968462639, file: "image-00000000000000000003-1792968462639.fennec" },
 	]);
 	assert.deepEqual(listImages(join(work, "no-such-folder")), []);
 });

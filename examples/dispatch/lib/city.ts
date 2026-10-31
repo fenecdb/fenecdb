@@ -245,7 +245,7 @@ export function toMetres([lon, lat]: Point): [number, number] {
 
 const round6 = (v: number) => Math.round(v * 1e6) / 1e6;
 
-/** The metres between two points on fenecdb's sphere, as `distance()` answers them. */
+/** The metres between two points on fennecdb's sphere, as `distance()` answers them. */
 export function metresBetween(a: Point, b: Point): number {
   const R = 6_372_797.560856;
   const rad = Math.PI / 180;

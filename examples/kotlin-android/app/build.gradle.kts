@@ -4,14 +4,14 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val fenecVersion: String by project
+val fennecVersion: String by project
 
 android {
-    namespace = "com.fenecdb.notes"
+    namespace = "com.fennecdb.notes"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.fenecdb.notes"
+        applicationId = "com.fennecdb.notes"
         minSdk = 21
         targetSdk = 34
         versionCode = 1
@@ -32,8 +32,8 @@ kotlin {
 
 dependencies {
     implementation(project(":notes"))
-    // The AAR: the library and libfenec_ffi.so for each ABI.
-    implementation("com.fenecdb:fenecdb-android:$fenecVersion")
+    // The AAR: the library and libfennec_ffi.so for each ABI.
+    implementation("com.fennecdb:fennecdb-android:$fennecVersion")
 
     implementation(platform("androidx.compose:compose-bom:2024.09.00"))
     implementation("androidx.compose.material3:material3")

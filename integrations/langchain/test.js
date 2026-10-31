@@ -1,9 +1,9 @@
-// The store against a database in the page (a Fenec over web/fenec.wasm)
-// and against fenec-server's HTTP endpoint (a FenecHttp): `npm test` here, after
+// The store against a database in the page (a Fennec over web/fennec.wasm)
+// and against fennec-server's HTTP endpoint (a FennecHttp): `npm test` here, after
 // `npm ci`. What LangChain.js's own integrations are held to -- documents
 // in and found again, their ids, scores, deletions, filters, a retriever --
-// and BM25 and hybrid search. Needs web/fenec.wasm (make wasm); the HTTP
-// half the fenec-server binary (cargo build -p fenec-server), and skips without it.
+// and BM25 and hybrid search. Needs web/fennec.wasm (make wasm); the HTTP
+// half the fennec-server binary (cargo build -p fennec-server), and skips without it.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,17 +13,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Document } from '@langchain/core/documents';
 import { SyntheticEmbeddings } from '@langchain/core/utils/testing';
-import { Fenec, FenecHttp } from '../../web/fenec.js';
-import { FenecVectorStore } from './index.js';
+import { Fennec, FennecHttp } from '../../web/fennec.js';
+import { FennecVectorStore } from './index.js';
 
 const root = new URL('../../', import.meta.url);
-const wasm = await readFile(new URL('web/fenec.wasm', root)).catch(() => null);
-const binary = new URL('target/debug/fenec-server', root).pathname;
+const wasm = await readFile(new URL('web/fennec.wasm', root)).catch(() => null);
+const binary = new URL('target/debug/fennec-server', root).pathname;
 const hasBinary = await access(binary).then(() => true, () => false);
 const embeddings = new SyntheticEmbeddings({ vectorSize: 16 });
 
 /**
- * Where a fenec-server started on port 0 listens, off its `listening on:
+ * Where a fennec-server started on port 0 listens, off its `listening on:
  * http://<address>` line, read to the space after it so a line that came
  * in two pieces is not read short. A port found free and handed over was
  * free only until someone else took it, and a server of someone else's
@@ -37,18 +37,18 @@ const listening = (child) =>
       const at = /listening on: (http:\/\/\S+)\s/.exec(log);
       if (at) res(at[1]);
     });
-    child.on('exit', () => rej(new Error(`fenec-server ended before it listened: ${log}`)));
+    child.on('exit', () => rej(new Error(`fennec-server ended before it listened: ${log}`)));
   });
 
-/** fenec-server over a file of its own, on a port the system picks; `stop()` ends it. */
+/** fennec-server over a file of its own, on a port the system picks; `stop()` ends it. */
 async function server() {
-  const dir = await mkdtemp(join(tmpdir(), 'fenecdb-langchain-'));
-  const child = spawn(binary, ['--http', '127.0.0.1:0', '--file', join(dir, 'db.fenec')], {
+  const dir = await mkdtemp(join(tmpdir(), 'fennecdb-langchain-'));
+  const child = spawn(binary, ['--http', '127.0.0.1:0', '--file', join(dir, 'db.fennec')], {
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   const url = await listening(child);
   return {
-    client: new FenecHttp(url),
+    client: new FennecHttp(url),
     async stop() {
       child.kill();
       await rm(dir, { recursive: true, force: true });
@@ -57,7 +57,7 @@ async function server() {
 }
 
 const docs = [
-  new Document({ pageContent: 'fenecdb compacts a file beside the database', metadata: { source: 'handbook', page: 1 } }),
+  new Document({ pageContent: 'fennecdb compacts a file beside the database', metadata: { source: 'handbook', page: 1 } }),
   new Document({ pageContent: 'a replica applies what the primary sends', metadata: { source: 'handbook', page: 2 } }),
   new Document({ pageContent: 'the browser keeps a database in IndexedDB', metadata: { source: 'blog', page: 3 } }),
   new Document({ pageContent: 'HNSW links each vector to its nearest', metadata: { source: 'paper', page: 4 } }),
@@ -65,15 +65,15 @@ const docs = [
 
 /** Each test, once over a database in the page and once over HTTP. */
 function both(name, fn) {
-  test(`${name} (in the page)`, { skip: wasm ? false : 'no web/fenec.wasm (make wasm)' }, async () => {
-    const db = await Fenec.open(wasm);
+  test(`${name} (in the page)`, { skip: wasm ? false : 'no web/fennec.wasm (make wasm)' }, async () => {
+    const db = await Fennec.open(wasm);
     try {
       await fn(db);
     } finally {
       db.close();
     }
   });
-  test(`${name} (over HTTP)`, { skip: wasm && hasBinary ? false : 'no fenec-server binary (cargo build -p fenec-server)' }, async () => {
+  test(`${name} (over HTTP)`, { skip: wasm && hasBinary ? false : 'no fennec-server binary (cargo build -p fennec-server)' }, async () => {
     const s = await server();
     try {
       await fn(s.client);
@@ -84,7 +84,7 @@ function both(name, fn) {
 }
 
 both('documents go in and are found again, their ids and scores kept', async (client) => {
-  const store = new FenecVectorStore(embeddings, { client, collection: 'docs' });
+  const store = new FennecVectorStore(embeddings, { client, collection: 'docs' });
   assert.deepEqual(await store.similaritySearch('anything', 2), [], 'a store nothing was written to is empty');
   const ids = await store.addDocuments(docs, { ids: ['a', 'b', 'c', 'd'] });
   assert.deepEqual(ids, ['a', 'b', 'c', 'd']);
@@ -112,7 +112,7 @@ both('documents go in and are found again, their ids and scores kept', async (cl
 });
 
 both('a filter over the metadata fields is answered by their index', async (client) => {
-  const store = await FenecVectorStore.fromDocuments(docs, embeddings, {
+  const store = await FennecVectorStore.fromDocuments(docs, embeddings, {
     client,
     collection: 'filtered',
     metadataFields: { source: 'text', page: 'int' },
@@ -127,7 +127,7 @@ both('a filter over the metadata fields is answered by their index', async (clie
 });
 
 both('fromTexts, and a retriever over the store', async (client) => {
-  const store = await FenecVectorStore.fromTexts(
+  const store = await FennecVectorStore.fromTexts(
     docs.map((d) => d.pageContent),
     docs.map((d) => d.metadata),
     embeddings,
@@ -139,21 +139,21 @@ both('fromTexts, and a retriever over the store', async (client) => {
 });
 
 both('with fullText, by the words and by both', async (client) => {
-  const store = await FenecVectorStore.fromDocuments(docs, embeddings, { client, collection: 'words', fullText: true });
+  const store = await FennecVectorStore.fromDocuments(docs, embeddings, { client, collection: 'words', fullText: true });
   const [[first]] = await store.search('replica primary', 1, { mode: 'text' });
   assert.equal(first.pageContent, docs[1].pageContent);
   const hybrid = await store.search('browser IndexedDB', 2, { mode: 'hybrid' });
   assert.equal(hybrid[0][0].pageContent, docs[2].pageContent);
-  const plain = new FenecVectorStore(embeddings, { client, collection: 'words' });
+  const plain = new FennecVectorStore(embeddings, { client, collection: 'words' });
   await assert.rejects(plain.search('x', 1, { mode: 'text' }), /fullText/);
 });
 
 test('names and options that are not a store refuse to make one', () => {
   const client = { run() {} };
-  assert.throws(() => new FenecVectorStore(embeddings, { collection: 'x' }), /client/);
-  assert.throws(() => new FenecVectorStore(embeddings, { client, collection: 'no-dash' }), /collection name/);
-  assert.throws(() => new FenecVectorStore(embeddings, { client, metric: 'hamming' }), /metric/);
-  assert.throws(() => new FenecVectorStore(embeddings, { client, quant: 'bit', metric: 'l2' }), /cosine/);
-  assert.throws(() => new FenecVectorStore(embeddings, { client, metadataFields: { content: 'text' } }), /metadata field/);
-  assert.throws(() => new FenecVectorStore(embeddings, { client, metadataFields: { page: 'vector' } }), /a field is one of/);
+  assert.throws(() => new FennecVectorStore(embeddings, { collection: 'x' }), /client/);
+  assert.throws(() => new FennecVectorStore(embeddings, { client, collection: 'no-dash' }), /collection name/);
+  assert.throws(() => new FennecVectorStore(embeddings, { client, metric: 'hamming' }), /metric/);
+  assert.throws(() => new FennecVectorStore(embeddings, { client, quant: 'bit', metric: 'l2' }), /cosine/);
+  assert.throws(() => new FennecVectorStore(embeddings, { client, metadataFields: { content: 'text' } }), /metadata field/);
+  assert.throws(() => new FennecVectorStore(embeddings, { client, metadataFields: { page: 'vector' } }), /a field is one of/);
 });

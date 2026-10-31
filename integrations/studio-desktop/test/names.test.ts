@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { collectionStatement, databaseFileName, fileNameRefusal } from "../src/bun/names.ts";
 
-test("a first collection is the one statement that makes it, written as FenecQL writes one", () => {
+test("a first collection is the one statement that makes it, written as FennecQL writes one", () => {
 	assert.deepEqual(collectionStatement("notes", "title text, done bool"), { ok: true, statement: "create collection notes (title text, done bool)" });
 	assert.deepEqual(collectionStatement(" tasks ", " title  TEXT @text ,due timestamp, tags [text], at geo, v vector<768>"), {
 		ok: true,
@@ -48,32 +48,32 @@ const refused = (typed: string) => {
 };
 
 test("a name gets the extension, once", () => {
-	assert.equal(ok("orders"), "orders.fenec");
-	assert.equal(ok("  orders  "), "orders.fenec");
-	assert.equal(ok("orders.fenec"), "orders.fenec");
-	assert.equal(ok("Orders.FENEC"), "Orders.FENEC");
-	assert.equal(ok("sales 2026"), "sales 2026.fenec");
-	assert.equal(ok("müşteri"), "müşteri.fenec");
+	assert.equal(ok("orders"), "orders.fennec");
+	assert.equal(ok("  orders  "), "orders.fennec");
+	assert.equal(ok("orders.fennec"), "orders.fennec");
+	assert.equal(ok("Orders.FENNEC"), "Orders.FENNEC");
+	assert.equal(ok("sales 2026"), "sales 2026.fennec");
+	assert.equal(ok("müşteri"), "müşteri.fennec");
 });
 
 test("nothing that names a folder, a hidden file or no file", () => {
-	for (const bad of ["", "   ", "a/b", "../x", "a\\b", "a:b", ".hidden", ".fenec", "..", "tab\tname", "nul\u0000", "del\u007f"]) refused(bad);
+	for (const bad of ["", "   ", "a/b", "../x", "a\\b", "a:b", ".hidden", ".fennec", "..", "tab\tname", "nul\u0000", "del\u007f"]) refused(bad);
 });
 
 test("a name drawn in another order than it is spelled is refused: a database's and a key's", () => {
-	// invoice<U+202E>slx.fenec is shown as "invoicenef.xls".
+	// invoice<U+202E>slx.fennec is shown as "invoicenef.xls".
 	for (const control of ["\u202e", "\u202d", "\u202a", "\u202b", "\u202c", "\u2066", "\u2067", "\u2068", "\u2069", "\u200e", "\u200f", "\u061c"]) {
 		assert.match(refused(`invoice${control}slx`), /direction/, `U+${control.codePointAt(0)!.toString(16)}`);
 		assert.match(fileNameRefusal(`backups${control}.key`) ?? "", /direction/);
 	}
 	// Right-to-left letters themselves are a name like any other.
-	assert.equal(ok("\u05e9\u05dc\u05d5\u05dd"), "\u05e9\u05dc\u05d5\u05dd.fenec");
-	assert.equal(ok("\u0645\u0631\u062d\u0628\u0627"), "\u0645\u0631\u062d\u0628\u0627.fenec");
+	assert.equal(ok("\u05e9\u05dc\u05d5\u05dd"), "\u05e9\u05dc\u05d5\u05dd.fennec");
+	assert.equal(ok("\u0645\u0631\u062d\u0628\u0627"), "\u0645\u0631\u062d\u0628\u0627.fennec");
 });
 
 test("a name too long for the file system is refused, one at the limit is not", () => {
-	assert.equal(ok("a".repeat(255 - ".fenec".length)), "a".repeat(255 - ".fenec".length) + ".fenec");
-	refused("a".repeat(256 - ".fenec".length));
+	assert.equal(ok("a".repeat(255 - ".fennec".length)), "a".repeat(255 - ".fennec".length) + ".fennec");
+	refused("a".repeat(256 - ".fennec".length));
 	// 255 bytes, not 255 characters: two-byte letters count twice.
 	refused("ş".repeat(130));
 });

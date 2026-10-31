@@ -9,7 +9,7 @@
 // the writes kept after it, and after a checkpoint wrote a new image with
 // the graph. Median of five restarts a size. The example's alarm is off
 // (`QUIET` 0), so the first column is the writes as they left the storage.
-// Needs web/fenec.wasm (make wasm) and `npm ci` here.
+// Needs web/fennec.wasm (make wasm) and `npm ci` here.
 
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -43,7 +43,7 @@ const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
 
 console.log(`rows x ${DIM}  load (rows/s)  first near: as written  after a checkpoint  near after it`);
 for (const n of SIZES) {
-  const state = await mkdtemp(join(tmpdir(), 'fenecdb-cold-'));
+  const state = await mkdtemp(join(tmpdir(), 'fennecdb-cold-'));
   try {
     let w = await serve(state);
     await w.query('t', `create collection docs (n int, title text, e vector<${DIM}> @hnsw(cosine))`);

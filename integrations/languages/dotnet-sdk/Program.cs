@@ -1,10 +1,10 @@
-// C# with the FenecDb SDK. Run by ../run-tests.sh.
+// C# with the FennecDb SDK. Run by ../run-tests.sh.
 using System.Text.Json.Serialization;
-using FenecDb;
+using FennecDb;
 
-using var db = new FenecClient(
-    Environment.GetEnvironmentVariable("FENEC_URL") ?? "http://127.0.0.1:8080",
-    new() { Token = Environment.GetEnvironmentVariable("FENEC_TOKEN") });
+using var db = new FennecClient(
+    Environment.GetEnvironmentVariable("FENNEC_URL") ?? "http://127.0.0.1:8080",
+    new() { Token = Environment.GetEnvironmentVariable("FENNEC_TOKEN") });
 
 await db.ExecAsync("create collection if not exists docs (title text @text, year int @sorted)");
 await db.ExecAsync("put docs {title: $1, year: $2}", ["Dunes", 2021]);
@@ -20,8 +20,8 @@ if (hits.Count != 1 || hits[0].Title != "Night at the oasis" || hits[0].Score <=
 // The same through the query builder, which writes that statement itself.
 var docs = db.From("docs");
 var query = docs.Select("title", "year").Where("year", ">=", 2020).Order("year", "desc").Limit(5);
-if (query.ToFenecQL().Text != "get docs select title, year where year >= $1 order year desc limit $2")
-    throw new Exception($"the builder wrote {query.ToFenecQL().Text}");
+if (query.ToFennecQL().Text != "get docs select title, year where year >= $1 order year desc limit $2")
+    throw new Exception($"the builder wrote {query.ToFennecQL().Text}");
 var built = await query.RowsAsync<Doc>();
 if (!built.SequenceEqual(rows))
     throw new Exception($"the builder's query answered {string.Join(", ", built)}");
@@ -36,7 +36,7 @@ try
     await db.QueryAsync("get nowhere");
     throw new Exception("a missing collection was answered");
 }
-catch (FenecException e) when (e.Status == 404) { }
+catch (FennecException e) when (e.Status == 404) { }
 
 Console.WriteLine(".NET (sdk): ok");
 

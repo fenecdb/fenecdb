@@ -1,0 +1,1507 @@
+import Foundation
+
+// The query builder: FennecQL text and its parameters from a chain of calls.
+//
+//     let rows = try await db.from("docs")
+//         .select("title")
+//         .where("year", ">=", 2024)
+//         .near("embed", vector, ef: 64)
+//         .limit(5)
+//         .rows()
+//
+// It makes the text web/fennec.js's builder makes of the same chain, to the
+// byte, as the Python, Go, .NET, Kotlin and Dart builders do:
+// integrations/builder-golden.json holds the chains and what each must make,
+// and every builder's tests run it. Every value goes in as a parameter; a
+// name -- a collection, a field, a path into a json field -- cannot, so
+// names are checked against FennecQL's own rule, and that check is the
+// injection boundary. A step the builder refuses throws as it is called
+// (`FennecError.Code.builder`), its message the JS builder's.
+
+/// A condition: what `or`, `and`, `not`, `raw` and `cmp` make, or the JS
+/// builder's object condition written as a dictionary literal --
+/// `["lang": "en", "year": ["gte": 2024]]` -- each field's value equality,
+/// `nil` (`.null`) `is null`, and an object its operators, in the order
+/// written, which is the text's.
+public struct Cond: Sendable, ExpressibleByDictionaryLiteral {
+    indirect enum Spec: Sendable {
+        case or([Cond]), and([Cond]), not(Cond)
+        case raw(String, [any FennecValue])
+        case cmp(String, String, any FennecValue)
+        case fields([(String, Value)])
+    }
+
+    let spec: Spec
+
+    init(_ spec: Spec) { self.spec = spec }
+
+    public init(dictionaryLiteral elements: (String, Value)...) { spec = .fields(elements) }
+
+    /// The fields' conditions, joined with `and`.
+    public static func fields(_ row: Row) -> Cond { Cond(.fields(Array(zip(row.keys, row.values)))) }
+
+    /// Joins conditions with `or`.
+    public static func or(_ conds: Cond...) -> Cond { Cond(.or(conds)) }
+
+    /// Joins conditions with `and`: `where` already ands, so this is only
+    /// needed inside `or`.
+    public static func and(_ conds: Cond...) -> Cond { Cond(.and(conds)) }
+
+    /// Negates a condition.
+    public static func not(_ cond: Cond) -> Cond { Cond(.not(cond)) }
+
+    /// What the builder cannot express (a function call): each `?` is bound
+    /// to the next parameter -- a literal `?` goes in as one too.
+    /// `.raw("cosine(embed, ?) > ?", vector, 0.5)`
+    public static func raw(_ sql: String, _ params: any FennecValue...) -> Cond { Cond(.raw(sql, params)) }
+
+    /// One comparison, `where`'s three arguments as a condition.
+    public static func cmp(_ field: String, _ op: String, _ value: any FennecValue) -> Cond {
+        Cond(.cmp(field, op, value))
+    }
+}
+
+// A value a write works out over the row it writes, as the JS builder's
+// `inc` and `expr`: an object under a key no field can be named (a NUL
+// opens it), so that it rides in a document's `Value` as any value does and
+// the builder renders it as FennecQL, its values as parameters.
+extension Value {
+    static let computedKey = "\u{0}fennec.computed"
+
+    /// `["n": .inc(1)]` in an update: the field plus `by`, counting from 0
+    /// where it is null -- `n: coalesce(n, 0) + $1` -- worked out under the
+    /// write lock, so increments from many clients all land.
+    public static func inc(_ by: Value = 1) -> Value {
+        .object(Row([(computedKey, "inc"), ("by", by)]))
+    }
+
+    /// A value as a FennecQL expression over the row, each `?` bound to the
+    /// next parameter: `["at": .expr("now()")]`, `.expr("price * ?", 1.2)`.
+    public static func expr(_ sql: String, _ params: Value...) -> Value { expr(sql, params) }
+
+    static func expr(_ sql: String, _ params: [Value]) -> Value {
+        .object(Row([(computedKey, "expr"), ("sql", .string(sql)), ("params", .array(params))]))
+    }
+}
+
+/// A select-list item or a group key: a name -- a field, a path into a json
+/// field, an aggregate spelled as FennecQL spells it, `"count(*)"`,
+/// `"count(distinct user)"`, `"sum(total)"`, `"first(px)"` -- or an
+/// expression, which `as` names as a column: `.expr(...)`, `.bucket(...)`,
+/// `.countDistinct(...)`, `.first(...)`, `.last(...)`. A string literal is a
+/// name.
+///
+///     try db.from("ticks")
+///         .select(.bucket("at", "1m").as("minute"), .first("px", by: "at").as("open"), "max(px)")
+///         .group("minute")
+public struct Column: Sendable, ExpressibleByStringLiteral {
+    enum Kind: Sendable {
+        case name(String)
+        case expr(sql: String, params: [Value], name: String?)
+    }
+
+    let kind: Kind
+
+    init(_ kind: Kind) { self.kind = kind }
+
+    /// A field, a path or an aggregate, by its name.
+    public init(_ name: String) { kind = .name(name) }
+
+    public init(stringLiteral value: String) { self.init(value) }
+
+    /// A FennecQL expression over the row -- or over the group's rows, when
+    /// it calls an aggregate -- each `?` bound to the next parameter:
+    /// `.expr("sum(px * qty) / sum(qty)").as("vwap")`.
+    public static func expr(_ sql: String, _ params: Value...) -> Column { expr(sql, params) }
+
+    static func expr(_ sql: String, _ params: [Value]) -> Column { Column(.expr(sql: sql, params: params, name: nil)) }
+
+    /// `bucket(field, interval)`: the start of the interval a timestamp
+    /// falls in -- `"15m"`, `"1h"`, `"1d"`, `"1w"` (from a Monday), `"1mo"`,
+    /// `"1y"`, in UTC. The interval is written into the text, since it is a
+    /// part of the statement's shape, so it is checked here. Given a zone --
+    /// an IANA name, `"Europe/Istanbul"`, or an offset, `"+03:00"` -- by its
+    /// clock: a day from local midnight, 23 or 25 hours where it changes to
+    /// or from daylight time. The zone goes as a parameter:
+    /// `.bucket("at", "1d", TimeZone.current.identifier)`.
+    public static func bucket(_ field: String, _ interval: String, _ zone: String? = nil) throws -> Column {
+        guard Builder.isInterval(interval) else {
+            throw FennecError.builder(
+                "bucket() takes an interval such as '15m', '1h', '1d', '1w' or '1mo': \(Builder.quote(interval))")
+        }
+        guard let zone else { return expr("bucket(\(try Builder.path(field)), \(interval))", []) }
+        if zone.isEmpty {
+            throw FennecError.builder(
+                "bucket() takes a zone's name, such as 'Europe/Istanbul', or an offset, such as '+03:00': \(Builder.quote(zone))")
+        }
+        return expr("bucket(\(try Builder.path(field)), \(interval), ?)", [.string(zone)])
+    }
+
+    /// `count(distinct field)`: how many distinct values the rows hold.
+    public static func countDistinct(_ field: String) throws -> Column {
+        expr("count(distinct \(try Builder.path(field)))", [])
+    }
+
+    /// `distance(field, point)`: the metres from a point, `[lon, lat]`, to
+    /// the row's -- `.distance("loc", [13.4, 52.5]).as("m")`, what Redis's
+    /// `GEOSEARCH ... WITHDIST` answers with.
+    public static func distance(_ field: String, _ point: Value) throws -> Column {
+        expr("distance(\(try Builder.path(field)), ?)", [point])
+    }
+
+    /// `first(field)`, or `first(field by key)`: the value of the row least
+    /// by `by` -- by the order the rows were written without one -- that has
+    /// a value; a bar's open is `.first("px", by: "at")`.
+    public static func first(_ field: String, by: String? = nil) throws -> Column { try pick("first", field, by) }
+
+    /// `last(field [by key])`: as `first`, the row greatest by `by`.
+    public static func last(_ field: String, by: String? = nil) throws -> Column { try pick("last", field, by) }
+
+    static func pick(_ fn: String, _ field: String, _ by: String?) throws -> Column {
+        let f = try Builder.path(field)
+        let b = try by.map { " by \(try Builder.path($0))" } ?? ""
+        return expr("\(fn)(\(f)\(b))", [])
+    }
+
+    /// The name the column answers under: `select ... as <name>`. A name
+    /// is no path, and only an expression takes one: a field answers under
+    /// its own.
+    public func `as`(_ name: String) throws -> Column {
+        guard case .expr(let sql, let params, _) = kind else {
+            throw FennecError.builder("as() names an expression; a field answers under its own name")
+        }
+        return Column(.expr(sql: sql, params: params, name: try Builder.ident(name, "column")))
+    }
+}
+
+/// One key of a lookup's order: a field, `asc` or `desc`, and a collation
+/// (`tr` or `und`). A string literal is an ascending key.
+public struct SortKey: Sendable, ExpressibleByStringLiteral {
+    public let field: String
+    public let direction: String
+    public let collate: String?
+
+    public init(_ field: String, _ direction: String = "asc", collate: String? = nil) {
+        self.field = field
+        self.direction = direction
+        self.collate = collate
+    }
+
+    public init(stringLiteral value: String) { self.init(value) }
+}
+
+indirect enum Node: Sendable {
+    case and([Node]), or([Node]), not(Node)
+    case null(String, negated: Bool)
+    case `in`(String, [Value])
+    case cmp(String, String, Value)
+    case within(String, Value)
+    case distance(String, Value, String, Value)
+    case raw(String, [Value])
+}
+
+enum Builder {
+    static let maxLookupDepth = 8
+
+    static let ops: [String: String] = [
+        "=": "=", "eq": "=",
+        "!=": "!=", "ne": "!=", "neq": "!=",
+        "<": "<", "lt": "<",
+        "<=": "<=", "lte": "<=", "le": "<=",
+        ">": ">", "gt": ">",
+        ">=": ">=", "gte": ">=", "ge": ">=",
+        "~": "~", "like": "~", "contains": "~",
+        "has": "has",
+        "in": "in",
+    ]
+
+    /// FennecQL's identifier: a Unicode letter or `_`, then letters, digits
+    /// and `_`, as the lexer reads it -- JavaScript's `\p{Alphabetic}` and
+    /// `\p{N}`, which Swift's scalar properties name the same.
+    static func isIdent<S: StringProtocol>(_ s: S) -> Bool {
+        var first = true
+        for u in s.unicodeScalars {
+            let p = u.properties
+            let start = u == "_" || p.isAlphabetic
+            let more: Bool
+            switch p.generalCategory {
+            case .decimalNumber, .letterNumber, .otherNumber: more = true
+            default: more = false
+            }
+            if !(start || (!first && more)) { return false }
+            first = false
+        }
+        return !first
+    }
+
+    static func ident(_ name: String, _ what: String = "field") throws -> String {
+        guard isIdent(name) else { throw FennecError.builder("invalid \(what) name: \(quote(name))") }
+        return name
+    }
+
+    /// A field's name, or a path into a json field: `meta.lang`.
+    static func path(_ name: String) throws -> String {
+        guard name.split(separator: ".", omittingEmptySubsequences: false).allSatisfy(isIdent) else {
+            throw FennecError.builder("invalid field name: \(quote(name))")
+        }
+        return name
+    }
+
+    /// A name as `JSON.stringify` writes it, which the messages quote with.
+    static func quote(_ s: String) -> String {
+        var out = ""
+        Value.quote(s, into: &out)
+        return out
+    }
+
+    /// What JavaScript's `String.prototype.trim` takes off.
+    static func jsSpace(_ u: Unicode.Scalar) -> Bool {
+        switch u.value {
+        case 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0xa0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff: return true
+        case 0x2000...0x200a: return true
+        default: return false
+        }
+    }
+
+    static func asciiIdent(_ s: Substring) -> Bool {
+        guard let f = s.unicodeScalars.first, f.isASCII, f.properties.isAlphabetic || f == "_" else { return false }
+        return s.unicodeScalars.allSatisfy { $0.isASCII && ($0.properties.isAlphabetic || ("0"..."9").contains($0) || $0 == "_") }
+    }
+
+    /// A dotted path of ASCII names, as the JS builder's aggregate pattern
+    /// takes one inside an aggregate.
+    static func asciiPath(_ s: Substring) -> Bool {
+        s.split(separator: ".", omittingEmptySubsequences: false).allSatisfy(asciiIdent)
+    }
+
+    static func trimJS(_ s: Substring) -> Substring {
+        var scalars = s.unicodeScalars[...]
+        while let f = scalars.first, jsSpace(f) { scalars.removeFirst() }
+        while let l = scalars.last, jsSpace(l) { scalars.removeLast() }
+        return Substring(scalars)
+    }
+
+    /// A select item's name: a field, or an aggregate of one spelled as
+    /// FennecQL spells it -- `count(*)`, `count(distinct user)`,
+    /// `sum(total)`, `avg(f)`, `min(f)`, `max(f)`, `first(f)`, `last(f)`, a
+    /// path where a field goes -- answering under that name. Read by hand
+    /// rather than by a case-blind pattern, which would fold the Kelvin sign
+    /// onto `k` where the JS builder's does not.
+    static func column(_ name: String) throws -> (text: String, aggregate: Bool) {
+        let s = trimJS(Substring(name))
+        if let open = s.firstIndex(of: "("), open > s.startIndex, s.hasSuffix(")") {
+            let fn = s[s.startIndex..<open]
+            let arg = s[s.index(after: open)..<s.index(before: s.endIndex)]
+            let low = fn.unicodeScalars.allSatisfy({ $0.isASCII && $0.properties.isAlphabetic }) ? fn.lowercased() : nil
+            if low == "count", arg.isEmpty || arg == "*" { return ("count(*)", true) }
+            if low == "count", let field = distinct(arg) { return ("count(distinct \(field))", true) }
+            if let low, ["sum", "avg", "min", "max", "first", "last"].contains(low), asciiPath(arg) {
+                return ("\(low)(\(arg))", true)
+            }
+        }
+        return (try path(name), false)
+    }
+
+    /// The field of `distinct <field>`, with JavaScript's `\s` around and
+    /// between, the word in any case of its ASCII letters.
+    static func distinct(_ arg: Substring) -> Substring? {
+        let a = trimJS(arg)
+        let word = a.unicodeScalars.prefix(8)
+        guard word.count == 8, Substring(word).lowercased() == "distinct",
+            word.allSatisfy(\.isASCII)
+        else { return nil }
+        let rest = Substring(a.unicodeScalars.dropFirst(8))
+        guard let f = rest.unicodeScalars.first, jsSpace(f) else { return nil }
+        let field = trimJS(rest)
+        return asciiPath(field) ? field : nil
+    }
+
+    /// What a select list holds: a name made its text, or an expression,
+    /// an aggregate's when it calls one.
+    static func column(_ c: Column) throws -> (column: Column, aggregate: Bool) {
+        switch c.kind {
+        case .name(let name):
+            let (text, aggregate) = try column(name)
+            return (Column(text), aggregate)
+        case .expr(let sql, _, _):
+            let calls = sql.range(of: #"\b(count|sum|avg|min|max|first|last)\s*\("#, options: [.regularExpression, .caseInsensitive])
+            return (c, calls != nil)
+        }
+    }
+
+    /// `15m`, `1h`, `1d`, `1w`, `3mo`, `1y`: what `bucket` takes.
+    static func isInterval(_ s: String) -> Bool {
+        s.range(of: #"^[1-9][0-9]*(ms|s|m|h|d|w|mo|y)$"#, options: .regularExpression) != nil
+    }
+
+    /// A select item or a group key as text, an expression's values bound.
+    static func columnText(_ c: Column, _ bind: Binder) throws -> String {
+        switch c.kind {
+        case .name(let text): return text
+        case .expr(let sql, let params, let name):
+            let text = try exprText(sql, params, bind)
+            return name.map { "\(text) as \($0)" } ?? text
+        }
+    }
+
+    /// An expression's text, each `?` bound to the next of its parameters.
+    static func exprText(_ sql: String, _ params: [Value], _ bind: Binder) throws -> String {
+        let pieces = sql.split(separator: "?", omittingEmptySubsequences: false)
+        var out = ""
+        for i in 0..<pieces.count - 1 {
+            guard i < params.count else { throw FennecError.builder("expr(): more `?` placeholders than parameters") }
+            out += pieces[i] + bind.bind(params[i])
+        }
+        guard pieces.count - 1 == params.count else { throw FennecError.builder("expr(): too many parameters given") }
+        return out + pieces[pieces.count - 1]
+    }
+
+    static func direction(_ dir: String) throws -> Bool {
+        switch dir.lowercased() {
+        case "asc": return true
+        case "desc": return false
+        default: throw FennecError.builder("order direction must be 'asc' or 'desc': \(dir)")
+        }
+    }
+
+    /// The collations the engine knows. The name is spliced into the text,
+    /// so it is checked against the list rather than the name pattern.
+    static func collation(_ name: String?) throws -> String? {
+        guard let name else { return nil }
+        guard name == "und" || name == "tr" else {
+            throw FennecError.builder("unknown collation: \(quote(name)); there are 'und' and 'tr'")
+        }
+        return name
+    }
+
+    /// A count, a whole number JavaScript holds exactly. `limit`, `offset`
+    /// and a facet's `top` go as parameters, so a page of any size or place
+    /// is one text; `ef`, `candidates`, `k` and a snippet's words are
+    /// written in, as FennecQL takes them.
+    static func whole(_ n: Int, _ what: String) throws -> Int {
+        guard n >= 0, n <= (1 << 53) - 1 else { throw FennecError.builder("\(what) must be a non-negative integer: \(n)") }
+        return n
+    }
+
+    /// A number as JavaScript's `String` writes it, the text every other
+    /// builder makes: 2500 (Swift writes `2500.0`), 50.5, -10, 1e-7.
+    static func jsNumber(_ d: Double) -> String {
+        if d == 0 { return "0" }
+        if d.rounded() == d, abs(d) < 1e21 { return String(format: "%.0f", d) }
+        let s = d.description
+        guard let e = s.firstIndex(of: "e") else { return s }
+        var exp = s[s.index(after: e)...]
+        let sign = exp.first == "-" ? "-" : "+"
+        if exp.first == "-" || exp.first == "+" { exp = exp.dropFirst() }
+        return s[..<e] + "e" + sign + String(exp.drop(while: { $0 == "0" }))
+    }
+
+    /// A mark's tags: both or neither, each text.
+    static func tags(_ pre: Value?, _ post: Value?, _ what: String) throws -> (pre: String, post: String)? {
+        guard pre != nil || post != nil else { return nil }
+        guard let pre, let post else { throw FennecError.builder("\(what) takes both pre and post, or neither") }
+        return (try text(pre, "\(what) pre"), try text(post, "\(what) post"))
+    }
+
+    static func text(_ v: Value, _ what: String) throws -> String {
+        guard let s = v.string else { throw FennecError.builder("\(what) must be text: \(v.json)") }
+        return s
+    }
+
+    static func node(_ c: Cond) throws -> Node {
+        switch c.spec {
+        case .or(let items): return .or(try items.map(node))
+        case .and(let items): return .and(try items.map(node))
+        case .not(let item): return .not(try node(item))
+        case .raw(let sql, let params): return .raw(sql, try params.map { try $0.fennecValue() })
+        case .cmp(let field, let op, let value): return try condOf(field, op, value.fennecValue())
+        case .fields(let fields):
+            let items = try fields.map { try fieldCond(try path($0.0), $0.1) }
+            return items.count == 1 ? items[0] : .and(items)
+        }
+    }
+
+    static func condOf(_ field: String, _ op: String, _ value: Value) throws -> Node {
+        guard let o = ops[op] else { throw FennecError.builder("unknown operator `\(op)`") }
+        let f = try path(field)
+        return o == "in" ? try inCond(f, value) : try cmp(f, o, value)
+    }
+
+    /// One field's condition: a value is equality, `.null` is null, an
+    /// object its operators.
+    static func fieldCond(_ field: String, _ spec: Value) throws -> Node {
+        guard case .object(let opsMap) = spec else {
+            return spec.isNull ? .null(field, negated: false) : try cmp(field, "=", spec)
+        }
+        var items: [Node] = []
+        for (k, v) in opsMap {
+            if k == "not" {
+                items.append(v.isNull ? .null(field, negated: true) : .not(try fieldCond(field, v)))
+                continue
+            }
+            // A point's: in the box `[west, south, east, north]`, and the
+            // metres from a point, compared.
+            if k == "within" {
+                items.append(.within(field, v))
+                continue
+            }
+            if k == "distance" {
+                items.append(try distanceCond(field, v))
+                continue
+            }
+            guard let op = ops[k] else { throw FennecError.builder("unknown operator `\(k)` (field: \(field))") }
+            items.append(op == "in" ? try inCond(field, v) : try cmp(field, op, v))
+        }
+        switch items.count {
+        case 0: throw FennecError.builder("empty condition object (field: \(field))")
+        case 1: return items[0]
+        default: return .and(items)
+        }
+    }
+
+    /// `["distance": ["from": [lon, lat], "lte": 500]]`: a point's distance,
+    /// compared -- `distance(loc, $1) <= $2`, each comparison given its own.
+    static func distanceCond(_ field: String, _ spec: Value) throws -> Node {
+        guard case .object(let opsMap) = spec, let from = opsMap["from"], case .array = from else {
+            throw FennecError.builder("distance takes { from: [lon, lat], <op>: metres } (field: \(field))")
+        }
+        var items: [Node] = []
+        for (k, v) in opsMap where k != "from" {
+            let number: Bool
+            switch v {
+            case .int, .double: number = true
+            default: number = false
+            }
+            guard let op = ops[k], !["in", "has", "~"].contains(op), number else {
+                throw FennecError.builder("distance compares metres with lt, lte, gt, gte, eq or ne: \(k) (field: \(field))")
+            }
+            items.append(.distance(field, from, op, v))
+        }
+        switch items.count {
+        case 0: throw FennecError.builder("distance needs a comparison, as lte: metres (field: \(field))")
+        case 1: return items[0]
+        default: return .and(items)
+        }
+    }
+
+    static func inCond(_ field: String, _ values: Value) throws -> Node {
+        guard case .array(let items) = values else {
+            throw FennecError.builder("`in` expects an array (field: \(field))")
+        }
+        guard !items.isEmpty else { throw FennecError.builder("`in` does not accept an empty array (field: \(field))") }
+        return .in(field, items)
+    }
+
+    /// `= null` is never true in FennecQL; what is meant is `is null`.
+    static func cmp(_ field: String, _ op: String, _ value: Value) throws -> Node {
+        guard value.isNull else { return .cmp(field, op, value) }
+        switch op {
+        case "=": return .null(field, negated: false)
+        case "!=": return .null(field, negated: true)
+        default: throw FennecError.builder("`\(op)` cannot be used with null (field: \(field))")
+        }
+    }
+
+    /// Flattens empty and single-child junctions before rendering: the
+    /// parentheses depend on the child count, and rendering binds parameters.
+    static func prune(_ c: Node) -> Node? {
+        switch c {
+        case .and(let items), .or(let items):
+            let kept = items.compactMap(prune)
+            if kept.isEmpty { return nil }
+            if kept.count == 1 { return kept[0] }
+            if case .and = c { return .and(kept) }
+            return .or(kept)
+        case .not(let item):
+            return prune(item).map { .not($0) }
+        default: return c
+        }
+    }
+
+    static func render(_ c: Node, _ bind: Binder, parent: String? = nil) throws -> String {
+        switch c {
+        case .and(let items), .or(let items):
+            let word: String
+            if case .and = c { word = "and" } else { word = "or" }
+            let s = try items.map { try render($0, bind, parent: word) }.joined(separator: " \(word) ")
+            // `and` binds tighter than `or`: one inside the other needs parens.
+            if let parent, parent != word { return "(\(s))" }
+            return s
+        case .not(let item): return "not (\(try render(item, bind)))"
+        case .null(let field, let negated): return "\(field) is \(negated ? "not " : "")null"
+        case .in(let field, let values): return "\(field) in [\(values.map(bind.bind).joined(separator: ", "))]"
+        case .cmp(let field, let op, let value): return "\(field) \(op) \(bind.bind(value))"
+        case .within(let field, let box): return "within(\(field), \(bind.bind(box)))"
+        case .distance(let field, let from, let op, let metres):
+            let point = bind.bind(from)
+            return "distance(\(field), \(point)) \(op) \(bind.bind(metres))"
+        case .raw(let sql, let params):
+            let pieces = sql.split(separator: "?", omittingEmptySubsequences: false)
+            var out = ""
+            for i in 0..<pieces.count - 1 {
+                guard i < params.count else { throw FennecError.builder("raw(): more `?` placeholders than parameters") }
+                out += pieces[i] + bind.bind(params[i])
+            }
+            guard pieces.count - 1 == params.count else { throw FennecError.builder("raw(): too many parameters given") }
+            return out + pieces[pieces.count - 1]
+        }
+    }
+
+    /// A document's fields, in order; `insert` refuses an `inc`, which reads
+    /// the row it changes.
+    static func renderDoc(_ doc: Value, _ bind: Binder, insert: Bool = false) throws -> String {
+        guard case .object(let row) = doc else { throw FennecError.builder("expected a document object") }
+        guard !row.isEmpty else { throw FennecError.builder("cannot write an empty document") }
+        return "{" + (try row.map {
+            let key = try path($0.key)
+            return "\(key): \(try value(key, $0.value, bind, insert))"
+        }).joined(separator: ", ") + "}"
+    }
+
+    /// A document's value: `inc`'s and `expr`'s text, or a parameter.
+    static func value(_ key: String, _ v: Value, _ bind: Binder, _ insert: Bool) throws -> String {
+        guard case .object(let r) = v, let kind = r[Value.computedKey]?.string else { return bind.bind(v) }
+        if kind == "inc" {
+            let by = r["by"] ?? .null
+            let finite: Bool
+            switch by {
+            case .int: finite = true
+            case .double(let d): finite = d.isFinite
+            default: finite = false
+            }
+            guard finite else { throw FennecError.builder("inc() takes a number: \(by.json)") }
+            if insert {
+                throw FennecError.builder("inc() reads the row it changes: use it in update (field: \(key))")
+            }
+            return "coalesce(\(key), 0) + \(bind.bind(by))"
+        }
+        return try exprText(r["sql"]?.string ?? "", r["params"]?.array ?? [], bind)
+    }
+
+    /// Whether a `raw` fragment may read a collection of its own.
+    static func readsMore(_ c: Node) -> Bool {
+        switch c {
+        case .and(let items), .or(let items): return items.contains(where: readsMore)
+        case .not(let item): return readsMore(item)
+        case .raw(let sql, _): return sql.range(of: #"\bget\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+        default: return false
+        }
+    }
+}
+
+final class Binder {
+    private(set) var params: [Value] = []
+
+    func bind(_ v: Value) -> String {
+        params.append(v)
+        return "$\(params.count)"
+    }
+}
+
+/// A query over one collection, made by `Fennec.from` or `Query.from`.
+/// Immutable: each call hands back a new one, so a base query can be kept
+/// and branched from, from several tasks too.
+public struct Query: Sendable {
+    struct VectorClause: Sendable {
+        let field: String
+        let vector: Value
+        let n: Int?
+        let exact: Bool
+    }
+
+    struct Level: Sendable {
+        let collection: String
+        let on: [String]
+        let parent: [String]
+        let project: [Column]?
+        let group: [Column]?
+        let cond: [Node]
+        let required: Bool
+        let order: [(field: String, asc: Bool, collate: String?)]
+        let limit: Int?
+        let offset: Int
+    }
+
+    /// `highlight(field)` when `words` is nil, `snippet(field, words)`
+    /// otherwise; the tags both or neither.
+    struct Mark: Sendable {
+        let field: String
+        let words: Int?
+        let ellipsis: String?
+        let tags: (pre: String, post: String)?
+
+        var kind: String { words == nil ? "highlight" : "snippet" }
+    }
+
+    typealias Exec = @Sendable (String, [Value]) async throws -> Answer
+
+    public let collection: String
+    var project: [Column]?
+    var aggregate = false
+    var group: [Column]?
+    var cond: [Node] = []
+    var near: VectorClause?
+    var match: (field: String, query: Value, fuzzy: Int?, prefix: Bool)?
+    var rerank: VectorClause?
+    var fuse: (k: Int?, candidates: Int?)?
+    var order: [(field: String, asc: Bool, collate: String?)] = []
+    var limit: Int?
+    var offset = 0
+    /// ` require n`, or none.
+    var requirement = ""
+    var count = false
+    var lookups: [Level] = []
+    var marks: [Mark] = []
+    var facets: [(field: String, top: Int?, ranges: [String]?, disjunctive: Bool)] = []
+    var exec: Exec?
+    /// What runs the query's reads where they go elsewhere than its writes
+    /// (`bind(_:read:)`); nil, `exec`.
+    var readExec: Exec?
+
+    init(collection: String) { self.collection = collection }
+
+    /// A query bound to no database: for its text alone, `toFennecQL()`.
+    public static func from(_ collection: String) throws -> Query {
+        Query(collection: try Builder.ident(collection, "collection"))
+    }
+
+    /// The query bound to whatever runs a text and its parameters.
+    public func bind(_ exec: @escaping @Sendable (String, [Value]) async throws -> Answer) -> Query {
+        var q = self
+        q.exec = exec
+        q.readExec = nil
+        return q
+    }
+
+    /// The query bound to what runs its writes, `exec`, and what runs its
+    /// reads -- `rows`, `answer`, `count`, `first`, `explain` -- `read`: a
+    /// connection reading near hands its reads to a read replica near it,
+    /// its writes home (`FennecRemote.Reads`).
+    public func bind(
+        _ exec: @escaping @Sendable (String, [Value]) async throws -> Answer,
+        read: @escaping @Sendable (String, [Value]) async throws -> Answer
+    ) -> Query {
+        var q = self
+        q.exec = exec
+        q.readExec = read
+        return q
+    }
+
+    private func with(_ change: (inout Query) throws -> Void) rethrows -> Query {
+        var q = self
+        try change(&q)
+        return q
+    }
+
+    /// Every collection the query reads -- its own and each lookup's -- or
+    /// `nil` when a `raw` fragment may read one more: a live query runs
+    /// again when one of them is written.
+    public var reads: [String]? {
+        if cond.contains(where: Builder.readsMore) || lookups.contains(where: { $0.cond.contains(where: Builder.readsMore) }) {
+            return nil
+        }
+        var out = [collection]
+        for l in lookups where !out.contains(l.collection) { out.append(l.collection) }
+        return out
+    }
+
+    /// `select a, b`; none, or `"*"`, is every field. Aggregates go in the
+    /// same list as FennecQL spells them and answer under that name:
+    /// `.select("status", "count(*)", "sum(total)").group("status")`.
+    public func select(_ columns: String...) throws -> Query { try select(columns) }
+
+    public func select(_ columns: [String]) throws -> Query { try select(columns.map { Column($0) }) }
+
+    /// A list holding expressions too, each answering under the name its
+    /// `as` gives it: `.select("sym", .expr("sum(px * qty) / sum(qty)").as("vwap")).group("sym")`.
+    /// One column at the least, so that `select()` is the names' overload.
+    public func select(_ column: Column, _ more: Column...) throws -> Query { try select([column] + more) }
+
+    public func select(_ columns: [Column]) throws -> Query {
+        if columns.isEmpty || columns.contains(where: { if case .name("*") = $0.kind { true } else { false } }) {
+            return with { $0.project = nil; $0.aggregate = false }
+        }
+        let cs = try columns.map(Builder.column)
+        return with { $0.project = cs.map(\.column); $0.aggregate = cs.contains { $0.aggregate } }
+    }
+
+    /// `group field`: a row per value, for a select list that aggregates.
+    public func group(_ field: String) throws -> Query { try group([Column(field)]) }
+
+    /// `group a, b`: a row per distinct set of the keys' values. A key is a
+    /// field or a path, a name the list gives a column with `as`, or an
+    /// expression: `.group("sym", .bucket("at", "1h"))`.
+    public func group(_ key: Column, _ more: Column...) throws -> Query { try group([key] + more) }
+
+    public func group(_ keys: [Column]) throws -> Query {
+        if keys.isEmpty { throw FennecError.builder("group takes at least one key") }
+        let ks = try keys.map { k -> Column in
+            if case .name(let name) = k.kind { return Column(try Builder.path(name)) }
+            return k
+        }
+        return with { $0.group = ks }
+    }
+
+    /// `highlight(field)` in the select list: where the terms `match` found
+    /// stand in the field's text -- `[start, end]` pairs of UTF-16 offsets,
+    /// which `NSRange` and `String.UTF16View` take -- or, given `pre` and
+    /// `post`, the text with each mark between them. The text is not
+    /// escaped. Answers under `highlight(field)`, after the fields `select`
+    /// named.
+    ///
+    ///     db.from("docs").select("title").highlight("body", pre: "<b>", post: "</b>").match("body", text)
+    public func highlight(_ field: String, pre: String? = nil, post: String? = nil) throws -> Query {
+        try mark(highlight: field, pre: pre.map(Value.string), post: post.map(Value.string))
+    }
+
+    /// `snippet(field, words)`: the window of `words` words around the
+    /// densest marks, `{"text": ..., "marks": [[start, end], ...]}` -- or the
+    /// marked text, given `pre` and `post` -- with `ellipsis` where it leaves
+    /// text out. Answers under `snippet(field)`.
+    public func snippet(
+        _ field: String, _ words: Int, ellipsis: String? = nil, pre: String? = nil, post: String? = nil
+    ) throws -> Query {
+        try mark(
+            snippet: field, words: words, ellipsis: ellipsis.map(Value.string), pre: pre.map(Value.string),
+            post: post.map(Value.string))
+    }
+
+    // The tags and the ellipsis as values, so the golden runner can hand
+    // over what JavaScript's callers can and be refused by the same message.
+    func mark(highlight field: String, pre: Value?, post: Value?) throws -> Query {
+        try add(Mark(field: try Builder.ident(field), words: nil, ellipsis: nil, tags: try Builder.tags(pre, post, "highlight")))
+    }
+
+    func mark(snippet field: String, words: Int, ellipsis: Value?, pre: Value?, post: Value?) throws -> Query {
+        let f = try Builder.ident(field)
+        let n = try Builder.whole(words, "snippet words")
+        let tags = try Builder.tags(pre, post, "snippet")
+        if n == 0 { throw FennecError.builder("snippet shows at least one word") }
+        let e = try ellipsis.map { try Builder.text($0, "snippet ellipsis") }
+        return try add(Mark(field: f, words: n, ellipsis: e, tags: tags))
+    }
+
+    private func add(_ mark: Mark) throws -> Query {
+        // Each answers under its label, and a row holds a name once.
+        if marks.contains(where: { $0.kind == mark.kind && $0.field == mark.field }) {
+            throw FennecError.builder("\(mark.kind)(\(mark.field)) is asked twice")
+        }
+        return with { $0.marks.append(mark) }
+    }
+
+    /// `facet field [top N]`: each value the field -- or a path into a json
+    /// field -- holds over every row the query matches, not only the page,
+    /// and how many rows hold it, most first; `top` keeps the commonest. A
+    /// list counts once a row for each value. The counts come back beside
+    /// the rows: `answer().facets`.
+    ///
+    ///     db.from("products").match("title", "phone").facet("brand", top: 10).facet("color").limit(20)
+    ///
+    /// `ranges: [0, 25, 50]` counts the rows in each range of numbers from
+    /// one bound up to the next, every range in order, its value `[from,
+    /// to]`; `disjunctive` counts as if the filter's own conditions on the
+    /// field were not there, so the other values a shopper could add are
+    /// counted too.
+    public func facet(_ field: String, top: Int? = nil, ranges: [Double]? = nil, disjunctive: Bool = false) throws -> Query {
+        try facet(field, top: top, rangeValues: ranges.map { .array($0.map { .double($0) }) }, disjunctiveValue: .bool(disjunctive))
+    }
+
+    /// `facet`, its options as the golden file holds them -- a bound that is
+    /// not a number, a disjunctive that is not a boolean -- so a refusal of
+    /// one is the JS builder's.
+    func facet(_ field: String, top: Int?, rangeValues: Value?, disjunctiveValue: Value?) throws -> Query {
+        let f = try Builder.path(field)
+        let t = try top.map { try Builder.whole($0, "facet top") }
+        if t == 0 { throw FennecError.builder("facet \(f) top 0 answers nothing") }
+        if facets.contains(where: { $0.field == f }) { throw FennecError.builder("facet \(f) is asked twice") }
+        var bounds: [String]?
+        if let rangeValues {
+            // The engine's rule, refused before anything is sent.
+            let list = rangeValues.array ?? []
+            let numbers = list.compactMap { v -> Double? in
+                switch v {
+                case .int(let n): return Double(n)
+                case .double(let d): return d
+                default: return nil
+                }
+            }
+            let rising = zip(numbers, numbers.dropFirst()).allSatisfy { $0 < $1 }
+            guard t == nil, rangeValues.array != nil, numbers.count == list.count, numbers.count >= 2,
+                numbers.allSatisfy({ $0.isFinite }), rising
+            else {
+                throw FennecError.builder(
+                    "facet \(f) ranges takes 2 to 10 001 numbers, each above the one before, and no top: every range answers, in order")
+            }
+            bounds = numbers.map(Builder.jsNumber)
+        }
+        var disjunctive = false
+        if let d = disjunctiveValue, !d.isNull {
+            guard let b = d.bool else { throw FennecError.builder("facet \(f) disjunctive is true or false") }
+            disjunctive = b
+        }
+        return with { $0.facets.append((f, t, bounds, disjunctive)) }
+    }
+
+    /// `field op value`, joined to the conditions before with `and`. The op
+    /// is a symbol or its word: `=`, `!=`, `<`, `<=`, `>`, `>=`, `~`, `has`,
+    /// `in` (a list), or `eq`, `ne`, `lt`, `gte`, `like`, `contains` ... A
+    /// `.null` with `=` or `!=` is `is null` and `is not null`.
+    public func `where`(_ field: String, _ op: String, _ value: any FennecValue) throws -> Query {
+        let n = try Builder.condOf(field, op, value.fennecValue())
+        return with { $0.cond.append(n) }
+    }
+
+    /// The field held to a spec: a value is equality, `.null` is null, an
+    /// object (a `Value` dictionary literal) its operators.
+    public func `where`(_ field: String, _ spec: any FennecValue) throws -> Query {
+        let n = try Builder.fieldCond(try Builder.path(field), spec.fennecValue())
+        return with { $0.cond.append(n) }
+    }
+
+    /// A condition `Cond` made, or a dictionary literal of fields.
+    public func `where`(_ cond: Cond) throws -> Query {
+        let n = try Builder.node(cond)
+        return with { $0.cond.append(n) }
+    }
+
+    /// Everything conditioned so far, or `field op value`.
+    public func orWhere(_ field: String, _ op: String, _ value: any FennecValue) throws -> Query {
+        or(try Builder.condOf(field, op, value.fennecValue()))
+    }
+
+    /// Everything conditioned so far, or the field held to a spec.
+    public func orWhere(_ field: String, _ spec: any FennecValue) throws -> Query {
+        or(try Builder.fieldCond(try Builder.path(field), spec.fennecValue()))
+    }
+
+    /// Everything conditioned so far, or the condition.
+    public func orWhere(_ cond: Cond) throws -> Query { or(try Builder.node(cond)) }
+
+    private func or(_ right: Node) -> Query {
+        with { q in q.cond = q.cond.isEmpty ? [right] : [.or([.and(q.cond), right])] }
+    }
+
+    /// `near field $n [ef N] [exact]`. A `[Float]` goes to the library as
+    /// its bytes.
+    public func near(_ field: String, _ vector: any FennecValue, ef: Int? = nil, exact: Bool = false) throws -> Query {
+        let clause = VectorClause(
+            field: try Builder.ident(field), vector: try vector.fennecValue(),
+            n: try ef.map { try Builder.whole($0, "ef") }, exact: exact)
+        return with { $0.near = clause }
+    }
+
+    /// `match field $n [fuzzy N] [prefix]`: BM25 over a `@text` index.
+    /// `fuzzy: 2` matches each word within the edits its length allows --
+    /// none under 5 characters, one up to 8, two from 9 -- `fuzzy: 1` one
+    /// at most; `prefix: true` matches the last word as the start of a word
+    /// too, as a search box is typed into.
+    public func match(_ field: String, _ query: String, fuzzy: Int? = nil, prefix: Bool = false) throws -> Query {
+        try match(field, query, fuzzyValue: fuzzy.map { .int(Int64($0)) }, prefixValue: .bool(prefix))
+    }
+
+    /// `match`, its options as the golden file holds them -- a fuzzy that
+    /// is not a number, a prefix that is not a boolean -- so a refusal of
+    /// one is the JS builder's.
+    func match(_ field: String, _ query: String, fuzzyValue: Value?, prefixValue: Value?) throws -> Query {
+        let f = try Builder.ident(field)
+        // As JavaScript writes a value into its message.
+        func shown(_ v: Value) -> String {
+            switch v {
+            case .string(let s): return s
+            case .int(let n): return String(n)
+            case .double(let d): return Builder.jsNumber(d)
+            case .bool(let b): return b ? "true" : "false"
+            default: return v.json
+            }
+        }
+        var edits: Int?
+        switch fuzzyValue {
+        case nil, .null?, .bool(false)?: edits = nil
+        case .bool(true)?: edits = 2
+        case .int(let n)? where (0...2).contains(n): edits = Int(n)
+        case let v?: throw FennecError.builder("fuzzy is true, false or 0 to 2 edits: \(shown(v))")
+        }
+        var prefix = false
+        switch prefixValue {
+        case nil, .null?: prefix = false
+        case .bool(let b)?: prefix = b
+        case let v?: throw FennecError.builder("prefix is true or false: \(shown(v))")
+        }
+        return with { $0.match = (f, .string(query), edits, prefix) }
+    }
+
+    /// `fuse [k N] [candidates N]`: with both `match` and `near`, ranks by
+    /// both, a document scoring `1 / (k + rank)` from each list it is on.
+    public func fuse(k: Int? = nil, candidates: Int? = nil) throws -> Query {
+        let f = (try k.map { try Builder.whole($0, "k") }, try candidates.map { try Builder.whole($0, "candidates") })
+        return with { $0.fuse = f }
+    }
+
+    /// `rerank field $n [candidates N]`: reorders what `match` found by exact
+    /// distance, the vectors read out of the store.
+    public func rerank(_ field: String, _ vector: any FennecValue, candidates: Int? = nil) throws -> Query {
+        let clause = VectorClause(
+            field: try Builder.ident(field), vector: try vector.fennecValue(),
+            n: try candidates.map { try Builder.whole($0, "candidates") }, exact: false)
+        return with { $0.rerank = clause }
+    }
+
+    /// `lookup name on child [= parent] ...`: each row's children, attached
+    /// to it. `on` names the child's field, `parentKey` the parent's (`id`
+    /// unless given); the rest binds to the looked-up collection, and
+    /// `limit` counts children per parent. `required` drops a parent no
+    /// child matches. Called again, it chains onto the collection the call
+    /// before named.
+    ///
+    /// `select` may aggregate, as the query's own list does -- `"count(*)"`,
+    /// `"sum(total)"`, `.expr(...).as(name)` -- each parent's children
+    /// folded, one row a parent, or with `group` one a group, ordered and
+    /// paged a parent at a time; ungrouped, `order`, `limit` and `offset`
+    /// pick the children folded. A query whose list aggregates hangs a
+    /// lookup off its groups, `parentKey` a column.
+    public func lookup(
+        _ name: String, on: String?, parentKey: String? = nil, select: [Column]? = nil, group: [Column]? = nil,
+        where cond: Cond? = nil, required: Bool = false, order: [SortKey] = [], limit: Int? = nil, offset: Int? = nil
+    ) throws -> Query {
+        try lookup(
+            name, on: on.map { [$0] } ?? [], parentKey: parentKey.map { [$0] }, select: select, group: group,
+            where: cond, required: required, order: order, limit: limit, offset: offset)
+    }
+
+    /// `lookup name on (child, ...) = (parent, ...) ...`: a key over several
+    /// fields, a field of each side for each part, in order --
+    /// `on: ["org", "order"], parentKey: ["org", "id"]`.
+    public func lookup(
+        _ name: String, on: [String], parentKey: [String]? = nil, select: [Column]? = nil, group: [Column]? = nil,
+        where cond: Cond? = nil, required: Bool = false, order: [SortKey] = [], limit: Int? = nil, offset: Int? = nil
+    ) throws -> Query {
+        guard let first = on.first, !first.isEmpty else {
+            throw FennecError.builder("lookup needs `on`: the child field holding the key")
+        }
+        let child = try on.map { try Builder.ident($0) }
+        let parent = try (parentKey ?? []).map { try Builder.ident($0) }
+        // One child field alone pairs with `id` unless named; several, each with its own.
+        if (child.count > 1 || parentKey != nil) && parent.count != child.count {
+            throw FennecError.builder("lookup pairs \(child.count) child fields with \(parent.count) parent fields")
+        }
+        var project: [Column]? = nil
+        var aggregate = false
+        let star = { (c: Column) -> Bool in if case .name("*") = c.kind { true } else { false } }
+        if let select, !select.contains(where: star) {
+            let cs = try select.map(Builder.column)
+            project = cs.map(\.column)
+            aggregate = cs.contains { $0.aggregate }
+        }
+        var keys: [Column]? = nil
+        if let group {
+            if group.isEmpty { throw FennecError.builder("group takes at least one key") }
+            let ks = try group.map { k -> Column in
+                if case .name(let name) = k.kind { return Column(try Builder.path(name)) }
+                return k
+            }
+            // The engine refuses it too; failing here never sends a query.
+            if !aggregate {
+                let text = ks.map { k -> String in
+                    switch k.kind {
+                    case .name(let name): return name
+                    case .expr(let sql, _, _): return sql
+                    }
+                }
+                throw FennecError.builder("group \(text.joined(separator: ", ")) needs an aggregate in select: 'count(*)'")
+            }
+            keys = ks
+        }
+        // A level selects its children's fields, or aggregates of them.
+        if !aggregate, let project, project.contains(where: { if case .expr = $0.kind { true } else { false } }) {
+            throw FennecError.builder("a lookup selects its children's fields, or aggregates of them")
+        }
+        let level = Level(
+            collection: try Builder.ident(name, "collection"),
+            on: child,
+            parent: parent,
+            project: project,
+            group: keys,
+            cond: try cond.map { [try Builder.node($0)] } ?? [],
+            required: required,
+            // Over groups a key may name an aggregate of the list.
+            order: try order.map { (try Builder.column($0.field).text, try Builder.direction($0.direction), try Builder.collation($0.collate)) },
+            limit: try limit.map { try Builder.whole($0, "limit") },
+            offset: try offset.map { try Builder.whole($0, "offset") } ?? 0)
+        return with { $0.lookups.append(level) }
+    }
+
+    /// `order field asc|desc`: each call adds a key. `collate: "tr"` puts
+    /// text in Turkish order, `"und"` in Unicode's root order.
+    public func order(_ field: String, _ direction: String = "asc", collate: String? = nil) throws -> Query {
+        // Over groups a key may be an aggregate of the list, by its name.
+        let key = (try Builder.column(field).text, try Builder.direction(direction), try Builder.collation(collate))
+        return with { $0.order.append(key) }
+    }
+
+    /// How many rows come back.
+    public func limit(_ n: Int) throws -> Query {
+        let n = try Builder.whole(n, "limit")
+        return with { $0.limit = n }
+    }
+
+    /// How many rows are passed over first.
+    public func offset(_ n: Int) throws -> Query {
+        let n = try Builder.whole(n, "offset")
+        return with { $0.offset = n }
+    }
+
+    /// `require n` on a read: the rows it answers, after `limit`, must
+    /// number n, or it is refused (412, unmet) and the batch it is in put
+    /// back, as a write's `require` is -- a checkout's guard on a read.
+    /// `reason` says why, `require n else '<reason>'`: the error's
+    /// `reason`, by which a caller tells "no such coupon" from another
+    /// refusal where `at` moves with every statement put in front --
+    /// `.require(1, reason: "no such coupon")`. Written into the text, as
+    /// the count is, never a parameter: 1 to 200 bytes of UTF-8.
+    public func require(_ n: Int, reason: String? = nil) throws -> Query {
+        let clause = try Query.requireClause(n, reason)
+        return with { $0.requirement = clause }
+    }
+
+    // ------------------------------------------------------------- the text
+
+    /// The statement and its parameters, as they would be run.
+    public func toFennecQL() throws -> (text: String, params: [Value]) {
+        let bind = Binder()
+        return (try text(bind), bind.params)
+    }
+
+    private func text(_ bind: Binder) throws -> String {
+        // The engine refuses each of these too; failing here runs nothing.
+        if let group, !aggregate {
+            let keys = group.map { k -> String in
+                switch k.kind {
+                case .name(let name): return name
+                case .expr(let sql, _, _): return sql
+                }
+            }
+            throw FennecError.builder("group \(keys.joined(separator: ", ")) needs an aggregate in select: 'count(*)'")
+        }
+        if aggregate {
+            // Ungrouped, `order`, `limit` and `offset` pick the rows folded; a
+            // lookup hangs off the groups, keyed by a column.
+            let clash = near != nil ? "near" : match != nil ? "match" : count && group == nil ? "count" : nil
+            if let clash { throw FennecError.builder("aggregates cannot be combined with \(clash)") }
+            if group == nil, !requirement.isEmpty {
+                throw FennecError.builder("require counts the rows a query answers, and an aggregate answers one")
+            }
+        }
+        if let first = marks.first {
+            if match == nil { throw FennecError.builder("\(first.kind) needs match: it marks the terms match found") }
+            if aggregate { throw FennecError.builder("\(first.kind) marks a row's text; aggregates answer groups") }
+        }
+        if !facets.isEmpty {
+            if near != nil {
+                throw FennecError.builder(
+                    "facet counts the rows a filter or match selects, and near ranks every row: ask the facets without near")
+            }
+            if aggregate { throw FennecError.builder("facet cannot be combined with aggregates: group counts by value") }
+        }
+        if rerank != nil, match == nil { throw FennecError.builder("rerank needs match: it reorders what match found") }
+        if match != nil, near != nil, fuse == nil {
+            throw FennecError.builder("match and near cannot be combined: both order the result; fuse() ranks by both")
+        }
+        if fuse != nil, match == nil || near == nil {
+            throw FennecError.builder("fuse combines match and near: the query needs both")
+        }
+        if fuse != nil, rerank != nil {
+            throw FennecError.builder("fuse and rerank are two ways to use a vector with match: pick one")
+        }
+        if !lookups.isEmpty {
+            let clash = near != nil ? "near" : match != nil ? "match" : rerank != nil ? "rerank" : nil
+            if let clash { throw FennecError.builder("lookup cannot be combined with \(clash)") }
+            if count, !lookups[0].required {
+                throw FennecError.builder(
+                    "count cannot be used with lookup unless it is required: there is nothing to attach children to")
+            }
+            if lookups.count > Builder.maxLookupDepth {
+                throw FennecError.builder("lookup chained too deep: at most \(Builder.maxLookupDepth) levels")
+            }
+            var seen = [collection]
+            for l in lookups {
+                if seen.contains(l.collection) {
+                    throw FennecError.builder("\(l.collection) cannot look itself up: both sides would answer to the same name")
+                }
+                seen.append(l.collection)
+            }
+        }
+        if count, let extra = extraClause() ?? (requirement.isEmpty ? nil : "require") {
+            throw FennecError.builder("count cannot be used with `\(extra)`")
+        }
+
+        var sql = "get \(collection)"
+        // The marks after the fields `select` named, or after every field;
+        // their tags bound first, being first in the text.
+        let items = marks.map { m in
+            var s = "\(m.kind)(\(m.field)"
+            if let n = m.words { s += ", \(n)" }
+            if m.ellipsis != nil || (m.words != nil && m.tags != nil) { s += ", \(bind.bind(.string(m.ellipsis ?? "")))" }
+            if let t = m.tags { s += ", \(bind.bind(.string(t.pre))), \(bind.bind(.string(t.post)))" }
+            return s + ")"
+        }
+        // The list's values are bound after the marks', as the JS builder
+        // binds them: a parameter is named by its number, so either order
+        // reads alike.
+        let columns = try project?.map { try Builder.columnText($0, bind) }
+        if columns != nil || !items.isEmpty { sql += " select " + ((columns ?? ["*"]) + items).joined(separator: ", ") }
+        if let w = try whereOf(cond, bind) { sql += " where \(w)" }
+        if let group { sql += " group " + (try group.map { try Builder.columnText($0, bind) }).joined(separator: ", ") }
+        if let near {
+            sql += " near \(near.field) \(bind.bind(near.vector))"
+            if let ef = near.n { sql += " ef \(ef)" }
+            if near.exact { sql += " exact" }
+        }
+        if let match {
+            sql += " match \(match.field) \(bind.bind(match.query))"
+            if let edits = match.fuzzy { sql += " fuzzy \(edits)" }
+            if match.prefix { sql += " prefix" }
+        }
+        if let rerank {
+            sql += " rerank \(rerank.field) \(bind.bind(rerank.vector))"
+            if let c = rerank.n { sql += " candidates \(c)" }
+        }
+        if let fuse {
+            sql += " fuse"
+            if let k = fuse.k { sql += " k \(k)" }
+            if let c = fuse.candidates { sql += " candidates \(c)" }
+        }
+        sql += Query.orderText(order)
+        if let limit { sql += " limit " + bind.bind(.int(Int64(limit))) }
+        if offset > 0 { sql += " offset " + bind.bind(.int(Int64(offset))) }
+        // Before a lookup, whose clauses are the children's.
+        sql += requirement
+        if count { sql += " count" }
+        if !facets.isEmpty {
+            let each = facets.map { f -> String in
+                var one = f.field
+                if let top = f.top { one += " top " + bind.bind(.int(Int64(top))) }
+                if let ranges = f.ranges { one += " ranges [" + ranges.joined(separator: ", ") + "]" }
+                if f.disjunctive { one += " disjunctive" }
+                return one
+            }
+            sql += " facet " + each.joined(separator: ", ")
+        }
+        // Terminal, so every clause after it is the child's -- and last, so
+        // its parameters come after the parent's.
+        for l in lookups {
+            let side = { (names: [String]) in names.count > 1 ? "(\(names.joined(separator: ", ")))" : names[0] }
+            sql += " lookup \(l.collection) on \(side(l.on))"
+            if !l.parent.isEmpty { sql += " = \(side(l.parent))" }
+            if l.required { sql += " required" }
+            if let project = l.project {
+                sql += " select " + (try project.map { try Builder.columnText($0, bind) }).joined(separator: ", ")
+            }
+            if let w = try whereOf(l.cond, bind) { sql += " where \(w)" }
+            if let keys = l.group {
+                sql += " group " + (try keys.map { try Builder.columnText($0, bind) }).joined(separator: ", ")
+            }
+            sql += Query.orderText(l.order)
+            if let n = l.limit { sql += " limit " + bind.bind(.int(Int64(n))) }
+            if l.offset > 0 { sql += " offset " + bind.bind(.int(Int64(l.offset))) }
+        }
+        return sql
+    }
+
+    private static func orderText(_ keys: [(field: String, asc: Bool, collate: String?)]) -> String {
+        var out = ""
+        for (i, k) in keys.enumerated() {
+            out += (i == 0 ? " order " : ", ") + k.field
+            if let c = k.collate { out += " collate \(c)" }
+            out += k.asc ? " asc" : " desc"
+        }
+        return out
+    }
+
+    private func whereOf(_ cond: [Node], _ bind: Binder) throws -> String? {
+        guard let root = Builder.prune(.and(cond)) else { return nil }
+        return try Builder.render(root, bind)
+    }
+
+    private func extraClause(picks: Bool = false) -> String? {
+        near != nil ? "near"
+            : match != nil ? "match"
+            : rerank != nil ? "rerank"
+            : !order.isEmpty && !picks ? "order"
+            : limit != nil && !picks ? "limit"
+            : offset > 0 ? "offset"
+            : project != nil ? "select"
+            : nil
+    }
+
+    // Near, offset, select mean something only to a read; dropped from a
+    // write, `offset(1).delete()` would delete from the first row. `order`
+    // and `limit` pick the rows an update or a delete writes.
+    private func assertPlain(_ verb: String) throws {
+        if !requirement.isEmpty {
+            throw FennecError.builder("\(verb) takes require as its option: \(verb)(..., { require: n })")
+        }
+        if let extra = extraClause(picks: verb == "update" || verb == "delete") {
+            throw FennecError.builder("\(verb) cannot be used with `\(extra)`")
+        }
+        if !lookups.isEmpty { throw FennecError.builder("\(verb) cannot be used with `lookup`") }
+        if !facets.isEmpty { throw FennecError.builder("\(verb) cannot be used with `facet`") }
+        if verb == "insert" || verb == "upsert", !cond.isEmpty { throw FennecError.builder("\(verb) cannot be used with `where`") }
+    }
+
+    // An update or delete of every row is too easy to do by accident and
+    // cannot be undone: it has to be asked for, with `all`.
+    // A `limit` bounds it.
+    private func requireFilter(_ verb: String, _ all: Bool, _ bind: Binder) throws -> String {
+        if let w = try whereOf(cond, bind) { return " where \(w)" }
+        if all || limit != nil { return "" }
+        throw FennecError.builder(
+            "an unfiltered \(verb) covers the whole collection; if you mean it, \(verb)({ all: true })")
+    }
+
+    // `require n`: the write is refused, and put back whole, unless it
+    // wrote exactly n rows -- a check and its write in one statement. A
+    // number written in, never a parameter: the count is what the statement
+    // guards, a constant of the code, where a page's `limit` and `offset`
+    // change with each request and go as parameters.
+    private static func requireClause(_ n: Int?, _ reason: String? = nil) throws -> String {
+        guard let n else {
+            if reason != nil { throw FennecError.builder("a reason says why a require refused, and goes with one") }
+            return ""
+        }
+        if n < 0 { throw FennecError.builder("require takes a count of rows, a whole number from 0 (got \(n))") }
+        return " require \(n)" + (try reasonClause(reason))
+    }
+
+    // ` else '<reason>'` for a require's reason: written into the text, a
+    // quote doubled and a backslash escaped, as FennecQL takes it -- never a
+    // parameter, as the count is not: it is the statement's own words,
+    // which a caller tells one refusal from another by. 1 to 200 bytes of
+    // UTF-8, as the parser holds it: bytes, not characters, so "ş" counts
+    // two. Escaped scalar by scalar, not by Character: a quote followed by
+    // a combining mark is one Character to Swift, which a search for "'"
+    // passes over, and the lexer would end the text at it. No backtick,
+    // scalar by scalar too: the refusal quotes its statement with them, and
+    // the reason is read back as its words up to the first "(`".
+    private static func reasonClause(_ reason: String?) throws -> String {
+        guard let reason else { return "" }
+        if reason.isEmpty || reason.utf8.count > 200 {
+            throw FennecError.builder("a require's reason is a text of 1 to 200 bytes")
+        }
+        if reason.unicodeScalars.contains("`") {
+            throw FennecError.builder("a require's reason holds no backtick")
+        }
+        var escaped = String.UnicodeScalarView()
+        for u in reason.unicodeScalars {
+            if u == "'" || u == "\\" { escaped.append(u) }
+            escaped.append(u)
+        }
+        return " else '\(String(escaped))'"
+    }
+
+    // An update's or a delete's ` order ... limit $n returning ...`: the rows
+    // it picks, and whether it answers them, under the fields named -- `*`
+    // for every one.
+    private func pick(_ returning: [String]?, _ bind: Binder) throws -> String {
+        var out = Query.orderText(order)
+        if let limit { out += " limit " + bind.bind(.int(Int64(limit))) }
+        return out + (try Query.returningClause(returning))
+    }
+
+    // ` returning ...` for a write's `returning`: the fields named, each a
+    // field or a path, or `*` for every one.
+    private static func returningClause(_ returning: [String]?) throws -> String {
+        guard let returning else { return "" }
+        if returning.isEmpty { throw FennecError.builder("returning names the fields it answers, or * for every one") }
+        if returning.contains("*") {
+            if returning.count > 1 { throw FennecError.builder("returning * answers every field: it takes no other") }
+            return " returning *"
+        }
+        return " returning " + (try returning.map { try Builder.path($0) }).joined(separator: ", ")
+    }
+
+    private static func docs(_ v: Value) -> [Value] {
+        if case .array(let list) = v { return list }
+        return [v]
+    }
+
+    /// The `put` of a document -- a `Value` or `Row` of fields, a `Codable`
+    /// `FennecValue` -- or a list of them, not run.
+    /// `ifAbsent`: `put ... if absent`, which passes over a document whose
+    /// id or `@unique` value a row holds and counts only what it wrote -- a
+    /// lock taken, or not, in one statement. `require`: refused, and nothing
+    /// written, unless it wrote exactly that many rows; `reason` beside it
+    /// says why (`require n else '<reason>'`), the error's `reason`, by
+    /// which a caller tells "liked already" from another refusal where `at`
+    /// moves with every statement put in front -- written into the text,
+    /// never a parameter, as the count is not. `returning`: the rows
+    /// written answered, ids and all (`insertReturning`).
+    public func toInsert(_ docs: any FennecValue, ifAbsent: Bool = false, require: Int? = nil, reason: String? = nil, returning: [String]? = nil) throws -> (text: String, params: [Value]) {
+        try assertPlain("insert")
+        let list = Query.docs(try docs.fennecValue())
+        guard !list.isEmpty else { throw FennecError.builder("cannot write an empty document list") }
+        let bind = Binder()
+        let body = try list.map { try Builder.renderDoc($0, bind, insert: true) }.joined(separator: ", ")
+        let absent = ifAbsent ? " if absent" : ""
+        let tail = try Query.returningClause(returning) + Query.requireClause(require, reason)
+        return ("put \(collection) \(list.count == 1 ? body : "[\(body)]")\(absent)\(tail)", bind.params)
+    }
+
+    /// The `set` of the rows the filter names, not run; with no filter it is
+    /// refused unless `all` or a `limit` bounds it; with `require`, refused
+    /// unless it set exactly that many rows, and `reason` as `toInsert`'s:
+    /// `require: 1, reason: "insufficient funds"`. `order` and `limit`
+    /// before it pick the rows it writes -- the page a `get` with them
+    /// answers -- and `returning` answers them as written, the fields named
+    /// or `["*"]` for every one: a job queue's claim (`updateReturning`).
+    public func toUpdate(_ patch: any FennecValue, all: Bool = false, require: Int? = nil, reason: String? = nil, returning: [String]? = nil) throws -> (text: String, params: [Value]) {
+        try assertPlain("update")
+        let bind = Binder()
+        let body = try Builder.renderDoc(try patch.fennecValue(), bind)
+        let filter = try requireFilter("update", all, bind)
+        return ("set \(collection) \(body)\(filter)\(try pick(returning, bind))\(try Query.requireClause(require, reason))", bind.params)
+    }
+
+    /// The upsert, `put ... if absent else set {patch}`, not run: a document
+    /// whose id or first `@unique` value a row holds sets that row by the
+    /// patch -- an update's, `.inc` and `.expr` with it, and in an
+    /// expression `new.f` the document's own `f` -- and every other one is
+    /// inserted. The documents' parameters come first, then the patch's;
+    /// `require`, `reason` and `returning` as `toInsert`'s.
+    public func toUpsert(_ docs: any FennecValue, _ patch: any FennecValue, require: Int? = nil, reason: String? = nil, returning: [String]? = nil) throws -> (text: String, params: [Value]) {
+        try assertPlain("upsert")
+        let list = Query.docs(try docs.fennecValue())
+        guard !list.isEmpty else { throw FennecError.builder("cannot write an empty document list") }
+        let bind = Binder()
+        let body = try list.map { try Builder.renderDoc($0, bind, insert: true) }.joined(separator: ", ")
+        let set = try Builder.renderDoc(try patch.fennecValue(), bind)
+        let tail = try Query.returningClause(returning) + Query.requireClause(require, reason)
+        return ("put \(collection) \(list.count == 1 ? body : "[\(body)]") if absent else set \(set)\(tail)", bind.params)
+    }
+
+    /// The `del` of the rows the filter names, not run; with no filter it is
+    /// refused unless `all` or a `limit` bounds it; with `require`, refused
+    /// unless it deleted exactly that many rows, and `reason` as
+    /// `toInsert`'s. `order`, `limit` and `returning` as `toUpdate`'s, the
+    /// rows answered as they were: a pop.
+    public func toDelete(all: Bool = false, require: Int? = nil, reason: String? = nil, returning: [String]? = nil) throws -> (text: String, params: [Value]) {
+        try assertPlain("delete")
+        let bind = Binder()
+        let filter = try requireFilter("delete", all, bind)
+        return ("del \(collection)\(filter)\(try pick(returning, bind))\(try Query.requireClause(require, reason))", bind.params)
+    }
+
+    // -------------------------------------------------------------- running
+
+    /// A statement through what the query is bound to: a read -- a `get`,
+    /// an `explain` -- through its reads' executor where it has one.
+    private func run(_ statement: (text: String, params: [Value]), read: Bool = false) async throws -> Answer {
+        guard let exec = read ? readExec ?? exec : exec else {
+            throw FennecError.builder(
+                "query is not bound to a connection: use db.from(...) (toFennecQL() if you only want the text)")
+        }
+        return try await exec(statement.text, statement.params)
+    }
+
+    /// Runs the query and hands back its rows.
+    public func rows() async throws -> [Row] { try await run(toFennecQL(), read: true).rows }
+
+    /// Runs the query and hands back its whole answer: the rows, and what
+    /// `facet` counted beside them (`.facets`).
+    public func answer() async throws -> Answer { try await run(toFennecQL(), read: true) }
+
+    /// Runs the query and decodes its rows as `T`, field by field.
+    public func rows<T: Decodable>(as type: T.Type) async throws -> [T] { try decoded(try await rows()) }
+
+    /// The first row with `limit 1`, or `nil`.
+    public func first() async throws -> Row? { try await limit(1).rows().first }
+
+    /// The first row with `limit 1` as a `T`, or `nil`.
+    public func first<T: Decodable>(as type: T.Type) async throws -> T? { try await limit(1).rows(as: T.self).first }
+
+    /// How many rows match: `get ... count`, no row decoded.
+    public func count() async throws -> Int {
+        let rows = try await with { $0.count = true }.rows()
+        return rows.first?["count"]?.int ?? 0
+    }
+
+    /// The path the query took, a line a step; the query runs to tell.
+    public func explain() async throws -> [String] {
+        let (text, params) = try toFennecQL()
+        return try await run(("explain \(text)", params), read: true).rows.map { $0["plan"]?.string ?? "" }
+    }
+
+    /// Puts a document, or a list of them: how many it wrote, which with
+    /// `ifAbsent` leaves out those already held. None is no statement.
+    /// `require`: refused (`.unmet`) unless it wrote exactly that many;
+    /// `reason` beside it, what the error's `reason` says.
+    @discardableResult
+    public func insert(_ docs: any FennecValue, ifAbsent: Bool = false, require: Int? = nil, reason: String? = nil) async throws -> Int {
+        let v = try docs.fennecValue()
+        if case .array(let list) = v, list.isEmpty { return 0 }
+        return try await run(toInsert(v, ifAbsent: ifAbsent, require: require, reason: reason)).affected
+    }
+
+    /// Inserts each document, or, where a row holds its id or `@unique`
+    /// value, sets that row by the patch --
+    /// `upsert(["key": k, "n": 1], ["n": .expr("n + new.n")])`: the
+    /// rows it set and made together. None is no statement.
+    @discardableResult
+    public func upsert(_ docs: any FennecValue, _ patch: any FennecValue, require: Int? = nil, reason: String? = nil) async throws -> Int {
+        let v = try docs.fennecValue()
+        if case .array(let list) = v, list.isEmpty { return 0 }
+        return try await run(toUpsert(v, patch, require: require, reason: reason)).affected
+    }
+
+    /// Sets the patch's fields on the rows the filter names; with no filter
+    /// it is refused unless `all`; with `require`, refused (`.unmet`) unless
+    /// it set exactly that many rows, the error's `reason` the `reason`
+    /// beside it: `update(["balance": .inc(-5)], require: 1, reason:
+    /// "insufficient funds")`.
+    @discardableResult
+    public func update(_ patch: any FennecValue, all: Bool = false, require: Int? = nil, reason: String? = nil) async throws -> Int {
+        try await run(toUpdate(patch, all: all, require: require, reason: reason)).affected
+    }
+
+    /// Deletes the rows the filter names; with no filter it is refused
+    /// unless `all`; with `require`, refused (`.unmet`) unless it deleted
+    /// exactly that many rows, the error's `reason` the `reason` beside it.
+    @discardableResult
+    public func delete(all: Bool = false, require: Int? = nil, reason: String? = nil) async throws -> Int {
+        try await run(toDelete(all: all, require: require, reason: reason)).affected
+    }
+
+    /// `update` that answers the rows it set, as written, under the fields
+    /// named -- `["*"]` every one. With `order` and `limit` a job queue's
+    /// claim: `from("jobs").where(.raw("run_at <= now()")).order("run_at")
+    /// .limit(10).updateReturning(["owner": me, "run_at": .expr("now() + ?",
+    /// 30000), "attempts": .inc(1)])`.
+    @discardableResult
+    public func updateReturning(_ patch: any FennecValue, returning: [String] = ["*"], all: Bool = false, require: Int? = nil, reason: String? = nil) async throws -> [Row] {
+        try await run(toUpdate(patch, all: all, require: require, reason: reason, returning: returning)).rows
+    }
+
+    /// `delete` that answers the rows it deleted, as they were: a pop.
+    @discardableResult
+    public func deleteReturning(returning: [String] = ["*"], all: Bool = false, require: Int? = nil, reason: String? = nil) async throws -> [Row] {
+        try await run(toDelete(all: all, require: require, reason: reason, returning: returning)).rows
+    }
+
+    /// `insert` that answers the rows it wrote, ids and all, in the
+    /// documents' order, under the fields named -- `["*"]` every one:
+    /// `from("orders").insertReturning(["item": "tea"], returning: ["id"])`.
+    @discardableResult
+    public func insertReturning(_ docs: any FennecValue, returning: [String] = ["*"], ifAbsent: Bool = false, require: Int? = nil, reason: String? = nil) async throws -> [Row] {
+        let v = try docs.fennecValue()
+        if case .array(let list) = v, list.isEmpty { return [] }
+        return try await run(toInsert(v, ifAbsent: ifAbsent, require: require, reason: reason, returning: returning)).rows
+    }
+
+    /// `upsert` that answers the rows it set and made, as written, in the
+    /// documents' order.
+    @discardableResult
+    public func upsertReturning(_ docs: any FennecValue, _ patch: any FennecValue, returning: [String] = ["*"], require: Int? = nil, reason: String? = nil) async throws -> [Row] {
+        let v = try docs.fennecValue()
+        if case .array(let list) = v, list.isEmpty { return [] }
+        return try await run(toUpsert(v, patch, require: require, reason: reason, returning: returning)).rows
+    }
+}

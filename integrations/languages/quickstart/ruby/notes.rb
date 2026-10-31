@@ -1,7 +1,7 @@
 require "json"
 require "net/http"
 
-# One FenecQL statement; the answer is its status and the decoded JSON body.
+# One FennecQL statement; the answer is its status and the decoded JSON body.
 def query(q, params = [])
   res = Net::HTTP.post(URI("http://127.0.0.1:8080/query"),
                        JSON.generate(query: q, params: params),

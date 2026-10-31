@@ -1,0 +1,21 @@
+[package]
+name = "fennec-wire"
+description = "A PostgreSQL v3 wire protocol client for fennecdb's import and --follow"
+version.workspace = true
+edition.workspace = true
+autotests = false
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+# No external dependencies: the framing is written by hand, and SCRAM's
+# hashing is fennec-http's.
+fennec-core = { workspace = true, features = ["std-fs", "full"] }
+fennec-http.workspace = true
+
+[[test]]
+name = "all"
+path = "tests/all.rs"

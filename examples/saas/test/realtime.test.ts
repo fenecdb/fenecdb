@@ -5,7 +5,7 @@
 // score of theirs. The same through the app's /db/ pipe.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import { connect, type ShapeEvent } from '@fenecdb/web/client';
+import { connect, type ShapeEvent } from '@fennecdb/web/client';
 import { sseEvents } from './sse.ts';
 import { Browser, join_, organisation, person, query, start, type Env } from './harness.ts';
 
@@ -187,7 +187,7 @@ test('comments are searched the same way', async () => {
   assert.deepEqual(rows.map((x) => x.body), ['The quarterly numbers look fine']);
 });
 
-// What the board leans on now that fenecdb closed the gaps it hit: a live
+// What the board leans on now that fennecdb closed the gaps it hit: a live
 // query under a person's token, the client's own subscription, and a page on
 // another origin reaching the router with no pipe.
 test('a live query under a person\'s token runs again for their teams\' writes, and no others', async () => {

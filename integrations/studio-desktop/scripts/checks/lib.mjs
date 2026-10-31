@@ -1,17 +1,17 @@
 // What every check shares: starting the test variant of the app, driving it
 // through its control file and reading what it reports.
 //
-// The test variant (FENEC_DESKTOP_TEST_BUILD=1, `make studio-desktop-test`)
+// The test variant (FENNEC_DESKTOP_TEST_BUILD=1, `make studio-desktop-test`)
 // holds src/bun/testhooks.ts, which a shipped app does not. It reads
-//   FENEC_DESKTOP_REPORT   a file it appends one JSON fact a line to
-//   FENEC_DESKTOP_CONTROL  a file of commands, one JSON object a line
-//   FENEC_DESKTOP_OPEN / _LAUNCHER   what to show at start
-// and has its own identifier (dev.fenecdb.studio.test), so userData and the
+//   FENNEC_DESKTOP_REPORT  a file it appends one JSON fact a line to
+//   FENNEC_DESKTOP_CONTROL a file of commands, one JSON object a line
+//   FENNEC_DESKTOP_OPEN / _LAUNCHER  what to show at start
+// and has its own identifier (dev.fennecdb.studio.test), so userData and the
 // Keychain service are its own too.
 //
 // Environment:
-//   FENEC_DESKTOP_APP   the test variant's .app (default build-test/stable-macos-arm64/fenec studio test.app)
-//   FENEC_SERVER_BIN    a fenec-server to start by hand (default bin/fenec-server)
+//   FENNEC_DESKTOP_APP  the test variant's .app (default build-test/stable-macos-arm64/fennec studio test.app)
+//   FENNEC_SERVER_BIN   a fennec-server to start by hand (default bin/fennec-server)
 //   SD_DIR              where data, logs and reports go (default a fresh directory under the system's temp one)
 import { execSync, spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -19,12 +19,12 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export const HERE = new URL('../..', import.meta.url).pathname;
-export const APP = process.env.FENEC_DESKTOP_APP ?? `${HERE}build-test/stable-macos-arm64/fenec studio test.app`;
+export const APP = process.env.FENNEC_DESKTOP_APP ?? `${HERE}build-test/stable-macos-arm64/fennec studio test.app`;
 export const EXE = `${APP}/Contents/MacOS/launcher`;
-export const SERVER = process.env.FENEC_SERVER_BIN ?? `${HERE}bin/fenec-server`;
-export const IDENTIFIER = 'dev.fenecdb.studio.test';
+export const SERVER = process.env.FENNEC_SERVER_BIN ?? `${HERE}bin/fennec-server`;
+export const IDENTIFIER = 'dev.fennecdb.studio.test';
 
-export const D = process.env.SD_DIR ?? join(tmpdir(), 'fenec-desktop-checks');
+export const D = process.env.SD_DIR ?? join(tmpdir(), 'fennec-desktop-checks');
 mkdirSync(`${D}/data`, { recursive: true });
 mkdirSync(`${D}/logs`, { recursive: true });
 /** D as the app sees it (realpath: /tmp is /private/tmp on macOS), for the keys of its windows. */
@@ -58,7 +58,7 @@ export function procs() {
     .map((m) => ({ pid: +m[1], ppid: +m[2], rss: +m[3], command: m[4] }));
 }
 /** The test variant's processes (the launcher, Bun, the servers it bundles) and servers started by hand on this run's files. */
-export const mine = () => procs().filter((p) => p.command.startsWith(APP) || p.command.includes(`fenec-server --file ${R}/`) || p.command.includes(`fenec-server --file ${D}/`));
+export const mine = () => procs().filter((p) => p.command.startsWith(APP) || p.command.includes(`fennec-server --file ${R}/`) || p.command.includes(`fennec-server --file ${D}/`));
 export const describe = (list) => list.map((p) => `${p.pid} (ppid ${p.ppid}) ${p.command.replace(APP, "<APP>").slice(0, 200)}`).join('\n');
 
 export function lines() {
@@ -165,7 +165,7 @@ export function startApp(name, env = {}) {
   if (!existsSync(EXE)) throw new Error(`no app at ${APP}: build it with \`make studio-desktop-test\``);
   const fd = openSync(`${D}/logs/${name}.app.log`, 'w');
   const child = spawn(EXE, [], {
-    env: { ...process.env, FENEC_DESKTOP_REPORT: REPORT, FENEC_DESKTOP_CONTROL: CONTROL, ...env },
+    env: { ...process.env, FENNEC_DESKTOP_REPORT: REPORT, FENNEC_DESKTOP_CONTROL: CONTROL, ...env },
     stdio: ['ignore', fd, fd],
   });
   closeSync(fd);
@@ -192,7 +192,7 @@ export async function quit(app, ms = 40000) {
   await Promise.race([app.exited, sleep(5000)]);
 }
 
-/** A fenec-server started by hand, as another program holding a file or a remote server would be. */
+/** A fennec-server started by hand, as another program holding a file or a remote server would be. */
 export async function startServer(args, env = {}, bin = SERVER) {
   const child = spawn(bin, args, { env: { ...process.env, ...env }, stdio: ['ignore', 'ignore', 'pipe'] });
   let err = '';
@@ -225,13 +225,13 @@ export async function startServer(args, env = {}, bin = SERVER) {
 }
 
 /** The data file `name` the checks open. */
-export const file = (name) => `${R}/data/${name}.fenec`;
+export const file = (name) => `${R}/data/${name}.fennec`;
 
 /** A fresh data file `name` of `rows` orders (the collections the studio's own tests use), replacing any. */
 export function data(name, rows = 50) {
   const path = file(name);
   const r = spawnSync(process.execPath, [`${HERE}scripts/mkdata.mjs`, path, String(rows)], {
-    env: { ...process.env, FENEC_SERVER_BIN: SERVER },
+    env: { ...process.env, FENNEC_SERVER_BIN: SERVER },
     stdio: ['ignore', 'ignore', 'pipe'],
     encoding: 'utf8',
   });

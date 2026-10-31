@@ -6,76 +6,76 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 // scripts/get-server.sh against a release laid out as GitHub lays one out
-// (`v<V>/fenec-v<V>-<triple>.tar.gz` and `SHA256SUMS`) in a directory, which
+// (`v<V>/fennec-v<V>-<triple>.tar.gz` and `SHA256SUMS`) in a directory, which
 // it reads through file://: no network, and a server that is a shell script.
 
 const script = new URL("../scripts/get-server.sh", import.meta.url).pathname;
-const work = mkdtempSync(join(tmpdir(), "fenec-get-server-"));
+const work = mkdtempSync(join(tmpdir(), "fennec-get-server-"));
 after(() => rmSync(work, { recursive: true, force: true }));
 
 const TRIPLE = "aarch64-apple-darwin";
 const sha = (file: string) => execFileSync("shasum", ["-a", "256", file]).toString().split(" ")[0]!;
 
-const SHELL_HELP = "usage: fenec backup <primary> <dir>  fenec verify <dir>  each takes --key-file <path>";
+const SHELL_HELP = "usage: fennec backup <primary> <dir>  fennec verify <dir>  each takes --key-file <path>";
 
 /** A release `version` whose server prints `help` for --help, and whose shell prints `shellHelp` for `backup --help` (none: no shell in it). */
 function release(version: string, help: string, shellHelp: string | null = SHELL_HELP) {
 	const dir = join(work, "releases", `v${version}`);
-	const stage = join(work, `stage-${version}`, `fenec-v${version}-${TRIPLE}`);
+	const stage = join(work, `stage-${version}`, `fennec-v${version}-${TRIPLE}`);
 	mkdirSync(dir, { recursive: true });
 	mkdirSync(stage, { recursive: true });
-	writeFileSync(join(stage, "fenec-server"), `#!/bin/sh\necho '${help}'\n`);
-	chmodSync(join(stage, "fenec-server"), 0o755);
+	writeFileSync(join(stage, "fennec-server"), `#!/bin/sh\necho '${help}'\n`);
+	chmodSync(join(stage, "fennec-server"), 0o755);
 	if (shellHelp !== null) {
-		writeFileSync(join(stage, "fenec"), `#!/bin/sh\necho '${shellHelp}'\n`);
-		chmodSync(join(stage, "fenec"), 0o755);
+		writeFileSync(join(stage, "fennec"), `#!/bin/sh\necho '${shellHelp}'\n`);
+		chmodSync(join(stage, "fennec"), 0o755);
 	}
-	const asset = `fenec-v${version}-${TRIPLE}.tar.gz`;
-	execFileSync("tar", ["-czf", join(dir, asset), "-C", join(work, `stage-${version}`), `fenec-v${version}-${TRIPLE}`]);
+	const asset = `fennec-v${version}-${TRIPLE}.tar.gz`;
+	execFileSync("tar", ["-czf", join(dir, asset), "-C", join(work, `stage-${version}`), `fennec-v${version}-${TRIPLE}`]);
 	// Another asset first, as a real SHA256SUMS lists many.
-	writeFileSync(join(dir, "SHA256SUMS"), `${"0".repeat(64)}  fenec-web-v${version}.tar.gz\n${sha(join(dir, asset))}  ${asset}\n`);
+	writeFileSync(join(dir, "SHA256SUMS"), `${"0".repeat(64)}  fennec-web-v${version}.tar.gz\n${sha(join(dir, asset))}  ${asset}\n`);
 	return { dir, asset };
 }
 
 function get(version: string, out: string) {
 	return spawnSync("sh", [script, version], {
 		encoding: "utf8",
-		env: { ...process.env, FENEC_RELEASES: `file://${join(work, "releases")}`, FENEC_SERVER_OUT: out, TARGET_TRIPLE: TRIPLE },
+		env: { ...process.env, FENNEC_RELEASES: `file://${join(work, "releases")}`, FENNEC_SERVER_OUT: out, TARGET_TRIPLE: TRIPLE },
 	});
 }
 
 test("a release's asset is installed once its SHA-256 matches the release's own", () => {
-	release("9.0.1", "usage: fenec-server --file <path> --studio --exit-on-stdin-close");
-	const out = join(work, "ok", "fenec-server");
+	release("9.0.1", "usage: fennec-server --file <path> --studio --exit-on-stdin-close");
+	const out = join(work, "ok", "fennec-server");
 	const r = get("9.0.1", out);
 	assert.equal(r.status, 0, r.stderr);
 	assert.ok(existsSync(out));
 	assert.match(r.stdout, /matches the release's SHA256SUMS/);
 	assert.match(execFileSync(out).toString(), /--studio/);
-	assert.match(execFileSync(join(work, "ok", "fenec")).toString(), /fenec verify/, "the shell beside it, from the same asset");
+	assert.match(execFileSync(join(work, "ok", "fennec")).toString(), /fennec verify/, "the shell beside it, from the same asset");
 	assert.ok(!existsSync(`${out}.new`), "no staging file left behind");
-	assert.ok(!existsSync(join(work, "ok", "fenec.new")));
+	assert.ok(!existsSync(join(work, "ok", "fennec.new")));
 });
 
 test("a release whose shell cannot verify or seal backups is refused, and installs neither", () => {
-	release("9.0.6", "usage: fenec-server --file <path> --studio --exit-on-stdin-close", "usage: fenec backup <primary> <file>");
-	const out = join(work, "oldshell", "fenec-server");
+	release("9.0.6", "usage: fennec-server --file <path> --studio --exit-on-stdin-close", "usage: fennec backup <primary> <file>");
+	const out = join(work, "oldshell", "fennec-server");
 	const r = get("9.0.6", out);
 	assert.notEqual(r.status, 0);
-	assert.match(r.stderr, /no `fenec verify`/);
+	assert.match(r.stderr, /no `fennec verify`/);
 	assert.ok(!existsSync(out));
-	assert.ok(!existsSync(join(work, "oldshell", "fenec")));
+	assert.ok(!existsSync(join(work, "oldshell", "fennec")));
 });
 
 test("a release that carries no shell is refused", () => {
-	release("9.0.7", "usage: fenec-server --file <path> --studio --exit-on-stdin-close", null);
-	const r = get("9.0.7", join(work, "noshell", "fenec-server"));
+	release("9.0.7", "usage: fennec-server --file <path> --studio --exit-on-stdin-close", null);
+	const r = get("9.0.7", join(work, "noshell", "fennec-server"));
 	assert.notEqual(r.status, 0);
-	assert.match(r.stderr, /holds no fenec shell/);
+	assert.match(r.stderr, /holds no fennec shell/);
 });
 
 test("a v in front of the version is fine", () => {
-	const out = join(work, "v", "fenec-server");
+	const out = join(work, "v", "fennec-server");
 	assert.equal(get("v9.0.1", out).status, 0);
 	assert.ok(existsSync(out));
 });
@@ -84,7 +84,7 @@ test("an asset that is not what the release says is refused, and a server alread
 	const { dir, asset } = release("9.0.2", "usage: --studio --exit-on-stdin-close");
 	// The download changed after the sums were made.
 	writeFileSync(join(dir, asset), readFileSync(join(dir, asset)).toString("latin1") + "x", "latin1");
-	const out = join(work, "tampered", "fenec-server");
+	const out = join(work, "tampered", "fennec-server");
 	mkdirSync(join(work, "tampered"));
 	writeFileSync(out, "the server already here");
 	const r = get("9.0.2", out);
@@ -97,14 +97,14 @@ test("an asset that is not what the release says is refused, and a server alread
 test("a release whose sums do not list the asset is refused", () => {
 	const { dir } = release("9.0.3", "usage: --studio --exit-on-stdin-close");
 	writeFileSync(join(dir, "SHA256SUMS"), `${"0".repeat(64)}  something-else.tar.gz\n`);
-	const r = get("9.0.3", join(work, "unlisted", "fenec-server"));
+	const r = get("9.0.3", join(work, "unlisted", "fennec-server"));
 	assert.notEqual(r.status, 0);
-	assert.match(r.stderr, /does not list fenec-v9\.0\.3/);
+	assert.match(r.stderr, /does not list fennec-v9\.0\.3/);
 });
 
 test("a server without --studio is refused with the way out, and installs nothing", () => {
-	release("9.0.4", "usage: fenec-server --file <path> --http <addr> --exit-on-stdin-close");
-	const out = join(work, "old", "fenec-server");
+	release("9.0.4", "usage: fennec-server --file <path> --http <addr> --exit-on-stdin-close");
+	const out = join(work, "old", "fennec-server");
 	const r = get("9.0.4", out);
 	assert.notEqual(r.status, 0);
 	assert.match(r.stderr, /no --studio/);
@@ -113,8 +113,8 @@ test("a server without --studio is refused with the way out, and installs nothin
 });
 
 test("a server with --studio and without --exit-on-stdin-close is refused too: the app could not stop it with its own end", () => {
-	release("9.0.5", "usage: fenec-server --file <path> --studio --http <addr>");
-	const out = join(work, "half", "fenec-server");
+	release("9.0.5", "usage: fennec-server --file <path> --studio --http <addr>");
+	const out = join(work, "half", "fennec-server");
 	const r = get("9.0.5", out);
 	assert.notEqual(r.status, 0);
 	assert.match(r.stderr, /no --exit-on-stdin-close/);
@@ -123,11 +123,11 @@ test("a server with --studio and without --exit-on-stdin-close is refused too: t
 });
 
 test("a release that does not exist, and a version that is not one", () => {
-	const missing = get("9.9.9", join(work, "none", "fenec-server"));
+	const missing = get("9.9.9", join(work, "none", "fennec-server"));
 	assert.notEqual(missing.status, 0);
 	assert.match(missing.stderr, /could not download/);
 	for (const bad of ["../etc", "1.0/../../x", "-rf", "1.0.0 2"]) {
-		const r = get(bad, join(work, "bad", "fenec-server"));
+		const r = get(bad, join(work, "bad", "fennec-server"));
 		assert.notEqual(r.status, 0, bad);
 		assert.match(r.stderr, /not a release version/, bad);
 	}

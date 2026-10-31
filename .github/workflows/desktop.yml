@@ -1,7 +1,7 @@
 name: desktop
 
-# fenec studio as a desktop app (integrations/studio-desktop, beta, macOS on
-# Apple silicon): the bundled fenec-server and the app built, the unit tests
+# fennec studio as a desktop app (integrations/studio-desktop, beta, macOS on
+# Apple silicon): the bundled fennec-server and the app built, the unit tests
 # and every scripted check run against the app on a macOS runner, which has
 # the window server they drive. Nothing here is a required check: a change
 # outside these paths cannot break the app, and the macOS minutes are spent
@@ -54,15 +54,15 @@ on:
       - 'studio/**'
       # The server and the shell the app bundles are built from these (each
       # crate either binary depends on, and the lock that pins them), and the
-      # studio's pages are embedded in the server by fenec-http.
-      - 'crates/fenec-server/**'
-      - 'crates/fenec-cli/**'
-      - 'crates/fenec-http/**'
-      - 'crates/fenec-core/**'
-      - 'crates/fenec-ql/**'
-      - 'crates/fenec-abi/**'
-      - 'crates/fenec-import/**'
-      - 'crates/fenec-wire/**'
+      # studio's pages are embedded in the server by fennec-http.
+      - 'crates/fennec-server/**'
+      - 'crates/fennec-cli/**'
+      - 'crates/fennec-http/**'
+      - 'crates/fennec-core/**'
+      - 'crates/fennec-ql/**'
+      - 'crates/fennec-abi/**'
+      - 'crates/fennec-import/**'
+      - 'crates/fennec-wire/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/desktop.yml'
@@ -73,15 +73,15 @@ on:
       - 'studio/**'
       # The server and the shell the app bundles are built from these (each
       # crate either binary depends on, and the lock that pins them), and the
-      # studio's pages are embedded in the server by fenec-http.
-      - 'crates/fenec-server/**'
-      - 'crates/fenec-cli/**'
-      - 'crates/fenec-http/**'
-      - 'crates/fenec-core/**'
-      - 'crates/fenec-ql/**'
-      - 'crates/fenec-abi/**'
-      - 'crates/fenec-import/**'
-      - 'crates/fenec-wire/**'
+      # studio's pages are embedded in the server by fennec-http.
+      - 'crates/fennec-server/**'
+      - 'crates/fennec-cli/**'
+      - 'crates/fennec-http/**'
+      - 'crates/fennec-core/**'
+      - 'crates/fennec-ql/**'
+      - 'crates/fennec-abi/**'
+      - 'crates/fennec-import/**'
+      - 'crates/fennec-wire/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/desktop.yml'
@@ -110,7 +110,7 @@ jobs:
 
       # Where the checks keep their data, reports and logs, so a failure can upload them.
       - name: Where the checks write
-        run: echo "SD_DIR=$RUNNER_TEMP/fenec-desktop-checks" >> "$GITHUB_ENV"
+        run: echo "SD_DIR=$RUNNER_TEMP/fennec-desktop-checks" >> "$GITHUB_ENV"
 
       - name: Install the pinned toolchain
         run: rustup show
@@ -161,7 +161,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: desktop-check-logs
-          path: ${{ runner.temp }}/fenec-desktop-checks/logs
+          path: ${{ runner.temp }}/fennec-desktop-checks/logs
           retention-days: 14
           if-no-files-found: ignore
 
@@ -172,7 +172,7 @@ jobs:
       - name: The unsigned DMG
         uses: actions/upload-artifact@v7
         with:
-          name: fenec-studio-unsigned-dmg
+          name: fennec-studio-unsigned-dmg
           path: integrations/studio-desktop/artifacts/*.dmg
           retention-days: 7
           if-no-files-found: error
@@ -306,16 +306,16 @@ jobs:
 
       # What Gatekeeper will say on a Mac that has never seen this app, asked
       # here: the signature, the hardened runtime and the Developer ID on the
-      # bundled fenec-server and fenec shell (each its own grep: one is not the
+      # bundled fennec-server and fennec shell (each its own grep: one is not the
       # other), and the notarization ticket stapled to the app and to the DMG.
       - name: Hold the result to what Gatekeeper checks
         if: steps.have.outputs.available == 'true'
         run: |
           set -eu
           cd integrations/studio-desktop
-          app="build/stable-macos-arm64/fenec studio.app"
+          app="build/stable-macos-arm64/fennec studio.app"
           codesign --verify --deep --strict --verbose=2 "$app"
-          for bin in fenec-server fenec; do
+          for bin in fennec-server fennec; do
             codesign -dv --verbose=4 "$app/Contents/Resources/app/bin/$bin" > "$RUNNER_TEMP/$bin-signature.txt" 2>&1
             cat "$RUNNER_TEMP/$bin-signature.txt"
             grep -E 'flags=.*runtime' "$RUNNER_TEMP/$bin-signature.txt"
@@ -331,7 +331,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: steps.have.outputs.available == 'true'
         with:
-          name: fenec-studio-signed-dmg
+          name: fennec-studio-signed-dmg
           path: integrations/studio-desktop/artifacts/*.dmg
           retention-days: 30
           if-no-files-found: error
@@ -361,7 +361,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: fenec-studio-signed-dmg
+          name: fennec-studio-signed-dmg
           path: dist
 
       - name: Attach
@@ -373,6 +373,6 @@ jobs:
           printf '%s' "$RELEASE" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::release is a tag such as v0.1.12"; exit 1; }
           version="${RELEASE#v}"
           for dmg in dist/*.dmg; do
-            mv "$dmg" "dist/fenec-studio-v$version-$(basename "$dmg")"
+            mv "$dmg" "dist/fennec-studio-v$version-$(basename "$dmg")"
           done
-          gh release upload "v$version" dist/fenec-studio-v"$version"-*.dmg --clobber -R "$GITHUB_REPOSITORY"
+          gh release upload "v$version" dist/fennec-studio-v"$version"-*.dmg --clobber -R "$GITHUB_REPOSITORY"

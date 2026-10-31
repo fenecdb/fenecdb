@@ -1,15 +1,15 @@
 // Clients of the tenant node, one per tenant and role, through
-// `@fenecdb/web/client` (the HTTP client and the builder, no WebAssembly).
+// `@fennecdb/web/client` (the HTTP client and the builder, no WebAssembly).
 // A client carries one token; tokens live ten minutes, so a client is made
 // again every five.
-import { connect, type FenecHttp } from '@fenecdb/web/client';
+import { connect, type FennecHttp } from '@fennecdb/web/client';
 import { OPERATOR_TOKEN, tenantUrl } from './config.ts';
 import { tokens, type Role } from './tokens.ts';
 
-const kept = new Map<string, { db: FenecHttp; until: number }>();
+const kept = new Map<string, { db: FennecHttp; until: number }>();
 
 /** `role`'s client of `tenant`, or the node's own (`'operator'`) for setup and the rollup worker. */
-export function db(tenant: string, role: Role | 'operator'): FenecHttp {
+export function db(tenant: string, role: Role | 'operator'): FennecHttp {
   const key = `${tenant}\u0000${role}`;
   const now = Date.now();
   const k = kept.get(key);

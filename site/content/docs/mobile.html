@@ -1,14 +1,14 @@
 <!--
-title: Mobile and native apps — fenecdb
-description: Keep a fenecdb database in a file on the device from Swift, Kotlin or Dart and Flutter, with the query builder and live queries driving the UI.
+title: Mobile and native apps — fennecdb
+description: Keep a fennecdb database in a file on the device from Swift, Kotlin or Dart and Flutter, with the query builder and live queries driving the UI.
 -->
 
 <h1>Mobile and native apps</h1>
 <p class="kicker">Keep the database in a file on the device: no server, no
 network, the same engine and file format as the server and the browser.</p>
 
-<p>An iOS, macOS, Android or Flutter app opens a fenecdb file, writes to it
-and asks it questions in FenecQL or through the query builder, with
+<p>An iOS, macOS, Android or Flutter app opens a fennecdb file, writes to it
+and asks it questions in FennecQL or through the query builder, with
 <code>near</code>, <code>match</code> and <code>lookup</code> as anywhere
 else. A live query hands the UI its rows again after every write to what it
 reads.</p>
@@ -17,7 +17,7 @@ reads.</p>
 <table>
 <thead><tr><th>&nbsp;</th><th>Swift</th><th>Kotlin and Java</th><th>Dart and Flutter</th></tr></thead>
 <tbody>
-<tr><td>install</td><td>SwiftPM: <code>github.com/fenecdb/fenecdb</code>, product <code>FenecDB</code></td><td><code>com.fenecdb:fenecdb-android</code> (the AAR), <code>com.fenecdb:fenecdb</code> (the JVM)</td><td><code>fenecdb_flutter</code>, or <code>fenecdb</code> in Dart alone</td></tr>
+<tr><td>install</td><td>SwiftPM: <code>github.com/fennec-db/fennecdb</code>, product <code>FennecDB</code></td><td><code>com.fennecdb:fennecdb-android</code> (the AAR), <code>com.fennecdb:fennecdb</code> (the JVM)</td><td><code>fennecdb_flutter</code>, or <code>fennecdb</code> in Dart alone</td></tr>
 <tr><td>platforms</td><td>iOS 15, macOS 12</td><td>Android 5 (API 21): arm64-v8a, armeabi-v7a, x86_64; the JVM</td><td>iOS, Android, macOS</td></tr>
 <tr><td>calls</td><td><code>async</code>, off the caller's thread</td><td><code>suspend</code> on <code>Dispatchers.IO</code>; <code>...Blocking</code> for Java</td><td><code>Future</code>s, on an isolate of the database's</td></tr>
 <tr><td>live queries</td><td><code>LiveQuery</code> (<code>ObservableObject</code>), <code>LiveRows</code> (<code>@Observable</code>), an <code>AsyncThrowingStream</code></td><td>a <code>Flow</code>: Compose's <code>collectAsState</code></td><td>a <code>Stream</code>: <code>StreamBuilder</code></td></tr>
@@ -27,12 +27,12 @@ reads.</p>
 </div>
 
 <details class="deep"><summary>How the bindings share one library</summary>
-<p>Each binding calls the same native library, <code>crates/fenec-ffi</code>:
+<p>Each binding calls the same native library, <code>crates/fennec-ffi</code>:
 the engine built for the device, behind a C ABI of a few functions --
 open, query, the change notice, sync, flush, checkpoint, close. A statement
 goes in as text with its parameters as JSON, and its answer comes back as
 the JSON the browser module answers with, from the same code
-(<code>fenec-abi</code>), so a page and an app handed the same text get the
+(<code>fennec-abi</code>), so a page and an app handed the same text get the
 same bytes. A vector goes in as its <code>f32</code> bytes beside the
 JSON, never as digits. The same file can be a replica a server keeps in
 step (<a href="#sync">Sync with a server</a>), and an app can ask a server
@@ -48,17 +48,17 @@ itself: nothing calls it after a write.</p>
 <div class="langs" data-langs>
 
 <div class="lang" data-name="Swift">
-<pre data-lang="swift" data-label="Todos.swift">import FenecDB
+<pre data-lang="swift" data-label="Todos.swift">import FennecDB
 import SwiftUI
 
-struct Todo: Codable, Sendable, FenecValue {
+struct Todo: Codable, Sendable, FennecValue {
     var id: Int?
     var title: String
     var done: Bool
 }
 
 @main struct TodosApp: App {
-    @State var db: Fenec?
+    @State var db: Fennec?
 
     var body: some Scene {
         WindowGroup {
@@ -66,20 +66,20 @@ struct Todo: Codable, Sendable, FenecValue {
         }
     }
 
-    func open() async throws -> Fenec {
+    func open() async throws -> Fennec {
         let dir = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                               appropriateFor: nil, create: true)
-        let db = try await Fenec.open(dir.appendingPathComponent("todos.fenec"))
+        let db = try await Fennec.open(dir.appendingPathComponent("todos.fennec"))
         try await db.execute("create collection if not exists todos (title text, done bool @hash)")
         return db
     }
 }
 
 struct TodoList: View {
-    let db: Fenec
+    let db: Fennec
     @StateObject var open: LiveQuery&lt;Todo&gt;
 
-    init(db: Fenec) {
+    init(db: Fennec) {
         self.db = db
         _open = StateObject(wrappedValue: LiveQuery(db, try! db.from("todos").where("done", false), as: Todo.self))
     }
@@ -100,10 +100,10 @@ struct TodoList: View {
 </div>
 
 <div class="lang" data-name="Kotlin">
-<pre data-lang="kotlin" data-label="Todos.kt">import com.fenecdb.*
+<pre data-lang="kotlin" data-label="Todos.kt">import com.fennecdb.*
 
 class TodosModel(app: Application) : AndroidViewModel(app) {
-    val db = Fenec.open(File(app.filesDir, "todos.fenec").path)   // in a background start-up, or openAsync
+    val db = Fennec.open(File(app.filesDir, "todos.fennec").path)   // in a background start-up, or openAsync
 
     init {
         db.executeBlocking("create collection if not exists todos (title text, done bool @hash)")
@@ -131,20 +131,20 @@ behind sees the latest rows.</p>
 </div>
 
 <div class="lang" data-name="Dart">
-<pre data-lang="dart" data-label="main.dart">import 'package:fenecdb_flutter/fenecdb_flutter.dart';
+<pre data-lang="dart" data-label="main.dart">import 'package:fennecdb_flutter/fennecdb_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 Future&lt;void&gt; main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final dir = await getApplicationSupportDirectory();
-  final db = await Fenec.open('${dir.path}/todos.fenec');
+  final db = await Fennec.open('${dir.path}/todos.fennec');
   await db.execute('create collection if not exists todos (title text, done bool @hash)');
   runApp(MaterialApp(home: Todos(db)));
 }
 
 class Todos extends StatelessWidget {
-  final Fenec db;
+  final Fennec db;
   const Todos(this.db, {super.key});
 
   @override
@@ -173,9 +173,9 @@ the iOS simulator on every change.</p>
 
 <p>A fuller app, Notes -- search with <code>match</code> and
 <code>fuse</code>, filters, a schema file, an add form -- is in the
-repository for each: <a href="https://github.com/fenecdb/fenecdb/tree/main/examples/swift">SwiftUI</a>
-(and a CLI), <a href="https://github.com/fenecdb/fenecdb/tree/main/examples/kotlin-android">Jetpack
-Compose</a> (and a JVM CLI) and <a href="https://github.com/fenecdb/fenecdb/tree/main/examples/flutter">Flutter</a>,
+repository for each: <a href="https://github.com/fennec-db/fennecdb/tree/main/examples/swift">SwiftUI</a>
+(and a CLI), <a href="https://github.com/fennec-db/fennecdb/tree/main/examples/kotlin-android">Jetpack
+Compose</a> (and a JVM CLI) and <a href="https://github.com/fennec-db/fennecdb/tree/main/examples/flutter">Flutter</a>,
 each built on every change and its headless part run.</p>
 
 <h2 id="builder">The builder</h2>
@@ -191,7 +191,7 @@ to one golden file; each language's spelling is on
 <a href="languages.html#builder">Your language</a>. A builder query also
 knows the collections it reads, which is what a live query runs again for.
 To see the text and parameters a chain builds, for logging or a test,
-<code>toFenecQL()</code> returns them and runs nothing.</p>
+<code>toFennecQL()</code> returns them and runs nothing.</p>
 
 <pre data-lang="swift">let near = try await db.from("notes")
     .select("title")
@@ -204,13 +204,13 @@ To see the text and parameters a chain builds, for logging or a test,
 
 <p>An app that makes its database declares it once, as
 <code>create collection</code> and <code>create index</code> statements --
-a <code>schema.fenecql</code> in the app's resources -- and hands it to
+a <code>schema.fennecql</code> in the app's resources -- and hands it to
 <code>schema</code> after each open. The engine compares the file with it:
 what only adds (a collection, a field, an index) is made, the migrations
 not yet recorded run first, in order, and are kept in
 <code>_migrations</code>, all one block; a field the text lacks, a type or
 an index changed, is refused with what resolves it, and nothing is written.
-It is the check the browser's <code>Fenec.open({ schema })</code> and the
+It is the check the browser's <code>Fennec.open({ schema })</code> and the
 server's <code>/_schema</code> run (<a href="javascript.html#schema">Schema in
 code</a>).</p>
 
@@ -236,7 +236,7 @@ code</a>).</p>
 
 </div>
 
-<p><code>fenec types --lang swift|kotlin|dart schema.fenecql</code> writes
+<p><code>fennec types --lang swift|kotlin|dart schema.fennecql</code> writes
 a row of each collection as the language reads it: a <code>Codable</code>
 struct, a data class with <code>from(row)</code>, a class with
 <code>fromJson</code>.</p>
@@ -251,7 +251,7 @@ is put back whole and runs nothing either.</p>
 
 <details class="deep"><summary>How a live query re-runs</summary>
 <p>The engine keeps a ring of the writes it landed, and
-<code>fenec_changes(since)</code> names the collections written since a
+<code>fennec_changes(since)</code> names the collections written since a
 cursor -- or answers "everything" when the cursor fell behind the ring or a
 collection written since was dropped. A write asks for a look; the looks
 asked for within a frame (16 ms) are one, taken once no write through the
@@ -260,10 +260,10 @@ again from scratch -- well under a millisecond over a local file, where
 keeping track of which rows changed would cost more than the query. Knowing
 costs a write nothing: the ring is asked once after a burst, and only by a
 database holding a live query. It is how the browser's
-<code>Fenec.live</code> works, with a frame in place of a microtask: an
+<code>Fennec.live</code> works, with a frame in place of a microtask: an
 app's writes run on other threads and come back one at a time.</p>
 <p>A builder query reads its own collection and each <code>lookup</code>'s; a
-FenecQL text names its collections, or runs after every write.</p>
+FennecQL text names its collections, or runs after every write.</p>
 </details>
 
 <h2 id="sync">Sync with a server</h2>
@@ -276,21 +276,21 @@ still writes to it.</p>
 <div class="langs" data-langs>
 
 <div class="lang" data-name="Swift">
-<pre data-lang="swift" data-label="Todos.swift">let db = try await Fenec.sync(url: "https://api.example.com", token: jwt,
+<pre data-lang="swift" data-label="Todos.swift">let db = try await Fennec.sync(url: "https://api.example.com", token: jwt,
                               shapes: [Shape("todos", key: "key")],
-                              path: dir.appendingPathComponent("todos.fenec").path)</pre>
+                              path: dir.appendingPathComponent("todos.fennec").path)</pre>
 </div>
 
 <div class="lang" data-name="Kotlin">
-<pre data-lang="kotlin" data-label="Todos.kt">val db = Fenec.sync(url = "https://api.example.com", token = jwt,
+<pre data-lang="kotlin" data-label="Todos.kt">val db = Fennec.sync(url = "https://api.example.com", token = jwt,
                     shapes = listOf(Shape("todos", key = "key")),
-                    path = File(app.filesDir, "todos.fenec").path)</pre>
+                    path = File(app.filesDir, "todos.fennec").path)</pre>
 </div>
 
 <div class="lang" data-name="Dart">
-<pre data-lang="dart" data-label="main.dart">final db = await Fenec.openSynced(url: 'https://api.example.com', token: jwt,
+<pre data-lang="dart" data-label="main.dart">final db = await Fennec.openSynced(url: 'https://api.example.com', token: jwt,
                                   shapes: [Shape('todos', key: 'key')],
-                                  path: '${dir.path}/todos.fenec');</pre>
+                                  path: '${dir.path}/todos.fennec');</pre>
 </div>
 
 </div>
@@ -330,7 +330,7 @@ static and instance member of one name.</p>
 <table>
 <thead><tr><th>&nbsp;</th><th>Swift</th><th>Kotlin</th><th>Dart</th></tr></thead>
 <tbody>
-<tr><td>open</td><td><code>Fenec.sync(url:token:shapes:path:)</code></td><td><code>Fenec.sync(url, token, shapes, path)</code></td><td><code>Fenec.openSynced(url:, token:, shapes:, path:)</code></td></tr>
+<tr><td>open</td><td><code>Fennec.sync(url:token:shapes:path:)</code></td><td><code>Fennec.sync(url, token, shapes, path)</code></td><td><code>Fennec.openSynced(url:, token:, shapes:, path:)</code></td></tr>
 <tr><td>status</td><td><code>replica.status</code>, <code>statuses()</code> (an <code>AsyncStream</code>)</td><td><code>replica.status</code> (a <code>StateFlow</code>)</td><td><code>replica.status</code>, <code>statuses</code> (a <code>Stream</code>)</td></tr>
 <tr><td>first seed, writes answered</td><td colspan="3"><code>ready()</code>, <code>pushed()</code></td></tr>
 <tr><td>refused writes</td><td><code>refusals()</code></td><td><code>refusals</code> (a <code>SharedFlow</code>)</td><td><code>refusals</code></td></tr>
@@ -348,7 +348,7 @@ error.</p>
 
 <details class="deep"><summary>How the sync core and the bindings divide the work</summary>
 <p>What to ask, what an answer means and what is written are one state
-machine in Rust (<code>fenec_abi::sync</code>), with no network of its own:
+machine in Rust (<code>fennec_abi::sync</code>), with no network of its own:
 a binding feeds it what happened -- a request's answer, a stream's bytes, a
 timer, the network, a new token -- and does what it hands back: make this
 request, open this stream, wait this long. So the logic exists once, with
@@ -412,7 +412,7 @@ between them is the platforms':</p>
 
 <p>iOS (App Transport Security) and Android refuse plain <code>http://</code>
 by default, and so should you: put TLS in front of
-<code>fenec-server</code>. Caddy does it in three lines, certificate
+<code>fennec-server</code>. Caddy does it in three lines, certificate
 included:</p>
 
 <pre data-lang="text" data-label="Caddyfile">api.example.com {
@@ -437,7 +437,7 @@ Caddy passes <code>text/event-stream</code> through as it comes; behind
 nginx, the server's <code>X-Accel-Buffering: no</code> does the same. A
 proxy that closes an idle connection sooner than the server's keepalive
 (a comment every 20 s) cuts the stream, which then opens again from its
-cursor -- harmless, a round trip each time. fenecdb's own HTTP client, the
+cursor -- harmless, a round trip each time. fennecdb's own HTTP client, the
 server's, speaks no TLS and is not used on a device.</p>
 </details>
 
@@ -470,14 +470,14 @@ default) is sent its shapes whole on return.</p>
 <h2 id="connect">Without a file: the server alone</h2>
 
 <p>An app that keeps nothing on the device asks the server directly:
-<code>Fenec.connect</code> makes every query a request, through the same
+<code>Fennec.connect</code> makes every query a request, through the same
 builder, as <code>connect</code> does in JavaScript.</p>
 
-<pre data-lang="swift">let db = Fenec.connect(url: "https://api.example.com", token: jwt)
+<pre data-lang="swift">let db = Fennec.connect(url: "https://api.example.com", token: jwt)
 let open = try await db.from("todos").where("done", false).rows()</pre>
 
-<p>Kotlin's is <code>Fenec.connect(url, token = jwt)</code>, Dart's
-<code>Fenec.connect(url, token: jwt)</code>; a replica's
+<p>Kotlin's is <code>Fennec.connect(url, token = jwt)</code>, Dart's
+<code>Fennec.connect(url, token: jwt)</code>; a replica's
 <code>replica.remote</code> is the same, for what the replica does not
 hold. Live queries are the file's alone.</p>
 
@@ -489,7 +489,7 @@ of them or none. One that stops it is an error naming its place
 <code>unmet</code>, for a write whose <code>require</code> was not met -- and
 its <code>reason</code> where the <code>require</code> gave one
 (<code>reason:</code> beside <code>require:</code>, Kotlin's with
-<code>=</code>; <a href="/docs/fenecql-writing#require-reason">A reason for the
+<code>=</code>; <a href="/docs/fennecql-writing#require-reason">A reason for the
 refusal</a>). A
 retry after a timeout cannot tell whether the write ran, so a write that
 must not run twice goes under an idempotency key: the second answer is the
@@ -525,13 +525,13 @@ by the replica there, each after the furthest position an answer from home
 named to this connection -- its change and its history, shared by every
 copy -- so the app never reads older than it wrote; writes go home.</p>
 
-<pre data-lang="swift">let db = Fenec.connect(url: "https://ap.example.com/t/acme", token: jwt, reads: .nearest)
+<pre data-lang="swift">let db = Fennec.connect(url: "https://ap.example.com/t/acme", token: jwt, reads: .nearest)
 try await db.from("orders").insert(["number": "SG-1"] as Value)   // home, in eu
 let mine = try await db.from("orders").rows()                      // ap's replica, after that write
 let n = try await db.asRead().query("get orders count")           // a text that only reads</pre>
 
-<p>Kotlin's is <code>Fenec.connect(url, token = jwt, reads =
-FenecRemote.Reads.NEAREST)</code>, Dart's <code>Fenec.connect(url, token:
+<p>Kotlin's is <code>Fennec.connect(url, token = jwt, reads =
+FennecRemote.Reads.NEAREST)</code>, Dart's <code>Fennec.connect(url, token:
 jwt, reads: Reads.nearest)</code>, and all three have
 <code>asRead()</code>. A write sent through <code>asRead()</code> is
 refused (status 403), never landed.</p>
@@ -662,7 +662,7 @@ is the objects before the app's linker takes what it uses.</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>20 000 × 128, Apple M1</th><th class="n">through the library</th><th class="n">fenec-server's handler, in process</th></tr></thead>
+<thead><tr><th>20 000 × 128, Apple M1</th><th class="n">through the library</th><th class="n">fennec-server's handler, in process</th></tr></thead>
 <tbody>
 <tr><td>open, checkpointed</td><td class="n">2.9 ms</td><td class="n">2.6 ms</td></tr>
 <tr><td>a put with its vector, buffered</td><td class="n">4.6 µs</td><td class="n">23.2 µs</td></tr>
@@ -675,7 +675,7 @@ is the objects before the app's linker takes what it uses.</p>
 <details class="deep"><summary>Method, and the library's timings against the server's</summary>
 <p><code>make ffi-bench</code> makes the file through the library and
 opens it both ways: the library as an app opens it, the server's handler as
-<code>fenec-server</code> serves it, the request built in process with no
+<code>fennec-server</code> serves it, the request built in process with no
 socket. The medians of 1 000 calls each. The library is handed a vector as
 its <code>f32</code> bytes, as the bindings hand it; as JSON a buffered put
 takes 23.3 µs, the server's time, most of it the vector's digits.</p>
@@ -684,19 +684,19 @@ takes 23.3 µs, the server's time, most of it the vector's digits.</p>
 <h2 id="abi">The C ABI</h2>
 
 <p>Any language with a C FFI can call the library: the header is
-<code>crates/fenec-ffi/include/fenec.h</code>, and <code>make ffi</code>
+<code>crates/fennec-ffi/include/fennec.h</code>, and <code>make ffi</code>
 builds the library for this machine, or <code>TARGET=...</code> for another.
 Every call returns a code -- 0, an error's kind, or the boundary's own:
-<code>FENEC_MISUSE</code>, <code>FENEC_LOCKED</code>,
-<code>FENEC_PANIC</code> -- and writes its answer or its error as
-NUL-terminated JSON, freed with <code>fenec_free_string</code>.</p>
+<code>FENNEC_MISUSE</code>, <code>FENNEC_LOCKED</code>,
+<code>FENNEC_PANIC</code> -- and writes its answer or its error as
+NUL-terminated JSON, freed with <code>fennec_free_string</code>.</p>
 
 <details class="deep"><summary>Handles, panics and JNI</summary>
 <p>A handle is a number, not a pointer: a handle used after its close finds
 nothing and is refused, where a pointer would reach freed memory, and a
 call holds its database for as long as it runs whatever closes meanwhile.
 A panic never crosses the boundary: each call runs under
-<code>catch_unwind</code> and answers <code>FENEC_PANIC</code> with its
+<code>catch_unwind</code> and answers <code>FENNEC_PANIC</code> with its
 message, which is why the library is built to unwind, not to abort. The
 Kotlin binding reaches the same calls through JNI functions the library
 carries itself (its <code>jni</code> feature): each call answers one

@@ -11,7 +11,7 @@
 //     answered 410. A deletion is not in a read of the table, so "start over
 //     from a read" cannot find the objects whose rows are gone: this can.
 //
-//   FENEC_URL=... ADMIN_TOKEN=... S3_ENDPOINT=... S3_KEY=... S3_SECRET=... BUCKET=... node reconcile.mjs
+//   FENNEC_URL=... ADMIN_TOKEN=... S3_ENDPOINT=... S3_KEY=... S3_SECRET=... BUCKET=... node reconcile.mjs
 //
 // The objects are listed first and the rows read after: a row is made before
 // its URL, so an object listed has a row made earlier, and a row deleted since
@@ -41,10 +41,10 @@ async function* objects(s3, bucket, prefix) {
 }
 
 /** Every file row's state, by id, read in pages of a thousand. */
-async function states(fenec, adminToken) {
+async function states(fennec, adminToken) {
   const rows = new Map();
   for (let after = 0; ;) {
-    const res = await fetch(`${fenec}/query`, {
+    const res = await fetch(`${fennec}/query`, {
       method: 'POST',
       headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
       body: JSON.stringify({ query: 'get files select id, state where id > $1 order id limit 1000', params: [after] }),
@@ -59,13 +59,13 @@ async function states(fenec, adminToken) {
 
 /**
  * The keys deleted, in order (with `dryRun`, the keys that would be). `prefix`
- * is the tenant on a `--dir` node, and `fenec` that tenant's address.
+ * is the tenant on a `--dir` node, and `fennec` that tenant's address.
  */
-export async function reconcile({ fenec, adminToken, s3, bucket, prefix = '', dryRun = false, maxDeletePercent = 50, force = false }) {
+export async function reconcile({ fennec, adminToken, s3, bucket, prefix = '', dryRun = false, maxDeletePercent = 50, force = false }) {
   const keys = keysOf(prefix);
   const listed = [];
   for await (const key of objects(s3, bucket, prefix)) if (keys.parse(key)) listed.push(key);
-  const rows = await states(fenec, adminToken);
+  const rows = await states(fennec, adminToken);
   const doomed = listed.sort().filter((key) => {
     const { kind, id } = keys.parse(key);
     // An upload belongs to a pending row; what a ready row left under pending/
@@ -91,7 +91,7 @@ if (isMain(import.meta.url)) {
   const percent = args.indexOf('--max-delete-percent');
   try {
     const gone = await reconcile({
-      fenec: env.FENEC_URL, adminToken: env.ADMIN_TOKEN, s3: s3From(env), bucket: env.BUCKET, prefix: env.KEY_PREFIX ?? '',
+      fennec: env.FENNEC_URL, adminToken: env.ADMIN_TOKEN, s3: s3From(env), bucket: env.BUCKET, prefix: env.KEY_PREFIX ?? '',
       dryRun: args.includes('--dry-run'), force: args.includes('--force'),
       ...(percent >= 0 && { maxDeletePercent: Number(args[percent + 1]) }),
     });

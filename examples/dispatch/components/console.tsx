@@ -5,7 +5,7 @@
 // idle couriers (`near loc`) and who is within a radius of its pickup
 // (`distance(loc, $1) <= $2`), each run again as positions are written.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { FenecHttp } from '@fenecdb/web/client';
+import type { FennecHttp } from '@fennecdb/web/client';
 import { svgOf, type Point } from '../lib/city';
 import { CourierMark, LiveMap, OrderPin } from './live-map';
 import { since, useConnection, useNow, type Access } from './access';
@@ -74,7 +74,7 @@ const STATE_WORD: Record<string, string> = {
   dropoff: 'Carrying',
 };
 
-function useRows<T extends { id: number }>(conn: FenecHttp, collection: string, shape: Record<string, string>, initial: T[]) {
+function useRows<T extends { id: number }>(conn: FennecHttp, collection: string, shape: Record<string, string>, initial: T[]) {
   const [rows, setRows] = useState(() => new Map(initial.map((r) => [r.id, r])));
   const [live, setLive] = useState(false);
   const key = JSON.stringify(shape);
@@ -119,7 +119,7 @@ function useRows<T extends { id: number }>(conn: FenecHttp, collection: string, 
   return { rows, live };
 }
 
-function useLive<T>(conn: FenecHttp, text: string | null, params: unknown[], collections: string[]): T[] {
+function useLive<T>(conn: FennecHttp, text: string | null, params: unknown[], collections: string[]): T[] {
   const [rows, setRows] = useState<T[]>([]);
   const key = JSON.stringify(params);
   useEffect(() => {

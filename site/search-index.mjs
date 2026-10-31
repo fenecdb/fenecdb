@@ -1,6 +1,6 @@
 // The site's search index, written by the engine the site ships.
 //
-//   node site/search-index.mjs <fenec.wasm> <out> <out-vectors> <vectors.json> < documents.json
+//   node site/search-index.mjs <fennec.wasm> <out> <out-vectors> <vectors.json> < documents.json
 //
 // `build.py` cuts every page into its sections and hands them over as JSON;
 // this writes them into a database through the browser module itself and
@@ -17,7 +17,7 @@
 // each image holds.
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { Fenec } from '../web/fenec.js';
+import { Fennec } from '../web/fennec.js';
 import { SCHEMA, SCHEMA_VECTORS } from './search-query.js';
 
 const [wasm, out, outVectors, vectorsFile] = process.argv.slice(2);
@@ -27,10 +27,10 @@ if (vectors.length !== docs.length) throw new Error(`${vectors.length} vectors f
 const module = readFileSync(wasm);
 
 async function image(schema, path, withVectors) {
-  const db = await Fenec.open(module);
+  const db = await Fennec.open(module);
   db.run(schema);
   // One statement a section, every value a parameter: the text is the
-  // pages', and none of it is FenecQL.
+  // pages', and none of it is FennecQL.
   const put = withVectors
     ? 'put docs {title: $1, heading: $2, url: $3, body: $4, section: $5, kind: $6, embed: $7}'
     : 'put docs {title: $1, heading: $2, url: $3, body: $4, section: $5, kind: $6}';

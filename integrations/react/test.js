@@ -6,7 +6,7 @@
 // renders every component that reads what it wrote, over a database in the
 // page alone, and a row another client writes through the server shows up
 // in the component, with no code of the component's asking. Those need
-// web/fenec.wasm (make wasm), the second the fenec-server binary (cargo
+// web/fennec.wasm (make wasm), the second the fennec-server binary (cargo
 // build) too, and skip themselves without them.
 
 import { test } from 'node:test';
@@ -24,7 +24,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const { createElement: h, act, Component } = await import('react');
 const { createRoot } = await import('react-dom/client');
-const { FenecProvider, useFenec, useLiveQuery } = await import('./index.js');
+const { FennecProvider, useFennec, useLiveQuery } = await import('./index.js');
 
 // ---------------------------------------------------------------- stand-in
 
@@ -43,7 +43,7 @@ function standIn() {
 }
 
 function query(text, context) {
-  return { context, toFenecQL: () => [text, []] };
+  return { context, toFennecQL: () => [text, []] };
 }
 
 async function render(element) {
@@ -136,16 +136,16 @@ test('a query that fails reaches the error boundary', async () => {
 test("the provider's database serves a query that brings none", async () => {
   const db = standIn();
   function Seen() {
-    assert.equal(useFenec(), db);
+    assert.equal(useFennec(), db);
     return h(Titles, { q: query('get tasks') });
   }
-  const view = await render(h(FenecProvider, { db }, h(Seen)));
+  const view = await render(h(FennecProvider, { db }, h(Seen)));
   assert.equal(db.subs.length, 1);
   await view.unmount();
   const quiet = console.error;
   console.error = () => {};
   try {
-    await assert.rejects(render(h(() => useFenec() && null)), /no FenecProvider/);
+    await assert.rejects(render(h(() => useFennec() && null)), /no FennecProvider/);
   } finally {
     console.error = quiet;
   }
@@ -153,9 +153,9 @@ test("the provider's database serves a query that brings none", async () => {
 
 // ---------------------------------------------------------------- real
 
-const wasm = await readFile(new URL('../../web/fenec.wasm', import.meta.url)).catch(() => null);
+const wasm = await readFile(new URL('../../web/fennec.wasm', import.meta.url)).catch(() => null);
 async function binary() {
-  for (const p of ['../../target/debug/fenec-server', '../../target/release/fenec-server']) {
+  for (const p of ['../../target/debug/fennec-server', '../../target/release/fennec-server']) {
     const url = new URL(p, import.meta.url);
     try {
       await access(url);
@@ -170,11 +170,11 @@ const bin = await binary();
 
 test(
   'a row another client writes shows up in the component',
-  { skip: !wasm ? 'no web/fenec.wasm (make wasm)' : !bin ? 'no fenec-server (cargo build)' : false },
+  { skip: !wasm ? 'no web/fennec.wasm (make wasm)' : !bin ? 'no fennec-server (cargo build)' : false },
   async () => {
-    const { Fenec, sync, connect } = await import('../../web/fenec.js');
-    const dir = await mkdtemp(join(tmpdir(), 'fenec-react-'));
-    const proc = spawn(bin, ['--http', '127.0.0.1:0', '--file', join(dir, 'r.fenec')], {
+    const { Fennec, sync, connect } = await import('../../web/fennec.js');
+    const dir = await mkdtemp(join(tmpdir(), 'fennec-react-'));
+    const proc = spawn(bin, ['--http', '127.0.0.1:0', '--file', join(dir, 'r.fennec')], {
       stdio: ['ignore', 'ignore', 'pipe'],
     });
     try {
@@ -183,7 +183,7 @@ test(
         const timer = setTimeout(() => rej(new Error(`no listener: ${buf}`)), 10000);
         proc.stderr.on('data', (d) => {
           buf += d;
-          const m = buf.match(/fenec-http \S+ listening on: (http:\/\/\S+)\s+\[[^\]]*\]/);
+          const m = buf.match(/fennec-http \S+ listening on: (http:\/\/\S+)\s+\[[^\]]*\]/);
           if (m) {
             clearTimeout(timer);
             res(m[1]);
@@ -196,17 +196,17 @@ test(
 
       const db = await sync({
         url,
-        local: await Fenec.open(wasm),
+        local: await Fennec.open(wasm),
         leader: false,
         shapes: [{ collection: 'tasks' }],
       });
       await db.ready();
 
       function Open() {
-        const rows = useLiveQuery(useFenec().from('tasks').where('done', false).order('title'));
+        const rows = useLiveQuery(useFennec().from('tasks').where('done', false).order('title'));
         return h('p', null, rows === undefined ? 'loading' : rows.map((r) => r.title).join(', '));
       }
-      const view = await render(h(FenecProvider, { db }, h(Open)));
+      const view = await render(h(FennecProvider, { db }, h(Open)));
       const until = async (want, v = view) => {
         const deadline = Date.now() + 10000;
         while (text(v.container) !== want) {
@@ -227,7 +227,7 @@ test(
       // The same component over the server alone -- connect(), no module:
       // its query runs on the server, again on every write it may read.
       const http = connect(url);
-      const served = await render(h(FenecProvider, { db: http }, h(Open)));
+      const served = await render(h(FennecProvider, { db: http }, h(Open)));
       await until('test the hook', served);
       await remote.from('tasks').insert({ title: 'ship the hook', done: false });
       await until('ship the hook, test the hook', served);
@@ -245,17 +245,17 @@ test(
 // event handler renders every component whose query reads what it wrote.
 test(
   'a local database is the state: a write renders the components that read it',
-  { skip: !wasm ? 'no web/fenec.wasm (make wasm)' : false },
+  { skip: !wasm ? 'no web/fennec.wasm (make wasm)' : false },
   async () => {
-    const { Fenec } = await import('../../web/fenec.js');
-    const db = await Fenec.open(wasm);
+    const { Fennec } = await import('../../web/fennec.js');
+    const db = await Fennec.open(wasm);
     db.run('create collection todos (title text, done bool @hash)');
     db.run('create collection prefs (theme text)');
     db.run('put todos {title: "write the hook", done: false}');
 
     const renders = { open: 0, count: 0, theme: 0 };
     function Open() {
-      const rows = useLiveQuery(useFenec().from('todos').where('done', false).order('title'));
+      const rows = useLiveQuery(useFennec().from('todos').where('done', false).order('title'));
       renders.open++;
       return h('p', { id: 'open' }, rows === undefined ? 'loading' : rows.map((r) => r.title).join(', '));
     }
@@ -273,7 +273,7 @@ test(
     }
     // A sidebar: the facets come on the rows, counted over every match.
     function Sidebar() {
-      const rows = useLiveQuery(useFenec().from('todos').facet('done').limit(0));
+      const rows = useLiveQuery(useFennec().from('todos').facet('done').limit(0));
       return h(
         'p',
         { id: 'facets' },
@@ -281,7 +281,7 @@ test(
       );
     }
     const view = await render(
-      h('div', null, h(FenecProvider, { db }, h(Open), h(Count), h(Sidebar)), h(Theme)),
+      h('div', null, h(FennecProvider, { db }, h(Open), h(Count), h(Sidebar)), h(Theme)),
     );
     const shown = () => ['open', 'count', 'theme'].map((id) => view.container.querySelector(`#${id}`).textContent);
     const sidebar = () => view.container.querySelector('#facets').textContent;
@@ -306,7 +306,7 @@ test(
     assert.equal(renders.count, before.count);
 
     // Another database loaded in its place -- as `restore` does -- renders all.
-    const other = await Fenec.open(wasm);
+    const other = await Fennec.open(wasm);
     other.run('create collection todos (title text, done bool @hash)');
     other.run('create collection prefs (theme text)');
     other.run('put todos {title: "restored", done: false}');

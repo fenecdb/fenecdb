@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The failover drill: two regions of fenecdb in Docker, broken on purpose.
+"""The failover drill: two regions of fennecdb in Docker, broken on purpose.
 
     make drill                       # builds the kit image, then runs this
     python3 deploy/drill/drill.py    # the image built already (DRILL_IMAGE)
@@ -13,7 +13,7 @@ environment and none on a command line:
     eu-r1, eu-r2        eu's, the same
     us-a, us-b          us's nodes, zones us-1 and us-2 (--dir --lease --sync always)
     eu-a, eu-b          eu's nodes, zones eu-1 and eu-2
-    arch-<node>         a node-wide archiver for each node (fenec archive --tenants)
+    arch-<node>         a node-wide archiver for each node (fennec archive --tenants)
 
 The region routers lease their own nodes (--auto-failover) and give every
 tenant a replica in the other zone (--replicas). Tenants are made in both
@@ -48,7 +48,7 @@ volume and the network carry the run's label and are removed at the end,
 however it ends. Exit status 0 when nothing acknowledged was lost and every
 check held, 1 otherwise.
 
-Knobs (environment): DRILL_IMAGE (fenec-kit), DRILL_LEASE seconds (2),
+Knobs (environment): DRILL_IMAGE (fennec-kit), DRILL_LEASE seconds (2),
 DRILL_TENANTS a region (3), DRILL_RATE writes a second a tenant (100),
 DRILL_KEEP=1 to leave everything running for a look, DRILL_JSON=<path> to
 write the results there too, DRILL_LOG_LINES of each router's and node's
@@ -68,14 +68,14 @@ import threading
 import time
 from datetime import datetime, timezone
 
-IMAGE = os.environ.get("DRILL_IMAGE", "fenec-kit")
+IMAGE = os.environ.get("DRILL_IMAGE", "fennec-kit")
 LEASE = int(os.environ.get("DRILL_LEASE", "2"))
 PER_REGION = int(os.environ.get("DRILL_TENANTS", "3"))
 RATE = float(os.environ.get("DRILL_RATE", "100"))
 KEEP = os.environ.get("DRILL_KEEP") == "1"
 
 RUN = "fdrill-" + secrets.token_hex(3)
-LABEL = f"fenec-drill={RUN}"
+LABEL = f"fennec-drill={RUN}"
 NET = RUN
 
 # Every token is the run's own, and each a different one: the router
@@ -380,18 +380,18 @@ def longest_gap(w, start, end):
 
 
 def node_cmd():
-    # As deploy/systemd/fenec-node.service runs it, with fewer connections
+    # As deploy/systemd/fennec-node.service runs it, with fewer connections
     # than its 4000: a container's threads are the Docker VM's.
-    return ["fenec-server", "--dir", "/data", "--http", "0.0.0.0:8081", "--sync", "always",
+    return ["fennec-server", "--dir", "/data", "--http", "0.0.0.0:8081", "--sync", "always",
             "--lease", "--max-connections", "200"]
 
 
 def node_env(n):
-    return {"FENEC_HTTP_TOKEN": DATA, "FENEC_ADMIN_TOKEN": ADMIN[n], "FENEC_REPLICATION_TOKEN": REPL}
+    return {"FENNEC_HTTP_TOKEN": DATA, "FENNEC_ADMIN_TOKEN": ADMIN[n], "FENNEC_REPLICATION_TOKEN": REPL}
 
 
-ROUTER_ENV = {"FENEC_SHARD_TOKEN": ROOT, "FENEC_SHARD_REPLICATION_TOKEN": DIRS,
-              "FENEC_SHARD_ENTRY_TOKEN": ENTRY}
+ROUTER_ENV = {"FENNEC_SHARD_TOKEN": ROOT, "FENNEC_SHARD_REPLICATION_TOKEN": DIRS,
+              "FENNEC_SHARD_ENTRY_TOKEN": ENTRY}
 GLOBALS = "http://g1:8090,http://g2:8090"
 
 
@@ -402,24 +402,24 @@ UPSTREAM = 2 * LEASE
 
 
 def global_cmd(standby_of=None):
-    # As deploy/systemd/fenec-global(.standby).service runs it.
-    cmd = ["fenec-shard", "--listen", "0.0.0.0:8090", "--directory", "/data/directory.fenec",
+    # As deploy/systemd/fennec-global(.standby).service runs it.
+    cmd = ["fennec-shard", "--listen", "0.0.0.0:8090", "--directory", "/data/directory.fennec",
            "--upstream-timeout", str(UPSTREAM)]
     return cmd + (["--replica-of", standby_of] if standby_of else [])
 
 
 def region_cmd(region, standby_of=None):
-    # As deploy/systemd/fenec-router(.standby).service runs it: a standby
+    # As deploy/systemd/fennec-router(.standby).service runs it: a standby
     # carries the primary's flags, so that once promoted it leases and fails
     # over as the primary did.
-    cmd = ["fenec-shard", "--listen", "0.0.0.0:8090", "--directory", "/data/directory.fenec",
+    cmd = ["fennec-shard", "--listen", "0.0.0.0:8090", "--directory", "/data/directory.fennec",
            "--region", region, "--global", GLOBALS, "--replicas",
            "--auto-failover", str(LEASE), "--upstream-timeout", str(UPSTREAM)]
     return cmd + (["--replica-of", standby_of] if standby_of else [])
 
 
 def archive_cmd(n):
-    return ["fenec", "archive", "--tenants", f"http://{n}:8081", f"/archive/{n}", "--image-every", "1h"]
+    return ["fennec", "archive", "--tenants", f"http://{n}:8081", f"/archive/{n}", "--image-every", "1h"]
 
 
 def build_world():
@@ -470,7 +470,7 @@ def build_world():
             until(lambda: query(addr(router, 8090), t, "get events count")[0] == 200,
                   f"{t} through {router}")
     for n in ["us-a", "us-b", "eu-a", "eu-b"]:
-        start(f"arch-{n}", archive_cmd(n), {"FENEC_REPLICATION_TOKEN": REPL},
+        start(f"arch-{n}", archive_cmd(n), {"FENNEC_REPLICATION_TOKEN": REPL},
               mounts=[f"{RUN}-archive:/archive"], data=False)
     say(f"{len(tenants)} tenants made through the global router, each with a replica in the other zone; 4 archivers following")
     return tenants
@@ -654,7 +654,7 @@ def kill_router(writers, results):
           f"{region}'s tenants to write again under {standby}'s leases", within=30 + 3 * LEASE)
     back = {w.tenant: round((first_ack_after(w, promoted) - promoted) * 1000) for w in mine}
     # The operator switches the promoted machine's unit at once
-    # (systemctl start fenec-router): the same file, opened as the
+    # (systemctl start fennec-router): the same file, opened as the
     # primary's, where the standby's unit started again would have it follow
     # the dead router. A restart of the one router the region has.
     switched = time.monotonic()
@@ -670,7 +670,7 @@ def kill_router(writers, results):
     recreate(primary, region_cmd(region, f"http://{standby}:8090"), ROUTER_ENV, 8090)
     forget(primary)
     listening(primary)
-    until(lambda: "fenec_router_following 1" in shard(primary, "GET", "/_metrics")[1],
+    until(lambda: "fennec_router_following 1" in shard(primary, "GET", "/_metrics")[1],
           f"{primary} to follow {standby}")
     for w in mine:
         until(lambda: query(addr(primary, 8090), w.tenant, "get events count")[0] == 200,
@@ -734,9 +734,9 @@ def restore(results):
     t = "eu-t1"
     k = point["acked"][t]
     out = docker("run", "--rm", "--label", LABEL, "-v", f"{RUN}-archive:/archive", IMAGE, "sh", "-c",
-                 f"fenec verify --tenants /archive/eu-a >/dev/null && "
-                 f"fenec restore --tenants /archive/eu-a /tmp/restored --to {point['at']} >/dev/null && "
-                 f"fenec /tmp/restored/{t}.fenec -c 'get events select count() as c, min(id) as lo, max(id) as hi'",
+                 f"fennec verify --tenants /archive/eu-a >/dev/null && "
+                 f"fennec restore --tenants /archive/eu-a /tmp/restored --to {point['at']} >/dev/null && "
+                 f"fennec /tmp/restored/{t}.fennec -c 'get events select count() as c, min(id) as lo, max(id) as hi'",
                  timeout=300)
     # The shell's table: a header, a rule, then `c lo hi`.
     line = [l for l in out.splitlines() if l.strip() and l.split()[0].isdigit()][0]

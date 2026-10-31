@@ -1,9 +1,9 @@
 // HS256 JSON Web Tokens with node:crypto alone, signed with the secret
-// fenec-server checks them with (`--jwt-secret-file`). Every token names an
+// fennec-server checks them with (`--jwt-secret-file`). Every token names an
 // `exp`: the server refuses one without.
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-const SECRET = process.env.FENEC_JWT_SECRET ?? 'shop-dev-jwt-secret-of-at-least-32-bytes!';
+const SECRET = process.env.FENNEC_JWT_SECRET ?? 'shop-dev-jwt-secret-of-at-least-32-bytes!';
 
 const b64 = (b: Buffer | string) => Buffer.from(b).toString('base64url');
 

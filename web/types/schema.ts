@@ -1,13 +1,13 @@
-// A schema declared in code (`@fenecdb/web/schema`), as a caller writes
+// A schema declared in code (`@fennecdb/web/schema`), as a caller writes
 // it, type-checked under --strict (`make types-check`): each line the types
 // must take, each `@ts-expect-error` one they must refuse -- and the row
-// types a table infers held equal to what `fenec types` generates for the
+// types a table infers held equal to what `fennec types` generates for the
 // same collections (schema-generated.d.ts, made from schema-tables.ts).
 
-import { Fenec, connect, from, openFile, sync, type InsertRow, type Row, type TableRef } from '../fenec.js';
+import { Fennec, connect, from, openFile, sync, type InsertRow, type Row, type TableRef } from '../fennec.js';
 import { useLiveQuery } from '../../integrations/react/index.js';
 import {
-  fenecTable,
+  fennecTable,
   text,
   integer,
   boolean,
@@ -18,7 +18,7 @@ import {
   uniqueIndex,
   defineRelations,
   describe,
-  toFenecQL,
+  toFennecQL,
   getColumns,
   rename,
   drop,
@@ -27,7 +27,7 @@ import {
   rebuild,
 } from '../schema.js';
 import { articles, reviews, tables, relations } from './schema-tables.ts';
-import type { FenecSchema } from './schema-generated.d.ts';
+import type { FennecSchema } from './schema-generated.d.ts';
 
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
 /** True when `A` and `B` are the one type, not merely assignable either way. */
@@ -35,13 +35,13 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ?
 const equal = <T extends true>(_: T) => {};
 const expect = <T>(value: T): T => value;
 
-// --------------------------------------------- what fenec types generates
+// --------------------------------------------- what fennec types generates
 
-equal<Equal<typeof articles.$inferSelect, Simplify<Row<FenecSchema['articles']>>>>(true);
-equal<Equal<typeof reviews.$inferSelect, Simplify<Row<FenecSchema['reviews']>>>>(true);
-equal<Equal<typeof articles.$inferInsert, Simplify<InsertRow<FenecSchema['articles']>>>>(true);
-equal<Equal<typeof reviews.$inferInsert, Simplify<InsertRow<FenecSchema['reviews']>>>>(true);
-equal<Equal<(typeof reviews)['$fields'], FenecSchema['reviews']>>(true);
+equal<Equal<typeof articles.$inferSelect, Simplify<Row<FennecSchema['articles']>>>>(true);
+equal<Equal<typeof reviews.$inferSelect, Simplify<Row<FennecSchema['reviews']>>>>(true);
+equal<Equal<typeof articles.$inferInsert, Simplify<InsertRow<FennecSchema['articles']>>>>(true);
+equal<Equal<typeof reviews.$inferInsert, Simplify<InsertRow<FennecSchema['reviews']>>>>(true);
+equal<Equal<(typeof reviews)['$fields'], FennecSchema['reviews']>>(true);
 // A nullable column reads `T | null`, a `.notNull()` one `T`.
 expect<string>(null as unknown as typeof articles.$inferSelect.title);
 expect<number | null>(null as unknown as typeof articles.$inferSelect.year);
@@ -56,7 +56,7 @@ void missing;
 
 // ------------------------------------------------------------- declaring
 
-const todos = fenecTable(
+const todos = fennecTable(
   'todos',
   {
     title: text().notNull().collate('tr'),
@@ -89,39 +89,39 @@ describe({ todos }, [
 ]);
 expect<{ title: unknown }>(getColumns(todos));
 
-// @ts-expect-error -- FenecQL has no defaults
+// @ts-expect-error -- FennecQL has no defaults
 text().default('x');
 // @ts-expect-error -- `id` is every document's own
 integer().primaryKey();
 // @ts-expect-error -- collation orders text
 integer().collate('tr');
-// @ts-expect-error -- a collation fenecdb has not got
+// @ts-expect-error -- a collation fennecdb has not got
 text().collate('fr');
 // @ts-expect-error -- nocase compares text
 integer().nocase();
 // @ts-expect-error -- nocase is a text's, not a list's
 text().array().nocase();
 // @ts-expect-error -- a path reads into json
-fenecTable('x', { a: text() }, (t) => [index().on(t.a.path('k'))]);
+fennecTable('x', { a: text() }, (t) => [index().on(t.a.path('k'))]);
 // @ts-expect-error -- an hnsw index is on a vector
-fenecTable('x', { a: text() }, (t) => [index().using('hnsw', t.a)]);
+fennecTable('x', { a: text() }, (t) => [index().using('hnsw', t.a)]);
 // @ts-expect-error -- bm25 indexes text
-fenecTable('x', { a: integer() }, (t) => [index().using('bm25', t.a)]);
+fennecTable('x', { a: integer() }, (t) => [index().using('bm25', t.a)]);
 // @ts-expect-error -- an hnsw index takes no prefix
-fenecTable('x', { v: vector({ dimensions: 3 }) }, (t) => [index().using('hnsw', t.v.op('vector_l2_ops')).with({ prefix: 3 })]);
+fennecTable('x', { v: vector({ dimensions: 3 }) }, (t) => [index().using('hnsw', t.v.op('vector_l2_ops')).with({ prefix: 3 })]);
 // @ts-expect-error -- pgvector has no such operator class
-fenecTable('x', { v: vector({ dimensions: 3 }) }, (t) => [index().using('hnsw', t.v.op('vector_hamming_ops'))]);
+fennecTable('x', { v: vector({ dimensions: 3 }) }, (t) => [index().using('hnsw', t.v.op('vector_hamming_ops'))]);
 // @ts-expect-error -- a duration is a number and a unit
-fenecTable('x', { at: timestamp() }, (t) => [index().on(t.at).ttl('soon')]);
+fennecTable('x', { at: timestamp() }, (t) => [index().on(t.at).ttl('soon')]);
 // @ts-expect-error -- an index over several fields is ordered: no hash
-fenecTable('x', { a: text(), b: text() }, (t) => [index().using('hash', t.a, t.b)]);
+fennecTable('x', { a: text(), b: text() }, (t) => [index().using('hash', t.a, t.b)]);
 // @ts-expect-error -- an index over several fields expires nothing
-fenecTable('x', { a: timestamp(), b: text() }, (t) => [index().on(t.a, t.b).ttl('1h')]);
+fennecTable('x', { a: timestamp(), b: text() }, (t) => [index().on(t.a, t.b).ttl('1h')]);
 
 // --------------------------------------------------------------- opening
 
 export async function opened(bytes: Uint8Array) {
-  const db = await Fenec.open(bytes, { schema: tables, relations, migrations: [rename(articles, 'name', 'title')] });
+  const db = await Fennec.open(bytes, { schema: tables, relations, migrations: [rename(articles, 'name', 'title')] });
 
   // By the table, and by its name: typed the same.
   const rows = await db.from(articles).select('title', 'year').where('year', '>=', 2024).rows();
@@ -170,9 +170,9 @@ export async function opened(bytes: Uint8Array) {
   expect<{ title: string }[] | undefined>(live);
   // The unbound builder takes a table too.
   expect<string>(from(articles).collection);
-  const raw = db.checkSchema({ format: 1, fenecql: toFenecQL(tables) }, 'plan');
-  // A schema written as FenecQL, typed by the caller.
-  const text = await Fenec.open<{ notes: { title: string } }>(bytes, { schema: 'create collection notes (title text required)' });
+  const raw = db.checkSchema({ format: 1, fennecql: toFennecQL(tables) }, 'plan');
+  // A schema written as FennecQL, typed by the caller.
+  const text = await Fennec.open<{ notes: { title: string } }>(bytes, { schema: 'create collection notes (title text required)' });
   expect<{ title: string }[]>(await text.from('notes').select('title').rows());
   expect<string[]>(raw.statements);
   expect<string | null>(raw.refusals[0].field);
@@ -191,6 +191,6 @@ export async function elsewhere() {
   // @ts-expect-error -- a field the table does not have
   replica.from(articles).where('nope', 1);
 
-  const db = await Fenec.open('./fenec.wasm');
-  await openFile(db, 'app.fenec', { schema: tables });
+  const db = await Fennec.open('./fennec.wasm');
+  await openFile(db, 'app.fennec', { schema: tables });
 }

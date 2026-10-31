@@ -3,7 +3,7 @@
 // and its alarm interleave, which `wrangler dev` gives no way to hold in
 // place. `cloudflare:workers` is a class that keeps `ctx` and `env`, and
 // the `.wasm` import the module compiled, as a Worker imports it. Needs
-// web/fenec.wasm (make wasm), node:sqlite and `module.registerHooks`.
+// web/fennec.wasm (make wasm), node:sqlite and `module.registerHooks`.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,10 +11,10 @@ import { readFile } from 'node:fs/promises';
 import * as nodeModule from 'node:module';
 import { Rows } from './fakes.js';
 
-const wasm = await readFile(new URL('../../web/fenec.wasm', import.meta.url)).catch(() => null);
+const wasm = await readFile(new URL('../../web/fennec.wasm', import.meta.url)).catch(() => null);
 const sqlite = await import('node:sqlite').catch(() => null);
 const skip = !wasm
-  ? 'no web/fenec.wasm (make wasm)'
+  ? 'no web/fennec.wasm (make wasm)'
   : !sqlite
     ? 'no node:sqlite'
     : !nodeModule.registerHooks && 'no module.registerHooks';
@@ -23,7 +23,7 @@ const skip = !wasm
 if (skip && process.env.CI) throw new Error(`example.test.js cannot run: ${skip}`);
 
 let Tenant;
-let Fenec;
+let Fennec;
 if (!skip) {
   const durable = 'export class DurableObject { constructor(ctx, env) { this.ctx = ctx; this.env = env; } }';
   nodeModule.registerHooks({
@@ -40,7 +40,7 @@ if (!skip) {
     },
   });
   ({ Tenant } = await import('./example/worker.js'));
-  ({ Fenec } = await import('../../web/fenec.js'));
+  ({ Fennec } = await import('../../web/fennec.js'));
 }
 
 /** An object over `storage`: events are not held back, nothing else runs here. */
@@ -59,7 +59,7 @@ async function settledYet(promise) {
 /** Each row the storage holds, as a database restored from it reads them. */
 async function stored(storage) {
   const { restore } = await import('./index.js');
-  const db = await Fenec.open(wasm);
+  const db = await Fennec.open(wasm);
   assert.equal(await restore(db, storage), true);
   return db.rows('get t select id, n order n');
 }

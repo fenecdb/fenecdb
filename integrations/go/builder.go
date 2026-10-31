@@ -1,20 +1,20 @@
-package fenecdb
+package fennecdb
 
-// The query builder: FenecQL text and its parameters from a chain of calls.
+// The query builder: FennecQL text and its parameters from a chain of calls.
 //
 //	rows, err := db.From("docs").
 //		Select("title").
 //		Where("year", ">=", 2024).
-//		Near("embed", vec, fenecdb.Ef(64)).
+//		Near("embed", vec, fennecdb.Ef(64)).
 //		Limit(5).
 //		Rows(ctx)
 //
-// It makes the text web/fenec.js's builder makes of the same chain, to the
+// It makes the text web/fennec.js's builder makes of the same chain, to the
 // byte, and so do the Python and .NET builders: integrations/builder-golden.json
 // holds the chains and what each must make, and every builder's tests run
 // it. Every value goes in as a parameter; a name -- a collection, a field,
 // a path into a json field -- cannot, so names are checked against
-// FenecQL's own rule, and that check is the injection boundary.
+// FennecQL's own rule, and that check is the injection boundary.
 //
 // A *Builder is immutable: each call hands back a copy, so a base query can
 // be kept and branched from, from several goroutines too. A step that is
@@ -43,7 +43,7 @@ import (
 // not go together. Message is the JS builder's, word for word.
 type QueryError struct{ Message string }
 
-func (e *QueryError) Error() string { return "fenecdb: " + e.Message }
+func (e *QueryError) Error() string { return "fennecdb: " + e.Message }
 
 func refuse(format string, args ...any) error {
 	return &QueryError{Message: fmt.Sprintf(format, args...)}
@@ -65,7 +65,7 @@ var ops = map[string]string{
 	"in":  "in",
 }
 
-// FenecQL's identifier: a Unicode letter or _, then letters, digits and _,
+// FennecQL's identifier: a Unicode letter or _, then letters, digits and _,
 // as the lexer reads it -- JavaScript's \p{Alphabetic} and \p{N}, which
 // holds the marks of Other_Alphabetic, a Devanagari vowel sign among them.
 func identStart(r rune) bool {
@@ -181,7 +181,7 @@ func asciiLower(s string) string {
 }
 
 // column is a select item: a field, or an aggregate of one spelled as
-// FenecQL spells it -- count(*), count(distinct user), sum(total), avg(f),
+// FennecQL spells it -- count(*), count(distinct user), sum(total), avg(f),
 // min(f), max(f), first(f), last(f), a path where a field goes --
 // answering under that name. Read by hand rather than by a case-blind
 // pattern, which folds the Kelvin sign onto k where the JS builder's does
@@ -308,7 +308,7 @@ func flat(args []any) []any {
 	return out
 }
 
-// render is the item as FenecQL, an expression's values bound.
+// render is the item as FennecQL, an expression's values bound.
 func (it selectItem) render(bind *binder) (string, error) {
 	if it.expr == nil {
 		return it.text, nil
@@ -359,7 +359,7 @@ func jsNumber(f float64) string {
 // whole: a count, a whole number JavaScript holds exactly. Limit, Offset
 // and a facet's Top go as parameters, so a page of any size or place is
 // one text; ef, candidates, k and a snippet's words are written in, as
-// FenecQL takes them.
+// FennecQL takes them.
 func whole(n int, what string) (int, error) {
 	if n < 0 || int64(n) > 1<<53-1 {
 		return 0, refuse("%s must be a non-negative integer: %d", what, n)
@@ -464,7 +464,7 @@ func Not(c Cond) Cond {
 // Raw is everything the builder cannot express (a function call): each ?
 // is bound to the next parameter -- a literal ? goes in as one too.
 //
-//	q.WhereCond(fenecdb.Raw("cosine(embed, ?) > ?", vec, 0.5))
+//	q.WhereCond(fennecdb.Raw("cosine(embed, ?) > ?", vec, 0.5))
 func Raw(sql string, params ...any) Cond {
 	return Cond{n: &node{t: "raw", sql: sql, params: params}}
 }
@@ -489,7 +489,7 @@ func Cmp(field, op string, value any) Cond {
 // joined with and. A spec is a value (equality), nil (is null), an OpMap,
 // or a map[string]any read as one in the order of its sorted keys.
 //
-//	fenecdb.Fields("year", fenecdb.Ops("gte", 2024), "tags", fenecdb.Ops("has", "rust"))
+//	fennecdb.Fields("year", fennecdb.Ops("gte", 2024), "tags", fennecdb.Ops("has", "rust"))
 func Fields(pairs ...any) Cond {
 	if len(pairs)%2 != 0 {
 		return Cond{err: refuse("Fields takes names and specs in pairs")}
@@ -649,7 +649,7 @@ func inCond(field string, values any) Cond {
 	return Cond{n: &node{t: "in", field: field, values: list}}
 }
 
-// = null is never true in FenecQL; what is meant is is null.
+// = null is never true in FennecQL; what is meant is is null.
 func cmp(field, op string, value any) Cond {
 	if value == nil {
 		switch op {
@@ -974,7 +974,7 @@ type Builder struct {
 }
 
 // From is the query builder over a collection, bound to no client: for its
-// text alone (ToFenecQL).
+// text alone (ToFennecQL).
 func From(collection string) *Builder {
 	b := &Builder{}
 	b.collection, b.err = ident(collection, "collection")
@@ -1014,7 +1014,7 @@ func (b *Builder) Err() error { return b.err }
 func (b *Builder) Collection() string { return b.collection }
 
 // Select names the fields; none, or "*", is every field. Aggregates go in
-// the same list as FenecQL spells them and answer under that name:
+// the same list as FennecQL spells them and answer under that name:
 // Select("status", "count(*)", "sum(total)").Group("status"); an expression
 // -- Expr, Bucket, CountDistinct, First, Last -- under the name its As
 // gives it: Select("sym", Expr("sum(px * qty) / sum(qty)").As("vwap")).
@@ -1042,7 +1042,7 @@ func (b *Builder) Select(cols ...any) *Builder {
 // between them, not escaped. It answers under `highlight(field)`, after
 // the fields Select named; it needs Match.
 //
-//	db.From("docs").Select("title").Highlight("body", fenecdb.Tags("<mark>", "</mark>")).Match("body", text)
+//	db.From("docs").Select("title").Highlight("body", fennecdb.Tags("<mark>", "</mark>")).Match("body", text)
 func (b *Builder) Highlight(field string, options ...Opt) *Builder {
 	return b.step(func(d *Builder) error {
 		m := mark{words: -1}
@@ -1136,7 +1136,7 @@ func text(v any, what string) (string, error) {
 // and how many rows hold it, most first; Top keeps the commonest. The
 // counts come back beside the rows: Answer's Facets.
 //
-//	db.From("products").Match("title", "phone").Facet("brand", fenecdb.Top(10)).Facet("color").Limit(20)
+//	db.From("products").Match("title", "phone").Facet("brand", fennecdb.Top(10)).Facet("color").Limit(20)
 func (b *Builder) Facet(field string, options ...Opt) *Builder {
 	return b.step(func(d *Builder) error {
 		f := facetClause{top: -1}
@@ -1481,8 +1481,8 @@ func (b *Builder) Require(n int, options ...Opt) *Builder {
 	})
 }
 
-// ToFenecQL is the statement and its parameters, as they would be sent.
-func (b *Builder) ToFenecQL() (string, []any, error) {
+// ToFennecQL is the statement and its parameters, as they would be sent.
+func (b *Builder) ToFennecQL() (string, []any, error) {
 	if b.err != nil {
 		return "", nil, b.err
 	}
@@ -1956,7 +1956,7 @@ func structDoc(v any) (Doc, error) {
 
 // Computed is a value worked out over a row: what Inc and Expr make for a
 // write, and what Expr, Bucket, CountDistinct, First and Last make for
-// Select or Group, rendered as FenecQL with its values as parameters.
+// Select or Group, rendered as FennecQL with its values as parameters.
 type Computed struct {
 	kind   string
 	by     any
@@ -1975,7 +1975,7 @@ func (c Computed) As(name string) Computed {
 }
 
 // Inc is a field plus by in an update, counting from 0 where it is null --
-// D("n", fenecdb.Inc(1)) is n: coalesce(n, 0) + $1 -- worked out under the
+// D("n", fennecdb.Inc(1)) is n: coalesce(n, 0) + $1 -- worked out under the
 // server's write lock, so increments from many clients all land.
 func Inc(by any) Computed {
 	if !finiteNumber(by) {
@@ -1984,7 +1984,7 @@ func Inc(by any) Computed {
 	return Computed{kind: "inc", by: by}
 }
 
-// Expr is a value as a FenecQL expression over the row it is written into,
+// Expr is a value as a FennecQL expression over the row it is written into,
 // each ? bound to the next parameter: Expr("now()"), Expr("price * ?", 1.2).
 func Expr(sql string, params ...any) Computed {
 	return Computed{kind: "expr", sql: sql, params: params}
@@ -1997,7 +1997,7 @@ var interval = regexp.MustCompile(`^[1-9][0-9]*(ms|s|m|h|d|w|mo|y)$`)
 // Bucket is the start of the interval a timestamp falls in -- "15m", "1h",
 // "1d", "1w" (from a Monday), "1mo", "1y", in UTC -- for Select or Group:
 //
-//	db.From("ticks").Select(fenecdb.Bucket("at", "1m").As("minute"), "count(*)").Group("minute")
+//	db.From("ticks").Select(fennecdb.Bucket("at", "1m").As("minute"), "count(*)").Group("minute")
 //
 // Given a zone -- an IANA name, "Europe/Istanbul", or an offset, "+03:00"
 // -- by its clock: a day from local midnight, 23 or 25 hours where it
@@ -2177,7 +2177,7 @@ func Returning(fields ...string) Opt {
 }
 
 // requireClause is " require n" for Require: a whole number from 0 written
-// into the text -- FenecQL takes no parameter there: the count is what the
+// into the text -- FennecQL takes no parameter there: the count is what the
 // statement guards, a constant of the code, where a page's limit and
 // offset change with each request and go as parameters.
 func requireClause(o opts) (string, error) {
@@ -2198,7 +2198,7 @@ func requireClause(o opts) (string, error) {
 }
 
 // reasonClause is " else '<reason>'" for Reason: written into the text, a
-// quote doubled and a backslash escaped, as FenecQL takes it -- never a
+// quote doubled and a backslash escaped, as FennecQL takes it -- never a
 // parameter, as the count is not: it is the statement's own words, by which
 // a caller tells one refusal from another. 1 to 200 bytes of UTF-8, as the
 // parser holds it: len counts bytes, so "ş" counts 2. A string that is not
@@ -2366,7 +2366,7 @@ func (b *Builder) ToDelete(options ...Opt) (string, []any, error) {
 
 func (b *Builder) send(ctx context.Context, text string, params []any) ([]byte, head, error) {
 	if b.client == nil {
-		return nil, head{}, refuse("query is not bound to a connection: use db.From(...) (ToFenecQL() if you only want the text)")
+		return nil, head{}, refuse("query is not bound to a connection: use db.From(...) (ToFennecQL() if you only want the text)")
 	}
 	return b.client.query(ctx, text, params)
 }
@@ -2381,7 +2381,7 @@ func (b *Builder) sendRead(ctx context.Context, text string, params []any) ([]by
 }
 
 func (b *Builder) answer(ctx context.Context) ([]byte, error) {
-	text, params, err := b.ToFenecQL()
+	text, params, err := b.ToFennecQL()
 	if err != nil {
 		return nil, err
 	}
@@ -2441,7 +2441,7 @@ func (b *Builder) Count(ctx context.Context) (int64, error) {
 // Explain is the path the query took, a line a step; the query runs to
 // tell.
 func (b *Builder) Explain(ctx context.Context) ([]string, error) {
-	text, params, err := b.ToFenecQL()
+	text, params, err := b.ToFennecQL()
 	if err != nil {
 		return nil, err
 	}
@@ -2465,7 +2465,7 @@ func (b *Builder) exec(ctx context.Context, text string, params []any) (Result, 
 	}
 	r, err := resultOf(raw)
 	if err != nil {
-		return Result{}, fmt.Errorf("fenecdb: a write answered %q", raw)
+		return Result{}, fmt.Errorf("fennecdb: a write answered %q", raw)
 	}
 	r.Seq, r.Replayed = h.seq, h.replayed
 	return r, nil

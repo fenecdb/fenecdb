@@ -1,4 +1,4 @@
-// The database fenec studio reads in the page: the browser module in a
+// The database fennec studio reads in the page: the browser module in a
 // dedicated worker, so an index being built or a seed being written never
 // holds the page's thread. local.js starts it and speaks to it; engine.js
 // answers each request as a server would.
@@ -12,7 +12,7 @@
 // (`persist`, a write at a time after the first image) and a later visit
 // brings it back (`restore`) instead of seeding again.
 
-import { Fenec, persist, restore, putState } from './fenec.js';
+import { Fennec, persist, restore, putState } from './fennec.js';
 import { Engine } from './engine.js';
 
 let engine = null;
@@ -23,7 +23,7 @@ const post = (m) => self.postMessage(m);
 
 /** A database seeded afresh: the playground's statements, one block. */
 async function fresh() {
-  const db = await Fenec.open(opened.module, { collation: opened.collation });
+  const db = await Fennec.open(opened.module, { collation: opened.collation });
   if (opened.seed?.length) await db.batch(opened.seed);
   return db;
 }
@@ -47,7 +47,7 @@ const ops = {
     let db = null;
     let restored = false;
     if (keeping) {
-      db = await Fenec.open(module, { collation });
+      db = await Fennec.open(module, { collation });
       try {
         restored = await restore(db, key);
       } catch {
@@ -96,7 +96,7 @@ const ops = {
       // Stored from its image on: `persist` goes on from where it last
       // stored a database, which after a forget is nowhere, so the one
       // kept is a copy that was never stored.
-      const db = await Fenec.open(opened.module, { collation: opened.collation });
+      const db = await Fennec.open(opened.module, { collation: opened.collation });
       await db.loadAsync(engine.db.snapshot());
       keeping = true;
       swap(db);

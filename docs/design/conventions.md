@@ -10,11 +10,11 @@ a crate by `tests/all.rs` (`autotests = false`: a new file needs its `mod`
 line there, or it is never built). A test reading the process's own
 counts, `/_metrics` or the statements', is a `[[test]]` of its own; so is
 one whose servers hold many threads (past macOS's 2 048 a process, a
-server answers 503 to whichever test asked), and so are `fenec-http`'s
-`tests/audit.rs` and `fenec-shard`'s `tests/refusals.rs`: the wait after a
+server answers 503 to whichever test asked), and so are `fennec-http`'s
+`tests/audit.rs` and `fennec-shard`'s `tests/refusals.rs`: the wait after a
 refusal is the process's, so the other tests' servers ask with none
 (`audit::set_delay(0)` in their helpers). Measurement programs are each
-crate's `examples/` and `fenec-bench`'s binaries, wired to `make` targets,
+crate's `examples/` and `fennec-bench`'s binaries, wired to `make` targets,
 not to CI.
 
 ## Reruns
@@ -60,8 +60,8 @@ upstream timeout of 600 ms failed a tenant's create at background QoS).
 
 A server a test or a harness starts listens on port 0 (`--http
 127.0.0.1:0`, `--listen 127.0.0.1:0`, Node's `listen(0)`) and is found by
-the `listening on: http://<address>` line on stderr of fenec-server and
-fenec-shard (their usage names it, `fenec-shard`'s `tests/listen.rs` holds
+the `listening on: http://<address>` line on stderr of fennec-server and
+fennec-shard (their usage names it, `fennec-shard`'s `tests/listen.rs` holds
 it): a fixed port, or one found free and handed over, met another suite's
 server. A router is told its nodes by the addresses they said. Only a site
 whose address is needed before it binds -- a Next.js build renders it, the
@@ -75,7 +75,7 @@ A change that adds or alters something a user meets says so where a user
 looks, in the same pull request: its reference page under
 `site/content/docs/`; README's feature table and the links beside it; the
 home page (`site/content/index.html`) and the docs index when a visitor
-would pick fenecdb for the feature; and the SDK lists (`languages.html`,
+would pick fennecdb for the feature; and the SDK lists (`languages.html`,
 `mobile.html`, `sharding-read-replicas.html`'s SDK paragraph, `integrations.html`'s)
 when an SDK changes. A section added or changed is found by its words
 alone until the site's search vector cache has its vector: after sections

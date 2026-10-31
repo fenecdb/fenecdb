@@ -1,4 +1,4 @@
-# The fenecdb website
+# The fennecdb website
 
 Dusk in the dune field. The fennec is a desert fox -- small, tough, and all
 ears -- so the site is a night sky over lit dunes, and the fox at its top
@@ -22,9 +22,9 @@ make site-deploy   # build, then wrangler deploy
 ```
 
 All three depend on `make wasm`: the playground runs the real engine, so
-`build.py` copies `web/fenec.js` and `web/fenec.wasm` into the output.
+`build.py` copies `web/fennec.js` and `web/fennec.wasm` into the output.
 
-The playground is fenec studio -- the `studio/` folder fenec-server embeds
+The playground is fennec studio -- the `studio/` folder fennec-server embeds
 with `--studio`, not a copy of it -- over a database in the page.
 `build.py` writes its page to `dist/studio/` from `studio/index.html`, every
 module and stylesheet minified and named by its hash with each import
@@ -50,12 +50,12 @@ Quickstart's steps 2 and 3 and holds what it prints to the block under the
 tabs, the same three lines in every language;
 `{{moved_script}}` is the script of a page that was split ("Splitting a docs
 page", below); and `{{builder "case" ...}}`, on the line above a
-`<pre data-lang="fenecql">`, makes the block the first tab of a box whose
+`<pre data-lang="fennecql">`, makes the block the first tab of a box whose
 other tabs are the same statements written with each SDK's builder
 (`builder_tabs.py`). Each name is a case of
 `integrations/builder-golden.json`, one for each statement of the block in
 order, and the build fails unless the case makes its statement -- its
-text, each parameter written in as FenecQL writes the value, or a `$n`
+text, each parameter written in as FennecQL writes the value, or a `$n`
 where the page has one. A tab's code is rendered from the case's chain, and
 `python3 site/builder_tabs.py --check` (CI's integrations job) runs every
 JavaScript and Python tab as the page shows it and holds what it sent to
@@ -65,17 +65,17 @@ and the like), which their own jobs run, and the check fails while they are
 behind the pages. A new example takes a case ending at an endpoint (`rows`,
 `count`, `update` ...) in `web/golden.mjs` (`make builder-golden`), the
 placeholder, then `make docs-builder`. A placeholder alone on its line, over
-no FenecQL block, writes the FenecQL tab from its cases -- each statement with
+no FennecQL block, writes the FennecQL tab from its cases -- each statement with
 its parameters written in, broken before its clauses where it is long -- as
 Your language's tour of the builder does, its prose having no statement of
-its own; a parameter text FenecQL cannot write in (a C0 control but `\n`,
-`\t`, `\r` and `\0`, U+0085, U+2028, U+2029) fails the build. FenecQL's tab keeps no language
+its own; a parameter text FennecQL cannot write in (a C0 control but `\n`,
+`\t`, `\r` and `\0`, U+0085, U+2028, U+2029) fails the build. FennecQL's tab keeps no language
 (`data-keep="false"`), so a box opens on the reader's language where one was
 chosen; JavaScript's tab is "JavaScript" in every box of languages, Your
 language's and the Quickstart's too, or one would not open on the other's
 choice. Each code block's label is the import its names come from, and the
 statements the tabs send are written once, under the panels (`styles.css`
-hides them under FenecQL's tab). All are filled before the claims are checked and before the search and `llms.txt` read
+hides them under FennecQL's tab). All are filled before the claims are checked and before the search and `llms.txt` read
 the page, and a version in prose that is a fact about the past (a comparison
 checked against a competitor's page on a day, a benchmark's build) stays as
 written. The Quickstart, Quickstart: in the browser, Install and The shell
@@ -91,7 +91,7 @@ pages' commands again and compare.
 
 Every code block gets a copy button (`site.js`): over its corner, taking no
 room, in the label bar where a block has one and shown on hover otherwise; a
-block with prompt lines (`$ `, `fenec> `) copies those commands alone, with no
+block with prompt lines (`$ `, `fennec> `) copies those commands alone, with no
 prompt and none of the answers beneath. A set of tabs that are not languages
 names its own `data-tabs` and `data-key` (the Quickstart's macOS and Linux
 and Docker).
@@ -136,15 +136,15 @@ for everything, five minutes of caching and `text/plain` for `/install.sh` (the
 installer, `curl -fsSL https://fenecdb.com/install.sh | sh`: it reaches the next
 install when a change merges, and a browser shows it rather than saving it),
 and a year of immutable caching for every content-hashed asset.
-That now includes the engine — the site loads `fenec.<hash>.js` and
-`fenec.<hash>.wasm`, so a returning visitor pays no revalidation round trip for
+That now includes the engine — the site loads `fennec.<hash>.js` and
+`fennec.<hash>.wasm`, so a returning visitor pays no revalidation round trip for
 the two largest files on the page.
 
-Both also ship under their plain names, because `./fenec.js` is what the docs
+Both also ship under their plain names, because `./fennec.js` is what the docs
 tell people to import and those links have to keep resolving. Only the plain
 pair revalidates: a stale module under a stable name would silently be the
 wrong engine. They are deliberately not run through the page-wide asset rename
-either, or the `./fenec.js` inside every docs code sample would be rewritten
+either, or the `./fennec.js` inside every docs code sample would be rewritten
 into a hashed name that means nothing to a reader.
 
 ## Layout
@@ -161,7 +161,7 @@ site/
   motion.js       each section's scenes, drawn from their time alone
   mark.svg        the mark, written by `node site/fennec.js`: the favicon
   mark-detail.svg the same with its running light: header and footer
-  playground.js   the playground's boot: fenec studio over a database in the page
+  playground.js   the playground's boot: fennec studio over a database in the page
   playground-data.js  what that database is seeded with, and the editor's examples
   highlight.js    the studio editor's colours; build.py writes its rules in
   test_highlight.py holds highlight.js to build.py's highlighter (needs node)
@@ -192,13 +192,13 @@ site/
 
 ## Search
 
-The search is fenecdb, in the reader's tab. `build.py` cuts every docs page,
+The search is fennecdb, in the reader's tab. `build.py` cuts every docs page,
 the home page and the playground into sections at their `<h2>` and `<h3>`,
 each a document -- `title`, `heading`, `url` with the heading's anchor,
 `body` as plain text with its code, `section` (the sidebar's group) and
 `kind` (doc, compare or benchmark) -- and hands them to
 `search-index.mjs`, which writes them into a database through
-`web/fenec.wasm` and its image into `dist` as `search.<hash>.fenec.gz`.
+`web/fennec.wasm` and its image into `dist` as `search.<hash>.fennec.gz`.
 Both texts are `@text(prefix=12)`: besides each word the index holds its
 first 3 to 12 letters, and a query is cut the same way, so a word half typed
 finds the words it begins (`compac` and `compaction` share `compa`) and an
@@ -219,12 +219,12 @@ The page loads nothing of it until the search is opened -- the button,
 `/`, or Cmd/Ctrl+K. Then `search.js` fetches the module, the engine and the
 image, decompresses the image with `DecompressionStream` and hands it to
 `load`; every keystroke is a `match` over the text and another over the
-heading, whose score counts three times (FenecQL has no weight for a field),
+heading, whose score counts three times (FennecQL has no weight for a field),
 `snippet()` and `highlight()` for what is shown, and `facet section` for the
 chips. A snippet and a heading go into the page as text, and only the spans
 the engine names are wrapped in `<mark>`.
 
-The image is gzipped by the build because a `.fenec` is a type the edge does
+The image is gzipped by the build because a `.fennec` is a type the edge does
 not know, and serves as it lies: 1.1 MB, against 367 KB gzipped (283 KB with
 brotli; the build prints all three).
 
@@ -245,7 +245,7 @@ reader pauses (250 ms), the page sends the query to `POST /api/embed` on
 the site's own origin, `worker.js` turns it into bge-m3's vector through
 Workers AI, and the page runs the same query again as
 `match body $1 near embed $2 fuse` over a second image: the same sections
-with their vectors (`search-vectors.<hash>.fenec.gz`), which it downloads
+with their vectors (`search-vectors.<hash>.fennec.gz`), which it downloads
 only the first time a vector comes back. The words' list is on screen
 meanwhile and stays whenever the meaning does not come: no endpoint, a
 refusal, 800 ms gone by, no network. One or two words are looked up by the
@@ -371,7 +371,7 @@ it needs, all once:
 
    ```html
    <!--
-   title: Thing — fenecdb
+   title: Thing — fennecdb
    description: One sentence, used for the meta description and link previews.
    -->
 
@@ -390,7 +390,7 @@ write your own `id="..."` when another page already links to it.
 ## Splitting a docs page
 
 A fragment never reaches the server, so a section that moves to another page
-cannot be redirected there by a rule. `docs/fenecql` was one page of 23 000
+cannot be redirected there by a rule. `docs/fennecql` was one page of 23 000
 words and is now a tour and eight reference pages, and `docs/sharding` one of
 22 000 and is now a tutorial and seven pages (guides, a reference, the
 design); `docs/benchmarks` was one of 16 000 and is an overview and five pages
@@ -411,7 +411,7 @@ map: the map is for the addresses outside it.
 
 ## Conventions
 
-- Code goes in `<pre data-lang="fenecql|js|rust|bash|json|http|text">`, with an
+- Code goes in `<pre data-lang="fennecql|js|rust|bash|json|http|text">`, with an
   optional `data-label="filename"`. Write `<` and `>` raw; the generator
   escapes and highlights. `data-bare` highlights in place without the panel —
   that is how the typed headline on the home page is set.
@@ -567,9 +567,9 @@ fonts lack is set by the system's font throughout, so it never swaps.
 
 Measured in headless Chrome, 20 loads a page and width, cache off: the
 quickstart's CLS at 1280 px was 0.0106 on every load, the docs index's and
-the server page's 0.0021, FenecQL's 0.0037 and the home page's 0.0054, all
+the server page's 0.0021, FennecQL's 0.0037 and the home page's 0.0054, all
 of it the fonts, and the old playground's 0.0084, 0.0034 of it. It is 0 on
 those pages. The playground is now the studio in a frame of a fixed size,
 which moves nothing around it as it loads. With the fonts
-held back 600 ms the swap moves nothing but one text run of FenecQL's page
+held back 600 ms the swap moves nothing but one text run of FennecQL's page
 at 390 px (0.0004), where a line breaks at another word.

@@ -56,7 +56,7 @@ export async function prepare(
   }
   const world: World = { accounts: [], frozen: [], deposited: new Map(currencies.map((c) => [c, 0])) };
   const total = opts.n + (opts.frozen ?? 0);
-  // Eight at a time: fenec-server takes 100 connections unless told more.
+  // Eight at a time: fennec-server takes 100 connections unless told more.
   let next = 0;
   await Promise.all(
     Array.from({ length: Math.min(8, total) }, async () => {

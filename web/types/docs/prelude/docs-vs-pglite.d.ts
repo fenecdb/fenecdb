@@ -10,4 +10,4 @@ declare const queryVector: number[];
 declare function draw(rows: { title: string | null }[]): void;
 /** The table and the database the first example declared and opened. */
 declare const notes: typeof import('../tables.js').notes;
-declare const db: import('../../../fenec.js').Fenec<import('../../../fenec.js').SchemaOf<{ notes: typeof notes }>>;
+declare const db: import('../../../fennec.js').Fennec<import('../../../fennec.js').SchemaOf<{ notes: typeof notes }>>;

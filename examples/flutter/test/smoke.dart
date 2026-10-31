@@ -5,7 +5,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:fenecdb_notes/notes.dart';
+import 'package:fennecdb_notes/notes.dart';
 
 void check(bool ok, String step, [Object? got]) {
   if (!ok) throw StateError('$step: got $got');
@@ -15,7 +15,7 @@ void check(bool ok, String step, [Object? got]) {
 List<Object?> titles(List<Map<String, Object?>> rows) => [for (final r in rows) r['title']];
 
 Future<void> smoke(Directory dir, String schema) async {
-  final path = '${dir.path}/notes.fenec';
+  final path = '${dir.path}/notes.fennec';
   var notes = await Notes.open(path, schema);
   final db = notes.db;
 
@@ -69,11 +69,11 @@ Future<void> smoke(Directory dir, String schema) async {
   await notes.db.close();
 }
 
-// Without Flutter: dart run test/smoke.dart, FENEC_LIBRARY naming the library.
+// Without Flutter: dart run test/smoke.dart, FENNEC_LIBRARY naming the library.
 Future<void> main() async {
   final dir = await Directory.systemTemp.createTemp('notes');
   try {
-    await smoke(dir, File('schema.fenecql').readAsStringSync());
+    await smoke(dir, File('schema.fennecql').readAsStringSync());
   } finally {
     await dir.delete(recursive: true);
   }

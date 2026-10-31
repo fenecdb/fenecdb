@@ -1,6 +1,6 @@
 // Both runners of integrations/sync-scenarios.json ran every scenario, and
-// every one held: the native core's (crates/fenec-abi/tests/scenarios.rs)
-// and the browser's (web/fenec.sync.scenarios.test.js) each write the names
+// every one held: the native core's (crates/fennec-abi/tests/scenarios.rs)
+// and the browser's (web/fennec.sync.scenarios.test.js) each write the names
 // that passed to target/sync-scenarios/. A runner that skipped, or a
 // scenario one of them never reached, fails here rather than passing quietly.
 //

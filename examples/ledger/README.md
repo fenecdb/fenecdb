@@ -1,6 +1,6 @@
-# Quire: a payments ledger on fenecdb
+# Quire: a payments ledger on fennecdb
 
-A real-world example of money moving through fenecdb. Quire is a
+A real-world example of money moving through fennecdb. Quire is a
 double-entry ledger with an operator console. It has:
 
 - accounts in several currencies, balances in integer minor units, open or
@@ -26,9 +26,9 @@ The stack:
 
 - TypeScript on Node, with a plain `node:http` server rendering the console
   as strings;
-- `fenec-server` as the only database, a tenant node (`--dir`) with one file
+- `fennec-server` as the only database, a tenant node (`--dir`) with one file
   per tenant;
-- the engine in process (`@fenecdb/web`'s WebAssembly module) for the same
+- the engine in process (`@fennecdb/web`'s WebAssembly module) for the same
   tests without a server.
 
 Why no framework: the console is four pages of tables and forms, and the
@@ -41,7 +41,7 @@ Every person, account and amount is invented.
 ## Architecture
 
 ```
- browser                 ledger server (src/server.ts)                     fenec-server --dir (tenant node)
+ browser                 ledger server (src/server.ts)                     fennec-server --dir (tenant node)
  ───────                 ─────────────────────────────                     ────────────────────────────────
  console pages ◀──────── every page read under the signed-in    ─────────▶ /t/acme/  accounts, journal,
  (forms, no JS)          person's own JWT:                                            transfers, holds,
@@ -55,7 +55,7 @@ Every person, account and amount is invented.
  operator jobs (the node's own token, never the console's)
    scripts/sink.ts   GET /t/acme/_changes  ───────────────────────────▶  the journal, at least once,
                      → data/journal-sink.ndjson (dedup by entry id)       into a file outside
-   fenec backup --key-file  → a sealed backup
+   fennec backup --key-file  → a sealed backup
    reconciliation: one /batch of reads (a snapshot), from the console
                      under the operator's admin JWT
 ```
@@ -72,10 +72,10 @@ Four kinds of credential, each with one job:
 ## Run it
 
 ```sh
-cargo build --release -p fenec-server -p fenec-cli   # from the repository's root
+cargo build --release -p fennec-server -p fennec-cli   # from the repository's root
 cd examples/ledger
 npm install
-npm run db        # fenec-server --dir data/tenants on :8080, --sync always, policy.txt, the audit log
+npm run db        # fennec-server --dir data/tenants on :8080, --sync always, policy.txt, the audit log
 npm run setup     # tenants acme and globex, the schema, a few people and accounts
 npm start         # the console: http://127.0.0.1:3000
 npm run sink      # the journal into data/journal-sink.ndjson, until stopped
@@ -86,10 +86,10 @@ Ada and Ben share a household account). The password is `ledger-demo`.
 
 | Variable | Default | For |
 | --- | --- | --- |
-| `FENEC_URL` | `http://127.0.0.1:8080` | the tenant node |
+| `FENNEC_URL` | `http://127.0.0.1:8080` | the tenant node |
 | `LEDGER_TENANT` | `acme` | the tenant the console serves |
-| `FENEC_JWT_SECRET` | a dev value | signs the JWTs the node checks |
-| `FENEC_TOKEN`, `FENEC_ADMIN_TOKEN`, `FENEC_REPLICATION_TOKEN` | dev values | the node's own tokens, for setup, the sink and backups |
+| `FENNEC_JWT_SECRET` | a dev value | signs the JWTs the node checks |
+| `FENNEC_TOKEN`, `FENNEC_ADMIN_TOKEN`, `FENNEC_REPLICATION_TOKEN` | dev values | the node's own tokens, for setup, the sink and backups |
 | `LEDGER_SESSION_SECRET` | a dev value | signs the console's session cookie |
 | `LEDGER_RATE_LIMIT` | `30` | transfers an account may make a minute |
 | `LEDGER_SINK_FILE` | `data/journal-sink.ndjson` | where the sink writes |
@@ -108,7 +108,7 @@ npm run recon-bench     # reconciliation at a million entries (a server of its o
 
 From the repository's root, `examples/run-tests.sh ledger` runs `npm run ci`
 on this checkout's packages and binaries. CI's `examples (ledger)` job runs
-it against a release `fenec-server`.
+it against a release `fennec-server`.
 
 | File | What it holds |
 | --- | --- |
@@ -120,7 +120,7 @@ it against a release `fenec-server`.
 
 ## The invariants, and how each is enforced
 
-Every movement of money is one block of FenecQL statements sent as one
+Every movement of money is one block of FennecQL statements sent as one
 `/batch` (`src/ledger.ts`). A transfer:
 
 ```
@@ -169,14 +169,14 @@ captured ones too. A hold keeps `until` under `@sorted`, and the reaper
 block guarded by `state = "held" and until <= now()`. A capture checks
 `until > now()` in its own guard, so a lapsed hold cannot be captured even
 before the reaper comes by. A hold kept only while it lives would take
-`@ttl` and a reaper reading `expired()` (`site/content/docs/fenecql-indexes.html`,
+`@ttl` and a reaper reading `expired()` (`site/content/docs/fennecql-indexes.html`,
 the reaper).
 
 ### Under concurrency: 20 000 operations, 16 clients
 
 `test/invariants.test.ts` runs the same mix (`test/workload.ts`) twice:
 through the engine in this process (`LocalStore`) and through
-`fenec-server` over HTTP (`HttpStore`), 40 open accounts in two currencies
+`fennec-server` over HTTP (`HttpStore`), 40 open accounts in two currencies
 and 4 frozen ones. Of every operation:
 
 - 55% transfers: 4% from a frozen account, 4% to a missing one, 4% to a
@@ -267,12 +267,12 @@ hold:
 
 ## Reconciliation, and what "one moment" means here
 
-fenecdb has one writer and no snapshots of its own. A read takes the shared
+fennecdb has one writer and no snapshots of its own. A read takes the shared
 lock, so one statement sees one state; but balances and entries are two
 collections, and a write may land between two reads. So `src/reconcile.ts`
 sends its four reads as one `/batch`. A batch of reads alone runs under
 one read lock, so no write lands between the first read and the last, and
-the answer's `Fenec-Seq` names the change the books stood at; other reads
+the answer's `Fennec-Seq` names the change the books stood at; other reads
 go on beside it. The price is that transfers wait for it, as a write waits
 for any read: at a million entries the snapshot takes 250 ms, and a
 transfer arriving meanwhile waits up to that long (below).
@@ -301,7 +301,7 @@ reconciliation page shows the file against the journal.
 
 On an Apple M1 laptop with 8 cores, which other agents were using at the
 same time (load average 2 to 3), with this checkout's release
-`fenec-server`. Each figure is one run; take them as indicative.
+`fennec-server`. Each figure is one run; take them as indicative.
 
 ### Transfers
 
@@ -350,7 +350,7 @@ every page it put 13 ms between a transfer and its line at the median.
 
 ## What each part uses
 
-| Part | fenecdb |
+| Part | fennecdb |
 | --- | --- |
 | Accounts | `ext text @unique` (the external id), `currency`, `status`, `kind` `@hash`; balances and holds as `int` minor units; `holders [text]` read with `has` |
 | A transfer | one `/batch` with an `Idempotency-Key`; `set ... require 1` on the debit and the credit; `get ... require 1` guards that read without writing; expressions in `set` (`balance - $3`, `refunded + $3`); `transfers.ref @unique` |
@@ -359,11 +359,11 @@ every page it put 13 ms between a transfer and its line at the median.
 | Holds | the account's `held` counter under the debit's guard; `until timestamp @sorted` and a reaper; state moves guarded by `require 1` |
 | Rate limit | the counter recipe: `put limits {...} if absent` with `at timestamp @ttl(1m)`, then `set limits {n: n + 1} where ... and n < $10 require 1` |
 | Security | per-operation grants (`read`, `insert`, `update`), roles (`for app`, `for admin`), a list claim (`ext in $jwt.accounts`), `append-only`, tenant-bound tokens on a `--dir` node, `exp` required, `--audit` |
-| Reconciliation | a `/batch` of reads under one lock, its `Fenec-Seq`; `group` with `sum` and `count(*)` |
+| Reconciliation | a `/batch` of reads under one lock, its `Fennec-Seq`; `group` with `sum` and `count(*)` |
 | The sink | `/_changes` with `wait`, a server-kept consumer (`/_changes/consumers/<name>`), `410` handled by a snapshot copy |
-| Backups | `fenec key`, `fenec backup <node>/t/<tenant> --key-file` (sealed with ChaCha20-Poly1305), `fenec restore`; `fenec archive --key-file` keeps every write the same way |
-| Schema | `schema.fenecql`, applied with `POST /t/<tenant>/_schema/apply` and handed to `Fenec.open` in process |
-| Tenants | `fenec-server --dir`, `PUT /_admin/tenants/<t>`, a file each |
+| Backups | `fennec key`, `fennec backup <node>/t/<tenant> --key-file` (sealed with ChaCha20-Poly1305), `fennec restore`; `fennec archive --key-file` keeps every write the same way |
+| Schema | `schema.fennecql`, applied with `POST /t/<tenant>/_schema/apply` and handed to `Fennec.open` in process |
+| Tenants | `fennec-server --dir`, `PUT /_admin/tenants/<t>`, a file each |
 
 ## Limits, and honest notes
 
@@ -405,13 +405,13 @@ the ledger uses of them is said after each.
    `held::write` whatever the statements, so the reconciliation's four
    reads hold writers out for 250 ms at a million entries, and readers too.
    Smallest: take the read lock when every statement only reads, as the
-   native library already does (`fenec_abi::read_only`); readers would go on
+   native library already does (`fennec_abi::read_only`); readers would go on
    beside it. Writers waiting is the price of one writer and no snapshot.
    *Closed:* a batch of reads alone takes the read lock; transfers still
    wait for the snapshot.
 2. **A consumer's commit wakes its own reads.** `GET
    /t/acme/_changes?consumer=journal-sink&wait=1000` answered at once, with
-   no lines and `Fenec-Next` past its place, after every commit to
+   no lines and `Fennec-Next` past its place, after every commit to
    `/_changes/consumers/journal-sink`: the commit is a write to
    `_consumers`, which the stream leaves out but counts. A sink that
    committed every answer committed in a loop, 30 000 fsynced writes in a
@@ -440,7 +440,7 @@ the ledger uses of them is said after each.
    stopped it.** In process a refused transfer's error names `set accounts`,
    and the debit and the credit are both that. `LocalStore` runs the
    prefixes again, each ended by a statement that always fails, to find it.
-   Smallest: `"at"` in the module's error, which `fenec_abi::execute`
+   Smallest: `"at"` in the module's error, which `fennec_abi::execute`
    already knows. *Closed:* `LocalStore` reads the error's `at`.
 6. **No text concatenation.** `insert journal {entry: $5 + ":dr", ...}` is
    a type error, so each block's entry ids travel as two more parameters.
@@ -457,19 +457,19 @@ the ledger uses of them is said after each.
    answers where one stands (200), a `PATCH` moves it; the sink commits by
    `PATCH`, and its restart is handed only what it had not committed.
 
-`/batch` with a key goes through `@fenecdb/web/client`'s `db.batch(...,
-{ idempotencyKey })` (`src/store.ts`), whose `FenecError` carries the
+`/batch` with a key goes through `@fennecdb/web/client`'s `db.batch(...,
+{ idempotencyKey })` (`src/store.ts`), whose `FennecError` carries the
 refusal's `status` and `at`. The change stream has no client method, so the
 sink reads `/_changes` with a `fetch` of its own.
 
 ## Files
 
 ```
-schema.fenecql      the collections
+schema.fennecql     the collections
 policy.txt          what each token may read and write
 src/
   ledger.ts         every movement as one block of statements
-  store.ts          where they run: fenec-server over HTTP, or the engine in process
+  store.ts          where they run: fennec-server over HTTP, or the engine in process
   reconcile.ts      the snapshot and its checks
   sink.ts           the change stream into a file, deduplicated
   server.ts         the console and the JSON API

@@ -1,6 +1,6 @@
 // A short load test of the API routes: many shoppers at once, each route
 // for LOAD_SECONDS (10) at LOAD_CLIENTS (16) concurrent clients, every
-// request answered by the Next server with its data in fenec-server.
+// request answered by the Next server with its data in fennec-server.
 //
 //   search     GET  /api/search?q=...        match, highlight, snippet, facets
 //   category   GET  /api/c/<slug>?page=...   a page with four facets
@@ -14,14 +14,14 @@ import { pct, ms } from './stats';
 import { CATEGORIES } from '../lib/catalog-data';
 
 const SHOP = (process.env.SHOP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
-const FENEC = (process.env.FENEC_URL ?? 'http://127.0.0.1:8080').replace(/\/$/, '');
-const ROOT = process.env.FENEC_TOKEN ?? 'shop-dev-token';
+const FENNEC = (process.env.FENNEC_URL ?? 'http://127.0.0.1:8080').replace(/\/$/, '');
+const ROOT = process.env.FENNEC_TOKEN ?? 'shop-dev-token';
 const SECONDS = Number(process.env.LOAD_SECONDS ?? 10);
 const CLIENTS = Number(process.env.LOAD_CLIENTS ?? 16);
 const WORDS = ['tent', 'titanium', 'shemagh', 'merino', 'solar panel', 'filter', 'brim hat', 'down', 'headlamp', 'duffel', 'cooler', 'stove', 'linen shirt', 'boots', 'tarp'];
 
 async function q(query: string, params: unknown[] = []) {
-  const r = await fetch(`${FENEC}/query`, { method: 'POST', headers: { authorization: `Bearer ${ROOT}` }, body: JSON.stringify({ query, params }) });
+  const r = await fetch(`${FENNEC}/query`, { method: 'POST', headers: { authorization: `Bearer ${ROOT}` }, body: JSON.stringify({ query, params }) });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }

@@ -1,11 +1,11 @@
 # Notes -- .NET (server)
 
-A notes console app over a `fenec-server`, with the `FenecDb` package:
+A notes console app over a `fennec-server`, with the `FennecDb` package:
 `HttpClient` and `System.Text.Json` alone, every query sent over HTTP.
 
 ## What it shows
 
-- the schema in `schema.fenecql`, applied with
+- the schema in `schema.fennecql`, applied with
   `db.SchemaAsync(text, migrate: true)` at every start, and four notes
   seeded into an empty collection;
 - creating notes through the query builder, and marking one done;
@@ -18,15 +18,15 @@ A notes console app over a `fenec-server`, with the `FenecDb` package:
 
 ## Prerequisites
 
-The .NET 8 SDK or newer, and `fenec-server`: a [release
-binary](https://github.com/fenecdb/fenecdb/releases), or
-`cargo build --release -p fenec-server` at the repository's root
-(`target/release/fenec-server`).
+The .NET 8 SDK or newer, and `fennec-server`: a [release
+binary](https://github.com/fennec-db/fennecdb/releases), or
+`cargo build --release -p fennec-server` at the repository's root
+(`target/release/fennec-server`).
 
 ## Run
 
 ```sh
-fenec-server --file notes.fenec --http 127.0.0.1:8080 --http-token secret
+fennec-server --file notes.fennec --http 127.0.0.1:8080 --http-token secret
 ```
 
 ```sh
@@ -41,14 +41,14 @@ dotnet run -- watch                      # Ctrl-C to stop; add a note from anoth
 dotnet run -- smoke                      # the whole tour, checked: what CI runs
 ```
 
-`FENEC_URL` and `FENEC_TOKEN` point it at another server; `secret` is a
+`FENNEC_URL` and `FENNEC_TOKEN` point it at another server; `secret` is a
 development default, never one to deploy.
 
 ## The core
 
 ```csharp
-using var db = new FenecClient(url, new() { Token = token });
-await db.SchemaAsync(File.ReadAllText("schema.fenecql"), migrate: true);   // made, or checked
+using var db = new FennecClient(url, new() { Token = token });
+await db.SchemaAsync(File.ReadAllText("schema.fennecql"), migrate: true);   // made, or checked
 await db.From("notes").InsertAsync(new { title, body, tags, done = false,
     at = DateTime.UtcNow.ToString("o"), embed = Embed($"{title} {body}") });
 
@@ -67,14 +67,14 @@ UTF-8 bytes) hashed into 64 dimensions with FNV-1a, so `near` and `fuse`
 have something to rank without a download. It matches spelling, not
 meaning; every Notes example computes the same vectors. A real app calls a
 model here -- an embeddings API, or a local ONNX model -- and declares
-`vector<N>` with that model's `N` in `schema.fenecql`.
+`vector<N>` with that model's `N` in `schema.fennecql`.
 
 ## Against this repository's build
 
-`Notes.csproj` takes the NuGet package unless `FenecLocal` names a checkout
+`Notes.csproj` takes the NuGet package unless `FennecLocal` names a checkout
 of this repository; then it references the SDK's project there, as CI does:
 
 ```sh
 cd examples/dotnet
-dotnet run -p:FenecLocal=$PWD/../.. -- smoke
+dotnet run -p:FennecLocal=$PWD/../.. -- smoke
 ```

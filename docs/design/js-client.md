@@ -5,27 +5,27 @@ The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *The JS
 ## The module and the client
 
 **One module and a client entry, by where the queries run, and a test
-build.** `@fenecdb/web` ships `fenec.wasm` (every index and the schema
-check, 244.1 KB brotli) and `@fenecdb/web/client`, so a user has two
+build.** `@fennecdb/web` ships `fennec.wasm` (every index and the schema
+check, 244.1 KB brotli) and `@fennecdb/web/client`, so a user has two
 clear choices: queries on a server through the client entry and no
 module, or a database in the page or a synced replica through the full
-module. `fenec-lite.wasm` (no index, no schema check, 173 KB brotli; `make
+module. `fennec-lite.wasm` (no index, no schema check, 173 KB brotli; `make
 wasm-lite`, as `make wasm FEATURES=language SCHEMA=0` now) was shipped
 beside it and is a test build now -- built in CI, packed and released by
 nothing -- because it holds the invariant above: a build without an index
-opens a file that declares one, and `web/fenec.test.js` hands files
-between it and the full module both ways. `fenec-min.wasm` (`make
+opens a file that declares one, and `web/fennec.test.js` hands files
+between it and the full module both ways. `fennec-min.wasm` (`make
 wasm-min`, no feature at all) is the same kind of test build. The client entry is `web/client.js`: the builder (`builder.js`) and the HTTP client
-(`http.js`) re-exported, the two modules `fenec.js` imports beside its
+(`http.js`) re-exported, the two modules `fennec.js` imports beside its
 glue, persistence and sync. The entry's worth is that it cannot pull in
 the engine, sync or storage, not the bytes: a `connect`-only app never
-fetched the `.wasm` through `fenec.js` either (only `Fenec.open` does),
+fetched the `.wasm` through `fennec.js` either (only `Fennec.open` does),
 and bundling `connect` and a builder query's rows is 8.8 KB brotli
-through the entry against 11.7 through `fenec.js` (5.7 against 8.2 when
-the entry was made, 7.5 through `fenec.js` before `FenecHttp.live`), whose `Fenec` class a bundler cannot drop -- its static
-block is a side effect. `web/fenec.client.test.js` walks the client's imports and fails
+through the entry against 11.7 through `fennec.js` (5.7 against 8.2 when
+the entry was made, 7.5 through `fennec.js` before `FennecHttp.live`), whose `Fennec` class a bundler cannot drop -- its static
+block is a side effect. `web/fennec.client.test.js` walks the client's imports and fails
 if they reach anything but those three files or hold the module's glue,
-`FenecSync`, IndexedDB or files. `FenecHttp.live` is `Fenec.live`'s
+`FennecSync`, IndexedDB or files. `FennecHttp.live` is `Fennec.live`'s
 contract over a server: a subscription to each collection the query reads
 of a shape that holds nothing (`select=id&where=false`), every change a
 write to it, the query run again on the server; the first rows wait for
@@ -36,7 +36,7 @@ takes `connect()` as it takes `sync()`. A stream is a server thread
 0.26 -> 0.94 ms beside 60 streams and 3.1 beside 500 -- so `{ poll: ms }`
 holds none: the query is sent with `If-None-Match` and the server answers
 304 without running it while no collection it reads was written (`etag`,
-`unchanged` in `fenec-http`, the change ring's
+`unchanged` in `fennec-http`, the change ring's
 `changed_collections_since`; a read of rows that expire, calling `now()`
 or holding an inner `get` is never tagged), 54 us against 95 for a page
 of 24 run. On a client reading near (`reads: 'nearest'`) the streams stay
@@ -44,8 +44,8 @@ home, unmarked, and every run -- the first rows too -- is a read near, sent
 after the furthest of the client's position and the live query's own
 (`AFTER`, kept apart: another client's change is no write of this one's,
 which its other reads near would wait for): the furthest its streams named,
-each event's `seq` of the history the head names (`Fenec-History`; the
-seed's `seq` is at or past the head's `Fenec-Seq`), ordered as the client's
+each event's `seq` of the history the head names (`Fennec-History`; the
+seed's `seq` is at or past the head's `Fennec-Seq`), ordered as the client's
 (`later`), so a stream opened again after a failover names the later term
 and the old primary's moves nothing -- and the furthest its runs' answers
 named, since a marked `/query` read's answer carries where the copy that
@@ -55,7 +55,7 @@ for nothing of the client's): a run the router answered from home, past a
 change whose event was still on its way, showed rows the next run sent
 after the last event alone could have a replica behind answer without --
 `[a,b,b2,c]` -> `[a,b,b2]` -> `[a,b,b2,c]` in review. A run waits a second
-on the replica (`Fenec-Wait: 1000`), not the node's five: a replica has a
+on the replica (`Fennec-Wait: 1000`), not the node's five: a replica has a
 write once home's fsync covers it, 283 ms behind at most under `--sync 250`,
 and a link later, and home answers in a region's round trip; a replica's 504
 rests the copy at the router (above), so a replica cut off costs a live
@@ -77,17 +77,17 @@ term-0 positions never pass the client's. The rows are
 never older than a change a stream told of or a run showed, and a stream
 tells of every change home takes. The polls stay home: a tag is a change of
 the copy that answered, and a replica holding that change of its history
-(`Fenec-After`) judges it as home does up to where it stands -- behind,
+(`Fennec-After`) judges it as home does up to where it stands -- behind,
 `unchanged` reads a tag past its change as changed and runs the query, rows
 older than those shown -- but nothing in a poll names a change home took
 since, as a stream's events do, so a replica behind or cut off from home
-would answer 304 to a write home holds. `web/fenec.replicas.test.js` holds
+would answer 304 to a write home holds. `web/fennec.replicas.test.js` holds
 it to two routers, two nodes and a read replica that follows its primary
 through a proxy parking what the primary sends (`parking`, which counts
 what the routers ask the replica's node too), the tenant's `streams` quota
 set so the replica's node counts a run held there (`usage.streams`): the
 first rows and a change's run held on the replica, answered by it once
-released (`fenec_router_replica_reads_total`'s `replica`), one never
+released (`fennec_router_replica_reads_total`'s `replica`), one never
 released sent home after its second, and the changes after it home at once,
 the replica asked once for three (`fallback`), the stream unmarked --
 failing at once with the streams' position, its history or the mark taken
@@ -110,20 +110,20 @@ keeps a shape over a server -- a seed, then each change -- opened again with
 backoff and seeding again, stopped by a 401; `sseEvents` is exported with
 it, the types beside (`ShapeFilter`, `ShapeEvent`, `SubscribeOptions`; a
 sync shape was `Shape` already), and an app bundling `connect`, rows and
-`live` went 7 905 -> 8 277 bytes brotli, `FenecHttp` one class a bundler
+`live` went 7 905 -> 8 277 bytes brotli, `FennecHttp` one class a bundler
 keeps whole. `db.batch([...], { idempotencyKey })` posts `/batch` -- a
 builder query, a text or `[text, params]` a statement -- and a stopped one
-throws `FenecError` with `at`, `status` and `completed`; `run` takes a key,
+throws `FennecError` with `at`, `status` and `completed`; `run` takes a key,
 `withIdempotencyKey` makes a copy sharing `seq`, and every SDK has the same
-(Go's `Error.At`, .NET's `FenecException.At`, Python's `idempotency_key=`,
+(Go's `Error.At`, .NET's `FennecException.At`, Python's `idempotency_key=`,
 the Swift, Kotlin and Dart remotes' `batch`). A replayed answer carries the
-database's change as its `Fenec-Seq`, which holds the write. `Rows<P, {}>`
+database's change as its `Fennec-Seq`, which holds the write. `Rows<P, {}>`
 carries `facets?: Facets`: a `let` keeps its declared type, so a facet
 asked after it was lost to the type. The client grew 6 -> 7.4 KB brotli in
-an app's bundle. `FenecHttp` calls `fetch` on its
+an app's bundle. `FennecHttp` calls `fetch` on its
 own (`#request`): as its method, a browser's `fetch` throws "Illegal
 invocation", which Node's does not. `sync()` opens
-the full `./fenec.wasm` unless given `wasm` or `local`. A replica's module
+the full `./fennec.wasm` unless given `wasm` or `local`. A replica's module
 was shipped beside them for a while (text, sparse and sorted, no graph and
 no schema check, 154.0 KB) and taken out: it left out too much for 27 KB
 brotli -- no graph, so a `near` 2 to 40 times slower (0.27 -> 0.54 ms at
@@ -139,7 +139,7 @@ search over codes is, a bit index taken to hold its vectors whole while
 fewer than `BIT_TRAIN` distinct ones are stored (`stored_hash`); its
 tombstones, which count there, are not known here. Without `sparse`, a
 sparse `near` takes the `exact` scan. `match` without `text` is refused:
-BM25 needs the index's statistics. `web/fenec.test.js` holds the test
+BM25 needs the index's statistics. `web/fennec.test.js` holds the test
 build's `near` to the full one's `near ... exact` over 9
 declarations, filters and pages, row for row and score for score. The scan
 costs the modules without the graph 2.2 KB brotli; in the test build at
@@ -158,11 +158,11 @@ differently after a reopen.
 Not an invariant: the part of CLAUDE.md's *Architecture* on how the browser client keeps a database, moved here word for word, measurements included; CLAUDE.md keeps the journal's and the two-copy image's rules and says that the image and chunks can be sealed.
 
 `persist`/`restore` keep a database in IndexedDB as a file would hold it: an
-image, then the writes since as chunks, from the journal `fenec_journal` starts
-and `fenec_drain` empties (off until asked for -- a page that never drains would
+image, then the writes since as chunks, from the journal `fennec_journal` starts
+and `fennec_drain` empties (off until asked for -- a page that never drains would
 hold every write). One row persists in 0.18 ms over 32 MB in Chrome, against 92
 ms for the image. `openFile` (a dedicated worker) keeps the same bytes as a file
-of the origin private file system -- the file `fenec-server` keeps, so each opens
+of the origin private file system -- the file `fennec-server` keeps, so each opens
 the other's -- and `run` appends each statement's writes and flushes before it
 answers: 0.56 ms a row, statement included, and it opens in 20 ms against
 IndexedDB's 47 (`make file-bench`; Safari 0.98 and 0.36 ms). A new image
@@ -173,12 +173,12 @@ one of the two whole; `openFile` takes the copy when its image is whole.
 AES-GCM (WebCrypto), a tag over the key, the image's random generation and
 the chunk's number, so one moved, dropped from the middle or kept from an
 image before is refused; a row persists in 0.16 ms either way, the 32 MB
-image in 129 ms against 76. The OPFS file stays plain: it is `fenec-server`'s.
+image in 129 ms against 76. The OPFS file stays plain: it is `fennec-server`'s.
 
 ## Durable Objects
 
 **A Durable Object keeps a database as a file would** (`integrations/cloudflare`,
-`@fenecdb/cloudflare`). A Worker imports a `.wasm` compiled, and `Fenec.open`
+`@fennecdb/cloudflare`). A Worker imports a `.wasm` compiled, and `Fennec.open`
 takes the module so -- it read `.instance.exports` off what `instantiate`
 gives a module, and the engine could not start in a Worker at all.
 `persist` writes an image into `ctx.storage` and then only the writes since
@@ -224,12 +224,12 @@ and 84 when first measured (`make cloudflare-bench`, under `wrangler dev`,
 which runs from the example Worker's own `--config`: below the repository
 it took the site's `wrangler.jsonc`). A restore copies each row or value
 into the allocation the module keeps the image in as it reads it
-(`Fenec.loadParts`, JS only): read whole into a `Map`, joined, and copied
+(`Fennec.loadParts`, JS only): read whole into a `Map`, joined, and copied
 in, a 27.6 MB image held 60 MB of JavaScript beside the module's 42 at
 the peak, now 4 (memory.mjs, in Node), and the start of 50 000 rows went
 186-196 -> 175 ms. A Worker's isolate has 128 MB with the module's memory,
 which grows and never gives back. A checkpoint writes the image a mebibyte
-at a time (`fenec_snapshot_chunks`, `snapshotChunks`), each into storage
+at a time (`fennec_snapshot_chunks`, `snapshotChunks`), each into storage
 before the next is made: built into one `Vec` the image doubled as it grew,
 old and new side by side, and `boxed` copied it again -- 30 000 x 128 went
 from 60 to 128 MB, and goes to 70. Made all at once, the chunks stood
@@ -343,12 +343,12 @@ timeout left, which held the test process open.
 ## Live queries
 
 **A live query learns what a write changed from the change ring.**
-`Fenec.live` and `FenecSync.live` share one `Lives` (`web/fenec.js`): a
+`Fennec.live` and `FennecSync.live` share one `Lives` (`web/fennec.js`): a
 query's rows now, and again once a collection it reads is written --
 `Query.reads` names them, each `lookup`'s and inner `in` query's too, `null`
 for a `raw` holding a `get`, and a text names them with `{collections}` or
 runs after every write. Which collections were written is
-`fenec_changes(since)`, `Database::changed_collections_since`: a block's
+`fennec_changes(since)`, `Database::changed_collections_since`: a block's
 writes reach the ring as it lands, so one put back names nothing, a schema
 change names its collection, and a drop answers `None` -- everything --
 since a dropped collection has no name left (a name kept for each would be

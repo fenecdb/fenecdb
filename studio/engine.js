@@ -1,19 +1,19 @@
-// A database in the page, answering as a server answers fenec studio.
+// A database in the page, answering as a server answers fennec studio.
 //
 // The studio reaches its database through one surface: the statements
 // (`run`, `batch`), a shape's rows as they change (`subscribe`) and the
 // requests its views send whole (`/query`, `/batch`, `/_schema`,
 // `/_schema/plan`). Over HTTP that surface is the server's (connect.js);
-// here it is a `Fenec` -- the browser module, in the worker local.js starts
+// here it is a `Fennec` -- the browser module, in the worker local.js starts
 // -- and every answer is put in the shape the server gives it, so a view
 // never asks which it has: the same rows, the status the server would
-// answer a refusal with, `Fenec-Seq` where a write sets it. What only a
+// answer a refusal with, `Fennec-Seq` where a write sets it. What only a
 // server has -- a token's identity, its metrics, its statements' counts,
 // a router's tenants -- is not here, and the studio leaves those views out
 // rather than fake them: a request for one is a 404.
 //
 // No DOM and no worker here, so `studio/test/transport.test.mjs` holds
-// every answer to a real fenec-server's for the same statements.
+// every answer to a real fennec-server's for the same statements.
 
 /** An engine error's kind, by the words its message starts with, as `api::status_of` maps it. */
 const STATUS = [
@@ -46,7 +46,7 @@ export function statusOf(message) {
 /** What the lexer and the parser refuse a text with. */
 const PARSE = /^query error: (position \d+:|parameters start at \$1)/;
 
-/** An index of a description (`GET /_schema`) as FenecQL declares it. */
+/** An index of a description (`GET /_schema`) as FennecQL declares it. */
 function indexText(ix) {
   const { kind, ...o } = ix;
   if (kind === 'ttl') {
@@ -60,15 +60,15 @@ function indexText(ix) {
   return `@${kind}${args.length ? `(${args.join(', ')})` : ''}`;
 }
 
-/** The comment a server's `GET /_schema?as=fenecql` begins with. */
+/** The comment a server's `GET /_schema?as=fennecql` begins with. */
 const ID_NOTE = '-- every row also has an `id`, an int the database makes: `where id = 1`\n';
 
 /**
- * A description's collections as the FenecQL that makes them: the browser
+ * A description's collections as the FennecQL that makes them: the browser
  * module reads a description so -- reading its JSON was 8 KB of the module
  * -- and the studio's schema view sends JSON, as a server takes it.
  */
-export function fenecqlOf(collections) {
+export function fennecqlOf(collections) {
   const out = [];
   for (const c of collections) {
     const fields = c.fields.map((f) =>
@@ -114,7 +114,7 @@ export class Engine {
   #db;
   #subs = new Map();
 
-  /** `db` is an open `Fenec`. */
+  /** `db` is an open `Fennec`. */
   constructor(db) {
     this.#db = db;
   }
@@ -159,11 +159,11 @@ export class Engine {
         return await this.#batch(items);
       }
       if (method === 'GET' && route === '/_schema') {
-        const text = new URLSearchParams(query).get('as') === 'fenecql';
-        const json = this.#db.describe(text ? 'fenecql' : 'json');
+        const text = new URLSearchParams(query).get('as') === 'fennecql';
+        const json = this.#db.describe(text ? 'fennecql' : 'json');
         // As a server writes it (`with_id_note`): the `id` no field
         // declares, in a comment a plan reads past.
-        if (text && json.fenecql) json.fenecql = ID_NOTE + json.fenecql;
+        if (text && json.fennecql) json.fennecql = ID_NOTE + json.fennecql;
         return { status: 200, json, seq: null };
       }
       if (method === 'POST' && route === '/_schema/plan') {
@@ -173,14 +173,14 @@ export class Engine {
         } catch {
           /* refused by the module in the server's words */
         }
-        const asked = Array.isArray(d?.collections) ? { format: d.format, fenecql: fenecqlOf(d.collections), migrations: d.migrations } : body;
+        const asked = Array.isArray(d?.collections) ? { format: d.format, fennecql: fennecqlOf(d.collections), migrations: d.migrations } : body;
         return { status: 200, json: this.#db.checkSchema(asked, 'plan'), seq: null };
       }
     } catch (e) {
       const [status, error] = statusOf(e.message ?? String(e));
       return { status, json: { error }, seq: null };
     }
-    return { status: 404, json: { error: `${method} ${route} is a server's: fenec studio over a database in the page answers /query, /batch and /_schema` }, seq: null };
+    return { status: 404, json: { error: `${method} ${route} is a server's: fennec studio over a database in the page answers /query, /batch and /_schema` }, seq: null };
   }
 
   /** `POST /query`: rows as an array, or with `facets` beside them; a write's count; a message. */
@@ -220,7 +220,7 @@ export class Engine {
    * A shape's rows, then each change to them, as a server's subscription
    * sends them (`GET /<c>/changes`): `{type: 'seed', seq, rows}`, then
    * `{type: 'change', seq, puts, dels, schema}`. The page's live query
-   * (`Fenec.live`) runs the shape again after every write to the
+   * (`Fennec.live`) runs the shape again after every write to the
    * collection -- the change ring says which -- and what differs from the
    * rows it held is the change: a row new or written is put, one gone or
    * no longer in the shape deleted. A server also names as deleted a row

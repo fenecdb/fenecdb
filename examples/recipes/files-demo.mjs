@@ -1,11 +1,11 @@
-// docs/files, run: fenec-server with files-policy.txt, an S3-compatible server
+// docs/files, run: fennec-server with files-policy.txt, an S3-compatible server
 // (a container of SeaweedFS unless S3_ENDPOINT names one: MinIO, R2 with its
 // keys, S3), the backend and the bucket's follower, and two people who
 // upload, download, are refused each other's files and delete one.
 //
 //   node examples/recipes/files-demo.mjs
 //
-// FENEC_SERVER names the binary (target/debug/fenec-server); for your own
+// FENNEC_SERVER names the binary (target/debug/fennec-server); for your own
 // bucket give S3_ENDPOINT, S3_REGION, S3_KEY, S3_SECRET and BUCKET.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -39,14 +39,14 @@ try {
   const bob = as('bob');
   const appToken = serviceTokens({ pem: readFileSync(join(dir, 'svc-1.pem')), sub: 'files-backend' });
 
-  // fenec-server: the keys, the policy, the change stream the follower reads
+  // fennec-server: the keys, the policy, the change stream the follower reads
   // (a buffer of 1 MiB, so that the last step can outrun it).
   const url = await server('files', [
     '--http-token', 'root', '--cdc', '--replication-buffer', '1',
     '--jwt-keys', join(dir, 'keys.json'), '--policy', join(here, 'files-policy.txt'),
   ]);
   const post = (token, path, body) => query(url, token, body.query, body.params);
-  for (const stmt of readFileSync(join(here, 'files-schema.fenecql'), 'utf8').split('\n').filter(Boolean)) {
+  for (const stmt of readFileSync(join(here, 'files-schema.fennecql'), 'utf8').split('\n').filter(Boolean)) {
     await query(url, 'root', stmt);
   }
   await query(url, 'root', 'create collection junk (body text)');
@@ -69,7 +69,7 @@ try {
         await new Promise((r) => setTimeout(r, 2000 * attempt));
       }
     }
-    container = execFileSync('docker', ['run', '-d', '--rm', '--name', `fenec-recipes-s3-${process.pid}`,
+    container = execFileSync('docker', ['run', '-d', '--rm', '--name', `fennec-recipes-s3-${process.pid}`,
       '-p', '127.0.0.1:0:8333', '-v', `${join(dir, 's3.json')}:/etc/seaweedfs/s3.json:ro`,
       SEAWEEDFS, 'server', '-s3', '-s3.config=/etc/seaweedfs/s3.json', '-dir=/data'],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim().slice(0, 12); // stderr kept off ours, and on the error
@@ -82,9 +82,9 @@ try {
   const keys = keysOf();
   await until('the bucket', () => s3.send(new CreateBucketCommand({ Bucket: env.BUCKET })).then(() => true,
     (e) => e.name === 'BucketAlreadyOwnedByYou'), 30_000);
-  say(`fenec-server and the bucket ${env.BUCKET} are up`);
+  say(`fennec-server and the bucket ${env.BUCKET} are up`);
 
-  const app = backend({ fenec: url, appToken, s3, bucket: env.BUCKET });
+  const app = backend({ fennec: url, appToken, s3, bucket: env.BUCKET });
   await new Promise((r) => app.listen(0, '127.0.0.1', r));
   const api = `http://127.0.0.1:${app.address().port}`;
   const call = (token, method, path, body) => fetch(`${api}${path}`, {
@@ -104,7 +104,7 @@ try {
   const waitSaid = (re) => until(`the follower to say ${re}`, async () => said.some((l) => re.test(l)));
   const startFollower = () => {
     const ctl = new AbortController();
-    const done = follow({ fenec: url, adminToken: 'root', s3, bucket: env.BUCKET, signal: ctl.signal, wait: 500, log: (m) => said.push(m) });
+    const done = follow({ fennec: url, adminToken: 'root', s3, bucket: env.BUCKET, signal: ctl.signal, wait: 500, log: (m) => said.push(m) });
     // A follower that ends with an error fails the run, with the container removed.
     done.catch((e) => cleanup().then(() => { console.error(e); process.exit(1); }));
     return { ctl, done };
@@ -202,7 +202,7 @@ try {
   res = await fetch(late.url, { method: 'PUT', headers: late.headers, body: 'later' });
   say(`PUT <presigned>, after the delete   ${res.status}`);
   say(`HEAD ${keys.pending(late.id)}: ${(await there(keys.pending(late.id))) ? 'there, with no row' : 'gone'}`);
-  const swept = await reconcile({ fenec: url, adminToken: 'root', s3, bucket: env.BUCKET });
+  const swept = await reconcile({ fennec: url, adminToken: 'root', s3, bucket: env.BUCKET });
   say(`reconcile deleted ${swept.join(', ') || 'nothing'}`);
 
   say('\n-- a pending upload nobody finished is swept');

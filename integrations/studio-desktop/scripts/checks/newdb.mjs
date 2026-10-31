@@ -11,7 +11,7 @@ const FOLDER = `${R}/new-here`;
 rmSync(FOLDER, { recursive: true, force: true });
 mkdirSync(FOLDER);
 
-const app = startApp('newdb', { FENEC_DESKTOP_LAUNCHER: '1' });
+const app = startApp('newdb', { FENNEC_DESKTOP_LAUNCHER: '1' });
 await waitFor((l) => l.what === 'ready', 60000, 'ready');
 await waitFor((l) => l.what === 'page-text' && l.key === 'launcher' && /New database/.test(l.text), 20000, 'the launcher drawn');
 
@@ -20,48 +20,48 @@ let n = lines().length;
 await evalIn('launcher', `document.getElementById('new').click()`);
 await waitFor((l, i) => i >= n && l.what === 'page-text' && l.key === 'newdb' && /New database/.test(l.text), 15000, 'the new-database window drawn');
 const shown = await evalIn('newdb', `return [document.getElementById('folder').value, document.getElementById('file').textContent].join('|')`);
-assert.match(shown.value, /Documents\|orders\.fenec$/, `starts in Documents, showing what the file will be called: ${shown.value}`);
+assert.match(shown.value, /Documents\|orders\.fennec$/, `starts in Documents, showing what the file will be called: ${shown.value}`);
 
 step('Choose… the folder, name it: the file is made and opened');
 cmd({ cmd: 'answer', kind: 'folder', path: FOLDER });
 await evalIn('newdb', `document.getElementById('choose').click()`);
 await until(async () => (await evalIn('newdb', `return document.getElementById('folder').value`)).value === FOLDER, 10000, 'the chosen folder shown');
 await evalIn('newdb', `const i = document.getElementById('name'); i.value = 'fresh'; i.dispatchEvent(new Event('input', {bubbles: true}))`);
-assert.equal((await evalIn('newdb', `return document.getElementById('file').textContent`)).value, 'fresh.fenec');
+assert.equal((await evalIn('newdb', `return document.getElementById('file').textContent`)).value, 'fresh.fennec');
 n = lines().length;
 await evalIn('newdb', `document.getElementById('create').click()`);
 const started = await waitFor((l, i) => i >= n && l.what === 'server-started', 20000, 'the new database opening');
-assert.equal(started.path, `${FOLDER}/fresh.fenec`);
-assert.ok(existsSync(`${FOLDER}/fresh.fenec`));
-const KEY = `file:${FOLDER}/fresh.fenec`;
+assert.equal(started.path, `${FOLDER}/fresh.fennec`);
+assert.ok(existsSync(`${FOLDER}/fresh.fennec`));
+const KEY = `file:${FOLDER}/fresh.fennec`;
 await waitFor((l, i) => i >= n && l.what === 'page' && l.key === KEY && l.detail?.type === 'state', 30000, 'its studio');
 await waitFor((l, i) => i >= n && l.what === 'window-close' && l.key === 'newdb', 10000, 'the new-database window closing');
 
 step('close it: its server stops, and what is on disk is a database');
 cmd({ cmd: 'close', key: KEY });
 await waitFor((l) => l.what === 'server-stopped' && l.key === KEY, 15000, 'its server stopped');
-assert.ok(statSync(`${FOLDER}/fresh.fenec`).size >= 8, 'a database file, not empty');
+assert.ok(statSync(`${FOLDER}/fresh.fennec`).size >= 8, 'a database file, not empty');
 
 step('the same name again: refused, and the file is as it was');
-const before = readFileSync(`${FOLDER}/fresh.fenec`);
+const before = readFileSync(`${FOLDER}/fresh.fennec`);
 n = lines().length;
 cmd({ cmd: 'create', folder: FOLDER, name: 'fresh' });
 const dup = await waitFor((l, i) => i >= n && l.what === 'create-result', 10000, 'create-result');
 assert.equal(dup.ok, false);
-assert.match(dup.message, /fresh\.fenec exists in that folder already/);
-assert.deepEqual(readFileSync(`${FOLDER}/fresh.fenec`), before);
+assert.match(dup.message, /fresh\.fennec exists in that folder already/);
+assert.deepEqual(readFileSync(`${FOLDER}/fresh.fennec`), before);
 // Spelled with the extension, or in another case (APFS ignores case), it is the same file.
-for (const name of ['fresh.fenec', 'FRESH']) {
+for (const name of ['fresh.fennec', 'FRESH']) {
   n = lines().length;
   cmd({ cmd: 'create', folder: FOLDER, name });
   assert.equal((await waitFor((l, i) => i >= n && l.what === 'create-result', 10000, 'create-result')).ok, false, name);
 }
 // And a file that is not a database is as safe from it.
-writeFileSync(`${FOLDER}/notes.fenec`, 'mine');
+writeFileSync(`${FOLDER}/notes.fennec`, 'mine');
 n = lines().length;
 cmd({ cmd: 'create', folder: FOLDER, name: 'notes' });
 assert.equal((await waitFor((l, i) => i >= n && l.what === 'create-result', 10000, 'create-result')).ok, false);
-assert.equal(readFileSync(`${FOLDER}/notes.fenec`, 'utf8'), 'mine');
+assert.equal(readFileSync(`${FOLDER}/notes.fennec`, 'utf8'), 'mine');
 
 step('the window says so too, where the name is typed');
 await evalIn('launcher', `document.getElementById('new').click()`);
@@ -71,7 +71,7 @@ await evalIn('newdb', `document.getElementById('choose').click()`);
 await until(async () => (await evalIn('newdb', `return document.getElementById('folder').value`)).value === FOLDER, 10000, 'the chosen folder shown');
 await evalIn('newdb', `const i = document.getElementById('name'); i.value = 'fresh'; i.dispatchEvent(new Event('input', {bubbles: true})); document.getElementById('create').click()`);
 const err = await until(async () => (await evalIn('newdb', `return document.getElementById('error').textContent`)).value, 10000, 'the error shown in the window');
-assert.match(err, /fresh\.fenec exists in that folder already/);
+assert.match(err, /fresh\.fennec exists in that folder already/);
 assert.ok(!(await textOf('newdb')).includes('undefined'));
 
 step('names that cannot be files, and a folder that is gone');
@@ -90,7 +90,7 @@ n = lines().length;
 cmd({ cmd: 'create', folder: FOLDER, name: 'with-notes', sync: 'always', collection: { name: 'notes', fields: 'title text, done bool' } });
 const withNotes = await waitFor((l, i) => i >= n && l.what === 'create-result', 20000, 'create-result');
 assert.equal(withNotes.ok, true, withNotes.message);
-const NOTES = `${FOLDER}/with-notes.fenec`;
+const NOTES = `${FOLDER}/with-notes.fennec`;
 const notesShown = await waitStudio(`file:${NOTES}`, n);
 assert.match(notesShown.detail.side, /notes 0/, 'its first collection, empty');
 assert.ok(lines().slice(n).some((l) => l.what === 'task-server-started' && l.path === NOTES), 'made by a server, not by the app');
@@ -103,7 +103,7 @@ n = lines().length;
 cmd({ cmd: 'create', folder: FOLDER, name: 'bad-notes', collection: { name: 'notes', fields: 'title text); drop collection orders; (' } });
 const badNotes = await waitFor((l, i) => i >= n && l.what === 'create-result', 10000, 'create-result');
 assert.equal(badNotes.ok, false);
-assert.ok(!existsSync(`${FOLDER}/bad-notes.fenec`));
+assert.ok(!existsSync(`${FOLDER}/bad-notes.fennec`));
 
 step('Serve it once it is made: no studio window, the serve sheet in the main window instead');
 n = lines().length;
@@ -112,9 +112,9 @@ const toServe = await waitFor((l, i) => i >= n && l.what === 'create-result', 20
 assert.equal(toServe.ok, true, toServe.message);
 assert.equal(toServe.serve, true);
 const sheetTitle = await until(async () => (await evalIn('launcher', `const d = document.getElementById('sheet'); return d.open && document.getElementById('sheet-title').textContent`)).value, 15000, 'the serve sheet on it');
-assert.equal(sheetTitle, 'Serve to-serve.fenec');
-assert.ok(!lines().slice(n).some((l) => l.what === 'window-opened' && l.key === `file:${FOLDER}/to-serve.fenec`), 'no studio window');
-assert.ok(statSync(`${FOLDER}/to-serve.fenec`).size >= 8, 'a database already: a cancelled sheet leaves no empty file');
+assert.equal(sheetTitle, 'Serve to-serve.fennec');
+assert.ok(!lines().slice(n).some((l) => l.what === 'window-opened' && l.key === `file:${FOLDER}/to-serve.fennec`), 'no studio window');
+assert.ok(statSync(`${FOLDER}/to-serve.fennec`).size >= 8, 'a database already: a cancelled sheet leaves no empty file');
 await evalIn('launcher', `document.getElementById('sheet-cancel').click()`);
 
 step('Cancel closes the window');

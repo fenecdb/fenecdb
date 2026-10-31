@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- FennecDb on NuGet: a client for fennec-server's HTTP endpoint, HttpClient
+       and System.Text.Json alone. `make version` sets its version. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>12</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>FennecDb</RootNamespace>
+
+    <PackageId>FennecDb</PackageId>
+    <Version>0.1.12</Version>
+    <Authors>fennecdb</Authors>
+    <Description>A client for fennecdb's server over HTTP: FennecQL queries, vector search, atomic batches, subscriptions and the change stream.</Description>
+    <PackageTags>fennecdb;database;vector;search;hnsw</PackageTags>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://fenecdb.com/docs/languages</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/fennec-db/fennecdb</RepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="/" />
+    <InternalsVisibleTo Include="FennecDb.Tests" />
+  </ItemGroup>
+</Project>

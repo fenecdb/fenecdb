@@ -1,0 +1,37 @@
+[package]
+name = "fennec-cli"
+description = "fennecdb command line shell"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+fennec-core = { workspace = true, features = ["std-fs", "full"] }
+fennec-ql = { workspace = true, features = ["statements"] }
+# The `fennec import` subcommand. The SQLite reader, the PostgreSQL client and
+# the `--follow` replication follower grow the binary by 242 KB; it is
+# unnecessary for embedded/browser use and can be turned off:
+# `cargo build --release -p fennec-cli --no-default-features`.
+fennec-import = { workspace = true, optional = true }
+# `fennec backup`, `fennec archive`, `fennec restore`: they speak the replication
+# stream through fennec-http's client -- 65 KB next to import, 66 KB alone. Off
+# with the rest in `make small`.
+fennec-http = { workspace = true, optional = true }
+# `<file>.lock` (`fennec_abi::lock`), which the shell, `fennec import`, a
+# backup or restore into a file and `fennec mcp --file` take as `fennec-server`
+# and the native library do: in every build, the smallest too.
+fennec-abi.workspace = true
+
+[features]
+default = ["import", "backup", "mcp"]
+import = ["dep:fennec-import"]
+backup = ["dep:fennec-http"]
+mcp = ["dep:fennec-http"]
+
+[[bin]]
+name = "fennec"
+path = "src/main.rs"

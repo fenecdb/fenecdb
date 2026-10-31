@@ -2,13 +2,13 @@
 // and parameters every builder makes of the same chain of calls. The
 // JavaScript builder is the reference: this file holds the chains, runs
 // them through it and writes what it made (`make builder-golden`), and
-// web/fenec.test.js runs every case of the file through it again, so the
+// web/fennec.test.js runs every case of the file through it again, so the
 // file cannot drift from it. The Python, Go and .NET builders each read
 // the file in their own tests and are held to it, text and parameters
 // exactly, refusals by their message.
 //
 // A case is a chain of steps, `{op, args}`, starting with `from` and
-// ending with what turns it into a statement: `toFenecQL`, `toInsert`,
+// ending with what turns it into a statement: `toFennecQL`, `toInsert`,
 // `toUpdate`, `toUpsert`, `toDelete`, or an endpoint -- `rows`, `first`,
 // `count`, `explain`, `insert`, `update`, `upsert`, `delete` -- whose
 // statement is the one it
@@ -39,8 +39,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
-  from, or, and, not, raw, inc, expr, bucket, countDistinct, distance, first, last, FenecError,
-} from './fenec.js';
+  from, or, and, not, raw, inc, expr, bucket, countDistinct, distance, first, last, FennecError,
+} from './fennec.js';
 
 export const GOLDEN = fileURLToPath(new URL('../integrations/builder-golden.json', import.meta.url));
 
@@ -67,7 +67,7 @@ function arg(x) {
   return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, arg(v)]));
 }
 
-const TEXT = new Set(['toFenecQL', 'toInsert', 'toUpdate', 'toUpsert', 'toDelete']);
+const TEXT = new Set(['toFennecQL', 'toInsert', 'toUpdate', 'toUpsert', 'toDelete']);
 const ENDPOINTS = new Set(['rows', 'first', 'count', 'explain', 'insert', 'update', 'upsert', 'delete']);
 
 // What each endpoint is answered, as the HTTP transport hands it over.
@@ -100,9 +100,9 @@ export async function run(steps) {
       if (typeof q[op] !== 'function') throw new Error(`no builder step ${op}`);
       q = q[op](...a);
     }
-    throw new Error('a chain ends with a statement: toFenecQL or an endpoint');
+    throw new Error('a chain ends with a statement: toFennecQL or an endpoint');
   } catch (e) {
-    if (e instanceof FenecError) return { error: e.message };
+    if (e instanceof FennecError) return { error: e.message };
     throw e;
   }
 }
@@ -114,7 +114,7 @@ export async function run(steps) {
 const cases = [];
 const c = (name, ...steps) =>
   cases.push({ name, steps: steps.map(([op, ...args]) => (args.length ? { op, args } : { op })) });
-const Q = ['toFenecQL'];
+const Q = ['toFennecQL'];
 const docs = ['from', 'docs'];
 
 // Reading: the select list.
@@ -565,7 +565,7 @@ c('an insert returning takes field names', orders, ['toInsert', { a: 1 }, { retu
 c('upsert takes no limit', jobs, ['limit', 1], ['toUpsert', { id: 1 }, { a: 1 }]);
 c('a write still takes no offset', jobs, ['where', 'a', 1], ['order', 'id'], ['limit', 2], ['offset', 1], ['toUpdate', { a: 1 }]);
 
-// The FenecQL reference pages' examples, as each SDK's builder writes them:
+// The FennecQL reference pages' examples, as each SDK's builder writes them:
 // site/builder_tabs.py renders a case's chain in every language for the
 // tabs of a page's example (`{{builder "docs: ..."}}`), the build holds the
 // case's statement, its parameters written in, to the page's, and each
@@ -580,7 +580,7 @@ const bars = [
   { $as: [{ $expr: ['max(px)'] }, 'high'] }, { $as: [{ $expr: ['min(px)'] }, 'low'] },
   { $as: [{ $last: ['px', 'at'] }, 'close'] }, { $as: [{ $expr: ['sum(qty)'] }, 'volume'] },
 ];
-// fenecql-aggregates.html
+// fennecql-aggregates.html
 c('docs: aggregates over every order', ords, ['select', 'count(*)', 'sum(total)', 'avg(total)', 'min(at)', 'max(at)'], ['rows']);
 c('docs: aggregates of each status', ords, ['select', 'status', 'count(*)', 'avg(total)'], ['where', 'year', 2026], ['group', 'status'], ['rows']);
 c('docs: the ten customers who spent most', ords, ['select', 'customer', 'sum(total)'], ['group', 'customer'], ['order', 'sum(total)', 'desc'], ['limit', 10], ['rows']);
@@ -590,7 +590,7 @@ c('docs: vwap of each symbol', ['from', 'ticks'], ['select', 'sym', { $as: [{ $e
 c('docs: totals of a json path', ['from', 'events'], ['select', 'props.plan', 'sum(props.v)'], ['group', 'props.plan'], ['rows']);
 c('docs: the three statuses that took most', ords, ['select', 'status', 'count(*)', 'sum(total)'], ['where', 'year', 2026], ['group', 'status'], ['order', 'sum(total)', 'desc'], ['limit', 3], ['rows']);
 c('docs: one-minute bars since a time', ['from', 'ticks'], ['select', ...bars], ['where', 'sym', 'S07'], ['where', 'at', '>=', '2026-05-03T09:00:00Z'], ['group', 'bar'], ['rows']);
-// fenecql-indexes.html
+// fennecql-indexes.html
 c('docs: the newest articles', arts, ['order', 'published', 'desc'], ['limit', 20], ['rows']);
 c('docs: the newest articles since a day', arts, ['where', 'published', '>=', '2026-09-01'], ['order', 'published', 'desc'], ['limit', 20], ['rows']);
 c('docs: articles counted over a range of titles', arts, ['where', 'title', '>=', 'k'], ['where', 'title', '<', 'l'], ['count']);
@@ -613,7 +613,7 @@ c('docs: a document inserted', tour, ['insert', { slug: 'intro', title: 'Ownersh
 c('docs: a document inserted unless its slug is held', tour, ['insert', { slug: 'intro', title: 'Ownership in Rust' }, { ifAbsent: true }]);
 c('docs: a document\'s views counted', tour, ['where', 'slug', 'intro'], ['update', { views: { $inc: 1 } }]);
 c('docs: the documents before a year deleted', tour, ['where', 'year', '<', 2000], ['delete']);
-// fenecql-lookup.html
+// fennecql-lookup.html
 c('docs: products with their newest reviews', prods, ['limit', 20], ['lookup', 'reviews', { on: 'product_id', order: [['created', 'desc']], limit: 3 }], ['rows']);
 c('docs: shops, their orders and the orders\' lines', ['from', 'shops'], ['limit', 20], ['lookup', 'orders', { on: 'shop_id', limit: 3 }], ['lookup', 'lines', { on: 'order_id', limit: 5 }], ['rows']);
 c('docs: products with a five-star review', prods, ['limit', 20], ['lookup', 'reviews', { on: 'product_id', required: true, where: { stars: 5 } }], ['rows']);
@@ -627,7 +627,7 @@ c('docs: shops with their orders folded', ['from', 'shops'], ['limit', 20], ['lo
 c('docs: couriers with their latest fifty deliveries folded', ['from', 'couriers'], ['limit', 20], ['lookup', 'deliveries', { on: 'courier', select: [named('count(*)', 'n'), named('avg(km)', 'km')], order: [['at', 'desc']], limit: 50 }], ['rows']);
 c('docs: each shop\'s three best sellers', ['from', 'shops'], ['lookup', 'lines', { on: 'shop', select: ['product', named('sum(qty)', 'sold')], group: ['product'], order: [['sold', 'desc']], limit: 3 }], ['rows']);
 c('docs: the busiest couriers with their names', ords, ['select', 'courier', named('count(*)', 'n')], ['where', 'at', '>=', '2026-10-01'], ['group', 'courier'], ['order', 'n', 'desc'], ['limit', 10], ['lookup', 'couriers', { on: 'user', parentKey: 'courier', select: ['name'] }], ['rows']);
-// fenecql-reading.html
+// fennecql-reading.html
 c('docs: articles counted since a year', arts, ['where', 'year', '>=', 2024], ['count']);
 c('docs: articles a page at a time', arts, ['where', 'year', 2024], ['order', 'published', 'desc'], ['limit', 20], ['offset', 40], ['rows']);
 c('docs: a page of matches with its brands counted', prods, ['match', 'title', 'tent'], ['limit', 20], ['facet', 'brand', { top: 10 }], ['rows']);
@@ -635,7 +635,7 @@ c('docs: ready jobs claimed a page at a time', ['from', 'jobs'], ['where', { $ra
 c('docs: a column worked out', ['from', 'ticks'], ['select', 'sym', named('px * qty', 'notional')], ['where', 'qty', '>', 100], ['rows']);
 c('docs: columns named and worked out', ['from', 'ticks'], ['select', named('px', 'price'), { $as: [{ $bucket: ['at', '1m'] }, 'minute'] }, { $as: [{ $expr: ['greatest(px, ?)', 100] }, 'floor'] }], ['rows']);
 c('docs: a column of a case', ords, ['select', 'id', { $as: [{ $expr: ['case when total >= ? then ? else ? end', 100, 'large', 'small'] }, 'size'] }], ['rows']);
-// fenecql-schema.html
+// fennecql-schema.html
 const docsJson = ['from', 'docs'];
 c('docs: a document with a json field', docsJson, ['insert', { title: 'a', meta: { lang: 'tr', source: { site: 'x', rank: 3 } } }]);
 c('docs: documents by paths', docsJson, ['where', 'meta.lang', 'tr'], ['where', 'meta.source.rank', '>=', 2], ['rows']);
@@ -657,7 +657,7 @@ c('docs: a user whose email is taken', users, ['insert', { email: 'ALICE@example
 c('docs: a user unless the email is taken', users, ['insert', { email: 'alice@example.com' }, { ifAbsent: true }]);
 c('docs: a user by a name in any case', users, ['where', 'name', 'ismail'], ['rows']);
 c('docs: users in Turkish order', users, ['select', 'name'], ['order', 'name'], ['limit', 20], ['rows']);
-// fenecql-search.html
+// fennecql-search.html
 c('docs: articles matching words', arts, ['match', 'body', 'ownership'], ['limit', 10], ['rows']);
 c('docs: articles matching words since a year', arts, ['where', 'year', '>=', 2024], ['match', 'body', 'ownership'], ['limit', 10], ['rows']);
 c('docs: articles matching words reranked', arts, ['match', 'body', 'ownership'], ['rerank', 'embed', vec, { candidates: 500 }], ['limit', 10], ['rows']);
@@ -671,12 +671,12 @@ c('docs: a page of matches with brands and tags counted', prods, ['where', 'pric
 c('docs: phones counted by brand', prods, ['where', 'category', 'phones'], ['facet', 'brand'], ['count']);
 c('docs: products counted by origin alone', prods, ['limit', 0], ['facet', 'meta.origin', { top: 5 }], ['rows']);
 c('docs: red tents of two brands with their facets', prods, ['where', 'category', 'tents'], ['where', 'brand', 'in', ['acme', 'nova']], ['where', 'color', 'red'], ['order', 'price'], ['limit', 24], ['facet', 'brand', { disjunctive: true }], ['facet', 'color', { disjunctive: true }], ['facet', 'material'], ['rows']);
-// fenecql-vector.html
+// fennecql-vector.html
 c('docs: the nearest articles', arts, ['near', 'embed', vec], ['limit', 10], ['rows']);
 c('docs: the nearest articles since a year', arts, ['where', 'year', '>=', 2024], ['near', 'embed', vec, { ef: 200 }], ['limit', 10], ['rows']);
 c('docs: the nearest articles exactly', arts, ['near', 'embed', vec, { exact: true }], ['limit', 10], ['rows']);
 c('docs: the nearest articles filtered', arts, ['select', 'title', 'year'], ['where', 'year', '>=', 2024], ['where', 'tags', 'has', 'rust'], ['where', { $not: { title: { '~': 'draft' } } }], ['near', 'embed', vec, { ef: 128 }], ['limit', 10], ['rows']);
-// fenecql-writing.html
+// fennecql-writing.html
 c('docs: an article set by id', arts, ['where', 'id', 42], ['update', { year: 2025 }]);
 c('docs: an article\'s views counted', arts, ['where', 'id', 42], ['update', { views: { $inc: 1 } }]);
 c('docs: the articles before a year deleted', arts, ['where', 'year', '<', 2000], ['delete']);

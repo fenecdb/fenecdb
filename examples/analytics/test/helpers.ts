@@ -1,7 +1,7 @@
 // What the tests share: a site of their own on the running node, beacons
 // sent as the tracker sends them, and the node's raw answers.
 import { randomBytes } from 'node:crypto';
-import { FENEC_URL, MARKETS_SCHEMA, OPERATOR_TOKEN } from '../src/config.ts';
+import { FENNEC_URL, MARKETS_SCHEMA, OPERATOR_TOKEN } from '../src/config.ts';
 import { db } from '../src/db.ts';
 import { addSite, createTenant, type Site } from '../src/setup.ts';
 import type { SimEvent } from '../src/sim.ts';
@@ -63,7 +63,7 @@ export const rows = (site: string, text: string, params: unknown[] = []) => db(s
 
 /** A request to the node itself, as `token`. */
 export async function node(path: string, token: string, init: RequestInit = {}): Promise<{ status: number; body: string }> {
-  const res = await fetch(`${FENEC_URL}${path}`, {
+  const res = await fetch(`${FENNEC_URL}${path}`, {
     ...init,
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...(init.headers ?? {}) },
     signal: AbortSignal.timeout(5000),

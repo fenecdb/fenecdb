@@ -3,7 +3,7 @@
 // server and refuses anything that would lose data (scripts/seed.ts); the
 // pages connect with `schema` alone, which only checks.
 import {
-  fenecTable,
+  fennecTable,
   text,
   integer,
   doublePrecision,
@@ -12,12 +12,12 @@ import {
   vector,
   index,
   uniqueIndex,
-} from '@fenecdb/web/schema';
+} from '@fennecdb/web/schema';
 
 /** How many dimensions `products.features` has: see lib/features.ts. */
 export const FEATURE_DIMENSIONS = 48;
 
-export const products = fenecTable('products', {
+export const products = fennecTable('products', {
   sku: text().notNull(),
   slug: text().notNull(),
   name: text().notNull(),
@@ -52,7 +52,7 @@ export const products = fenecTable('products', {
   index('products_features').using('hnsw', t.features.op('vector_cosine_ops')),
 ]);
 
-export const categories = fenecTable('categories', {
+export const categories = fennecTable('categories', {
   slug: text().notNull(),
   name: text().notNull(),
   department: text().notNull(),
@@ -71,7 +71,7 @@ export const categories = fenecTable('categories', {
  * (`... where sku = $1 and available >= $2 require 1`), so the three
  * always add up to what was stocked.
  */
-export const inventory = fenecTable('inventory', {
+export const inventory = fennecTable('inventory', {
   sku: text().notNull(),
   available: integer().notNull(),
   reserved: integer().notNull(),
@@ -85,7 +85,7 @@ export const inventory = fenecTable('inventory', {
  * value, since a unique index takes one field. A line not touched for a
  * week expires.
  */
-export const carts = fenecTable('carts', {
+export const carts = fennecTable('carts', {
   owner: text().notNull(),
   line: text().notNull(),
   sku: text().notNull(),
@@ -97,7 +97,7 @@ export const carts = fenecTable('carts', {
   index('carts_touched').on(t.touched).ttl('7d'),
 ]);
 
-export const orders = fenecTable('orders', {
+export const orders = fennecTable('orders', {
   number: text().notNull(),
   owner: text().notNull(),
   status: text().notNull(), // reserved | paid | cancelled
@@ -116,7 +116,7 @@ export const orders = fenecTable('orders', {
   index('orders_hold').on(t.holdUntil),
 ]);
 
-export const orderLines = fenecTable('order_lines', {
+export const orderLines = fennecTable('order_lines', {
   orderNumber: text().notNull(),
   owner: text().notNull(),
   sku: text().notNull(),
@@ -130,14 +130,14 @@ export const orderLines = fenecTable('order_lines', {
 ]);
 
 /** One row a captured payment: a second capture of an order is a clash. */
-export const payments = fenecTable('payments', {
+export const payments = fennecTable('payments', {
   orderNumber: text().notNull(),
   ref: text().notNull(),
   amount: integer().notNull(),
   at: timestamp(),
 }, (t) => [uniqueIndex('payments_order').on(t.orderNumber)]);
 
-export const users = fenecTable('users', {
+export const users = fennecTable('users', {
   email: text().notNull(),
   name: text().notNull(),
   password: text().notNull(), // scrypt, salt and hash

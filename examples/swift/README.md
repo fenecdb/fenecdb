@@ -1,12 +1,12 @@
 # Notes -- Swift (SwiftUI, embedded)
 
 A notes app for macOS whose database is a file in Application Support:
-fenecdb embedded through the `FenecDB` package, no server. The same views
+fennecdb embedded through the `FennecDB` package, no server. The same views
 run on iOS.
 
 ## What it shows
 
-- the schema in `Sources/NotesKit/schema.fenecql`, applied with
+- the schema in `Sources/NotesKit/schema.fennecql`, applied with
   `db.schema(...)` at every open, and four notes seeded into an empty file;
 - creating notes, and marking one done with a tap;
 - full-text search with `match`, fused with `near` over a toy embedding
@@ -22,15 +22,15 @@ model from a terminal.
 ## Prerequisites
 
 Swift 5.9 or newer on macOS 12+ (Xcode, or the Command Line Tools for the
-app and the CLI). The package fetches `FenecDB` and its prebuilt library
+app and the CLI). The package fetches `FennecDB` and its prebuilt library
 from the release.
 
 ## Run
 
 ```sh
 cd examples/swift
-swift run NotesApp                       # the app; the file is ~/Library/Application Support/Notes/notes.fenec
-swift run notes-cli                      # ./notes.fenec: seeds it, then lists
+swift run NotesApp                       # the app; the file is ~/Library/Application Support/Notes/notes.fennec
+swift run notes-cli                      # ./notes.fennec: seeds it, then lists
 swift run notes-cli add "Dentist" "Call the dentist on Monday." health
 swift run notes-cli list --tag home
 swift run notes-cli list --open
@@ -50,17 +50,17 @@ package (File > Add Package Dependencies > Add Local...) and its `NotesKit`
 library, and use the same two calls as `Sources/NotesApp/NotesApp.swift`:
 
 ```swift
-let notes = try await Notes.open(Notes.defaultURL())   // Application Support/Notes/notes.fenec
+let notes = try await Notes.open(Notes.defaultURL())   // Application Support/Notes/notes.fennec
 NotesView(notes: notes)
 ```
 
 ## The core
 
 ```swift
-let db = try await Fenec.open(url)
-try await db.schema(schemaText)                          // schema.fenecql: made or checked
+let db = try await Fennec.open(url)
+try await db.schema(schemaText)                          // schema.fennecql: made or checked
 try await db.from("notes").insert(["title": "Dentist", "body": "Call on Monday.",
-    "tags": ["health"], "done": false, "at": Date().fenecValue(), "embed": .floats(embed("..."))] as Row)
+    "tags": ["health"], "done": false, "at": Date().fennecValue(), "embed": .floats(embed("..."))] as Row)
 
 let open = try db.from("notes").where("done", false).order("at", "desc")
 @StateObject var live = LiveQuery(db, open, as: Note.self)   // a SwiftUI list, again after every write
@@ -77,18 +77,18 @@ trigrams (of the UTF-8 bytes) hashed into 64 dimensions, so `near` and
 `fuse` have something to rank without a download. Every Notes example
 computes the same vectors. A real app computes them with a model -- Core ML
 on the device, or an embeddings API -- and declares `vector<N>` with that
-model's `N` in `schema.fenecql`.
+model's `N` in `schema.fennecql`.
 
 ## Against this repository's build
 
-CI builds the example against the repository's `FenecDB` rather than the
-release: with `FENEC_LOCAL` set, `Package.swift` takes the package at the
+CI builds the example against the repository's `FennecDB` rather than the
+release: with `FENNEC_LOCAL` set, `Package.swift` takes the package at the
 repository's root, and that takes the XCFramework
 `integrations/swift/build-xcframework.sh` built.
 
 ```sh
 integrations/swift/build-xcframework.sh --macos          # from the repository's root
 cd examples/swift
-FENEC_LOCAL=1 swift build
-FENEC_LOCAL=1 swift run notes-cli smoke
+FENNEC_LOCAL=1 swift build
+FENNEC_LOCAL=1 swift run notes-cli smoke
 ```

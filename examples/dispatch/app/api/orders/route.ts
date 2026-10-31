@@ -5,7 +5,7 @@
 import type { NextRequest } from 'next/server';
 import { back, crossSite, json, readBody } from '../../../lib/http';
 import { current, whoOf } from '../../../lib/session';
-import { asUser, FenecError, one } from '../../../lib/db';
+import { asUser, FennecError, one } from '../../../lib/db';
 import { placeOrder, cancel } from '../../../lib/orders';
 import { COMPANIES, people } from '../../../lib/world';
 import { metresBetween, type Point } from '../../../lib/city';
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     return form ? back(req, `/orders/${id}`) : json({ id });
   } catch (e) {
     // A company at its plan's rows takes no new order: say so.
-    if (e instanceof FenecError && e.status === 507) return json({ error: 'The delivery company cannot take new orders right now.', quota: e.quota }, 503);
+    if (e instanceof FennecError && e.status === 507) return json({ error: 'The delivery company cannot take new orders right now.', quota: e.quota }, 503);
     throw e;
   }
 }

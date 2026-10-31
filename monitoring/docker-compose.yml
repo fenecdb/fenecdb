@@ -1,63 +1,63 @@
-# fenecdb with Prometheus and Grafana, the dashboards already loaded: the
-# server's metrics (grafana/fenecdb.json, through Prometheus) and its data
-# twice -- through fenecdb-datasource, the plugin this checkout builds
-# (grafana/fenecdb-data-plugin.json, with an alert rule), and through the
-# Infinity plugin and POST /query (grafana/fenecdb-data.json):
+# fennecdb with Prometheus and Grafana, the dashboards already loaded: the
+# server's metrics (grafana/fennecdb.json, through Prometheus) and its data
+# twice -- through fennecdb-datasource, the plugin this checkout builds
+# (grafana/fennecdb-data-plugin.json, with an alert rule), and through the
+# Infinity plugin and POST /query (grafana/fennecdb-data.json):
 #
-#   FENEC_HTTP_TOKEN=secret FENEC_METRICS_TOKEN=scrape \
-#   FENEC_JWT_SECRET=$(openssl rand -hex 32) \
+#   FENNEC_HTTP_TOKEN=secret FENNEC_METRICS_TOKEN=scrape \
+#   FENNEC_JWT_SECRET=$(openssl rand -hex 32) \
 #     docker compose -f monitoring/docker-compose.yml up -d --build
-#   open http://127.0.0.1:3000/d/fenecdb
-#   open http://127.0.0.1:3000/d/fenecdb-data-plugin
-#   open http://127.0.0.1:3000/d/fenecdb-data
+#   open http://127.0.0.1:3000/d/fennecdb
+#   open http://127.0.0.1:3000/d/fennecdb-data-plugin
+#   open http://127.0.0.1:3000/d/fennecdb-data
 #
-# fenec-server serves /_metrics on a listener of its own (--metrics), so the
+# fennec-server serves /_metrics on a listener of its own (--metrics), so the
 # data port need not be on the compose network. That listener is on it
 # alone and still takes a token: a non-loopback address wants one.
 #
 # `seed` writes thirty days of a site's events and a week of trades into the
 # database the first time, and mints the token Grafana reads them with.
 # `docker compose ... down -v` takes the data and the token away with the
-# containers. FENEC_PORT, GRAFANA_PORT and PROMETHEUS_PORT move the ports
+# containers. FENNEC_PORT, GRAFANA_PORT and PROMETHEUS_PORT move the ports
 # published on loopback, 0 to one Docker picks (`make grafana-check` asks
 # for those, and reads them back with `docker compose port`, so it runs
 # beside a stack on the usual ones and beside another check).
 
 services:
-  fenecdb:
+  fennecdb:
     build: ..
-    image: fenecdb
+    image: fennecdb
     command:
       - --http
       - 0.0.0.0:8080
       - --file
-      - /data/data.fenec
+      - /data/data.fennec
       - --sync
       - "250"
       - --metrics
       - 0.0.0.0:9464
       - --admin-token
-      - "${FENEC_METRICS_TOKEN:?set a scrape token, e.g. FENEC_METRICS_TOKEN=scrape}"
+      - "${FENNEC_METRICS_TOKEN:?set a scrape token, e.g. FENNEC_METRICS_TOKEN=scrape}"
       # Statements that take 100 ms or longer go to the log with their text.
       - --slow-ms
       - "100"
       # JSON Web Tokens are held to these rules: Grafana's reads `events`
       # and `ticks` and writes nothing. The secret comes from a file, which
       # the seed reads to mint Grafana's token, rather than from
-      # FENEC_JWT_SECRET, which every process in the container would see.
+      # FENNEC_JWT_SECRET, which every process in the container would see.
       - --jwt-secret-file
-      - /run/secrets/fenec_jwt_secret
+      - /run/secrets/fennec_jwt_secret
       - --policy
-      - /etc/fenec/policy.txt
+      - /etc/fennec/policy.txt
     environment:
-      FENEC_HTTP_TOKEN: "${FENEC_HTTP_TOKEN:?set a token first, e.g. FENEC_HTTP_TOKEN=secret}"
+      FENNEC_HTTP_TOKEN: "${FENNEC_HTTP_TOKEN:?set a token first, e.g. FENNEC_HTTP_TOKEN=secret}"
     secrets:
-      - fenec_jwt_secret
+      - fennec_jwt_secret
     ports:
-      - "127.0.0.1:${FENEC_PORT:-8080}:8080"
+      - "127.0.0.1:${FENNEC_PORT:-8080}:8080"
     volumes:
-      - fenecdata:/data
-      - ./policy.txt:/etc/fenec/policy.txt:ro
+      - fennecdata:/data
+      - ./policy.txt:/etc/fennec/policy.txt:ro
     mem_limit: 1g
     restart: unless-stopped
     stop_grace_period: 30s
@@ -68,19 +68,19 @@ services:
   seed:
     image: node:24.21.0-alpine
     depends_on:
-      - fenecdb
+      - fennecdb
     command: ["node", "/monitoring/seed/seed.mjs"]
     environment:
-      FENEC_URL: http://fenecdb:8080
-      FENEC_HTTP_TOKEN: "${FENEC_HTTP_TOKEN:?set a token first}"
-      FENEC_JWT_SECRET_FILE: /run/secrets/fenec_jwt_secret
-      GRAFANA_TOKEN_FILE: /run/fenec/grafana.jwt
+      FENNEC_URL: http://fennecdb:8080
+      FENNEC_HTTP_TOKEN: "${FENNEC_HTTP_TOKEN:?set a token first}"
+      FENNEC_JWT_SECRET_FILE: /run/secrets/fennec_jwt_secret
+      GRAFANA_TOKEN_FILE: /run/fennec/grafana.jwt
     secrets:
-      - fenec_jwt_secret
+      - fennec_jwt_secret
     volumes:
       - ./seed:/monitoring/seed:ro
       - ../examples/analytics/src:/examples/analytics/src:ro
-      - grafana-token:/run/fenec
+      - grafana-token:/run/fennec
     mem_limit: 512m
 
   prometheus:
@@ -90,24 +90,24 @@ services:
       - /bin/sh
       - -c
       - >-
-        printf %s "$$FENEC_METRICS_TOKEN" > /prometheus/token &&
+        printf %s "$$FENNEC_METRICS_TOKEN" > /prometheus/token &&
         exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml
         --storage.tsdb.path=/prometheus
     environment:
-      FENEC_METRICS_TOKEN: "${FENEC_METRICS_TOKEN:?set a scrape token}"
+      FENNEC_METRICS_TOKEN: "${FENNEC_METRICS_TOKEN:?set a scrape token}"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
       - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
 
   grafana:
-    # Grafana 13.2.2 with fenecdb-datasource built from this checkout: the
+    # Grafana 13.2.2 with fennecdb-datasource built from this checkout: the
     # frontend with webpack, the backend with mage, unsigned and let in by
     # name (integrations/grafana/Dockerfile).
     build:
       context: ..
       dockerfile: integrations/grafana/Dockerfile
-    image: fenecdb-grafana
+    image: fennecdb-grafana
     # The data source reads the token the seed mints, so it waits for it.
     depends_on:
       seed:
@@ -115,28 +115,28 @@ services:
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
-      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/fenecdb.json
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/fennecdb.json
       # The Infinity data source, installed before provisioning reads the
       # data source that names it: the asynchronous GF_PLUGINS_PREINSTALL
       # may still be downloading then.
       GF_PLUGINS_PREINSTALL_SYNC: yesoreyeram-infinity-datasource@4.1.1
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/fenecdb.json:/var/lib/grafana/dashboards/fenecdb.json:ro
-      - ./grafana/fenecdb-data.json:/var/lib/grafana/dashboards/fenecdb-data.json:ro
-      - ./grafana/fenecdb-data-plugin.json:/var/lib/grafana/dashboards/fenecdb-data-plugin.json:ro
+      - ./grafana/fennecdb.json:/var/lib/grafana/dashboards/fennecdb.json:ro
+      - ./grafana/fennecdb-data.json:/var/lib/grafana/dashboards/fennecdb-data.json:ro
+      - ./grafana/fennecdb-data-plugin.json:/var/lib/grafana/dashboards/fennecdb-data-plugin.json:ro
       # The data source's token alone, not the secret that signs it.
-      - grafana-token:/run/fenec:ro
+      - grafana-token:/run/fennec:ro
     ports:
       - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
 
 volumes:
-  fenecdata:
+  fennecdata:
   grafana-token:
 
-# Signs the JWTs fenec-server takes: 32 bytes or more, e.g.
-# FENEC_JWT_SECRET=$(openssl rand -hex 32). Only the server and the seed
+# Signs the JWTs fennec-server takes: 32 bytes or more, e.g.
+# FENNEC_JWT_SECRET=$(openssl rand -hex 32). Only the server and the seed
 # see it; Grafana gets the token the seed signs with it.
 secrets:
-  fenec_jwt_secret:
-    environment: FENEC_JWT_SECRET
+  fennec_jwt_secret:
+    environment: FENNEC_JWT_SECRET

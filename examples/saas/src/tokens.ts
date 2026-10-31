@@ -40,7 +40,7 @@ export class Tokens {
 
   /**
    * The app's token for one tenant, minted for fifteen minutes and used for
-   * ten: fenec-server keeps a verified token by its text, so reusing one
+   * ten: fennec-server keeps a verified token by its text, so reusing one
    * skips the RSA check (38 us) for a lookup (0.5 us).
    */
   app(tenant: string): string {

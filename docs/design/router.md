@@ -4,13 +4,13 @@ The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *The ro
 
 ## CORS
 
-**The router tells a page one CORS rule, its own** (`fenec-shard
---http-cors`, `fenec_http::cors`, the one list a node and the router
+**The router tells a page one CORS rule, its own** (`fennec-shard
+--http-cors`, `fennec_http::cors`, the one list a node and the router
 send). Without it the router's own answers -- an unknown tenant's 404, a
 node's 502, a standby's 503, the connection ceiling's 503, `/_shard/`'s
 401 -- carried no CORS header while the nodes' answers through it carried
 the nodes', so a page read each as the network failing and the sync and
-`FenecHttp.live` backed off from an answer; and a preflight was
+`FennecHttp.live` backed off from an answer; and a preflight was
 forwarded, so where the tenant was unknown or its node unreachable the
 request after it was never sent (a node's own connection ceiling went
 without them too, and has them now). With it the router answers a preflight
@@ -36,7 +36,7 @@ six runs each in ABBA turns (20.7-25.2 and 20.5-25.7); on, 24.3
 
 **The router looks at a pooled connection before it writes, and sends a
 request again only where the node cannot have run it or may run it
-twice** (`fenec-shard/src/upstream.rs`). A node closes a keep-alive
+twice** (`fennec-shard/src/upstream.rs`). A node closes a keep-alive
 connection silent past `--idle-timeout`, and on macOS the router's end is
 reset about a minute after the node's FIN (`setsockopt` fine 59 s after
 the close, refused 62 s after; `net.inet.tcp.fin_timeout` is 60 s), after
@@ -71,11 +71,11 @@ before the router starts so no request but the test's meets the node's
 (`set_nonblocking`, `peek` and `set_nonblocking` again 0.74), and the
 two `setsockopt`s every exchange made, 0.67 us, are gone from a reused
 connection: the write timeout is set at the connect, the read timeout
-only when it changes (a `Fenec-Wait`), kept with the pooled connection.
+only when it changes (a `Fennec-Wait`), kept with the pooled connection.
 `make shard-bench`'s added p50 stayed 23.3 us against main's 23.3, six
 runs each in ABBA turns (23.1-24.8 and 20.0-24.4). A connection's name is
 looked up within the bound its connect has (`dial` through
-`fenec_http::dial::resolve`, which every dial of the router's goes
+`fennec_http::dial::resolve`, which every dial of the router's goes
 through: a forwarded request, a relay to a region's router, a query
 across tenants, a read replica's read and upkeep, a health probe, a lease
 grant): `getaddrinfo` takes no timeout, and a node recorded by a name its
@@ -92,14 +92,14 @@ there -- and an address written out is read where it stands, with no
 thread: `make shard-bench ARGS=latency`'s added p50 stayed 20.7 us against
 main's 20.5, eight runs a side in ABBA turns at loads of 2.2-2.8
 (20.2-21.3 and 17.0-20.8), and the whole bench's 20.4 against 20.7.
-`fenec-shard`'s code grew 59.9 KB with the leasing beside it, the held
+`fennec-shard`'s code grew 59.9 KB with the leasing beside it, the held
 tenants and the refusal's lineage and history -- 9.3 KB of it the promotion
 that sends them and records its answer in one block -- and
-`fenec-server`'s 14.5, 2.0 of it the copy's word of its primary's hello
+`fennec-server`'s 14.5, 2.0 of it the copy's word of its primary's hello
 (aarch64-apple-darwin); the follower's dial answers
 through a slot and a condvar, an `mpsc` channel 13 KB more of each. A
 request the node may
-hold (`Fenec-Wait`) watches its client while its head is waited for
+hold (`Fennec-Wait`) watches its client while its head is waited for
 (`answered_or_gone`: one `poll` of the node's socket and the client's,
 declared by hand as `recv` is, `nfds_t` each system's own, until either
 moves), and passes on what the client did as the node would read it from
@@ -110,7 +110,7 @@ run and hands its row on, and the node's answer goes on to the client as
 any. A reset, which can read nothing more, is the client gone
 (`Stage::Abandoned`, `upstream::client_gone`): the node's connection let
 go of, nothing written, sent again or counted against the node, the
-request counted in `fenec_router_requests_total`'s `gone` class (counted
+request counted in `fennec_router_requests_total`'s `gone` class (counted
 nowhere before) and its trace ended 499. `gone` counts resets alone: an
 end cannot be told from a half-close, so a client gone with its end --
 most timeouts and aborts -- is passed on as one, its claim leaving at the
@@ -133,7 +133,7 @@ router finding the node in its copy of the global directory
 once the relay saw the router let go: the job is the second's, failing
 with either hop's watch taken out; and a half-closed claim on a busy queue
 answered its job through the router as straight to the node, failing with
-the end taken for gone. The `poll` is a `Fenec-Wait` request's alone: one
+the end taken for gone. The `poll` is a `Fennec-Wait` request's alone: one
 with no such header passes no socket to watch and makes the system calls
 it made: with the body's buffer and the read replicas' health below,
 `make shard-bench ARGS=latency`'s added p50 stayed 20.5 us against main's
@@ -303,7 +303,7 @@ was cut from. A standby router and a region's router forwarding by its copy of t
 global directory fail nothing over, and end what they had out as their
 copy of the directory shows the failover, by the same rules (the next
 paragraph). Cuts are counted by what became of them
-(`fenec_router_cut_requests_total{outcome}`), besides each answer's status
+(`fennec_router_cut_requests_total{outcome}`), besides each answer's status
 class. `tests/cuts.rs` (a binary of its own) stands a wire that falls
 silent between the router and a node, carrying nothing and closing
 nothing, with the router's timeout at a minute and each client's at half
@@ -360,7 +360,7 @@ back to the pool once its body is read and the answer keeps none
 (`Answer::reader` an `Option`), where main pools a copy of its descriptor,
 a `dup` and a `close` more a read, and a first version of this change
 registered that copy under a flight of its own, a lock more and 0.4-0.5
-us. `fenec-shard`'s code grew 29.4 KB (aarch64-apple-darwin): `after_cut`
+us. `fennec-shard`'s code grew 29.4 KB (aarch64-apple-darwin): `after_cut`
 9.3, one out-of-line copy of `answer_out` for the cold callers 8.6 -- a
 read replica's answer goes through it too, `forward_near` 8.8 KB smaller
 -- `grant_cut_onto` and its thread 5.3, the grants after a failover by
@@ -569,7 +569,7 @@ a failover made, against 3.88-3.92 on main, and 3.94 and 4.22 at 10 000
 against 3.85-3.88 (a scratch harness applying a primary directory's
 records to a follower's database, 4 000 changes a run, four runs a side
 in ABBA turns) -- off the request path now, the thread the writes wake
-catching up before a request finds the maps stale. `fenec-shard`'s code
+catching up before a request finds the maps stale. `fennec-shard`'s code
 grew 24.8 KB (`__text`, aarch64-apple-darwin, `size_report.py --bin` in
 each tree): `catch_up_directories` 6.7, `after_cut`'s asking again, its
 client watched and counted once, 6.0, the directory's field, its
@@ -582,16 +582,16 @@ from changed.
 ## Queries across tenants
 
 **A query across tenants is the router's admin's, merged by what the
-request says** (`fenec-shard/src/fanout.rs`, `POST /_shard/query`). An
+request says** (`fennec-shard/src/fanout.rs`, `POST /_shard/query`). An
 operator asked every tenant themselves for a count each or the newest
 sign-ups of all. Tenants are the boundary, so it sits behind the
 router's `--token` like the rest of `/_shard/`: a JWT bound to a tenant
 and the nodes' data token are 401 there. Each tenant is asked through its
-node's `POST /_admin/tenants/<t>/query` (`fenec_http::admin_query`) with
+node's `POST /_admin/tenants/<t>/query` (`fennec_http::admin_query`) with
 the admin token the router holds -- one that exports a tenant's whole
 image learns nothing more by reading it; the data token reaches every
 tenant and writes -- which refuses a statement that writes before it runs
-and runs the rest in read-only mode besides. The router parses no FenecQL:
+and runs the rest in read-only mode besides. The router parses no FennecQL:
 `query` and `params` go to every node as their JSON came (validated with
 `parse_json`, never re-encoded), and the merge is the request's own JSON,
 three kinds exact from the answers alone -- none (rows one after another,
@@ -606,7 +606,7 @@ no schema: an object in place of its name (`{"column", "collate",
 "nocase", "desc"}`, `column_of`), an `order` key or a `min`, `max` or
 `group` column alike, `"nocase": true` the fold a field in that collation
 has (Turkish's under `tr`) and `"tr"` or `"und"` the field's own where the
-statement's `collate` names another. It compares by fenec-core's
+statement's `collate` names another. It compares by fennec-core's
 `TextOrder` as the engine's `order` does (`value_in`, `cmp_in`): read as
 text, never as the time an ISO form names; folded once as it is read, as
 `folded_keys` folds; the collation over the folds; and the texts folding

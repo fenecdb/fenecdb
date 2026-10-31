@@ -1,25 +1,25 @@
 <!--
-title: Integrations — fenecdb
-description: Vector stores for LangChain, LlamaIndex and LangChain.js, retrieval for the Vercel AI SDK, useLiveQuery for React, the Go and .NET SDKs, and fenecdb embedded in Swift, Kotlin and Dart apps.
+title: Integrations — fennecdb
+description: Vector stores for LangChain, LlamaIndex and LangChain.js, retrieval for the Vercel AI SDK, useLiveQuery for React, the Go and .NET SDKs, and fennecdb embedded in Swift, Kotlin and Dart apps.
 -->
 
 <h1>Integrations</h1>
-<p class="kicker">Use fenecdb from LangChain, LlamaIndex, LangChain.js, the
+<p class="kicker">Use fennecdb from LangChain, LlamaIndex, LangChain.js, the
 Vercel AI SDK and React, each tested the way its framework tests its own,
 from Go and .NET through their SDKs, and embedded in Swift, Kotlin and Dart
 apps.</p>
 
 <h2>LangChain</h2>
 
-<p>A LangChain vector store over fenec-server's HTTP endpoint. Install it, point it
+<p>A LangChain vector store over fennec-server's HTTP endpoint. Install it, point it
 at the server, and use it like any other store.</p>
 
-<pre data-lang="bash">pip install "fenecdb[langchain]"
+<pre data-lang="bash">pip install "fennecdb[langchain]"
 </pre>
 
-<pre data-lang="python">from fenecdb.langchain import FenecVectorStore
+<pre data-lang="python">from fennecdb.langchain import FennecVectorStore
 
-store = FenecVectorStore(
+store = FennecVectorStore(
     embeddings, "handbook",
     url="http://127.0.0.1:8080", token="...",
     metadata_fields={"source": "text", "year": "int"},
@@ -52,13 +52,13 @@ a field not declared is refused rather than applied to the JSON after the
 search, which would return fewer than <code>k</code> rows and not say
 so.</p>
 
-<p>The score is fenecdb's own, the one the HTTP endpoint and the browser
+<p>The score is fennecdb's own, the one the HTTP endpoint and the browser
 module return: the cosine similarity under <code>cosine</code> (the default),
 the distance under <code>l2</code>, the product under <code>dot</code>.
 <code>similarity_search_with_relevance_scores</code> maps them the way
 LangChain's own functions do.</p>
 
-<pre data-lang="python">store = FenecVectorStore(embeddings, "handbook", url=..., token=...,
+<pre data-lang="python">store = FennecVectorStore(embeddings, "handbook", url=..., token=...,
                          full_text=True, quant="int8")
 store.similarity_search("compact dead records", k=4, mode="text")     # BM25 alone
 store.similarity_search("how do I compact", k=4, mode="hybrid")       # both, fused
@@ -70,7 +70,7 @@ retriever = store.as_retriever(search_kwargs={"k": 8, "mode": "hybrid"})
 search takes <code>mode</code>: <code>"text"</code> ranks by the words alone
 with <code>match</code> and embeds nothing, and <code>"hybrid"</code> runs
 <code>match</code> and <code>near</code> each to their own depth and fuses
-the two rankings (<a href="fenecql-search.html#hybrid"><code>fuse</code></a>). Their
+the two rankings (<a href="fennecql-search.html#hybrid"><code>fuse</code></a>). Their
 scores are BM25's and the fusion's, not similarities. <code>quant</code>,
 <code>"int8"</code> or <code>"bit"</code> (<code>cosine</code> only), keeps the
 graph over codes, and <code>near</code> still orders by the vectors
@@ -80,14 +80,14 @@ themselves.</p>
 <h2 id="langchain-js">LangChain.js</h2>
 
 <p>The same store from JavaScript. It runs over a database in the page, with no
-server, or over fenec-server's HTTP endpoint.</p>
+server, or over fennec-server's HTTP endpoint.</p>
 
-<pre data-lang="js">import { Fenec, connect } from '@fenecdb/web';
-import { FenecVectorStore } from '@fenecdb/langchain';
+<pre data-lang="js">import { Fennec, connect } from '@fennecdb/web';
+import { FennecVectorStore } from '@fennecdb/langchain';
 
-// The database in the page -- or behind fenec-server: connect('http://127.0.0.1:8080')
-const db = await Fenec.open('./fenec.wasm');
-const store = new FenecVectorStore(embeddings, {
+// The database in the page -- or behind fennec-server: connect('http://127.0.0.1:8080')
+const db = await Fennec.open('./fennec.wasm');
+const store = new FennecVectorStore(embeddings, {
   client: db,
   collection: 'handbook',
   metadataFields: { source: 'text' },
@@ -106,24 +106,24 @@ the first write; <code>metadataFields</code> get columns of their own under
 <code>$in</code> over them; with <code>fullText</code>,
 <code>search(query, k, {mode})</code> ranks by the words
 (<code>'text'</code>) or both (<code>'hybrid'</code>). <code>client</code>
-is anything with <code>run(sql, params)</code>: a <code>Fenec</code> keeps
-the whole RAG index in the page, no server, and a <code>FenecHttp</code> the
+is anything with <code>run(sql, params)</code>: a <code>Fennec</code> keeps
+the whole RAG index in the page, no server, and a <code>FennecHttp</code> the
 server's. Writing an id already there replaces it — two statements, which
 over HTTP are two requests.</p>
 </details>
 
 <h2>LlamaIndex</h2>
 
-<p>A LlamaIndex vector store over fenec-server's HTTP endpoint, with metadata
+<p>A LlamaIndex vector store over fennec-server's HTTP endpoint, with metadata
 filters, deletion by document, and text and hybrid search.</p>
 
-<pre data-lang="bash">pip install "fenecdb[llama-index]"
+<pre data-lang="bash">pip install "fennecdb[llama-index]"
 </pre>
 
-<pre data-lang="python">from fenecdb.llama_index import FenecVectorStore
+<pre data-lang="python">from fennecdb.llama_index import FennecVectorStore
 from llama_index.core import StorageContext, VectorStoreIndex
 
-store = FenecVectorStore("handbook", url="http://127.0.0.1:8080", token="...",
+store = FennecVectorStore("handbook", url="http://127.0.0.1:8080", token="...",
                          metadata_fields={"author": "text", "year": "int"})
 index = VectorStoreIndex.from_documents(
     documents, storage_context=StorageContext.from_defaults(vector_store=store)
@@ -151,11 +151,11 @@ a query takes the modes that need it: <code>TEXT_SEARCH</code> ranks by the
 words alone (<code>match</code>), and <code>HYBRID</code> runs
 <code>match</code> and <code>near</code> each to their own depth —
 <code>hybrid_top_k</code>, or <code>sparse_top_k</code>, deep — and fuses the
-two rankings (<a href="fenecql-search.html#hybrid"><code>fuse</code></a>). The fusion
+two rankings (<a href="fennecql-search.html#hybrid"><code>fuse</code></a>). The fusion
 adds ranks rather than scores, so <code>alpha</code> has nothing to weigh and
 is not read. <code>quant</code> is taken as the LangChain store takes it.</p>
 
-<pre data-lang="python">store = FenecVectorStore("handbook", url=..., token=..., full_text=True)
+<pre data-lang="python">store = FennecVectorStore("handbook", url=..., token=..., full_text=True)
 retriever = index.as_retriever(similarity_top_k=4, vector_store_query_mode="hybrid")
 </pre>
 </details>
@@ -168,10 +168,10 @@ retriever = index.as_retriever(similarity_top_k=4, vector_store_query_mode="hybr
 
 <pre data-lang="js">import { generateText, stepCountIs } from 'ai';
 import { openai } from '@ai-sdk/openai';
-import { Fenec } from '@fenecdb/web';
+import { Fennec } from '@fennecdb/web';
 import { index, retrieve, searchTool } from './rag.js';   // integrations/ai-sdk/rag.js
 
-const db = await Fenec.open('./fenec.wasm');
+const db = await Fennec.open('./fennec.wasm');
 const model = openai.textEmbeddingModel('text-embedding-3-small');
 await index(db, { collection: 'docs', model, documents });   // [{text, source?}]
 
@@ -193,40 +193,40 @@ documents, their text under <code>@text</code> and their vectors under
 <code>hybrid</code> the words and the vector fused, kept to a
 <code>source</code> through its <code>@hash</code> index;
 <code>searchTool</code> is a <code>tool</code> a model calls with a query.
-It takes a <code>Fenec</code>, so the index lives in the page or a Worker,
-or a <code>FenecHttp</code> for the server's.</p>
+It takes a <code>Fennec</code>, so the index lives in the page or a Worker,
+or a <code>FennecHttp</code> for the server's.</p>
 </details>
 
 <h2>React</h2>
 
 <p><code>useLiveQuery</code> renders a query over the database in the page
-— a <code>Fenec</code> of its own or a synced replica — and runs it again
+— a <code>Fennec</code> of its own or a synced replica — and runs it again
 after every write it may read. No render waits on the network.</p>
 
-<pre data-lang="ts">import { sync, type FenecSync, type Row } from '@fenecdb/web';
-import { FenecProvider, useFenec, useLiveQuery } from '@fenecdb/react';
-import type { FenecSchema } from './fenec-schema.js';   // fenec types, over the server's file
+<pre data-lang="ts">import { sync, type FennecSync, type Row } from '@fennecdb/web';
+import { FennecProvider, useFennec, useLiveQuery } from '@fennecdb/react';
+import type { FennecSchema } from './fennec-schema.js'; // fennec types, over the server's file
 
-type TaskRow = Row<FenecSchema['tasks']>;
+type TaskRow = Row<FennecSchema['tasks']>;
 
-const db = await sync<FenecSchema>({ url: 'http://127.0.0.1:8080', shapes: [{ collection: 'tasks' }] });
+const db = await sync<FennecSchema>({ url: 'http://127.0.0.1:8080', shapes: [{ collection: 'tasks' }] });
 
 function Open() {
-  const db = useFenec<FenecSync<FenecSchema>>();
+  const db = useFennec<FennecSync<FennecSchema>>();
   const rows = useLiveQuery<TaskRow>(db.from('tasks').where('done', false).order('title'));
   if (rows === undefined) return &lt;Spinner /&gt;;
   return rows.map((t) =&gt; &lt;Task key={t.id} task={t} /&gt;);
 }
 
-&lt;FenecProvider db={db}&gt;&lt;Open /&gt;&lt;/FenecProvider&gt;
+&lt;FennecProvider db={db}&gt;&lt;Open /&gt;&lt;/FennecProvider&gt;
 </pre>
 
 <ul>
-  <li><b>No server needed:</b> <code>&lt;FenecProvider db={await Fenec.open()}&gt;</code>
+  <li><b>No server needed:</b> <code>&lt;FennecProvider db={await Fennec.open()}&gt;</code>
     makes the page's own database the app's state
     (<a href="javascript.html#state">State in the page</a>).</li>
-  <li><b>No module needed:</b> <code>&lt;FenecProvider db={connect(url)}&gt;</code>,
-    from <code>@fenecdb/web/client</code>, runs each query on the server and
+  <li><b>No module needed:</b> <code>&lt;FennecProvider db={connect(url)}&gt;</code>,
+    from <code>@fennecdb/web/client</code>, runs each query on the server and
     again after every write to a collection it reads.</li>
   <li><b>It is <code>undefined</code></b> until the first answer.</li>
   <li><b>A failing query throws</b> to the nearest error boundary.</li>
@@ -236,9 +236,9 @@ function Open() {
 <table>
 <thead><tr><th>Provider</th><th>Where a query runs</th><th>A render after a write</th><th>Loads</th></tr></thead>
 <tbody>
-<tr><td><code>connect(url)</code>, <code>@fenecdb/web/client</code></td><td>on the server, each time</td><td>waits for the server: the subscription's change, then the query's round trip</td><td>no module, 10 KB brotli of client</td></tr>
-<tr><td><code>sync({ url, shapes })</code></td><td>in the page, over the replica</td><td>waits for nothing: this tab's write is local, another client's arrives on the stream</td><td><code>fenec.wasm</code>, 274 KB brotli</td></tr>
-<tr><td><code>Fenec.open()</code></td><td>in the page, over its own database</td><td>waits for nothing</td><td>the same <code>fenec.wasm</code></td></tr>
+<tr><td><code>connect(url)</code>, <code>@fennecdb/web/client</code></td><td>on the server, each time</td><td>waits for the server: the subscription's change, then the query's round trip</td><td>no module, 10 KB brotli of client</td></tr>
+<tr><td><code>sync({ url, shapes })</code></td><td>in the page, over the replica</td><td>waits for nothing: this tab's write is local, another client's arrives on the stream</td><td><code>fennec.wasm</code>, 274 KB brotli</td></tr>
+<tr><td><code>Fennec.open()</code></td><td>in the page, over its own database</td><td>waits for nothing</td><td>the same <code>fennec.wasm</code></td></tr>
 </tbody>
 </table>
 </div>
@@ -250,8 +250,8 @@ every write it may read — a write of this tab's, or one the server streamed
 into a replica from another client — and the component renders what it
 answers. Over <code>connect</code> the query runs on the server, again after
 each write the server's subscriptions report to a collection it reads; a
-FenecQL text names those with <code>{ collections }</code> there, since
-nothing in the page can know what a text reads. A FenecQL text
+FennecQL text names those with <code>{ collections }</code> there, since
+nothing in the page can know what a text reads. A FennecQL text
 works too, on the provider's database:
 <code>useLiveQuery('get todos count', { collections: ['todos'] })</code>. <code>useLiveQuery</code> is
 <code>undefined</code> until the first answer, and subscribes by the query's
@@ -259,7 +259,7 @@ text and parameters, so the query built again on every render, which is the
 natural way to write one, does not subscribe again unless it asks something
 else; the rows of the query it asked before are not handed out as this one's.
 A query that fails throws while rendering, to the nearest error boundary. A
-query that asks for <a href="fenecql-search.html#facets">facets</a> has them on
+query that asks for <a href="fennecql-search.html#facets">facets</a> has them on
 its rows, <code>rows.facets.brand</code>, counted over every match: a
 results list and its filter sidebar from one hook, live alike. It
 lives in <code>integrations/react</code>, with React as its one peer
@@ -268,12 +268,12 @@ dependency.</p>
 
 <h2 id="sdks">Go and .NET</h2>
 
-<p>An SDK each over fenec-server's HTTP endpoint, each its standard library
-alone, beside Python's <code>fenecdb</code> and JavaScript's
-<code>@fenecdb/web</code>.</p>
+<p>An SDK each over fennec-server's HTTP endpoint, each its standard library
+alone, beside Python's <code>fennecdb</code> and JavaScript's
+<code>@fennecdb/web</code>.</p>
 
-<pre data-lang="bash">go get github.com/fenecdb/fenecdb/integrations/go
-dotnet add package FenecDb</pre>
+<pre data-lang="bash">go get github.com/fennec-db/fennecdb/integrations/go
+dotnet add package FennecDb</pre>
 
 <ul>
   <li><b>The same surface in both:</b> a statement and its rows, typed
@@ -318,13 +318,13 @@ which would cut a subscription short.</p>
 <h2 id="apps">Swift, Kotlin and Dart</h2>
 
 <p>Not over HTTP: the database in the app, a file on the device, through
-the native library (<code>crates/fenec-ffi</code>). A live query drives the
+the native library (<code>crates/fennec-ffi</code>). A live query drives the
 UI -- a SwiftUI observable, a Kotlin <code>Flow</code> for Compose, a Dart
 <code>Stream</code> for a <code>StreamBuilder</code>.</p>
 
-<pre data-lang="text">.package(url: "https://github.com/fenecdb/fenecdb", from: "{{version}}")  // Swift: product FenecDB
-implementation("com.fenecdb:fenecdb-android:{{version}}")          // Kotlin, Android
-flutter pub add fenecdb_flutter                                     // Flutter</pre>
+<pre data-lang="text">.package(url: "https://github.com/fennec-db/fennecdb", from: "{{version}}")  // Swift: product FennecDB
+implementation("com.fennecdb:fennecdb-android:{{version}}")          // Kotlin, Android
+flutter pub add fennecdb_flutter                                     // Flutter</pre>
 
 <ul>
   <li><b>The query builder,</b> the same seven ways, held to the one golden
@@ -342,17 +342,17 @@ flutter pub add fenecdb_flutter                                     // Flutter</
 <h2>Their tests</h2>
 
 <p>Each integration runs its framework's own tests, or the ones its framework
-holds its integrations to, against a real fenecdb.</p>
+holds its integrations to, against a real fennecdb.</p>
 
 <div class="tbl">
 <table>
 <thead><tr><th>Integration</th><th>Held to</th><th>Run with</th></tr></thead>
 <tbody>
-<tr><td>LangChain</td><td>LangChain's standard vector store suite (<code>langchain-tests</code>), sync and async, and filters, relevance, <code>from_texts</code>, the text and hybrid modes and int8 codes besides</td><td rowspan="2"><code>make python-test</code>: fenec-server built and started here, the tests from a <code>python:3.13</code> container</td></tr>
+<tr><td>LangChain</td><td>LangChain's standard vector store suite (<code>langchain-tests</code>), sync and async, and filters, relevance, <code>from_texts</code>, the text and hybrid modes and int8 codes besides</td><td rowspan="2"><code>make python-test</code>: fennec-server built and started here, the tests from a <code>python:3.13</code> container</td></tr>
 <tr><td>LlamaIndex</td><td>the tests LlamaIndex's own vector store integrations run — the class, a write and a nearest match, deletion by document, nodes by id and by filter, every filter operator, an index on top — and the text search and hybrid modes</td></tr>
-<tr><td>LangChain.js</td><td>what LangChain.js's own vector store integrations are held to — documents in and found again with their ids and scores, replaced under an id, deleted, filtered, <code>fromTexts</code>, a retriever — and the text and hybrid modes, each over a database in the page and over fenec-server's HTTP endpoint; LangChain.js publishes no standard suite</td><td><code>make langchain-test</code></td></tr>
+<tr><td>LangChain.js</td><td>what LangChain.js's own vector store integrations are held to — documents in and found again with their ids and scores, replaced under an id, deleted, filtered, <code>fromTexts</code>, a retriever — and the text and hybrid modes, each over a database in the page and over fennec-server's HTTP endpoint; LangChain.js publishes no standard suite</td><td><code>make langchain-test</code></td></tr>
 <tr><td>Vercel AI SDK</td><td>the SDK's own mock models: documents embedded with <code>embedMany</code> and found again with <code>near</code>, kept to a source and fused with the words, and a model that calls the search tool in <code>generateText</code> and answers from what it returned</td><td><code>make ai-sdk-test</code></td></tr>
-<tr><td>React</td><td>a stand-in database for the contract, and a real fenec-server, a replica and <code>connect</code> for a row another client writes</td><td><code>make react-test</code></td></tr>
+<tr><td>React</td><td>a stand-in database for the contract, and a real fennec-server, a replica and <code>connect</code> for a row another client writes</td><td><code>make react-test</code></td></tr>
 <tr><td>Go</td><td>a primary with a token, a JWT policy and the change stream, a replica and a node of tenants, started by the tests: <code>near</code> with exact scores, parameters of every type, the errors, a batch put back whole, an idempotency key, <code>After</code> on the replica, a subscription, <code>/_changes</code>, a tenant and a scoped token; the query builder against every case of <code>integrations/builder-golden.json</code>, and its queries' answers against the same statements sent as text</td><td><code>make go-test</code></td></tr>
 <tr><td>.NET</td><td>the same, with xunit</td><td><code>make dotnet-test</code></td></tr>
 <tr><td>Python client</td><td>the query builder against every case of <code>integrations/builder-golden.json</code>, sync and async, and its queries' answers against the same statements sent as text</td><td><code>make python-test</code></td></tr>

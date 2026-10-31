@@ -1,7 +1,7 @@
-/* fenec studio's views past the rows -- the query editor, the schema, the
+/* fennec studio's views past the rows -- the query editor, the schema, the
    live rows and the admin page -- fetched with the first of them. The same
    tokens, type and density as app.css: these are more rooms in the same
-   tool. FenecQL is coloured by the docs' rules (highlight.js) in the tool's
+   tool. FennecQL is coloured by the docs' rules (highlight.js) in the tool's
    own tokens: keywords in ink, strings in the oasis green the inspector
    gives text, an index's @ in the sun's amber the sidebar gives indexes,
    comments muted. */

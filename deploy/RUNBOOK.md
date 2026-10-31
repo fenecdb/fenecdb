@@ -1,21 +1,21 @@
-# Running fenecdb across regions
+# Running fennecdb across regions
 
-The operator's runbook for a self-hosted, multi-region fenecdb: what runs
+The operator's runbook for a self-hosted, multi-region fennecdb: what runs
 where, the order it comes up in, and what to do when something breaks. The
 design behind each step is in [Sharding design](https://fenecdb.com/docs/sharding-design);
 this page is the procedures, and the files beside it are the kit:
 
 | File | What it is |
 | --- | --- |
-| `systemd/fenec-node.service` | a tenant node, `fenec-server --dir --lease --sync always` |
-| `systemd/fenec-router.service`, `fenec-router-standby.service` | a region's router (`fenec-shard --region`) and its standby |
-| `systemd/fenec-global.service`, `fenec-global-standby.service` | the global router and its standby |
-| `systemd/fenec-archive@.service` | a node's archive, `fenec archive --tenants`, one instance a node |
-| `systemd/fenec-archive-sync@.service`, `.timer`, `bin/fenec-archive-sync` | that archive copied to a bucket by rclone, every five minutes |
+| `systemd/fennec-node.service` | a tenant node, `fennec-server --dir --lease --sync always` |
+| `systemd/fennec-router.service`, `fennec-router-standby.service` | a region's router (`fennec-shard --region`) and its standby |
+| `systemd/fennec-global.service`, `fennec-global-standby.service` | the global router and its standby |
+| `systemd/fennec-archive@.service` | a node's archive, `fennec archive --tenants`, one instance a node |
+| `systemd/fennec-archive-sync@.service`, `.timer`, `bin/fennec-archive-sync` | that archive copied to a bucket by rclone, every five minutes |
 | `systemd/cloudflared.service`, `cloudflared/config.yml` | the tunnel the global entry Worker reaches a router through |
-| `systemd/fenecdb.sysusers` | a user for each role: `fenec-node`, `fenec-router`, `fenec-archive`, `fenec-sync` |
+| `systemd/fennecdb.sysusers` | a user for each role: `fennec-node`, `fennec-router`, `fennec-archive`, `fennec-sync` |
 | `env/*.env` | the environment files the units read: addresses, flags and tokens |
-| `alerts/fenecdb.rules.yml`, `alerts/grafana.yml` | alert rules, for Prometheus and for Grafana |
+| `alerts/fennecdb.rules.yml`, `alerts/grafana.yml` | alert rules, for Prometheus and for Grafana |
 | `drill/drill.py` | `make drill`: the failovers below, in Docker, timed |
 | `test/units.py` | `make deploy-check`: these units under a real systemd |
 | `test/ingress.py` | `make deploy-check`: the tunnel's rules, asked of cloudflared's own matcher |
@@ -34,7 +34,7 @@ to follow, held to the binaries by `make deploy-check` and `make drill`.
                  |                               |
    region eu ----+-----------------    region us +------------------
    router-1 (zone fra)  router-2 (ams)  router-1 (iad)  router-2 (pdx)
-   fenec-router         -standby        fenec-router    -standby
+   fennec-router        -standby        fennec-router   -standby
         |  leases, places, fails over        |
    node eu-a (fra)   node eu-b (ams)     node us-a (iad)  node us-b (pdx)
    archiver of each node, on another machine; its archive -> bucket
@@ -55,14 +55,14 @@ to follow, held to the binaries by `make deploy-check` and `make drill`.
   another region.
 - **The entry Worker** gives every tenant one URL, learns each tenant's
   home from the routers' answers and sends its requests there, and names
-  the client to the routers (`Fenec-Client`, under the entry token).
+  the client to the routers (`Fennec-Client`, under the entry token).
 - **Archivers** keep every write of every tenant of a node, with the time it
   was made, on a machine apart from the node's; rclone copies the archive to
   a bucket.
 
 ### The network
 
-fenecdb speaks no TLS and no part of it should face the internet. Nodes,
+fennecdb speaks no TLS and no part of it should face the internet. Nodes,
 routers and archivers talk over a private network: a VPC within a region,
 and between regions WireGuard or the provider's encrypted peering --
 relays, the global directory, read replicas and moves cross it. The only
@@ -107,18 +107,18 @@ two things stand in front of each router:
   (no router or node sets one), so its clients never see the cookie either
   way; strict authentication keeps Access from making it.
 
-Each node and router listens on its private address (`FENEC_LISTEN`), with
+Each node and router listens on its private address (`FENNEC_LISTEN`), with
 a token: a router or a node refuses an address past loopback without one.
 
 ## Tokens
 
 Every token is made with `openssl rand -hex 32` and lives in an
-environment file, `/etc/fenecdb/*.env`, mode 0600, owned by root. systemd
+environment file, `/etc/fennecdb/*.env`, mode 0600, owned by root. systemd
 reads it as root before the process starts, so no service's user can read
 the file, and no token is on a command line (`ps` shows every process's
 arguments to every user). A process's environment, `/proc/<pid>/environ`,
 is readable by its own user's processes: each role is a user of its own
-(`fenec-node`, `fenec-router`, `fenec-archive`, `fenec-sync`), so a node
+(`fennec-node`, `fennec-router`, `fennec-archive`, `fennec-sync`), so a node
 cannot read a router's tokens, nor rclone the archiver's, where two roles
 share a machine. `make deploy-check` holds all of it, each user against
 every other role's processes. The archive's key and the tunnel's and
@@ -128,12 +128,12 @@ name) and is 0644.
 
 | Token | Variable | Held by | Reaches |
 | --- | --- | --- | --- |
-| data | `FENEC_HTTP_TOKEN` (node) | the tenants' clients | every tenant of every node, read and write; prefer JWTs (`--jwt-keys`, bound to a tenant) for anything a user holds |
-| node admin, one a node | `FENEC_ADMIN_TOKEN` (node) | the region's router, in its directory | `/_admin/` of that node: create, delete, freeze, move, export a tenant |
-| node replication, one for all | `FENEC_REPLICATION_TOKEN` (node, archiver) | nodes, archivers | every tenant's replication stream: every row |
-| routers | `FENEC_SHARD_TOKEN` (every router) | operators, the app that creates tenants, the scraper | `/_shard/`: place, move, delete every tenant; and the HMAC a router marks a relayed client with |
-| directory replication | `FENEC_SHARD_REPLICATION_TOKEN` (every router) | routers | the directories' streams, which carry every node's admin token |
-| entry | `FENEC_SHARD_ENTRY_TOKEN` (every router), `ENTRY_TOKEN` (Worker) | the entry Worker | believing the client address the entry names |
+| data | `FENNEC_HTTP_TOKEN` (node) | the tenants' clients | every tenant of every node, read and write; prefer JWTs (`--jwt-keys`, bound to a tenant) for anything a user holds |
+| node admin, one a node | `FENNEC_ADMIN_TOKEN` (node) | the region's router, in its directory | `/_admin/` of that node: create, delete, freeze, move, export a tenant |
+| node replication, one for all | `FENNEC_REPLICATION_TOKEN` (node, archiver) | nodes, archivers | every tenant's replication stream: every row |
+| routers | `FENNEC_SHARD_TOKEN` (every router) | operators, the app that creates tenants, the scraper | `/_shard/`: place, move, delete every tenant; and the HMAC a router marks a relayed client with |
+| directory replication | `FENNEC_SHARD_REPLICATION_TOKEN` (every router) | routers | the directories' streams, which carry every node's admin token |
+| entry | `FENNEC_SHARD_ENTRY_TOKEN` (every router), `ENTRY_TOKEN` (Worker) | the entry Worker | believing the client address the entry names |
 
 The entry token is the only one a third party's machine (Cloudflare's)
 holds, so a router refuses to start where it equals `--token`, the
@@ -152,18 +152,18 @@ On every machine (Debian 12 or later, Ubuntu 22.04 or later -- systemd 248
 or later for `LoadCredential=`'s `%d`):
 
 ```sh
-install -m 0755 fenec-server fenec-shard fenec /usr/local/bin/   # from a release
-install -m 0644 systemd/fenecdb.sysusers /etc/sysusers.d/fenecdb.conf && systemd-sysusers
+install -m 0755 fennec-server fennec-shard fennec /usr/local/bin/   # from a release
+install -m 0644 systemd/fennecdb.sysusers /etc/sysusers.d/fennecdb.conf && systemd-sysusers
 install -m 0644 systemd/*.service systemd/*.timer /etc/systemd/system/
-install -D -m 0755 bin/fenec-archive-sync /usr/local/libexec/fenecdb/fenec-archive-sync   # an archiver's machine
-install -d -m 0755 /etc/fenecdb
-install -D -m 0644 RUNBOOK.md /usr/local/share/doc/fenecdb/RUNBOOK.md
+install -D -m 0755 bin/fennec-archive-sync /usr/local/libexec/fennecdb/fennec-archive-sync   # an archiver's machine
+install -d -m 0755 /etc/fennecdb
+install -D -m 0644 RUNBOOK.md /usr/local/share/doc/fennecdb/RUNBOOK.md
 systemctl daemon-reload
 ```
 
 Then the environment file of each role the machine has, copied from
 `env/`, every example value replaced, mode 0600 (`install -m 0600`). The
-data go under `/var/lib/fenecdb/`, which a disk of its own mounted there
+data go under `/var/lib/fennecdb/`, which a disk of its own mounted there
 keeps apart from the system's.
 
 Each unit runs as its role's user with nothing writable but its own state
@@ -173,7 +173,7 @@ and other users' processes hidden (`systemd-analyze security` puts each at
 outgrows the page cache, and reads the cache's room there.
 
 Every connection is a thread and a descriptor, and a node's
-`--max-connections` (4 000 in `fenec-node.service`) is shared by clients'
+`--max-connections` (4 000 in `fennec-node.service`) is shared by clients'
 requests, their subscriptions and held writes, the followers of the
 tenants it holds replicas of -- one each, for as long as they follow --
 and its archivers. A node holding the replicas of 1 000 tenants holds
@@ -184,12 +184,12 @@ connection refused past the ceiling holds its descriptor while its
 request is read off, 2 s at most and 512 a process at most (a quarter of
 `LimitNOFILE` where that is fewer): count 512 more descriptors, a node's
 and a router's alike. Each tenant a node has open holds three on Linux: its
-file, its sync log and its `<tenant>.fenec.lock` (on macOS, which keeps no
+file, its sync log and its `<tenant>.fennec.lock` (on macOS, which keeps no
 sync log, 500 open tenants held 1 006 descriptors, 506 before the lock), so
 the tenants `--idle-close` lets stay open count too.
-`FenecConnectionsNearCeiling` fires at four fifths. A router's ceiling (its
+`FennecConnectionsNearCeiling` fires at four fifths. A router's ceiling (its
 default, 1 000) is its clients' and the regions' relays.
-`FenecNoThreadForConnection` fires once a process could make no thread for
+`FennecNoThreadForConnection` fires once a process could make no thread for
 a connection and refused it 503 (`reason="no_thread"`): it reached
 `TasksMax` (or its cgroup's `pids.max`) before `--max-connections`, so its
 other threads -- a router's lease grants and failovers, a node's
@@ -197,31 +197,31 @@ followers -- may be refused too. Raise `TasksMax`, or lower
 `--max-connections` well below it; `systemctl status` shows the unit's
 tasks against its limit. Prometheus's scrape is a connection too, refused
 the same way while the limit holds: `up` goes to 0, so the target-down
-alerts (`FenecNodeDown`, `FenecPrimaryRouterDown`, ...) are the other sign
+alerts (`FennecNodeDown`, `FennecPrimaryRouterDown`, ...) are the other sign
 of it, and the count shows once a scrape gets its thread.
 
 `TimeoutStopSec` leaves a node 120 s to sync every open tenant and
 checkpoint their graphs on SIGTERM; a kill past it loses no write under
-`--sync always`, only the checkpoint. Never `systemctl reload` a fenecdb
+`--sync always`, only the checkpoint. Never `systemctl reload` a fennecdb
 unit: the servers take SIGHUP for a shutdown.
 
 ### Logs
 
 The servers write their log to the journal and refusals, schema changes
-and admin changes to an audit log, `/var/log/fenecdb/<role>/audit.log`
+and admin changes to an audit log, `/var/log/fennecdb/<role>/audit.log`
 (`node`, `router`, `global`), 0600 under the units' `UMask` -- it names
 clients' addresses and every tenant changed. A log shipper reads it through
 an ACL, set once on the directory so each new file inherits it:
 
 ```sh
-setfacl -m u:<shipper>:rx -m d:u:<shipper>:r /var/log/fenecdb/node
+setfacl -m u:<shipper>:rx -m d:u:<shipper>:r /var/log/fennecdb/node
 ```
 
 The server opens the file once and appends; it does not reopen it, and
 SIGHUP shuts it down. So logrotate copies and truncates:
 
 ```
-/var/log/fenecdb/*/audit.log {
+/var/log/fennecdb/*/audit.log {
     daily
     rotate 14
     compress
@@ -235,7 +235,7 @@ rotated file; the journal keeps the servers' own log.
 
 ### The routers' upstream timeout
 
-`FENEC_UPSTREAM_TIMEOUT` (`router.env`, `global.env`: 10 s, fenec-shard's
+`FENNEC_UPSTREAM_TIMEOUT` (`router.env`, `global.env`: 10 s, fennec-shard's
 own default 60) is how long a router waits on a node -- or the global
 router on a region's router -- for each read of an answer: the connect,
 the answer's head, and every read after it but a stream's, which reads
@@ -260,7 +260,7 @@ with none. Past it the client is answered 502, the request perhaps run.
   is gone, which tries the next router of that region only past it; and
   what a standby router, or a region's router, had out to a node failed
   over while it was cut off from the router it follows, which it ends only
-  once the failover reaches its copy of the directory. At fenec-shard's
+  once the failover reaches its copy of the directory. At fennec-shard's
   60 s each of those holds its client a minute.
 - **What it costs.** An answer slower than the timeout to begin is a 502
   while the node goes on with it: a `create index` over a large
@@ -274,10 +274,10 @@ with none. Past it the client is answered 502, the request perhaps run.
   through the region's router under the same bound, read by read: a
   tenant whose export or install takes longer fails the move, which puts
   it back as it was.
-- **What it leaves alone.** A request carrying `Fenec-Wait` -- a held
-  claim, or a read waiting for a write with `Fenec-After` -- is allowed the
+- **What it leaves alone.** A request carrying `Fennec-Wait` -- a held
+  claim, or a read waiting for a write with `Fennec-After` -- is allowed the
   timeout plus its wait (30 s at most), so a claim held 25 s is answered
-  within 35. A `Fenec-After` read with no `Fenec-Wait` waits 5 s, inside
+  within 35. A `Fennec-After` read with no `Fennec-Wait` waits 5 s, inside
   it. A `/_changes` page's `wait` is a query parameter the router does not
   read: keep it under the timeout through a router. Streams -- a
   subscription, a replication stream -- read with no timeout once their
@@ -293,24 +293,24 @@ machine no failover covers. The kit's 10 s does both for most.
 In this order, each step checked before the next. `$ROOT` is the routers'
 token; `g1` the global router's private address.
 
-1. **The global router**, `fenec-global` with `global.env`, then its
-   standby, `fenec-global-standby` in another region, `FENEC_PRIMARY`
+1. **The global router**, `fennec-global` with `global.env`, then its
+   standby, `fennec-global-standby` in another region, `FENNEC_PRIMARY`
    naming it.
-2. **Each region's router**, `fenec-router` with `router.env` --
-   `FENEC_REGION`, `FENEC_GLOBAL` the global router then its standby --
-   and its standby, `fenec-router-standby`, on a machine of another zone.
+2. **Each region's router**, `fennec-router` with `router.env` --
+   `FENNEC_REGION`, `FENNEC_GLOBAL` the global router then its standby --
+   and its standby, `fennec-router-standby`, on a machine of another zone.
 3. **Record each region** on the global router, its router first:
    ```sh
    curl -X PUT http://g1:8090/_shard/regions/eu -H "Authorization: Bearer $ROOT" \
         -d '{"routers":["http://10.1.0.21:8090","http://10.1.1.21:8090"]}'
    curl http://10.1.0.21:8090/_shard/regions -H "Authorization: Bearer $ROOT"   # the region's router has heard
    ```
-4. **The nodes**, `fenec-node` with `node.env`, at least two a region in
+4. **The nodes**, `fennec-node` with `node.env`, at least two a region in
    two zones, then each recorded with its region and zone (through any
    router; the region's takes it):
    ```sh
    curl -X PUT http://g1:8090/_shard/nodes/eu-a -H "Authorization: Bearer $ROOT" \
-        -d '{"addr":"10.1.0.11:8081","token":"<eu-a FENEC_ADMIN_TOKEN>","region":"eu","zone":"fra"}'
+        -d '{"addr":"10.1.0.11:8081","token":"<eu-a FENNEC_ADMIN_TOKEN>","region":"eu","zone":"fra"}'
    ```
    The router checks the node with the token before it records it, and
    leases it from then on.
@@ -326,15 +326,15 @@ token; `g1` the global router's private address.
    directory first, then
    ```sh
    cd integrations/cloudflare
-   npx wrangler secret put ENTRY_TOKEN --config entry/wrangler.jsonc   # every router's FENEC_SHARD_ENTRY_TOKEN
+   npx wrangler secret put ENTRY_TOKEN --config entry/wrangler.jsonc   # every router's FENNEC_SHARD_ENTRY_TOKEN
    npx wrangler deploy --config entry/wrangler.jsonc
    ```
-7. **The archivers**, `fenec-archive@<node>` for each node on a machine
-   apart from it, and `fenec-archive-sync@<node>.timer` (Archives and
+7. **The archivers**, `fennec-archive@<node>` for each node on a machine
+   apart from it, and `fennec-archive-sync@<node>.timer` (Archives and
    restores, below).
 8. **Monitoring**: Prometheus or Grafana with `alerts/`, scraping every
    node and router, and node_exporter on each archiver's machine with its
-   textfile collector (`alerts/fenecdb.rules.yml` has the scrape config;
+   textfile collector (`alerts/fennecdb.rules.yml` has the scrape config;
    its job names are the rules').
 
 A first tenant, made through the global router and written through the
@@ -354,7 +354,7 @@ region and zone, as in bring-up. New tenants and new replicas go to it by
 the rules: a replica to a node of another zone first, then the fewest. A
 region of a single zone gives each tenant a replica in its own zone where
 nothing else is free, logs it, and counts it in
-`fenec_router_same_zone_copies` (alert `FenecSameZoneCopies`): a
+`fennec_router_same_zone_copies` (alert `FennecSameZoneCopies`): a
 datacenter lost takes both. A node added in another zone does not move
 those copies; moving such a tenant (`POST /_shard/tenants/<t>/move`)
 places its replica again by the zone rule.
@@ -365,7 +365,7 @@ tenant, replica or read replica: move them off first.
 ## Adding a region
 
 1. Its nodes, two zones at least, and its router and standby
-   (`router.env` with the new `FENEC_REGION`), as in bring-up steps 2 to 5.
+   (`router.env` with the new `FENNEC_REGION`), as in bring-up steps 2 to 5.
 2. Record the region on the global router (`PUT /_shard/regions/<r>`),
    then its nodes.
 3. Add it to the entry's `REGIONS` with the continents whose clients a new
@@ -383,15 +383,15 @@ curl -X POST http://g1:8090/_shard/tenants/acme/move -H "Authorization: Bearer $
 ```
 
 A tenant made naming no region goes to the global router's
-`--default-region` (`FENEC_GLOBAL_FLAGS`). Writes during a move are answered
+`--default-region` (`FENNEC_GLOBAL_FLAGS`). Writes during a move are answered
 503 with `Retry-After`; reads go on. A move across regions, a create and a
 delete need every region they touch and are refused, changing nothing,
 while one is out of reach. A move that does not record done
-(`FenecTenantsMoving`) left the tenant served where it was: move it again.
+(`FennecTenantsMoving`) left the tenant served where it was: move it again.
 
 ## Quotas
 
-The node's flags (`FENEC_NODE_FLAGS`) are every tenant's defaults; a
+The node's flags (`FENNEC_NODE_FLAGS`) are every tenant's defaults; a
 tenant's own set goes through its region's router (`10.1.0.21`, eu's, here),
 which keeps it in its directory and sends it wherever the tenant goes -- its
 replica, a move's target, a promoted copy:
@@ -407,8 +407,8 @@ curl http://10.1.0.21:8090/_shard/tenants/acme/quota -H "Authorization: Bearer $
 `Retry-After`. Deletes and compacts always land, so a tenant deletes its
 way back under. Unset, `streams` and `held` are each a quarter of
 `--max-connections`, so no one tenant's subscriptions and held claims take
-the node's connections. `fenec_quota_refused_total{quota}` counts the
-refusals (alert `FenecQuotaRefusals`, informational: a tenant on its plan's
+the node's connections. `fennec_quota_refused_total{quota}` counts the
+refusals (alert `FennecQuotaRefusals`, informational: a tenant on its plan's
 limit is working as sold); `GET /_admin/quotas` on a node, or
 `/_shard/tenants?quota` on the region's router, names the tenants.
 
@@ -480,9 +480,9 @@ for the old one and a tenth. Two cases it does not cover:
 
 What to do:
 
-1. `FenecNodeFailedOver` and `FenecAutoFailover` fire. Check the router's
+1. `FennecNodeFailedOver` and `FennecAutoFailover` fire. Check the router's
    log (`failover of <node>: 200 {...}`) and `GET /_shard/tenants?region=<r>`:
-   every tenant placed on a live node. `FenecAutoFailoverIncomplete` means
+   every tenant placed on a live node. `FennecAutoFailoverIncomplete` means
    tenants are still placed on the failed-over node, unwritable until it
    answers again or they are failed over. The router's log names why each:
    - its replica's node did not answer -- fix that node, then `POST
@@ -495,7 +495,7 @@ What to do:
      that has heard nothing from its primary since it was told to follow
      it (an old primary's copy a repair pointed at the new primary). The
      tenant waits for its node, where its rows are: bring the node back.
-2. The failed-over tenants now have no replica (`FenecTenantsWithoutReplica`)
+2. The failed-over tenants now have no replica (`FennecTenantsWithoutReplica`)
    until a node takes one: bring the node back, or give them replicas
    elsewhere with `POST /_shard/replicas` on the region's router. No tenant
    is given a replica while its primary does not answer; the router looks
@@ -524,7 +524,7 @@ reachable by clients without leases: that makes two primaries.
 
 ## A node back
 
-Start it (`systemctl start fenec-node`). It comes back with no lease, its
+Start it (`systemctl start fennec-node`). It comes back with no lease, its
 old tenants' files still primaries' files. As it takes its first lease the
 router runs a repair: each tenant it lost follows its new primary from
 this node -- this node becomes its replica -- and the writes it took that
@@ -533,24 +533,24 @@ runs saw the repair 0.51, 0.51 and 0.50 s after the start (1.07 in a
 reviewer's run), the copies caught up 25 to 39 ms later.
 
 Check: `GET /_shard/tenants/<t>` names the node as `replica`;
-`FenecNodeFailedOver` and `FenecTenantsWithoutReplica` clear. A node whose
+`FennecNodeFailedOver` and `FennecTenantsWithoutReplica` clear. A node whose
 disk was lost stays down until it has been failed over -- a lease -- and
 then starts empty: the repair places replicas there from images. Started
 sooner, it would hold the leases of tenants it no longer has.
 
 ## Tenants without a replica
 
-`FenecTenantsWithoutReplica`: for 15 minutes the region's router has
+`FennecTenantsWithoutReplica`: for 15 minutes the region's router has
 counted tenants with no copy a failover could promote -- no replica of
 their own, no standby on their node
-(`fenec_router_tenants_unreplicated{region}`). Such a tenant whose primary
+(`fennec_router_tenants_unreplicated{region}`). Such a tenant whose primary
 dies stays on it, writing nothing, until the node is back. Find them with
 `GET /_shard/tenants?region=<r>` on the region's router -- the entries with
 no `"replica"` whose node has no standby in `GET /_shard/nodes` (a paired
 node's tenants have their copy on the standby) -- and the router's log,
 which says why each has none:
 
-- **A node failed over** (`FenecNodeFailedOver`). Its own tenants were
+- **A node failed over** (`FennecNodeFailedOver`). Its own tenants were
   promoted on their replicas, and the replicas it held are gone: none of
   them has a copy until the node answers again (A node back), when its
   files follow the new primaries. A node gone for good: `POST
@@ -562,7 +562,7 @@ which says why each has none:
   stopped waiting is adopted, not made twice. Past that it logs `repair: 8
   repairs in a row left a tenant without its replica ...`. Look at the node
   it names -- its load, its disk (a slow rename of `.follows` outlasts the
-  10 s `FENEC_UPSTREAM_TIMEOUT`), its connections -- then `POST
+  10 s `FENNEC_UPSTREAM_TIMEOUT`), its connections -- then `POST
   /_shard/replicas`.
 - **No other node in the region**: `there is no other node in region `eu`
   to keep it`. Add one (Adding a node), then `POST /_shard/replicas`.
@@ -579,9 +579,9 @@ router may have left on nodes, in `left` (Files left on nodes).
 
 ## Files left on nodes
 
-`FenecFilesLeftOnNodes`: for half an hour the router keeping the directory
+`FennecFilesLeftOnNodes`: for half an hour the router keeping the directory
 has counted files it may have left on nodes, placed by nothing
-(`fenec_router_files_left`). Each is a tenant's file the router made, or
+(`fennec_router_files_left`). Each is a tenant's file the router made, or
 meant to take off, and did not: a create taken back (its schema refused)
 whose `DELETE` the node did not take, a create whose `PUT` went unanswered,
 a move undone whose target kept the copy, a move's source that would not
@@ -619,7 +619,7 @@ no replication token went as a file of no write. For each entry:
 4. Remove it on the node: `DELETE /_admin/tenants/<t>` with the node's
    admin token.
 5. Run a repair (`POST /_shard/replicas`): its look finds the file gone and
-   forgets the entry, and `fenec_router_files_left` falls.
+   forgets the entry, and `fennec_router_files_left` falls.
 
 An entry whose node does not answer says so (`did not answer this repair's
 look`) and stays until a repair finds the node; a node removed from the
@@ -627,11 +627,11 @@ directory takes its entries with it.
 
 ## A lease late
 
-`FenecLeaseRenewalLate`: in the last five minutes a node went more than
+`FennecLeaseRenewalLate`: in the last five minutes a node went more than
 three fifths of a lease without one, a renewal missed, and was not failed
 over. The node or the network between it and its router is slow or
 dropping packets; if it lasts a lease, the node is failed over, and
-`FenecNodeFailedOver` says so instead -- the rule passes over a node failed
+`FennecNodeFailedOver` says so instead -- the rule passes over a node failed
 over in the last ten minutes, and the minute before a failover marks one.
 Look at the node's load and disk, and at the path between the two.
 
@@ -646,7 +646,7 @@ never the routers': a standby that promoted itself whenever it could not
 reach the primary would make two primaries in a partition.
 
 1. Make sure the old router is gone, and stays gone: where its machine is
-   reachable, `systemctl mask --now fenec-router` there, so a reboot or a
+   reachable, `systemctl mask --now fennec-router` there, so a reboot or a
    `systemctl start` cannot bring it back as a primary; where it is not,
    power it off from the provider's console and mask the unit the first
    time it boots. A promoted router fences it at every node it reaches --
@@ -656,9 +656,9 @@ reach the primary would make two primaries in a partition.
    runs exactly these lines):
    ```sh
    curl -X POST http://<standby>:8090/_replication/promote \
-        -H "Authorization: Bearer $FENEC_SHARD_REPLICATION_TOKEN"
-   systemctl enable fenec-router && systemctl disable fenec-router-standby
-   systemctl start fenec-router     # stops the standby's unit; same file, opened as the primary's
+        -H "Authorization: Bearer $FENNEC_SHARD_REPLICATION_TOKEN"
+   systemctl enable fennec-router && systemctl disable fennec-router-standby
+   systemctl start fennec-router    # stops the standby's unit; same file, opened as the primary's
    ```
    The promoted router grants every node its lease and writes resume. Left
    under the standby's unit, a restart -- a crash, a reboot -- would have the
@@ -667,11 +667,11 @@ reach the primary would make two primaries in a partition.
    `PUT /_shard/regions/<r> {"routers":["http://<new>:8090","http://<old>:8090"]}`.
    And take the old router out of Prometheus's targets, or silence it,
    until it rejoins: down and last seen a primary, it is
-   `FenecPrimaryRouterDown` (critical) for an hour, and then
-   `FenecRouterDown`, critical, for as long as it is scraped.
+   `FennecPrimaryRouterDown` (critical) for an hour, and then
+   `FennecRouterDown`, critical, for as long as it is scraped.
 4. When the old machine returns, it rejoins as the new one's standby:
-   `FENEC_PRIMARY` pointed at the new router, `fenec-router-standby`
-   enabled, `fenec-router` left masked. Started as a primary, it would lease
+   `FENNEC_PRIMARY` pointed at the new router, `fennec-router-standby`
+   enabled, `fennec-router` left masked. Started as a primary, it would lease
    at its old term -- refused by every node the new one has reached -- and
    take `/_shard/` changes into a directory nobody else reads.
 
@@ -686,8 +686,8 @@ left gaps of 0.49, 0.43 and 0.47 s between two answered writes.
 
 **The global router.** Tenants go on working: every region keeps its own
 directory. Creates, deletes and moves across regions are refused (503)
-until its standby is promoted the same way (`fenec-global`). Then put the
-new one first in every region router's `FENEC_GLOBAL` and restart each,
+until its standby is promoted the same way (`fennec-global`). Then put the
+new one first in every region router's `FENNEC_GLOBAL` and restart each,
 standby first: a region's router follows the global directory from the
 first router named, and a restart within the lease leaves its nodes'
 leases standing.
@@ -697,7 +697,7 @@ leases standing.
 Upgrade one machine at a time, standbys before primaries, and watch the
 alerts between steps:
 
-1. **`fenec` (archivers, operators' machines)**: restart each archiver; it
+1. **`fennec` (archivers, operators' machines)**: restart each archiver; it
    reconnects to its node and goes on in the same archive.
 2. **Routers**: each region's standby, then promote it (A router lost) --
    or restart the primary in place, which loses no acknowledged write,
@@ -707,11 +707,11 @@ alerts between steps:
    run (send writes with an `Idempotency-Key` and they are retried safely).
    Then the global standby and the global router the same way.
 3. **Nodes**, one at a time, a zone at a time: replace the binary and
-   `systemctl restart fenec-node`. A restart shorter than the lease costs
+   `systemctl restart fennec-node`. A restart shorter than the lease costs
    its tenants the restart; one longer -- a shutdown checkpointing large
    graphs -- has them failed over to their replicas, and the node comes
    back as a replica of each (A node back). Either way no acknowledged
-   write is lost. Wait for `FenecTenantsWithoutReplica` to clear before the
+   write is lost. Wait for `FennecTenantsWithoutReplica` to clear before the
    next node.
 4. **The entry Worker** last: it reads only the routers' answers.
 
@@ -740,34 +740,34 @@ kinds newer than it, so once an upgraded
 node has written a tenant, that node cannot go back to the older binary --
 and an older node may not follow a newer primary's replication stream where
 the stream's version moved. Upgrade every node of a region within one
-window, and roll forward, not back. fenecdb is in alpha: read the release
+window, and roll forward, not back. fennecdb is in alpha: read the release
 notes before each upgrade.
 
 ## Archives and restores
 
-Each node is archived by `fenec-archive@<node>` on another machine: one
+Each node is archived by `fennec-archive@<node>` on another machine: one
 connection for all its tenants, an hourly image of each, a week kept
 (`--image-every 1h --keep 7d`), sealed with the key in
-`/etc/fenecdb/archive.key` (`fenec key` writes one; keep a copy apart from
+`/etc/fennecdb/archive.key` (`fennec key` writes one; keep a copy apart from
 the archive -- without it nothing restores). A replica's copy is archived
 as a primary is, its writes the primary's and numbered alike, so every
 tenant is in two archives: its primary's node's and its replica's. A write
 is in the archive once its node's stream has sent it -- under load the
 stream may be behind its node (Known gaps) -- and in the bucket after the
-next `fenec-archive-sync` run that succeeds: the timer starts one every
+next `fennec-archive-sync` run that succeeds: the timer starts one every
 five minutes, so a write is there five minutes and a run's length after
 the archive took it, while runs succeed. One that fails is retried at the
-next tick, and `FenecArchiveSyncStale` fires once no run has succeeded for
+next tick, and `FennecArchiveSyncStale` fires once no run has succeeded for
 half an hour. Each success is written into node_exporter's textfile
-collector, `/var/lib/prometheus/node-exporter`, which the `fenec-sync` user
-must be able to write (`setfacl -m u:fenec-sync:rwx` on it), as a file
+collector, `/var/lib/prometheus/node-exporter`, which the `fennec-sync` user
+must be able to write (`setfacl -m u:fennec-sync:rwx` on it), as a file
 node_exporter's own user reads (0644): written 0600 it read nothing, and an
-absent series fires no alert, so `FenecTextfileUnread` says when
-node_exporter cannot read a file there and `FenecArchiveSyncUnreported`
+absent series fires no alert, so `FennecTextfileUnread` says when
+node_exporter cannot read a file there and `FennecArchiveSyncUnreported`
 when no success has been read anywhere for an hour; `make deploy-check`
 scrapes a real node_exporter for it. A node taken out of service leaves
-its file, and `FenecArchiveSyncStale` would fire for it for good: remove
-`fenec-archive-sync-<node>.prom` with its timer.
+its file, and `FennecArchiveSyncStale` would fire for it for good: remove
+`fennec-archive-sync-<node>.prom` with its timer.
 
 **The bucket keeps what the archive lets go of.** The sync is `rclone
 copy`, never `sync`: it adds and replaces files and deletes none. An
@@ -783,11 +783,11 @@ But a copy replaces files, and an archive's `history`, `began` and
 over the bucket's. Three things keep it:
 
 - **A first copy from a new disk is refused** where the bucket holds a file
-  of the node's archive the disk does not (`bin/fenec-archive-sync`: it
+  of the node's archive the disk does not (`bin/fennec-archive-sync`: it
   knows the archive it last copied from by its directory's filesystem and
   inode). A machine rebuilt or a disk replaced starts a new archive at
   once, and the timer's first run, five minutes on, would have written over
-  the bucket before anyone looked; refused, `FenecArchiveSyncStale` fires
+  the bucket before anyone looked; refused, `FennecArchiveSyncStale` fires
   and the bucket is as it was (`make deploy-check` holds both, and the way
   back below).
 - **A bucket that keeps what is written over**: versioning, with a rule
@@ -828,36 +828,36 @@ back in its place, and the archiver goes on in the same archive, which the
 next copy takes (`make deploy-check` runs these lines):
 
 ```sh
-systemctl stop fenec-archive@eu-a fenec-archive-sync@eu-a.timer
-rm -rf /var/lib/fenecdb/archive/eu-a      # the new archive: its writes come again from the node
-rclone copy r2:fenecdb-archive/eu/eu-a /var/lib/fenecdb/archive/eu-a --config /etc/fenecdb/rclone.conf
-chown -R fenec-archive:fenec-archive /var/lib/fenecdb/archive/eu-a
-chmod -R u=rwX,g=rX,o= /var/lib/fenecdb/archive/eu-a
-FENEC_KEY_FILE=/etc/fenecdb/archive.key fenec verify --tenants /var/lib/fenecdb/archive/eu-a
-systemctl start fenec-archive@eu-a fenec-archive-sync@eu-a.timer
+systemctl stop fennec-archive@eu-a fennec-archive-sync@eu-a.timer
+rm -rf /var/lib/fennecdb/archive/eu-a      # the new archive: its writes come again from the node
+rclone copy r2:fennecdb-archive/eu/eu-a /var/lib/fennecdb/archive/eu-a --config /etc/fennecdb/rclone.conf
+chown -R fennec-archive:fennec-archive /var/lib/fennecdb/archive/eu-a
+chmod -R u=rwX,g=rX,o= /var/lib/fennecdb/archive/eu-a
+FENNEC_KEY_FILE=/etc/fennecdb/archive.key fennec verify --tenants /var/lib/fennecdb/archive/eu-a
+systemctl start fennec-archive@eu-a fennec-archive-sync@eu-a.timer
 ```
 
 To keep the new archive and copy it over the bucket's after all -- the
 bucket versioned, or its old archive not wanted -- write what the refusal
-names into `/var/lib/fenecdb/sync/eu-a/copied-from`.
+names into `/var/lib/fennecdb/sync/eu-a/copied-from`.
 
 ```sh
 # what an archive can restore
-FENEC_KEY_FILE=/etc/fenecdb/archive.key fenec verify --tenants /var/lib/fenecdb/archive/eu-a
+FENNEC_KEY_FILE=/etc/fennecdb/archive.key fennec verify --tenants /var/lib/fennecdb/archive/eu-a
 # from the bucket, on any machine
-rclone copy r2:fenecdb-archive/eu/eu-a /restore/eu-a --config rclone.conf
+rclone copy r2:fennecdb-archive/eu/eu-a /restore/eu-a --config rclone.conf
 # every tenant as it stood at a moment, a file each
-FENEC_KEY_FILE=archive.key fenec restore --tenants /restore/eu-a /restore/out --to 2026-10-18T09:14:59Z
-fenec /restore/out/acme.fenec -c 'get notes count'
+FENNEC_KEY_FILE=archive.key fennec restore --tenants /restore/eu-a /restore/out --to 2026-10-18T09:14:59Z
+fennec /restore/out/acme.fennec -c 'get notes count'
 ```
 
 **A tenant's data back from before a bad write**: restore its node's
-archive to the moment before, open the tenant's file (`fenec <file>`, or
-`fenec-server --file <file> --http 127.0.0.1:0` to read it over HTTP), and
+archive to the moment before, open the tenant's file (`fennec <file>`, or
+`fennec-server --file <file> --http 127.0.0.1:0` to read it over HTTP), and
 write back what was lost through the router. **A node lost with its
 replicas** (both machines holding its tenants gone, no failover possible):
 on a new machine given the node's address, restore the node's archive into
-`FENEC_DIR` before `fenec-node` first starts (`fenec restore --tenants
+`FENNEC_DIR` before `fennec-node` first starts (`fennec restore --tenants
 <archive> <dir>`, to the archive's end); what the archive had not received
 is lost, and each copy that does not lead from a restored primary is sent
 an image.
@@ -867,21 +867,21 @@ disaster would have it -- the archiver's own disk proves nothing about the
 bucket:
 
 1. Copy one node's archive out of the bucket (`rclone copy
-   r2:fenecdb-archive/eu/eu-a /restore/eu-a`) and `fenec verify --tenants`
+   r2:fennecdb-archive/eu/eu-a /restore/eu-a`) and `fennec verify --tenants`
    it with the key kept apart from the archive -- which proves that copy
    of the key too.
 2. Pick a tenant and a moment an hour back; ask the live tenant, through
    the router, for something written before it and nothing after -- the
    rows of a collection whose `created` field is older, a count by
    `bucket(created, 1h)` -- and note it.
-3. `fenec restore --tenants /restore/eu-a /restore/out --to <moment>` and
-   ask the restored file the same (`fenec /restore/out/<t>.fenec -c '...'`):
+3. `fennec restore --tenants /restore/eu-a /restore/out --to <moment>` and
+   ask the restored file the same (`fennec /restore/out/<t>.fennec -c '...'`):
    the same answer, and the restore took as long as a real one would.
 4. Remove `/restore`: it holds a tenant's rows.
 
 `make drill` runs the same restore against writes it recorded, in Docker.
-`FenecArchiverDisconnected` fires when no archiver follows a node and
-`FenecArchiveSyncStale` when the bucket stopped moving; nothing exports how
+`FennecArchiverDisconnected` fires when no archiver follows a node and
+`FennecArchiveSyncStale` when the bucket stopped moving; nothing exports how
 far an archive is behind its node (Known gaps), so verify the restore, not
 the process.
 
@@ -889,10 +889,10 @@ the process.
 
 A tenant can keep a read copy in another region
 (`PUT /_shard/tenants/<t>/read-replicas/<region>`), which that region's
-router answers marked reads from. `FenecReadReplicasGivenUp`: a copy lost
+router answers marked reads from. `FennecReadReplicasGivenUp`: a copy lost
 and made again three times is made again no more -- place it again
 (`DELETE` and `PUT` the read replica) once the cause is fixed.
-`FenecCopiesRefused` counts copies that found their primary to be another
+`FennecCopiesRefused` counts copies that found their primary to be another
 tenant of the same name and deleted themselves: expected after a tenant is
 deleted and made again.
 
@@ -903,21 +903,21 @@ short window in which the old and the new disagree; each procedure keeps
 it short and says what it costs.
 
 - **Entry token**: start every router with the new
-  `FENEC_SHARD_ENTRY_TOKEN` (a restart each, standbys first), then put it
+  `FENNEC_SHARD_ENTRY_TOKEN` (a restart each, standbys first), then put it
   in the Worker (`npx wrangler secret put ENTRY_TOKEN`). In between every
   request is served, its client counted by Cloudflare's address instead
-  of its own (`bad_mark` in `fenec_router_entry_clients_total`;
-  `FenecEntryMarkRefused` may fire for those minutes).
-- **Routers' token** (`FENEC_SHARD_TOKEN`): every router, then the
+  of its own (`bad_mark` in `fennec_router_entry_clients_total`;
+  `FennecEntryMarkRefused` may fire for those minutes).
+- **Routers' token** (`FENNEC_SHARD_TOKEN`): every router, then the
   scraper's and the app's copies. Data requests do not carry it; while
   routers disagree, a relayed client is counted by the relaying router's
   address.
 - **Directory replication token**: every router in quick succession.
   While they disagree, standbys and the regions' copies of the global
   directory stop following -- forwarding goes on from what they hold, and
-  `FenecReplicaDisconnected` fires if it lasts two minutes.
+  `FennecReplicaDisconnected` fires if it lasts two minutes.
 - **A node's admin token**: restart the node with the new
-  `FENEC_ADMIN_TOKEN`, then at once record it on the region's router
+  `FENNEC_ADMIN_TOKEN`, then at once record it on the region's router
   (`PUT /_shard/nodes/<n> {"addr": ..., "token": ...}`, which checks it
   against the node). Until then the router's lease renewals are refused: finish within
   the lease, or the node is failed over (and repaired as it is renewed).
@@ -930,7 +930,7 @@ it short and says what it costs.
   node's restart and their own update. Issue users JWTs instead
   (`--jwt-keys`): the keys file is read again as it changes, so a new key
   is added, tokens move to it, and the old key is removed with no restart.
-- **Archive key**: a new key is a new archive (`fenec key` refuses to
+- **Archive key**: a new key is a new archive (`fennec key` refuses to
   write over one). Point the archiver at a new directory with the new key,
   and keep the old key as long as the old archive is kept.
 - **Tunnel credentials, rclone keys**: replace the file and restart the
@@ -958,85 +958,85 @@ it short and says what it costs.
   expired or deleted, or a policy changed -- or a tunnel is down. Ask a
   router's hostname with the token (`curl -H "CF-Access-Client-Id: ..."
   -H "CF-Access-Client-Secret: ..." https://router-1.eu.example.com/t/x/`):
-  an answer without `Fenec-Shard: 1` is Access's or Cloudflare's, not the
+  an answer without `Fennec-Shard: 1` is Access's or Cloudflare's, not the
   router's (Rotating tokens).
-- `FenecRouter5xx`: more than 1% of tenants' requests answered 5xx. 502 is
-  a node the router could not reach (`FenecNodeUnreachable` names it), 503
+- `FennecRouter5xx`: more than 1% of tenants' requests answered 5xx. 502 is
+  a node the router could not reach (`FennecNodeUnreachable` names it), 503
   a tenant frozen for a move or a lease lapsed, 504 a replica behind the
   read's position. Look at which, and at the node. A router's own 503s
   as it takes a connection -- past `--max-connections`, at its thread limit
-  -- are not among them: they never reach `fenec_router_requests_total`,
-  and are counted in `fenec_router_connections_refused_total` alone
-  (`FenecNoThreadForConnection`).
-- `FenecNodeUnreachable`: the router cannot reach a node. Before a lease
+  -- are not among them: they never reach `fennec_router_requests_total`,
+  and are counted in `fennec_router_connections_refused_total` alone
+  (`FennecNoThreadForConnection`).
+- `FennecNodeUnreachable`: the router cannot reach a node. Before a lease
   lapses its tenants answer 502; past it the node is failed over.
-- `FenecStatementErrors`: more than 5% of a node's statements end in an
+- `FennecStatementErrors`: more than 5% of a node's statements end in an
   error -- clients' mistakes and the server's alike; the slow log and the
   node's log say which. A tenant whose disk refused a write takes no more
   writes until its node restarts: that is in the log as `Io`.
-- `FenecStorageFailed` (a single-file server): the disk refused a write;
+- `FennecStorageFailed` (a single-file server): the disk refused a write;
   writes stop until the process is restarted on a working disk.
-- `FenecRouterRefusals`, `FenecNodeRefusals`: more than one refused token a
+- `FennecRouterRefusals`, `FennecNodeRefusals`: more than one refused token a
   second -- a client with a stale token, or someone guessing. The audit log
-  (`/var/log/fenecdb/<role>/audit.log`) names the address; each refusal
+  (`/var/log/fennecdb/<role>/audit.log`) names the address; each refusal
   waits, longer for each one more from the same address.
 
 ## The entry token
 
-- `FenecEntryMarkRefused` with `bad_mark`: the router and the Worker hold
+- `FennecEntryMarkRefused` with `bad_mark`: the router and the Worker hold
   different entry tokens -- a rotation half done, or a client sending a
-  `Fenec-Client` of its own. With `stale`: the router's clock is more than
+  `Fennec-Client` of its own. With `stale`: the router's clock is more than
   a minute off Cloudflare's; fix its NTP.
-- `FenecEntryMarkAbsent`: tenants' requests that name no client -- the
+- `FennecEntryMarkAbsent`: tenants' requests that name no client -- the
   Worker's `ENTRY_TOKEN` unset, or a client reaching the router past the
   entry. Only meaningful on routers the entry alone reaches.
 
 ## Alerts
 
-`alerts/fenecdb.rules.yml` for Prometheus, `alerts/grafana.yml` the same
+`alerts/fennecdb.rules.yml` for Prometheus, `alerts/grafana.yml` the same
 rules for Grafana's alerting; `make deploy-check` runs promtool's check and
 tests -- each rule firing and each held back -- and
-`crates/fenec-shard/tests/datadog.rs` holds every metric and label value
+`crates/fennec-shard/tests/datadog.rs` holds every metric and label value
 they read to a real scrape, the jobs they name to the scrape config, and
 the two files to each other. A process that is down exports nothing, so
 the target-down rules read Prometheus's own `up` by job: keep the job
-names of the rules' scrape config (`fenecdb-node`, `fenecdb-router`,
-`fenecdb-global`, `node-exporter` on each archiver's machine with its
+names of the rules' scrape config (`fennecdb-node`, `fennecdb-router`,
+`fennecdb-global`, `node-exporter` on each archiver's machine with its
 textfile collector).
 
 | Alert | Severity | Means | Do |
 | --- | --- | --- | --- |
-| `FenecNodeDown` | critical | Prometheus cannot scrape a node | A node lost |
-| `FenecPrimaryRouterDown` | critical | a router that kept its directory does not answer: its region's writes stop as their leases lapse | A router lost |
-| `FenecStandbyRouterDown` | warning | a standby router, a region's or the global one's, does not answer: nothing to promote | A router lost, step 4 |
-| `FenecRouterDown` | critical | a router never seen up in the hour does not answer | A router lost |
-| `FenecScrapeMissing` | warning | a job has no target at all, node_exporter's among them: every rule over it is blind | Alerts |
-| `FenecConnectionsNearCeiling` | warning | a process at four fifths of its `--max-connections` | Installing a machine |
-| `FenecNoThreadForConnection` | critical | a process at its thread limit refused a connection 503 | Installing a machine |
-| `FenecNodeFailedOver` | critical | a node was failed over and has not answered since | A node lost |
-| `FenecAutoFailoverIncomplete` | critical | a node failed over still has tenants placed on it: they take no writes | A node lost, step 1 |
-| `FenecAutoFailover` | warning | a node was failed over | A node lost |
-| `FenecLeaseRenewalLate` | warning | a renewal to a node was late in the last five minutes (threshold for a 5 s lease); not a node failed over in the last ten | A lease late |
-| `FenecTenantsWithoutReplica` | warning | tenants with no copy to fail over to: a node failed over, a replica that did not take in four minutes, no other node | Tenants without a replica |
-| `FenecFilesLeftOnNodes` | warning | files the router may have left on nodes, placed by nothing, for half an hour: the router never deletes them | Files left on nodes |
-| `FenecSameZoneCopies` | warning | copies in their primary's zone | Adding a node |
-| `FenecReadReplicasGivenUp` | warning | read replicas no longer made again | Read replicas |
-| `FenecTenantsMoving` | warning | a move did not record done | Placing and moving a tenant |
-| `FenecNodeUnreachable` | warning | a router cannot reach a node | Errors and refusals |
-| `FenecRouter5xx` | warning | tenants' requests failing | Errors and refusals |
-| `FenecEntryMarkRefused` | warning | the entry's client marks not believed | The entry token |
-| `FenecEntryMarkAbsent` | info | requests naming no client | The entry token |
-| `FenecRouterRefusals`, `FenecNodeRefusals` | warning | tokens refused | Errors and refusals |
-| `FenecReplicaDisconnected`, `FenecReplicaBehind`, `FenecReplicaSilent` | warning | a standby router (or a file's replica) not following | A router lost |
-| `FenecDirectoryUnreplicated` | warning | a region router's directory has no standby following | A router lost, step 4 |
-| `FenecQuotaRefusals` | info | a tenant at its quota | Quotas |
-| `FenecStatementErrors` | warning | statements failing | Errors and refusals |
-| `FenecStorageFailed` | critical | a single-file server's disk refused a write | Errors and refusals |
-| `FenecArchiverDisconnected` | warning | no archiver follows a node | Archives and restores |
-| `FenecArchiveSyncStale` | warning | no bucket sync of a node's archive succeeded in half an hour | Archives and restores |
-| `FenecTextfileUnread` | warning | node_exporter cannot read a file of its textfile collector | Archives and restores |
-| `FenecArchiveSyncUnreported` | warning | no sync's success read anywhere for an hour | Archives and restores |
-| `FenecCopiesRefused` | info | a copy of a tenant made again deleted itself | Read replicas |
+| `FennecNodeDown` | critical | Prometheus cannot scrape a node | A node lost |
+| `FennecPrimaryRouterDown` | critical | a router that kept its directory does not answer: its region's writes stop as their leases lapse | A router lost |
+| `FennecStandbyRouterDown` | warning | a standby router, a region's or the global one's, does not answer: nothing to promote | A router lost, step 4 |
+| `FennecRouterDown` | critical | a router never seen up in the hour does not answer | A router lost |
+| `FennecScrapeMissing` | warning | a job has no target at all, node_exporter's among them: every rule over it is blind | Alerts |
+| `FennecConnectionsNearCeiling` | warning | a process at four fifths of its `--max-connections` | Installing a machine |
+| `FennecNoThreadForConnection` | critical | a process at its thread limit refused a connection 503 | Installing a machine |
+| `FennecNodeFailedOver` | critical | a node was failed over and has not answered since | A node lost |
+| `FennecAutoFailoverIncomplete` | critical | a node failed over still has tenants placed on it: they take no writes | A node lost, step 1 |
+| `FennecAutoFailover` | warning | a node was failed over | A node lost |
+| `FennecLeaseRenewalLate` | warning | a renewal to a node was late in the last five minutes (threshold for a 5 s lease); not a node failed over in the last ten | A lease late |
+| `FennecTenantsWithoutReplica` | warning | tenants with no copy to fail over to: a node failed over, a replica that did not take in four minutes, no other node | Tenants without a replica |
+| `FennecFilesLeftOnNodes` | warning | files the router may have left on nodes, placed by nothing, for half an hour: the router never deletes them | Files left on nodes |
+| `FennecSameZoneCopies` | warning | copies in their primary's zone | Adding a node |
+| `FennecReadReplicasGivenUp` | warning | read replicas no longer made again | Read replicas |
+| `FennecTenantsMoving` | warning | a move did not record done | Placing and moving a tenant |
+| `FennecNodeUnreachable` | warning | a router cannot reach a node | Errors and refusals |
+| `FennecRouter5xx` | warning | tenants' requests failing | Errors and refusals |
+| `FennecEntryMarkRefused` | warning | the entry's client marks not believed | The entry token |
+| `FennecEntryMarkAbsent` | info | requests naming no client | The entry token |
+| `FennecRouterRefusals`, `FennecNodeRefusals` | warning | tokens refused | Errors and refusals |
+| `FennecReplicaDisconnected`, `FennecReplicaBehind`, `FennecReplicaSilent` | warning | a standby router (or a file's replica) not following | A router lost |
+| `FennecDirectoryUnreplicated` | warning | a region router's directory has no standby following | A router lost, step 4 |
+| `FennecQuotaRefusals` | info | a tenant at its quota | Quotas |
+| `FennecStatementErrors` | warning | statements failing | Errors and refusals |
+| `FennecStorageFailed` | critical | a single-file server's disk refused a write | Errors and refusals |
+| `FennecArchiverDisconnected` | warning | no archiver follows a node | Archives and restores |
+| `FennecArchiveSyncStale` | warning | no bucket sync of a node's archive succeeded in half an hour | Archives and restores |
+| `FennecTextfileUnread` | warning | node_exporter cannot read a file of its textfile collector | Archives and restores |
+| `FennecArchiveSyncUnreported` | warning | no sync's success read anywhere for an hour | Archives and restores |
+| `FennecCopiesRefused` | info | a copy of a tenant made again deleted itself | Read replicas |
 
 ## The drill
 
@@ -1044,7 +1044,7 @@ The image `make drill` and `make deploy-check` build holds the binaries of
 the tree they are run in, however old its files: `tools/image-cargo.sh`
 compiles in a copy it keeps by content and holds every binary to the
 sources it was given, failing the build otherwise. A branch's image once
-held main's `fenec-shard`, and a drill on it tested what the branch had
+held main's `fennec-shard`, and a drill on it tested what the branch had
 not changed.
 
 `make drill` builds the binaries into an image and runs two regions in
@@ -1104,7 +1104,7 @@ made is removed; `DRILL_KEEP=1` leaves it for a look.
   is set right by an agent once the guest runs -- if one is set up to -- or
   slewed by NTP, never seen to jump. So:
   - Stop the node before its machine is paused, saved, snapshotted or
-    migrated (`systemctl stop fenec-node`; its tenants fail over a lease
+    migrated (`systemctl stop fennec-node`; its tenants fail over a lease
     and a tenth later), and start it after.
   - Where the cloud says ahead, do the same when it does: Azure's Scheduled
     Events `Freeze` (at least 15 minutes ahead, `NotBefore` kept; none
@@ -1127,10 +1127,10 @@ made is removed; `DRILL_KEEP=1` leaves it for a look.
   write or made once by a new primary. Sent with none, a read-back means
   something only a lease and a tenth (`--auto-failover` x 1.1) after the
   answer: until the tenant settles the node still answers reads with the
-  write in them -- one sent with `Fenec-After` too, its history holding
+  write in them -- one sent with `Fennec-After` too, its history holding
   the write -- and routers send reads there, while the copy promoted may
   lack it. After that, and not before, a read through the router, or one
-  with `Fenec-After` and `Fenec-History` set to the body's `seq` and
+  with `Fennec-After` and `Fennec-History` set to the body's `seq` and
   `history`, decides it -- 200 it survived, 504 it was lost. A batch's
   `seq` is its last landed statement's: a 200 says every statement that
   landed survived, and a 504 not which earlier ones did, which are read
@@ -1141,8 +1141,8 @@ made is removed; `DRILL_KEEP=1` leaves it for a look.
   a router's `--token`.
 - **No per-tenant replica lag** on a node's `/_metrics`
   (`/t/<t>/_replication/status` on the primary's node has each), and **no
-  archive lag**: `fenec archive` exports nothing, and the node's
-  `fenec_node_streams` says only whether an archiver is connected.
+  archive lag**: `fennec archive` exports nothing, and the node's
+  `fennec_node_streams` says only whether an archiver is connected.
 - **Requests out to a dead machine no failover covers** wait at the router
   for its upstream timeout (10 s in the kit, The routers' upstream timeout)
   where the machine's address swallows packets, unless the client gives up

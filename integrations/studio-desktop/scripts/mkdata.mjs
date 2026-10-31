@@ -1,7 +1,7 @@
-// Makes a .fenec file to open the app on: the `orders` collection the studio's
+// Makes a .fennec file to open the app on: the `orders` collection the studio's
 // own end-to-end tests use (studio/test/harness.mjs), N rows, and `docs`.
 //
-//   bun scripts/mkdata.mjs out.fenec [rows=100000] [vector-dim=0]
+//   bun scripts/mkdata.mjs out.fennec [rows=100000] [vector-dim=0]
 //
 // With a dimension, `orders` also gets `emb vector<dim> @hnsw`, which is what
 // makes a big file slow to open the first time (the graph is built, then kept
@@ -10,14 +10,14 @@ import { spawn } from 'node:child_process';
 import { rmSync } from 'node:fs';
 
 const [out, rowsArg = '100000', dimArg = '0'] = process.argv.slice(2);
-if (!out) throw new Error('usage: mkdata.mjs out.fenec [rows] [dim]');
+if (!out) throw new Error('usage: mkdata.mjs out.fennec [rows] [dim]');
 const n = Number(rowsArg);
 const dim = Number(dimArg);
-const bin = process.env.FENEC_SERVER_BIN ?? new URL('../bin/fenec-server', import.meta.url).pathname;
+const bin = process.env.FENNEC_SERVER_BIN ?? new URL('../bin/fennec-server', import.meta.url).pathname;
 const TOKEN = 'mkdata';
 for (const f of [out, `${out}.lock`, `${out}.sync`]) rmSync(f, { force: true });
 
-const child = spawn(bin, ['--file', out, '--http', '127.0.0.1:0', '--sync', 'off'], { env: { ...process.env, FENEC_HTTP_TOKEN: TOKEN }, stdio: ['ignore', 'ignore', 'pipe'] });
+const child = spawn(bin, ['--file', out, '--http', '127.0.0.1:0', '--sync', 'off'], { env: { ...process.env, FENNEC_HTTP_TOKEN: TOKEN }, stdio: ['ignore', 'ignore', 'pipe'] });
 const url = await new Promise((resolve, reject) => {
   let text = '';
   child.stderr.on('data', (b) => {

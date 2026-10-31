@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- C# with the FenecDb SDK, as this checkout holds it; a program of
+  <!-- C# with the FennecDb SDK, as this checkout holds it; a program of
        yours takes the NuGet package. Run by ../run-tests.sh. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -9,6 +9,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../dotnet/FenecDb/FenecDb.csproj" />
+    <ProjectReference Include="../../dotnet/FennecDb/FennecDb.csproj" />
   </ItemGroup>
 </Project>

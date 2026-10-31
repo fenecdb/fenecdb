@@ -1,5 +1,5 @@
 {
-  "name": "fenecdb-datasource",
+  "name": "fennecdb-datasource",
   "version": "0.1.12",
   "scripts": {
     "build": "webpack -c ./.config/webpack/webpack.config.ts --env production",
@@ -11,7 +11,7 @@
     "lint:fix": "npm run lint -- --fix && prettier --write --list-different .",
     "sign": "sign-plugin"
   },
-  "author": "fenecdb",
+  "author": "fennecdb",
   "license": "Apache-2.0",
   "devDependencies": {
     "@grafana/eslint-config": "^10.0.0",
@@ -75,6 +75,6 @@
     "react-dom": "^19.0.0"
   },
   "packageManager": "npm@11.19.0",
-  "description": "fenecdb's data source for Grafana: FenecQL with Grafana's time range and variables as parameters",
+  "description": "fennecdb's data source for Grafana: FennecQL with Grafana's time range and variables as parameters",
   "private": true
 }

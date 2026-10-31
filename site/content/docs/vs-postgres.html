@@ -1,16 +1,16 @@
 <!--
-title: fenecdb and PostgreSQL — fenecdb
-description: When to choose PostgreSQL, with pgvector for vectors, and when fenecdb, feature by feature, with the measured numbers and how to move a table across.
+title: fennecdb and PostgreSQL — fennecdb
+description: When to choose PostgreSQL, with pgvector for vectors, and when fennecdb, feature by feature, with the measured numbers and how to move a table across.
 -->
 
-<h1>fenecdb and PostgreSQL</h1>
+<h1>fennecdb and PostgreSQL</h1>
 <p class="kicker">PostgreSQL is a relational database server, and pgvector
-adds vector types and indexes to it. fenecdb is a document database that
+adds vector types and indexes to it. fennecdb is a document database that
 runs in a page, in an app, or as a server over HTTP, with full-text and
 vector search built in.</p>
 
 <p>The facts about PostgreSQL and pgvector on this page were checked on
-2026-10-02 against the pages each one links to. fenecdb is at version {{version}},
+2026-10-02 against the pages each one links to. fennecdb is at version {{version}},
 and is alpha software.</p>
 
 <h2 id="choose">Which to choose</h2>
@@ -31,7 +31,7 @@ and is alpha software.</p>
     together.</li>
 </ul>
 
-<p><b>Choose fenecdb when</b></p>
+<p><b>Choose fennecdb when</b></p>
 
 <ul>
   <li><b>The same database runs in the browser, in a mobile app and on the
@@ -39,13 +39,13 @@ and is alpha software.</p>
   <li><b>The client keeps a replica</b> that reads offline and redraws
     live (<a href="sync.html">Sync</a>).</li>
   <li><b>Reads and writes over HTTP with nothing in front:</b> on YCSB
-    fenec-server leads PostgreSQL in every workload at 4 and 16 clients,
+    fennec-server leads PostgreSQL in every workload at 4 and 16 clients,
     both in Docker (<a href="#measured">measured below</a>).</li>
   <li><b>A file per tenant</b> suits your service
     (<a href="sharding.html">Tenants and sharding</a>).</li>
   <li><b>You search by words, with typos, highlights and facets, and by
     meaning too:</b> BM25 and rank fusion are built in
-    (<a href="fenecql-search.html#hybrid">Hybrid search</a>).</li>
+    (<a href="fennecql-search.html#hybrid">Hybrid search</a>).</li>
   <li><b>Search latency at a million vectors matters</b>
     (<a href="#measured">measured below</a>).</li>
 </ul>
@@ -54,16 +54,16 @@ and is alpha software.</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>&nbsp;</th><th>fenecdb</th><th>PostgreSQL + pgvector</th></tr></thead>
+<thead><tr><th>&nbsp;</th><th>fennecdb</th><th>PostgreSQL + pgvector</th></tr></thead>
 <tbody>
 <tr><td>Where it runs</td>
   <td>Browser (WebAssembly), Rust, iOS, Android, Flutter, a server over HTTP (<a href="concepts.html#where-it-runs">Where it runs</a>)</td>
-  <td>A server; in the browser and Node through <a href="https://pglite.dev/docs/about">PGlite</a> (<a href="vs-pglite.html">fenecdb and PGlite</a>)</td></tr>
+  <td>A server; in the browser and Node through <a href="https://pglite.dev/docs/about">PGlite</a> (<a href="vs-pglite.html">fennecdb and PGlite</a>)</td></tr>
 <tr><td>Data model</td>
-  <td>Typed documents in collections, <code>json</code> fields (<a href="fenecql-schema.html#json">Objects and paths</a>)</td>
+  <td>Typed documents in collections, <code>json</code> fields (<a href="fennecql-schema.html#json">Objects and paths</a>)</td>
   <td>Relational tables, plus <a href="https://www.postgresql.org/docs/current/datatype-json.html"><code>jsonb</code></a></td></tr>
 <tr><td>Query language</td>
-  <td>FenecQL; builders in JS, Python, Go, .NET, Swift, Kotlin, Dart (<a href="fenecql.html">FenecQL</a>)</td>
+  <td>FennecQL; builders in JS, Python, Go, .NET, Swift, Kotlin, Dart (<a href="fennecql.html">FennecQL</a>)</td>
   <td><a href="https://www.postgresql.org/docs/current/sql.html">SQL</a></td></tr>
 <tr><td>Clients</td>
   <td>JS/TS, Python, Go, .NET, Swift, Kotlin, Dart; any language over HTTP (<a href="languages.html">Your language</a>)</td>
@@ -84,25 +84,25 @@ and is alpha software.</p>
   <td>Typed schema, <code>alter collection</code>, a schema declared in code and checked at every open (<a href="javascript.html#schema">Schema in code</a>)</td>
   <td>Transactional DDL (<a href="https://www.postgresql.org/docs/current/sql-altertable.html"><code>ALTER TABLE</code></a>); migrations by outside tools</td></tr>
 <tr><td>Full text</td>
-  <td>BM25 (<a href="fenecql-search.html#the-text-clause">The text clause</a>)</td>
+  <td>BM25 (<a href="fennecql-search.html#the-text-clause">The text clause</a>)</td>
   <td><code>tsvector</code> ranked by <a href="https://www.postgresql.org/docs/current/textsearch-controls.html"><code>ts_rank</code></a>; BM25 through an extension such as <a href="https://github.com/timescale/pg_textsearch">pg_textsearch</a></td></tr>
 <tr><td>Highlights and facets</td>
-  <td><code>highlight()</code>, <code>snippet()</code> and <code>facet</code> (<a href="fenecql-search.html#highlights">Highlights</a>, <a href="fenecql-search.html#facets">Facets</a>)</td>
+  <td><code>highlight()</code>, <code>snippet()</code> and <code>facet</code> (<a href="fennecql-search.html#highlights">Highlights</a>, <a href="fennecql-search.html#facets">Facets</a>)</td>
   <td><a href="https://www.postgresql.org/docs/current/textsearch-controls.html#TEXTSEARCH-HEADLINE"><code>ts_headline</code></a> over a <code>tsquery</code>; a facet is a <code>GROUP BY</code> of its own</td></tr>
 <tr><td>Vector index</td>
-  <td>HNSW (<a href="fenecql-vector.html#the-vector-clause">The vector clause</a>)</td>
+  <td>HNSW (<a href="fennecql-vector.html#the-vector-clause">The vector clause</a>)</td>
   <td>HNSW and IVFFlat (<a href="https://github.com/pgvector/pgvector">pgvector</a>)</td></tr>
 <tr><td>Quantization</td>
-  <td><code>f16</code> storage; <code>int8</code> and <code>bit</code> codes, re-ordered by the full vectors (<a href="fenecql-vector.html#quantized">Quantized indexes</a>)</td>
+  <td><code>f16</code> storage; <code>int8</code> and <code>bit</code> codes, re-ordered by the full vectors (<a href="fennecql-vector.html#quantized">Quantized indexes</a>)</td>
   <td><code>halfvec</code>, <code>bit</code>, binary quantization by expression index (<a href="https://github.com/pgvector/pgvector">pgvector</a>)</td></tr>
 <tr><td>Filtered vector search</td>
   <td>Planned with the filter, an exact fallback when the filter leaves too few (<a href="concepts.html#a-filter-and-a-vector-together">A filter and a vector together</a>)</td>
   <td>Iterative index scans since 0.8.0 (<a href="https://www.postgresql.org/about/news/pgvector-080-released-2952">release</a>)</td></tr>
 <tr><td>Sparse vectors</td>
-  <td><code>sparse&lt;N&gt;</code>, pgvector's text form (<a href="fenecql-vector.html#sparse">Sparse vectors</a>)</td>
+  <td><code>sparse&lt;N&gt;</code>, pgvector's text form (<a href="fennecql-vector.html#sparse">Sparse vectors</a>)</td>
   <td><code>sparsevec</code> (<a href="https://github.com/pgvector/pgvector">pgvector</a>)</td></tr>
 <tr><td>Hybrid search</td>
-  <td><code>fuse</code>, reciprocal rank fusion (<a href="fenecql-search.html#hybrid">Hybrid search</a>)</td>
+  <td><code>fuse</code>, reciprocal rank fusion (<a href="fennecql-search.html#hybrid">Hybrid search</a>)</td>
   <td>No operator; fusion written in SQL (<a href="https://www.tigerdata.com/blog/introducing-pg_textsearch-true-bm25-ranking-hybrid-retrieval-postgres">an example</a>)</td></tr>
 <tr><td>Size</td>
   <td>A 2.99 MB server image (<a href="benchmarks-size.html#binary-size">Binary size</a>)</td>
@@ -117,8 +117,8 @@ and is alpha software.</p>
 </table>
 </div>
 
-<details class="deep"><summary>What PostgreSQL does that fenecdb does not</summary>
-<p>What fenecdb gives up for its size is listed in <a
+<details class="deep"><summary>What PostgreSQL does that fennecdb does not</summary>
+<p>What fennecdb gives up for its size is listed in <a
 href="limits.html">Limits</a>: no SQL dialect (<a href="sql.html">its everyday spellings</a> aside) and a join only on a key (a query reads one
 collection and attaches related rows with <code>lookup</code>), one writer
 a file, no transaction held open across requests, and no TLS on the
@@ -130,13 +130,13 @@ dimensions, <code>halfvec</code> up to 4 000, <code>bit</code> up to
 (<a href="https://github.com/pgvector/pgvector">README</a>). pgvectorscale
 adds a disk-based index, StreamingDiskANN, for data larger than memory
 (<a href="https://github.com/timescale/pgvectorscale">pgvectorscale</a>).
-fenecdb keeps its indexes in memory and its documents in a mapped file
+fennecdb keeps its indexes in memory and its documents in a mapped file
 (<a href="limits.html#memory-and-scale">Memory and scale</a>).</p>
 </details>
 
 <h2 id="measured">Measured</h2>
 
-<p>YCSB's core workloads over a million records, fenec-server over HTTP
+<p>YCSB's core workloads over a million records, fennec-server over HTTP
 against PostgreSQL 17, both in Docker on the Mac, durable, operations a
 second, the median of three runs (<a href="benchmarks-ycsb.html#ycsb">every
 cell, and MongoDB</a>). We measured these on one laptop; the method is
@@ -144,7 +144,7 @@ below.</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>YCSB, 1 000 000 records</th><th class="n">fenec-server, HTTP</th><th class="n">PostgreSQL</th></tr></thead>
+<thead><tr><th>YCSB, 1 000 000 records</th><th class="n">fennec-server, HTTP</th><th class="n">PostgreSQL</th></tr></thead>
 <tbody>
 <tr><td>B, 95% reads, 16 clients</td><td class="n"><b>18.2 k</b></td><td class="n">13.0 k</td></tr>
 <tr><td>A, 50% updates, 16 clients</td><td class="n"><b>13.3 k</b></td><td class="n">10.5 k</td></tr>
@@ -159,24 +159,24 @@ below.</p>
 <ul>
   <li><b>Both in Docker,</b> because the VM's fsync takes a tenth of a
     millisecond where the Mac's <code>F_FULLFSYNC</code> takes four, and
-    its network a quarter of a millisecond a request: fenec-server on the
+    its network a quarter of a millisecond a request: fennec-server on the
     Mac against PostgreSQL in Docker would compare those, not the two.</li>
   <li><b>C, reads alone, is where PostgreSQL leads,</b> by 2% at one
     client, and F by 1%: each server's own part of a read is under 0.02 ms
     of a 0.29 ms round trip, and the rest is Docker's network, which moves
     more than that from one day to the next (PostgreSQL's C at one client
     did 3.66 k on 2026-10-05, its median now 3.14 k). At 4 and 16 clients
-    fenec-server leads every workload; at 16 fenec-server leads C,
+    fennec-server leads every workload; at 16 fennec-server leads C,
     18.4 k against 14.8 k.</li>
 </ul>
 
-<p>Then search by meaning: a million 128-dim vectors, fenec-server asked
+<p>Then search by meaning: a million 128-dim vectors, fennec-server asked
 over HTTP and PostgreSQL with pgvector over its own protocol, by the same
 client program with the same index settings.</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>1 000 000 × 128</th><th class="n">fenec-server, HTTP</th><th class="n">PostgreSQL + pgvector</th></tr></thead>
+<thead><tr><th>1 000 000 × 128</th><th class="n">fennec-server, HTTP</th><th class="n">PostgreSQL + pgvector</th></tr></thead>
 <tbody>
 <tr><td>load and index</td><td class="n"><b>49.6 s</b></td><td class="n">108.5 s</td></tr>
 <tr><td>memory the server holds</td><td class="n"><b>738 MB</b></td><td class="n">1 131 MB</td></tr>
@@ -215,15 +215,15 @@ make load-bench
   <li><b>Hardware.</b> An Apple M1 MacBook Air. It has no fan and slows
     under minutes of load, so for the vectors each side was run on its own
     after four idle minutes, once.</li>
-  <li><b>Where each ran, for the vectors.</b> <code>fenec-server</code> on the host,
+  <li><b>Where each ran, for the vectors.</b> <code>fennec-server</code> on the host,
     asked over kept-alive HTTP connections. PostgreSQL in Docker's virtual
     machine (4 GB, 8 CPUs, <code>shared_buffers</code> 1 GB), asked through
     the <code>postgres</code> crate. An empty query's round trip was 0.13 to
-    0.22 ms to PostgreSQL and 0.06 to 0.11 ms to fenec-server: part of each
+    0.22 ms to PostgreSQL and 0.06 to 0.11 ms to fennec-server: part of each
     answer, not the rest of it.</li>
   <li><b>Same index settings.</b> HNSW with m 16 and ef_construction 64,
     pgvector's defaults, on both.</li>
-  <li><b>Each side's best way to load.</b> fenec-server builds its graph
+  <li><b>Each side's best way to load.</b> fennec-server builds its graph
     as JSON arrays of rows arrive. pgvector builds after a binary
     <code>COPY</code>, on every core, then reads its index into its buffers
     (<code>pg_prewarm</code>) and searches a filter with
@@ -240,11 +240,11 @@ are <a href="benchmarks-ycsb.html#ycsb">YCSB's</a>.</p>
 
 <h2 id="moving">Moving from PostgreSQL</h2>
 
-<p><code>fenec import</code> copies a table into a collection over the
+<p><code>fennec import</code> copies a table into a collection over the
 network, vectors and index included. With <code>--follow</code> it keeps
 applying the table's changes as they commit.</p>
 
-<pre data-lang="bash">fenec import postgres://app@db:5432/app --table docs --into articles \
+<pre data-lang="bash">fennec import postgres://app@db:5432/app --table docs --into articles \
     --index "embed@hnsw(cosine)" --follow
 </pre>
 
@@ -254,9 +254,9 @@ applying the table's changes as they commit.</p>
     A <code>numeric</code> needs <code>--cast</code>
     (<a href="import.html#type-mapping">Type mapping</a>).</li>
   <li><b>Following needs</b> <code>wal_level = logical</code> and an integer
-    key. <code>fenec-server --follow</code> serves the mirror as it
+    key. <code>fennec-server --follow</code> serves the mirror as it
     follows (<a href="import.html#serving">Serving the mirror</a>).</li>
-  <li><b>Queries are rewritten.</b> fenecdb does not speak SQL or
+  <li><b>Queries are rewritten.</b> fennecdb does not speak SQL or
     PostgreSQL's protocol, so a pgvector client library cannot connect to
     it.</li>
 </ul>
@@ -269,7 +269,7 @@ ORDER BY published DESC
 LIMIT 10;
 </pre>
 
-<pre data-lang="fenecql">get articles select title
+<pre data-lang="fennecql">get articles select title
   where year >= 2024
   order published desc
   limit 10
@@ -281,7 +281,7 @@ ORDER BY embed &lt;=&gt; $1
 LIMIT 10;
 </pre>
 
-<pre data-lang="fenecql">get articles select title
+<pre data-lang="fennecql">get articles select title
   where year >= 2024
   near embed $1
   limit 10
@@ -290,8 +290,8 @@ LIMIT 10;
 <details class="deep"><summary>How a join, a transaction and row-level security carry over</summary>
 <p>A join becomes <code>lookup</code>, which attaches each row's related
 rows, or <code>in (get …)</code>, which filters by another collection's
-rows (<a href="fenecql-lookup.html#the-lookup-clause">The lookup clause</a>,
-<a href="fenecql-lookup.html#subqueries">Subqueries</a>). A transaction of several
+rows (<a href="fennecql-lookup.html#the-lookup-clause">The lookup clause</a>,
+<a href="fennecql-lookup.html#subqueries">Subqueries</a>). A transaction of several
 statements becomes a <code>/batch</code>, which lands whole or not at all
 but cannot read between its writes (<a href="http.html#batches">Batches</a>).
 Row-level security becomes a JWT rule

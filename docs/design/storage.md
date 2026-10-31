@@ -6,7 +6,7 @@ The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *Storag
 
 **No buffer pool of its own, and the file is mapped.** The byte sequence on
 disk and in memory are the same format, so a read decodes straight over the
-bytes -- there is no eviction policy, no dirty pages and no cache of fenecdb's
+bytes -- there is no eviction policy, no dirty pages and no cache of fennecdb's
 own. "Page cache" is the operating system's, which keeps the mapped file's
 pages and starts cold after a restart, as for any file; it was called "no page
 cache" here before, which read as nothing being cached.
@@ -17,11 +17,11 @@ documents written since the open until it hands them over to the file
 (below). A 1 GB file of 2.3 million rows with a hash and an ordered
 index holds 188 MB that way against 1 095 read into memory, and its
 `compact` peaks at 236 MB against 2 012; a 10 GB file opens on an 8 GB
-machine, which read it cannot. `fs::open_in_memory` (`fenec-server --no-mmap`,
+machine, which read it cannot. `fs::open_in_memory` (`fennec-server --no-mmap`,
 which reaches a replicated file and a `--dir` node's tenants as well) is the
 other way, for a network file system or to have `--max-memory` cover the
 data. In the browser `store::Base` is the image a load was handed
-(`fenec_load_owned`, `Database::load_mapped`): the module keeps it and
+(`fennec_load_owned`, `Database::load_mapped`): the module keeps it and
 reads the documents out of it, as a server reads its file, where it copied
 each into a segment -- 10 000 rows of 768 dimensions restored held 97 MB,
 and hold 66, for 0.7 KB brotli; the load is up to 12% quicker and the
@@ -162,10 +162,10 @@ compact beside the database, `Compactor` a thread that looks every 5 s. The
 look waits for a write under way: under `try_read` 10 looks in 12 runs of
 `make compact-bench` found the lock taken and put a due compact off 5 s,
 the file growing 100-160 MB a second meanwhile.
-`fenec_http::link` runs one thread over every database the process serves
+`fennec_http::link` runs one thread over every database the process serves
 (`--auto-compact <ratio>|off`, default 0.5), apart from the graph keeper so
 its graphs do not wait out a compact of a gigabyte; the native library
-starts a `Compactor` a file (`FENEC_OPEN_NO_AUTO_COMPACT`); a replica and a
+starts a `Compactor` a file (`FENNEC_OPEN_NO_AUTO_COMPACT`); a replica and a
 following tenant compact too, since `may_write` lets a compact run there and
 their files grow with every update sent, and an image adopted during a
 maintenance marks every tail changed (`Tails::all_changed`), or a replica's
@@ -214,7 +214,7 @@ and build every index again, though the indexes are keyed by id.
 ## Compaction and the page cache
 
 **A file is compacted before it outgrows the page cache** (`cache.rs`,
-`CompactPolicy::memory`, `due_in`). There is no cache of fenecdb's own, so
+`CompactPolicy::memory`, `due_in`). There is no cache of fennecdb's own, so
 what the reads need in memory is the file's pages holding a live record --
 and under updates at uniform keys that is every page until a compact: a
 million 1 KB records updated until the file stood at 2.1 GB left one on
@@ -291,7 +291,7 @@ skipped, it swallowed the next append, an acknowledged write lost on the open
 after. Only past the checkpoint image, though: an image is renamed into place
 whole, so a record cut short inside it -- or an image longer than the file --
 is refused as corrupt; cut there as a torn tail is, one flipped bit deleted
-every record after it. A tool that only looks (`fenec types`) opens with
+every record after it. A tool that only looks (`fennec types`) opens with
 `fs::open_read_only`, which cuts, creates and writes nothing: a server's
 append in flight looks torn from outside. The change counter record (kind 6) is at the front and fixed width;
 the id counter (kind 7) exists so `compact` cannot hand out a deleted id again,

@@ -4,7 +4,7 @@
 // Started cold, Chrome faults its binary in a page and a readahead at a
 // time, and a fresh GitHub runner's disk answers each slowly: the first
 // launch of a job has sat in `folio_wait_bit_common` for 5 to 20 s, 1 300
-// major faults for 136 MB (fenec studio's harness, which reads Chrome the
+// major faults for 136 MB (fennec studio's harness, which reads Chrome the
 // same way: studio/test/harness.mjs, `warm`). chrome-launcher waits for
 // Chrome to say where it listens for 50 polls of 500 ms, 25 s, and then
 // rejects with "waiting for dynamic debugging port in chrome-err.log" while

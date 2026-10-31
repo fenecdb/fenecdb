@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Report it privately, through GitHub:
-**https://github.com/fenecdb/fenecdb/security/advisories/new**
+**https://github.com/fennec-db/fennecdb/security/advisories/new**
 
 That form is visible only to the maintainers. Please do not open a public issue
 for a vulnerability, and please do not post a working exploit anywhere public
@@ -22,19 +22,19 @@ The latest release and `main`. Older tags get no backported fixes.
 
 ## Where the risk actually is
 
-fenecdb takes **no external crates** in the shipped crates — own codec, own
+fennecdb takes **no external crates** in the shipped crates — own codec, own
 JSON, own HNSW, own SHA-256/HMAC/PBKDF2, RSA verification and
-ChaCha20-Poly1305, and the client half of SCRAM `fenec import` signs in to
+ChaCha20-Poly1305, and the client half of SCRAM `fennec import` signs in to
 PostgreSQL with. That removes the upstream CVE surface entirely and puts all
 of it in this repository instead. The crypto in
-`crates/fenec-http/src/crypto.rs` and `crates/fenec-wire/src/client.rs` is
+`crates/fennec-http/src/crypto.rs` and `crates/fennec-wire/src/client.rs` is
 exactly the code that most deserves a second pair of eyes.
 
 In scope, and worth reporting:
 
 - Memory unsafety, panics or unbounded allocation reachable from input that
-  crosses a trust boundary: the HTTP/JSON surface, the FenecQL parser, the
-  on-disk file format, the SQLite and PostgreSQL readers of `fenec import`,
+  crosses a trust boundary: the HTTP/JSON surface, the FennecQL parser, the
+  on-disk file format, the SQLite and PostgreSQL readers of `fennec import`,
   and the WASM boundary.
 - Anything that authenticates when it should not, or that lets a client skip
   authentication: the bearer token, a JWT and the policy it is held to.
@@ -43,7 +43,7 @@ In scope, and worth reporting:
 - Allocation driven by an unauthenticated peer. A request's head is capped and
   its body bounded by `max_body` before it is read; a path around either is a
   vulnerability.
-- A crafted `.fenec` file that does more than fail to open — the reader is
+- A crafted `.fennec` file that does more than fail to open — the reader is
   expected to reject a damaged or hostile file, not to be exploited by it.
 - Query text reaching an identifier or a value without validation, from any
   client surface.
@@ -52,13 +52,13 @@ In scope, and worth reporting:
 
 These are deliberate, and README explains each one:
 
-- **There is no TLS.** `fenec-server` speaks plain HTTP: a token and the data
+- **There is no TLS.** `fennec-server` speaks plain HTTP: a token and the data
   flow in the clear. On an open network it belongs behind a TLS terminator
   (nginx, Caddy, stunnel).
 - **`--insecure` does what it says.** Binding to a non-loopback address without
   authentication is refused unless that flag is passed deliberately.
-- **A token on the command line shows up in `ps`.** `FENEC_HTTP_TOKEN`,
-  `FENEC_JWT_SECRET`, `--jwt-secret-file` and `FENEC_REPLICATION_TOKEN` exist
+- **A token on the command line shows up in `ps`.** `FENNEC_HTTP_TOKEN`,
+  `FENNEC_JWT_SECRET`, `--jwt-secret-file` and `FENNEC_REPLICATION_TOKEN` exist
   for that reason.
 - **`--jwt-require-exp off` takes a token with no `exp` for ever.** By
   default such a token is refused (401); turning that off is the operator's
@@ -103,13 +103,13 @@ These are deliberate, and README explains each one:
   as corrections, erasure and `@ttl` sweeps need. An app server that should
   only append is given a scoped token. Against whoever holds the server's
   token and the file, an append-only log is a sealed archive
-  (`fenec archive --key-file`) kept elsewhere.
+  (`fennec archive --key-file`) kept elsewhere.
 - **Two processes opening the same file corrupts it.** There is a single writer,
   which is why everything that writes a file runs as a thread of one
-  `fenec-server`. `fenec-server --file`, each tenant a `--dir` node has open,
-  `fenec-shard`'s directory, the native library and every `fenec` way that
+  `fennec-server`. `fennec-server --file`, each tenant a `--dir` node has open,
+  `fennec-shard`'s directory, the native library and every `fennec` way that
   writes a file (the shell, `mcp --file`, `import`, a backup or restore into
-  a file) take `<file>.lock` (an `fcntl` record lock, `fenec_abi::lock`) and
+  a file) take `<file>.lock` (an `fcntl` record lock, `fennec_abi::lock`) and
   refuse a file another holds; a file opened through a symbolic link is the
   file it leads to, for its lock and every rewrite alike.
   Embedded Rust's `fs::open` takes none, a hard link is a name with a lock of
@@ -139,7 +139,7 @@ These are deliberate, and README explains each one:
   would be passed, until the next request opens it again. An authenticated
   client can ask for work that costs memory; `--max-memory` is the bound, and
   `make memory` is how you calibrate it.
-- **`md5` authentication is not supported** by `fenec import` and
+- **`md5` authentication is not supported** by `fennec import` and
   `--follow` when they sign in to PostgreSQL. SCRAM-SHA-256 or cleartext.
 
 If you think one of these is worse than the README makes it sound, that is
@@ -147,8 +147,8 @@ worth an issue — as a documentation or design argument, not as an advisory.
 
 ## An application built on it
 
-[`examples/saas`](examples/saas) is a multi-tenant product on fenecdb with
+[`examples/saas`](examples/saas) is a multi-tenant product on fennecdb with
 its threat model written out: what the app owns (passwords, sessions,
-rate limits, the signing key), what fenec-server enforces (scoped,
+rate limits, the signing key), what fennec-server enforces (scoped,
 tenant-bound tokens, per-operation and per-field grants, append-only
 logs), and the attacks its tests try against both.

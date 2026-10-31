@@ -8,7 +8,7 @@ assertClean('before');
 const SMALL = data('small', 50);
 const KEY = `file:${SMALL}`;
 
-const app = startApp('sandbox', { FENEC_DESKTOP_OPEN: SMALL });
+const app = startApp('sandbox', { FENNEC_DESKTOP_OPEN: SMALL });
 const started = await waitFor((l) => l.what === 'server-started', 60000, 'the server started');
 await waitStudio(KEY);
 
@@ -25,10 +25,10 @@ assert.deepEqual(globals.value.filter((k) => !SANDBOXED.includes(k)), [], 'nothi
 const rpc = await evalIn(KEY, `return [typeof window.__electrobunBunBridge, typeof window.electrobun, typeof window.__electrobunRpcSocketPort, typeof window.__electrobunSecretKey].join(',')`);
 assert.equal(rpc.value, 'undefined,undefined,undefined,undefined');
 
-step('the session is handed over as the studio asks: window.fenecHost, frozen, in the page\'s own world, and never stored');
+step('the session is handed over as the studio asks: window.fennecHost, frozen, in the page\'s own world, and never stored');
 const host = await evalIn(KEY, `
-const d = Object.getOwnPropertyDescriptor(window, 'fenecHost');
-const h = window.fenecHost;
+const d = Object.getOwnPropertyDescriptor(window, 'fennecHost');
+const h = window.fennecHost;
 const buttons = [...document.querySelectorAll('button')].map(b => b.textContent.trim());
 return {
   defined: !!d,
@@ -41,7 +41,7 @@ return {
   sessionStorage: Object.keys(sessionStorage),
   localStorage: Object.keys(localStorage),
   signOut: buttons.includes('Sign out'),
-  signIn: /Connect to a fenecdb server/.test(document.body.innerText),
+  signIn: /Connect to a fennecdb server/.test(document.body.innerText),
 };`);
 assert.ok(host.ok, host.value);
 assert.equal(host.value.defined, true, 'the preload ran in the same world as the page: the page sees it');
@@ -51,7 +51,7 @@ assert.equal(host.value.server, host.value.origin, 'the origin that served the p
 assert.equal(host.value.tokenLength, 43, '32 random bytes, base64url');
 assert.equal(host.value.tenant, null);
 assert.deepEqual(host.value.sessionStorage, [], 'the token is not in session storage');
-assert.deepEqual(host.value.localStorage.filter((k) => /token|session|fenec-studio/i.test(k)), [], 'nor local storage');
+assert.deepEqual(host.value.localStorage.filter((k) => /token|session|fennec-studio/i.test(k)), [], 'nor local storage');
 assert.equal(host.value.signOut, false, 'under an app the studio has no Sign out: the app holds the connection');
 assert.equal(host.value.signIn, false, 'and no sign-in form');
 
@@ -67,10 +67,10 @@ assert.ok(where.value.startsWith(started.origin), `still on ${started.origin}: $
 step('an address that is not http(s) is not handed to the system, and the first one that is, is: the address was what held the others back');
 // Before any web link, so that the rate limit below has nothing to do with it.
 const mNon = lines().length;
-await evalIn(KEY, `window.open("file:///etc/passwd"); window.open("javascript:alert(1)"); window.open("fenec-check://x/y"); return 1`);
+await evalIn(KEY, `window.open("file:///etc/passwd"); window.open("javascript:alert(1)"); window.open("fennec-check://x/y"); return 1`);
 await waitNone((l, i) => i >= mNon && l.what === 'external', 1500, 'a non-web link was handed to the system');
 // The page did ask: the app was told of at least one of them, and dropped it.
-const asked = lines().slice(mNon).filter((l) => l.what === 'new-window-open' && /file:|fenec-check:/.test(l.data));
+const asked = lines().slice(mNon).filter((l) => l.what === 'new-window-open' && /file:|fennec-check:/.test(l.data));
 log('asked of the app and not handed on:', asked.length, 'of the 3');
 assert.ok(asked.length > 0, 'the app was asked to open a non-web address, so the filter is what refused it');
 // The control: a web link, the window's first, goes to the browser at once.

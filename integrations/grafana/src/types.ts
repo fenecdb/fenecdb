@@ -15,36 +15,36 @@ export interface Param {
 export type Format = 'auto' | 'table' | 'time_series';
 
 /**
- * A panel's query: FenecQL, its parameters, and how its answer is framed.
+ * A panel's query: FennecQL, its parameters, and how its answer is framed.
  * `vars` is never typed or saved: `applyTemplateVariables` fills it with the
  * values of the dashboard variables the text names, which the backend binds
  * as parameters.
  */
-export interface FenecQuery extends DataQuery {
+export interface FennecQuery extends DataQuery {
   queryText?: string;
   params?: Param[];
   format?: Format;
-  /** A change the server must hold before it answers (Fenec-After). */
+  /** A change the server must hold before it answers (Fennec-After). */
   after?: string;
   vars?: Record<string, string | string[]>;
 }
 
-export const DEFAULT_QUERY: Partial<FenecQuery> = {
+export const DEFAULT_QUERY: Partial<FennecQuery> = {
   queryText: '',
   params: [],
   format: 'auto',
 };
 
 /** A data source's settings; the URL is the data source's own field. */
-export interface FenecOptions extends DataSourceJsonData {
+export interface FennecOptions extends DataSourceJsonData {
   tenant?: string;
-  /** How long a query sent after a change waits for it (Fenec-Wait), ms. */
+  /** How long a query sent after a change waits for it (Fennec-Wait), ms. */
   waitMs?: number;
   timeoutSeconds?: number;
 }
 
 /** Kept by Grafana encrypted, sent to the backend alone, never to a browser. */
-export interface FenecSecureData {
+export interface FennecSecureData {
   token?: string;
 }
 

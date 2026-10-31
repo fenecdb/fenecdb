@@ -1,11 +1,11 @@
 <!--
-title: Agents and MCP — fenecdb
-description: fenecdb as an agent's search and memory tool over the Model Context Protocol: Streamable HTTP on fenec-server, stdio with fenec mcp, schema, search, query, get, write and a memory that outlives the conversation — each tool a statement held to the token's rules.
+title: Agents and MCP — fennecdb
+description: fennecdb as an agent's search and memory tool over the Model Context Protocol: Streamable HTTP on fennec-server, stdio with fennec mcp, schema, search, query, get, write and a memory that outlives the conversation — each tool a statement held to the token's rules.
 -->
 
 <h1>Agents and MCP</h1>
 <p class="kicker">An agent — Claude Code, Cursor, Claude Desktop, one you build
-— searches and remembers through tools it calls. fenecdb serves those tools
+— searches and remembers through tools it calls. fennecdb serves those tools
 over MCP, the Model Context Protocol: on its HTTP endpoint, or as a process
 the agent starts.</p>
 
@@ -22,20 +22,20 @@ since a model told nothing of the cut takes half an answer for the whole.</p>
 node, which a router forwards like any tenant path) — an underscore, as
 <code>/_metrics</code> has one, so that no collection's path is taken:</p>
 
-<pre data-lang="bash">fenec-server --file notes.fenec --http-token "$FENEC_TOKEN" --mcp
-fenec-server --file notes.fenec --http-token "$FENEC_TOKEN" --mcp-write --mcp-memory memories
+<pre data-lang="bash">fennec-server --file notes.fennec --http-token "$FENNEC_TOKEN" --mcp
+fennec-server --file notes.fennec --http-token "$FENNEC_TOKEN" --mcp-write --mcp-memory memories
 </pre>
 
-<p>Over a file, <code>fenec mcp</code> is the server as a process the agent
+<p>Over a file, <code>fennec mcp</code> is the server as a process the agent
 starts, speaking stdio — a message a line on stdin, an answer a line on
 stdout, its log on stderr:</p>
 
-<pre data-lang="bash">fenec mcp --file notes.fenec --memory memories
-fenec mcp --url http://127.0.0.1:8080/_mcp        # in front of a server, the token from FENEC_TOKEN
+<pre data-lang="bash">fennec mcp --file notes.fennec --memory memories
+fennec mcp --url http://127.0.0.1:8080/_mcp        # in front of a server, the token from FENNEC_TOKEN
 </pre>
 
 <p><code>--file</code> holds the database itself and takes
-<code>notes.fenec.lock</code> while the session lasts — a server, an app or
+<code>notes.fennec.lock</code> while the session lasts — a server, an app or
 the shell over the same file is refused, as it is refused while they hold it: two
 processes writing one file corrupt it. Each write is on the disk before it is
 answered. <code>--read-only</code> takes no lock and writes nothing, and reads
@@ -48,9 +48,9 @@ token's rules, and the bridge decides nothing.</p>
 
 <h2 id="claude-code">Claude Code</h2>
 
-<pre data-lang="bash">claude mcp add fenecdb -- fenec mcp --file notes.fenec --memory memories
-claude mcp add --transport http fenecdb http://127.0.0.1:8080/_mcp --header "Authorization: Bearer $FENEC_TOKEN"
-claude mcp list                                  # fenecdb: ... - ✓ Connected
+<pre data-lang="bash">claude mcp add fennecdb -- fennec mcp --file notes.fennec --memory memories
+claude mcp add --transport http fennecdb http://127.0.0.1:8080/_mcp --header "Authorization: Bearer $FENNEC_TOKEN"
+claude mcp list                                  # fennecdb: ... - ✓ Connected
 </pre>
 
 <p>With <code>--scope project</code> each goes into the project's
@@ -59,10 +59,10 @@ token left in the environment:</p>
 
 <pre data-lang="json" data-label=".mcp.json">{
   "mcpServers": {
-    "fenecdb": {
+    "fennecdb": {
       "type": "stdio",
-      "command": "fenec",
-      "args": ["mcp", "--file", "notes.fenec", "--memory", "memories"]
+      "command": "fennec",
+      "args": ["mcp", "--file", "notes.fennec", "--memory", "memories"]
     }
   }
 }
@@ -70,10 +70,10 @@ token left in the environment:</p>
 
 <pre data-lang="json" data-label=".mcp.json, a server">{
   "mcpServers": {
-    "fenecdb": {
+    "fennecdb": {
       "type": "http",
       "url": "http://127.0.0.1:8080/_mcp",
-      "headers": { "Authorization": "Bearer ${FENEC_TOKEN}" }
+      "headers": { "Authorization": "Bearer ${FENNEC_TOKEN}" }
     }
   }
 }
@@ -83,9 +83,9 @@ token left in the environment:</p>
 
 <pre data-lang="json" data-label=".cursor/mcp.json">{
   "mcpServers": {
-    "fenecdb": {
-      "command": "fenec",
-      "args": ["mcp", "--file", "notes.fenec", "--memory", "memories"]
+    "fennecdb": {
+      "command": "fennec",
+      "args": ["mcp", "--file", "notes.fennec", "--memory", "memories"]
     }
   }
 }
@@ -93,9 +93,9 @@ token left in the environment:</p>
 
 <pre data-lang="json" data-label=".cursor/mcp.json, a server">{
   "mcpServers": {
-    "fenecdb": {
+    "fennecdb": {
       "url": "http://127.0.0.1:8080/_mcp",
-      "headers": { "Authorization": "Bearer ${env:FENEC_TOKEN}" }
+      "headers": { "Authorization": "Bearer ${env:FENNEC_TOKEN}" }
     }
   }
 }
@@ -105,14 +105,14 @@ token left in the environment:</p>
 
 <p>Claude Desktop starts its tools as processes, so a server is reached
 through the bridge. An app started from the dock does not see a shell's
-<code>PATH</code>: name <code>fenec</code> by its full path.</p>
+<code>PATH</code>: name <code>fennec</code> by its full path.</p>
 
 <pre data-lang="json" data-label="claude_desktop_config.json">{
   "mcpServers": {
-    "fenecdb": {
-      "command": "fenec",
+    "fennecdb": {
+      "command": "fennec",
       "args": ["mcp", "--url", "http://127.0.0.1:8080/_mcp"],
-      "env": { "FENEC_TOKEN": "the token" }
+      "env": { "FENNEC_TOKEN": "the token" }
     }
   }
 }
@@ -127,9 +127,9 @@ of its servers called with the official TypeScript MCP client.</p>
 <table>
 <thead><tr><th>tool</th><th>what it does</th><th>takes</th></tr></thead>
 <tbody>
-<tr><td><code>schema</code></td><td>the collections the token may read, each as the FenecQL that makes it, and — to the server's token — how many rows each holds</td><td><code>collection</code></td></tr>
-<tr><td><code>search</code></td><td>rows ranked best first: by words over an <code>@text</code> field (BM25), by an embedding over an <code>@hnsw</code> field, or both fused; each row with <code>_score</code> and, by words, a <code>snippet</code> with the words found in <code>**bold**</code>; <code>fuzzy</code> matches words a typo away (<a href="fenecql-search.html#typos">typos and prefixes</a>), <code>prefix</code> the last word as the start of one</td><td><code>collection</code>, <code>text</code>, <code>fuzzy</code>, <code>prefix</code>, <code>vector</code>, <code>filter</code>, <code>params</code>, <code>limit</code>, <code>fields</code>, <code>text_field</code>, <code>vector_field</code></td></tr>
-<tr><td><code>query</code></td><td>one FenecQL read: <code>get</code> with any clause, aggregates, <code>count</code>, <code>lookup</code>, <code>explain</code></td><td><code>query</code>, <code>params</code>, <code>include_vectors</code></td></tr>
+<tr><td><code>schema</code></td><td>the collections the token may read, each as the FennecQL that makes it, and — to the server's token — how many rows each holds</td><td><code>collection</code></td></tr>
+<tr><td><code>search</code></td><td>rows ranked best first: by words over an <code>@text</code> field (BM25), by an embedding over an <code>@hnsw</code> field, or both fused; each row with <code>_score</code> and, by words, a <code>snippet</code> with the words found in <code>**bold**</code>; <code>fuzzy</code> matches words a typo away (<a href="fennecql-search.html#typos">typos and prefixes</a>), <code>prefix</code> the last word as the start of one</td><td><code>collection</code>, <code>text</code>, <code>fuzzy</code>, <code>prefix</code>, <code>vector</code>, <code>filter</code>, <code>params</code>, <code>limit</code>, <code>fields</code>, <code>text_field</code>, <code>vector_field</code></td></tr>
+<tr><td><code>query</code></td><td>one FennecQL read: <code>get</code> with any clause, aggregates, <code>count</code>, <code>lookup</code>, <code>explain</code></td><td><code>query</code>, <code>params</code>, <code>include_vectors</code></td></tr>
 <tr><td><code>get</code></td><td>rows by id; the ids with no row come back in <code>missing</code></td><td><code>collection</code>, <code>ids</code>, <code>fields</code></td></tr>
 <tr><td><code>write</code></td><td>one <code>put</code>, <code>insert</code>, <code>set</code> or <code>del</code>, with <code>require n</code> if it must touch n rows (<code>--mcp-write</code>)</td><td><code>statement</code>, <code>params</code></td></tr>
 <tr><td><code>remember</code></td><td>keeps a memory (<code>--mcp-memory</code>)</td><td><code>text</code>, <code>vector</code>, <code>tags</code>, <code>expires_in</code></td></tr>
@@ -152,17 +152,17 @@ A search's call and its answer:</p>
            "snippet": "the cat watches the **fox**", "_score": 0.67}], "count": 1}
 </pre>
 
-<p><b>Embeddings are the client's to compute.</b> fenecdb stores and searches
+<p><b>Embeddings are the client's to compute.</b> fennecdb stores and searches
 vectors and runs no model: an agent that has one passes <code>vector</code>,
 made with the model the collection was filled with — a vector of another
 length is refused, naming the field's. Without one, search by words.</p>
 
 <p><b>Values go in <code>params</code>, never into the text.</b> A filter is
-a FenecQL condition, <code>year &gt;= $1 and tags has $2</code>, parsed on its
+a FennecQL condition, <code>year &gt;= $1 and tags has $2</code>, parsed on its
 own and refused unless it is a condition and nothing more — no clause after
 it, no second statement, no parenthesis closing on the statement around it —
 and it goes into the statement the tool builds as the condition parsed, never
-as text. Names are checked against FenecQL's rule for one.</p>
+as text. Names are checked against FennecQL's rule for one.</p>
 
 <p><b>What a tool refuses comes back for the model to correct</b>, as its
 result with <code>isError</code>: an argument it does not take, a vector of
@@ -170,7 +170,7 @@ the wrong length, a statement the token's rules refuse, an answer past a
 bound — each saying what to change, and with the status <code>/query</code>
 would have answered it with. A <code>write</code> whose <code>require N else
 '…'</code> refused it carries that <code>reason</code> beside its words, as
-the 412 does (<a href="/docs/fenecql-writing#require-reason">A reason for the
+the 412 does (<a href="/docs/fennecql-writing#require-reason">A reason for the
 refusal</a>). A call that is not one — an unknown tool, a malformed message —
 is a JSON-RPC error.</p>
 
@@ -212,14 +212,14 @@ an agent's calls as they hold a client's requests.</p>
     token answers only a <code>Host</code> naming this machine —
     <code>localhost</code> or an address — so a page whose name was rebound to
     127.0.0.1 reaches nothing.</li>
-  <li><b>No TLS.</b> fenecdb speaks none: on an open network put a TLS
+  <li><b>No TLS.</b> fennecdb speaks none: on an open network put a TLS
     terminator in front of the server, and give the agent's client the
     <code>https</code> URL. The stdio bridge speaks plain HTTP only.</li>
   <li><b>An agent's writes are audited.</b> With <code>--audit</code> each
     call of <code>write</code>, <code>remember</code> or <code>forget</code> is
     a line (<code>"event":"mcp"</code>, the tool, whether it failed), beside
     the schema changes and the refused tokens. <code>/_metrics</code> counts
-    calls in <code>fenec_mcp_tool_calls_total</code> by tool and outcome — no
+    calls in <code>fennec_mcp_tool_calls_total</code> by tool and outcome — no
     collection is a label.</li>
 </ul>
 
@@ -232,7 +232,7 @@ its conversations: <code>remember</code> keeps a sentence,
 memory, with a vector field if that memory came with a vector — and given one
 at the first that does:</p>
 
-<pre data-lang="fenecql">create collection if not exists memories (text text required @text, tags [text], owner text @hash, at timestamp @sorted, expires timestamp @ttl(1ms), vector vector&lt;3&gt; @hnsw(cosine))
+<pre data-lang="fennecql">create collection if not exists memories (text text required @text, tags [text], owner text @hash, at timestamp @sorted, expires timestamp @ttl(1ms), vector vector&lt;3&gt; @hnsw(cosine))
 </pre>
 
 <p>The text is searched by its words (<code>@text</code>), so an agent with
@@ -248,7 +248,7 @@ at: now(), expires: now() + $3, vector: $4}</code>, its expiry the
 milliseconds <code>expires_in</code> names (<code>30m</code>,
 <code>12h</code>, <code>7d</code>). With the values written in:</p>
 
-<pre data-lang="fenecql">insert into memories {text: "the deploy runs on fridays", tags: ["ops"], at: now(), expires: null, vector: [0.9, 0.1, 0]}   -- → 1
+<pre data-lang="fennecql">insert into memories {text: "the deploy runs on fridays", tags: ["ops"], at: now(), expires: null, vector: [0.9, 0.1, 0]}   -- → 1
 insert into memories {text: "staging is in eu-west-1", tags: ["ops"], at: now(), expires: null, vector: [0, 0.2, 1]}   -- → 1
 insert into memories {text: "the user is debugging the login page", tags: ["session"], at: now(), expires: now() + 10000}   -- → 1
 </pre>
@@ -256,7 +256,7 @@ insert into memories {text: "the user is debugging the login page", tags: ["sess
 <p><code>recall</code> with words alone, with words and a vector, by a tag,
 and with nothing — the latest first:</p>
 
-<pre data-lang="fenecql">get memories select text, tags, at match text "when do we deploy" limit 5   -- → "the deploy runs on fridays"
+<pre data-lang="fennecql">get memories select text, tags, at match text "when do we deploy" limit 5   -- → "the deploy runs on fridays"
 get memories select text, tags, at match text "which region" near vector [0, 0.1, 1] fuse limit 5   -- → "staging is in eu-west-1"
 get memories select text where tags has "session" limit 5   -- → "the user is debugging the login page"
 get memories select text, tags, at order at desc, id desc limit 5   -- → "the user is debugging the login page"
@@ -264,13 +264,13 @@ get memories select text, tags, at order at desc, id desc limit 5   -- → "the 
 
 <p>Ten seconds on, the session's memory is out of every read:</p>
 
-<pre data-lang="fenecql">get memories where tags has "session" count   -- → 1
+<pre data-lang="fennecql">get memories where tags has "session" count   -- → 1
 -- 20 s later
 get memories where tags has "session" count   -- → 0
 </pre>
 
-<p>Every FenecQL block on this page is run, statement by statement, by a test
-(<code>crates/fenec-core/tests/mcp_docs.rs</code>), and the collection above
+<p>Every FennecQL block on this page is run, statement by statement, by a test
+(<code>crates/fennec-core/tests/mcp_docs.rs</code>), and the collection above
 is held to the one <code>remember</code> makes.</p>
 
 <p><b>Each user's memories apart.</b> A policy line keeps each token's
@@ -283,7 +283,7 @@ the server's token, once — a scoped one may not make collections, and its
 </pre>
 
 <p><b>An example agent.</b> <code>examples/mcp-agent</code> is Claude with
-these tools over <code>fenec mcp --file</code>, through the Anthropic SDK's
+these tools over <code>fennec mcp --file</code>, through the Anthropic SDK's
 tool runner: told something in one run, it recalls it in the next.</p>
 
 <pre data-lang="bash">cd examples/mcp-agent && npm install

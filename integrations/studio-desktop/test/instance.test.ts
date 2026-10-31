@@ -69,5 +69,5 @@ test("a socket that cannot be made does not keep the app from starting", async (
 test("the app's own socket fits where macOS puts the user's temporary folder", () => {
 	// $TMPDIR is /var/folders/xx/<28 characters>/T/ for every user.
 	const tmp = "/var/folders/8x/24jbdqnn3g3_r2knsn99ntw80000gn/T/";
-	assert.ok(Buffer.byteLength(instancePath("dev.fenecdb.studio.test", tmp)) < 104);
+	assert.ok(Buffer.byteLength(instancePath("dev.fennecdb.studio.test", tmp)) < 104);
 });

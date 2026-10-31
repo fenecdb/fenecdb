@@ -3,7 +3,7 @@
   // with --config, since wrangler run below the repository took the site's
   // wrangler.jsonc at its root, and served its static assets instead.
   "$schema": "../node_modules/wrangler/config-schema.json",
-  "name": "fenecdb-example",
+  "name": "fennecdb-example",
   "main": "worker.js",
   "compatibility_date": "2026-09-01",
   "durable_objects": {

@@ -1,84 +1,84 @@
 <!--
-title: The shell — fenecdb
-description: fenec, the fenecdb shell: open a database file, run FenecQL a statement at a time, script it from a file or a pipe, and what the same program does besides: import, backup, types and MCP.
+title: The shell — fennecdb
+description: fennec, the fennecdb shell: open a database file, run FennecQL a statement at a time, script it from a file or a pipe, and what the same program does besides: import, backup, types and MCP.
 -->
 
 <h1>The shell</h1>
-<p class="kicker">Open a database file and run FenecQL on it, one statement at
+<p class="kicker">Open a database file and run FennecQL on it, one statement at
 a time. It is the quickest way to learn the language, and to look inside a file
 a server or an app keeps.</p>
 
 <h2 id="quickstart">Quickstart</h2>
 
-<p><code>fenec</code> comes beside <code>fenec-server</code> in every way of
+<p><code>fennec</code> comes beside <code>fennec-server</code> in every way of
 installing it (<a href="install.html">Install</a>), and the steps below need
-nothing else. Give it a file of its own, <code>scratch.fenec</code> here: not
-one a server has open, such as the Quickstart's <code>notes.fenec</code>, since
+nothing else. Give it a file of its own, <code>scratch.fennec</code> here: not
+one a server has open, such as the Quickstart's <code>notes.fennec</code>, since
 two processes writing one file would corrupt it: the shell refuses a file
 another process has open (<a href="#the-lock">The file's lock</a>).</p>
 
 <ol class="steps-doc">
   <li>
     <p>Open a file. It is made if there is none.</p>
-<pre data-lang="bash">fenec scratch.fenec</pre>
-<pre data-lang="text" data-label="prints">fenecdb {{version}} — scratch.fenec
+<pre data-lang="bash">fennec scratch.fennec</pre>
+<pre data-lang="text" data-label="prints">fennecdb {{version}} — scratch.fennec
 `.help` for help, `.quit` to exit</pre>
   </li>
   <li>
     <p>At the prompt, make a collection, each field typed and the ones you
     filter, order and search by indexed, and write two rows. A write ends at a
     <code>;</code>.</p>
-<pre data-lang="text">fenec&gt; create collection notes (title text @text, year int @sorted)
+<pre data-lang="text">fennec&gt; create collection notes (title text @text, year int @sorted)
 collection `notes` created
-fenec&gt; put notes [{title: "Dunes", year: 2021}, {title: "Night at the oasis", year: 2024}];
+fennec&gt; put notes [{title: "Dunes", year: 2021}, {title: "Night at the oasis", year: 2024}];
 2 records (133.38µs)</pre>
   </li>
   <li>
     <p>Read them back by a filter and an order, then search the words, a typo
     and all. The timings are yours.</p>
-<pre data-lang="text">fenec&gt; get notes where year &gt;= 2020 order year desc
+<pre data-lang="text">fennec&gt; get notes where year &gt;= 2020 order year desc
 id  title               year
 --  ------------------  ----
 2   Night at the oasis  2024
 1   Dunes               2021
 (2 rows, 149.12µs)
-fenec&gt; get notes select title match title "oasys" fuzzy
+fennec&gt; get notes select title match title "oasys" fuzzy
 title               _score
 ------------------  ------
 Night at the oasis  0.6224
 (1 rows, 27.33µs)
-fenec&gt; .quit</pre>
+fennec&gt; .quit</pre>
   </li>
 </ol>
 
-<p>The file is the database: <code>fenec scratch.fenec</code> opens it again with
-its rows, and <code>fenec-server --file scratch.fenec</code> serves it once the
-shell has quit. <a href="fenecql.html">FenecQL</a> is a tour of the language
+<p>The file is the database: <code>fennec scratch.fennec</code> opens it again with
+its rows, and <code>fennec-server --file scratch.fennec</code> serves it once the
+shell has quit. <a href="fennecql.html">FennecQL</a> is a tour of the language
 in this shell, from a first write to a lookup and a total.</p>
 
 <h2 id="running">Running statements</h2>
 
-<pre data-lang="bash">fenec scratch.fenec                          # interactive
-fenec scratch.fenec -c 'get notes limit 5'   # one statement, then exit
-echo 'get notes' | fenec scratch.fenec       # from a pipe
-fenec scratch.fenec &lt; seed.fenecql           # a script
-fenec --read-only notes.fenec                # a server's file, read beside it
-fenec --version                              # fenec &lt;version&gt;, and nothing opened</pre>
+<pre data-lang="bash">fennec scratch.fennec                        # interactive
+fennec scratch.fennec -c 'get notes limit 5' # one statement, then exit
+echo 'get notes' | fennec scratch.fennec     # from a pipe
+fennec scratch.fennec &lt; seed.fennecql           # a script
+fennec --read-only notes.fennec              # a server's file, read beside it
+fennec --version                             # fennec &lt;version&gt;, and nothing opened</pre>
 
 <p><code>--version</code>, or <code>-V</code>, prints the shell's version on
-stdout and exits 0 without opening a file; <code>fenec version</code>, with no
+stdout and exits 0 without opening a file; <code>fennec version</code>, with no
 dashes, opens a file named <code>version</code>, as any other word does.
 Releases up to 0.1.12 have no <code>--version</code>: the first line an
 interactive session prints names theirs.</p>
 
 <p id="the-lock">The shell holds <code>&lt;file&gt;.lock</code> while it has a
-file open, as <code>fenec-server --file</code>, a <code>--dir</code> node for
-each tenant it has open, <code>fenec mcp --file</code> and an app through the
-native library do, so a file one of them or another shell has open is refused, and its holder named — <code>notes.fenec is open in
-another process (fenec-server, pid 4242)</code>, exit 1. A server's file is
+file open, as <code>fennec-server --file</code>, a <code>--dir</code> node for
+each tenant it has open, <code>fennec mcp --file</code> and an app through the
+native library do, so a file one of them or another shell has open is refused, and its holder named — <code>notes.fennec is open in
+another process (fennec-server, pid 4242)</code>, exit 1. A server's file is
 queried over HTTP instead, or the server stopped first; a file another session
 or an app has open is closed there first. <code>-c</code>, a pipe and a script
-are refused alike, and so are <code>fenec import</code> into the file, a
+are refused alike, and so are <code>fennec import</code> into the file, a
 <code>backup</code> or <code>restore</code> into it and <code>.save</code> over
 it. Where the lock cannot be taken at all, in a directory you may only read,
 the refusal points to <code>--read-only</code>, which takes no lock and writes
@@ -99,7 +99,7 @@ there beside a running server could leave the file unreadable.</p>
 <table>
 <thead><tr><th>Command</th><th>What it does</th></tr></thead>
 <tbody>
-<tr><td><code>.help</code></td><td>the summary of FenecQL and of these commands</td></tr>
+<tr><td><code>.help</code></td><td>the summary of FennecQL and of these commands</td></tr>
 <tr><td><code>.tables</code></td><td>the collections</td></tr>
 <tr><td><code>.stats</code></td><td>storage statistics</td></tr>
 <tr><td><code>.functions</code></td><td>the registered functions and plugins</td></tr>
@@ -148,19 +148,19 @@ for Enter like a typed one.</p>
 
 <h2 id="more">What else the program does</h2>
 
-<p>The same <code>fenec</code> is the tool for a file or a server beyond the
-prompt. <code>fenec --help</code> lists each with its flags.</p>
+<p>The same <code>fennec</code> is the tool for a file or a server beyond the
+prompt. <code>fennec --help</code> lists each with its flags.</p>
 
 <ul>
-  <li><b><code>fenec import</code></b> copies a SQLite file or a PostgreSQL
+  <li><b><code>fennec import</code></b> copies a SQLite file or a PostgreSQL
     table into a collection, and <code>--follow</code> keeps a PostgreSQL copy
     up to date: <a href="import.html">Import</a>.</li>
-  <li><b><code>fenec backup</code>, <code>archive</code>, <code>restore</code>,
+  <li><b><code>fennec backup</code>, <code>archive</code>, <code>restore</code>,
     <code>prune</code> and <code>verify</code></b> take a running server whole,
     keep its writes and rebuild it as it stood at a moment: <a
     href="replication.html">Replication</a>.</li>
-  <li><b><code>fenec types</code></b> writes TypeScript, Python, Go or C# types
+  <li><b><code>fennec types</code></b> writes TypeScript, Python, Go or C# types
     from a database file: <a href="javascript.html#typescript">TypeScript</a>.</li>
-  <li><b><code>fenec mcp</code></b> serves a file, or a server, to an agent
+  <li><b><code>fennec mcp</code></b> serves a file, or a server, to an agent
     over stdio: <a href="mcp.html">Agents and MCP</a>.</li>
 </ul>

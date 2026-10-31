@@ -1,5 +1,5 @@
 #!/bin/sh
-# The shop end to end, as CI runs it: a fenec-server over a new file, the
+# The shop end to end, as CI runs it: a fennec-server over a new file, the
 # catalog seeded, the site built and started, then lint and the tests --
 # correctness, security, SEO -- and, when asked, Lighthouse CI and the
 # timings and load test.
@@ -7,15 +7,15 @@
 # Every port is one the system picks, so two runs -- or this beside any
 # other suite or server -- never meet on one.
 #
-#   FENEC_SERVER          the server binary (scripts/db.sh finds one otherwise)
+#   FENNEC_SERVER         the server binary (scripts/db.sh finds one otherwise)
 #   SHOP_LIGHTHOUSE=1     Lighthouse CI's assertions on the budgets too
 #   SHOP_LOAD=1           the page timings and the API load test too
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 cd "$here"
 dir=$(mktemp -d)
-export FENEC_PORT=0
-export FENEC_FILE="$dir/shop.fenec"
+export FENNEC_PORT=0
+export FENNEC_FILE="$dir/shop.fennec"
 export SHOP_INSECURE_COOKIES=1 # plain http on localhost
 export NEXT_TELEMETRY_DISABLED=1
 db= site= hold=
@@ -69,9 +69,9 @@ export SHOP_URL=$SITE_URL
 sh scripts/db.sh >"$dir/db.log" 2>&1 &
 db=$!
 until_line 'listening on: http://[^ ]+ ' "$dir/db.log" "$db"
-FENEC_URL=$(sed -n 's/.*listening on: \(http:[^ ]*\) .*/\1/p' "$dir/db.log" | head -1)
-export FENEC_URL
-wait_for "$FENEC_URL/_health" "$dir/db.log"
+FENNEC_URL=$(sed -n 's/.*listening on: \(http:[^ ]*\) .*/\1/p' "$dir/db.log" | head -1)
+export FENNEC_URL
+wait_for "$FENNEC_URL/_health" "$dir/db.log"
 npm run -s seed
 npm run -s lint
 npm run -s build >"$dir/build.log" 2>&1 || { cat "$dir/build.log"; exit 1; }

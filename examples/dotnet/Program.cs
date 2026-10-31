@@ -1,4 +1,4 @@
-// Notes over fenec-server's HTTP endpoint, with the FenecDb SDK.
+// Notes over fennec-server's HTTP endpoint, with the FennecDb SDK.
 //
 //   dotnet run                            seeds if empty, then lists
 //   dotnet run -- add <title> <body> [tag ...]
@@ -8,13 +8,13 @@
 //   dotnet run -- watch                   the open notes again after every change
 //   dotnet run -- smoke                   what CI runs
 using System.Text;
-using FenecDb;
+using FennecDb;
 
-var url = Environment.GetEnvironmentVariable("FENEC_URL") ?? "http://127.0.0.1:8080";
-var token = Environment.GetEnvironmentVariable("FENEC_TOKEN") ?? "secret"; // a dev default; never ship one
-using var db = new FenecClient(url, new() { Token = token });
+var url = Environment.GetEnvironmentVariable("FENNEC_URL") ?? "http://127.0.0.1:8080";
+var token = Environment.GetEnvironmentVariable("FENNEC_TOKEN") ?? "secret"; // a dev default; never ship one
+using var db = new FennecClient(url, new() { Token = token });
 // Makes what is missing; refuses what would lose data.
-await db.SchemaAsync(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "schema.fenecql")), migrate: true);
+await db.SchemaAsync(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "schema.fennecql")), migrate: true);
 var app = new Notes(db);
 
 switch (args.FirstOrDefault())
@@ -54,7 +54,7 @@ switch (args.FirstOrDefault())
 
 record Note(long Id, string Title, string[]? Tags, bool Done, string? At);
 
-class Notes(FenecClient db)
+class Notes(FennecClient db)
 {
     static readonly (string Title, string Body, string[] Tags, bool Done, string At)[] Seeds =
     [

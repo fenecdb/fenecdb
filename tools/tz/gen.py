@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """The time zones `bucket(at, 1d, 'Europe/Berlin')` knows: IANA's rules
 since 2000, out of the system's compiled tzdata (TZif files, as Python's
-zoneinfo reads them), into crates/fenec-core/src/tz/zones.bin -- and the
-references crates/fenec-core/tests/zones.txt holds the engine to.
+zoneinfo reads them), into crates/fennec-core/src/tz/zones.bin -- and the
+references crates/fennec-core/tests/zones.txt holds the engine to.
 
     python3 tools/tz/gen.py [ZONEINFO_DIR]     # /usr/share/zoneinfo by default
 
@@ -32,8 +32,8 @@ from datetime import datetime, timezone
 ROOT = sys.argv[1] if len(sys.argv) > 1 else '/usr/share/zoneinfo'
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-BIN = os.path.join(REPO, 'crates/fenec-core/src/tz/zones.bin')
-REF = os.path.join(REPO, 'crates/fenec-core/tests/zones.txt')
+BIN = os.path.join(REPO, 'crates/fennec-core/src/tz/zones.bin')
+REF = os.path.join(REPO, 'crates/fennec-core/tests/zones.txt')
 
 # The table answers from 2000 on; a year before it is kept so that a day
 # that starts before 2000 is looked back on with the offset it had.

@@ -4,7 +4,7 @@
 // module in a dedicated worker (worker.js), which answers each request as
 // a server would (engine.js), so every view works unchanged over it.
 //
-// Only a page that asks for it loads this module: fenec-server's studio
+// Only a page that asks for it loads this module: fennec-server's studio
 // never does, and its first load holds none of it, nor the worker.
 
 import { h, fill } from './dom.js';
@@ -19,7 +19,7 @@ async function compile(url) {
   }
 }
 
-/** A refusal as a server's is thrown by `FenecHttp`: its words, its status, a batch's statement. */
+/** A refusal as a server's is thrown by `FennecHttp`: its words, its status, a batch's statement. */
 function refusal(json, status) {
   const e = new Error(json?.error ?? `HTTP ${status}`);
   e.status = status;
@@ -40,7 +40,7 @@ function remembered(key) {
 
 export class Local {
   local = true;
-  /** The change the last write left the database at, as a server's `Fenec-Seq`. */
+  /** The change the last write left the database at, as a server's `Fennec-Seq`. */
   seq = null;
   onError = null;
   /** Whether the database came back from this browser rather than from its seed. */
@@ -60,8 +60,8 @@ export class Local {
    * `[text, params]`, or the function that makes one) written into it
    * unless it is kept in this browser under `key` and comes back.
    */
-  static async open({ wasm, collation, seed = [], key = 'fenec-playground', docs = null }) {
-    const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module', name: 'fenec' });
+  static async open({ wasm, collation, seed = [], key = 'fennec-playground', docs = null }) {
+    const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module', name: 'fennec' });
     const db = new Local(worker, key);
     db.#docs = docs;
     // The module fetched and compiled while the worker's modules load, and
@@ -131,7 +131,7 @@ export class Local {
     return { status: r.status, ok: r.status < 300, ms, json: r.json, text: JSON.stringify(r.json), seq: r.seq, requestId: null };
   }
 
-  /** As `FenecHttp.run`: `{rows}` (and `facets`), `{kind: 'affected', count, seq}`, or the answer as it is. */
+  /** As `FennecHttp.run`: `{rows}` (and `facets`), `{kind: 'affected', count, seq}`, or the answer as it is. */
   async run(text, params = []) {
     const r = await this.request('/query', { method: 'POST', body: JSON.stringify({ query: text, params }) });
     if (!r.ok) throw refusal(r.json, r.status);
@@ -141,7 +141,7 @@ export class Local {
   }
 
   /**
-   * As `FenecHttp.batch`: one block, `{results, seq, replayed}`. A key is
+   * As `FennecHttp.batch`: one block, `{results, seq, replayed}`. A key is
    * not kept: nothing here sends a write twice.
    */
   async batch(items) {
@@ -154,7 +154,7 @@ export class Local {
     return { results: r.json?.results ?? [], seq: r.seq, replayed: false };
   }
 
-  /** As `FenecHttp.subscribe`: a seed, then each change; returns the function that stops it. */
+  /** As `FennecHttp.subscribe`: a seed, then each change; returns the function that stops it. */
   subscribe(collection, shape, onEvent, opts = {}) {
     const sub = ++this.#next;
     this.#subs.set(sub, { onEvent, opts });
@@ -206,7 +206,7 @@ export class Local {
       h('span', { class: 'who-name here-long' }, 'Running in your browser.'),
       h('span', { class: 'who-name here-short' }, 'In this tab'),
     );
-    const server = h('span', { class: 'here-server' }, 'On your server: ', h('code', {}, 'fenec-server --studio'));
+    const server = h('span', { class: 'here-server' }, 'On your server: ', h('code', {}, 'fennec-server --studio'));
     const reset = h('button', { type: 'button', class: 'btn ghost here-reset', onclick: () => this.#confirmReset(ctx) }, 'Reset data');
     return [line, server, reset];
   }
@@ -277,7 +277,7 @@ export class Local {
         'dl',
         { class: 'facts' },
         h('dt', {}, 'Engine'),
-        h('dd', {}, 'fenecdb compiled to WebAssembly, on a worker of this tab: the engine fenec-server runs. Nothing you type is sent anywhere.'),
+        h('dd', {}, 'fennecdb compiled to WebAssembly, on a worker of this tab: the engine fennec-server runs. Nothing you type is sent anywhere.'),
         h('dt', {}, 'Data'),
         h('dd', {}, this.restored ? 'Brought back from this browser.' : 'products, orders and events, seeded as the page opened.'),
         h('dt', {}, 'Kept'),
@@ -286,7 +286,7 @@ export class Local {
       h('label', { class: 'here-keep', for: 'here-keep' }, keep, ' Keep it in this browser'),
       h('h3', {}, 'On your server'),
       h('p', {}, 'The same studio, over your own data, served by the server itself:'),
-      h('pre', { class: 'statement' }, 'fenec-server --file data.fenec --studio'),
+      h('pre', { class: 'statement' }, 'fennec-server --file data.fennec --studio'),
       h(
         'p',
         { class: 'hint' },

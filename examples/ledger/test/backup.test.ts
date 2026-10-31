@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { Fenec } from '@fenecdb/web';
+import { Fennec } from '@fennecdb/web';
 import { createRequire } from 'node:module';
 import { reconcile } from '../src/reconcile.ts';
 import { LocalStore } from '../src/store.ts';
@@ -16,15 +16,15 @@ import { freshTenant } from './helpers.ts';
 import { mix, prepare } from './workload.ts';
 
 const root = fileURLToPath(new URL('../../..', import.meta.url));
-const cli = [process.env.FENEC_CLI, join(root, 'target/release/fenec'), join(root, 'target/debug/fenec')].find((b) => b && existsSync(b));
+const cli = [process.env.FENNEC_CLI, join(root, 'target/release/fennec'), join(root, 'target/debug/fennec')].find((b) => b && existsSync(b));
 // The replication token of the node (scripts/db.sh): a backup reads its feed.
-const REPLICATION = process.env.FENEC_REPLICATION_TOKEN ?? 'ledger-dev-replication';
+const REPLICATION = process.env.FENNEC_REPLICATION_TOKEN ?? 'ledger-dev-replication';
 
 test(
   'a sealed backup restores into balanced books, and a changed byte is refused',
-  { skip: !cli && !process.env.CI && 'no fenec binary' },
+  { skip: !cli && !process.env.CI && 'no fennec binary' },
   async () => {
-    assert.ok(cli, 'FENEC_CLI, or a fenec build in target/');
+    assert.ok(cli, 'FENNEC_CLI, or a fennec build in target/');
     const { operator, ledger } = await freshTenant('backup');
     const l = ledger();
     const world = await prepare(l, operator, { n: 12, frozen: 1 });
@@ -46,15 +46,15 @@ test(
     const flipped = Buffer.from(sealed);
     flipped[flipped.length >> 1] ^= 1;
     writeFileSync(join(dir, 'flipped.sealed'), flipped);
-    assert.throws(() => run('restore', join(dir, 'flipped.sealed'), join(dir, 'x.fenec'), '--key-file', key));
+    assert.throws(() => run('restore', join(dir, 'flipped.sealed'), join(dir, 'x.fennec'), '--key-file', key));
     run('key', join(dir, 'other'));
-    assert.throws(() => run('restore', join(dir, 'books.sealed'), join(dir, 'y.fenec'), '--key-file', join(dir, 'other')));
+    assert.throws(() => run('restore', join(dir, 'books.sealed'), join(dir, 'y.fennec'), '--key-file', join(dir, 'other')));
 
     // Restored, and opened in this process: the same books, balanced.
-    run('restore', join(dir, 'books.sealed'), join(dir, 'books.fenec'), '--key-file', key);
-    const wasm = readFileSync(createRequire(import.meta.url).resolve('@fenecdb/web/fenec.wasm'));
-    const db = await Fenec.open(wasm);
-    db.load(readFileSync(join(dir, 'books.fenec')));
+    run('restore', join(dir, 'books.sealed'), join(dir, 'books.fennec'), '--key-file', key);
+    const wasm = readFileSync(createRequire(import.meta.url).resolve('@fennecdb/web/fennec.wasm'));
+    const db = await Fennec.open(wasm);
+    db.load(readFileSync(join(dir, 'books.fennec')));
     const restored = new LocalStore(db);
     const report = await reconcile(restored);
     assert.ok(report.ok, JSON.stringify(report).slice(0, 400));

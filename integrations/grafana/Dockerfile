@@ -1,12 +1,12 @@
-# Grafana with fenecdb-datasource built from this checkout: the frontend with
+# Grafana with fennecdb-datasource built from this checkout: the frontend with
 # webpack, the backend with mage for the image's architecture. Built from the
 # repository's root, since the backend takes the Go SDK beside it
 # (integrations/go):
 #
-#   docker build -f integrations/grafana/Dockerfile -t fenecdb-grafana .
+#   docker build -f integrations/grafana/Dockerfile -t fennecdb-grafana .
 #
 # monitoring/docker-compose.yml builds it as its Grafana. The plugin is not
-# signed: GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=fenecdb-datasource lets
+# signed: GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=fennecdb-datasource lets
 # this Grafana load it (integrations/grafana/README.md says how to sign it).
 
 # ----------------------------------------------------------------- frontend
@@ -35,6 +35,6 @@ RUN --mount=type=cache,target=/root/go/pkg/mod --mount=type=cache,target=/root/.
 
 # ------------------------------------------------------------------ Grafana
 FROM grafana/grafana:13.2.2
-COPY --from=frontend /src/integrations/grafana/dist/ /var/lib/grafana/plugins/fenecdb-datasource/
-COPY --from=backend /src/integrations/grafana/dist/ /var/lib/grafana/plugins/fenecdb-datasource/
-ENV GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=fenecdb-datasource
+COPY --from=frontend /src/integrations/grafana/dist/ /var/lib/grafana/plugins/fennecdb-datasource/
+COPY --from=backend /src/integrations/grafana/dist/ /var/lib/grafana/plugins/fennecdb-datasource/
+ENV GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=fennecdb-datasource

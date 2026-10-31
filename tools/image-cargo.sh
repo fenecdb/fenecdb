@@ -2,8 +2,8 @@
 # `cargo build` inside an image's build: binaries made from the sources the
 # build was given, and held to them before they are copied out.
 #
-#   RUN --mount=type=cache,id=fenec-image-cargo,target=/work,sharing=locked \
-#       tools/image-cargo.sh /built --release -p fenec-server
+#   RUN --mount=type=cache,id=fennec-image-cargo,target=/work,sharing=locked \
+#       tools/image-cargo.sh /built --release -p fennec-server
 #
 # Run from the build context's copy (the Dockerfiles' /src) with /work a
 # cache mount that only this script uses. Every binary the build makes is
@@ -15,7 +15,7 @@
 # build shares, a build from files older on disk than the last build -- a
 # worktree made earlier, a branch whose files kept their times -- found
 # every output newer than every source and compiled nothing: a branch's
-# image carried main's fenec-shard, byte for byte. So the sources are
+# image carried main's fennec-shard, byte for byte. So the sources are
 # copied into /work/src by content (rsync -c, no times kept): a file whose
 # bytes changed is written again and takes the time it is written at, every
 # other keeps the one it had, and /work/src is a tree edited in place, the
@@ -31,7 +31,7 @@
 # key held two outputs: rebuilt with --no-cache, BuildKit filed the second
 # build's COPY layer under the first's content, and a later build making
 # the first's binaries again was handed the second's layer -- main's build
-# got a branch's fenec-shard though its own build stage held main's. The
+# got a branch's fennec-shard though its own build stage held main's. The
 # Dockerfiles copy from a path no build before this script wrote, so no
 # key filed that way is reached.
 #
@@ -61,7 +61,7 @@ set -eu
 
 # ---------------------------------------------------------------- wrapper
 # Cargo calls `$RUSTC_WRAPPER <rustc> <arguments>`.
-if [ -n "${FENEC_IMAGE_RECORDS:-}" ]; then
+if [ -n "${FENNEC_IMAGE_RECORDS:-}" ]; then
     "$@" || exit
     shift
     out='' name='' extra='' prev='' externs=''
@@ -86,7 +86,7 @@ if [ -n "${FENEC_IMAGE_RECORDS:-}" ]; then
         exit 1
         ;;
     esac
-    record=$FENEC_IMAGE_RECORDS/$name$extra
+    record=$FENNEC_IMAGE_RECORDS/$name$extra
     set -f
     # shellcheck disable=SC2086 # one word a file
     sha256sum $deps $externs > "$record.$$"
@@ -113,7 +113,7 @@ mkdir -p "$tree" "$target" "$records" "$out"
 rsync -rlc --delete "$context/" "$tree/"
 
 cd "$tree"
-CARGO_TARGET_DIR=$target RUSTC_WRAPPER=$self FENEC_IMAGE_RECORDS=$records \
+CARGO_TARGET_DIR=$target RUSTC_WRAPPER=$self FENNEC_IMAGE_RECORDS=$records \
     cargo build --message-format=json-render-diagnostics "$@" > "$units"
 
 # ------------------------------------------------------------------ check

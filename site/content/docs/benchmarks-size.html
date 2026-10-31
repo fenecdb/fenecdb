@@ -1,16 +1,16 @@
 <!--
-title: Size and memory benchmarks — fenecdb
-description: What the browser downloads, how large each build is, what each feature adds to the WebAssembly module, and how the memory fenecdb counts compares with what the process uses.
+title: Size and memory benchmarks — fennecdb
+description: What the browser downloads, how large each build is, what each feature adds to the WebAssembly module, and how the memory fennecdb counts compares with what the process uses.
 -->
 
 <h1>Size and memory benchmarks</h1>
 <p class="kicker">What the browser downloads, how large each build is, what each
-feature adds to the module, and how the memory fenecdb counts compares with what
+feature adds to the module, and how the memory fennecdb counts compares with what
 the process uses.</p>
 
 <h2>Memory</h2>
 
-<p>How the memory fenecdb counts for itself compares with what the process
+<p>How the memory fennecdb counts for itself compares with what the process
 really uses at its peak. Use it to choose <code>--max-memory</code>.</p>
 
 <div class="tbl">
@@ -48,15 +48,15 @@ server, the client alone in its bundle.</p>
 <table>
 <thead><tr><th>Build</th><th class="n">On disk</th><th class="n">Brotli</th><th class="n">gzip</th></tr></thead>
 <tbody>
-<tr><td><code>cargo build --release -p fenec-cli</code>, default</td><td class="n">3013 KB</td><td class="n">—</td><td class="n">—</td></tr>
+<tr><td><code>cargo build --release -p fennec-cli</code>, default</td><td class="n">3013 KB</td><td class="n">—</td><td class="n">—</td></tr>
 <tr><td><code>--profile cli</code>, default, as a release builds it</td><td class="n">2400 KB</td><td class="n">—</td><td class="n">—</td></tr>
 <tr><td><code>--no-default-features</code>, no import, backup or MCP</td><td class="n">2236 KB</td><td class="n">—</td><td class="n">—</td></tr>
 <tr><td><code>--profile cli --no-default-features</code> (<code>make small</code>)</td><td class="n"><b>1880 KB</b></td><td class="n">—</td><td class="n">—</td></tr>
 <tr><td>wasm32, browser</td><td class="n"><b>805 KB</b></td><td class="n"><b>274 KB</b></td><td class="n">330 KB</td></tr>
 <tr><td>wasm32, no index or schema check, <code>make wasm FEATURES=language SCHEMA=0</code></td><td class="n">586 KB</td><td class="n">203 KB</td><td class="n">242 KB</td></tr>
 <tr><td>wasm32, no feature at all, <code>make wasm FEATURES=none SCHEMA=0</code></td><td class="n">526 KB</td><td class="n">180 KB</td><td class="n">214 KB</td></tr>
-<tr><td><code>web/fenec.js</code> and its modules, the client</td><td class="n">197 KB</td><td class="n">51 KB</td><td class="n">60 KB</td></tr>
-<tr><td><code>@fenecdb/web/client</code> in an app's bundle, <code>connect</code> and a query's rows, esbuild, minified</td><td class="n">30 KB</td><td class="n">10 KB</td><td class="n">11 KB</td></tr>
+<tr><td><code>web/fennec.js</code> and its modules, the client</td><td class="n">197 KB</td><td class="n">51 KB</td><td class="n">60 KB</td></tr>
+<tr><td><code>@fennecdb/web/client</code> in an app's bundle, <code>connect</code> and a query's rows, esbuild, minified</td><td class="n">30 KB</td><td class="n">10 KB</td><td class="n">11 KB</td></tr>
 <tr><td>container image, scratch + musl, amd64</td><td class="n">2.99 MB</td><td class="n">—</td><td class="n">—</td></tr>
 </tbody>
 </table>
@@ -83,7 +83,7 @@ dashes.</p>
   and so does reading the thing end to end.</p>
 </div>
 
-<p><code>fenec-server</code> stays on the <code>release</code> profile on purpose:
+<p><code>fennec-server</code> stays on the <code>release</code> profile on purpose:
 a connection thread that panics unwinds and takes down only its own session,
 and the server stays up. The <code>cli</code> profile turns panic unwinding
 into abort, which is right for a single process with nothing to recover.</p>
@@ -102,9 +102,9 @@ every pull request's CI run shows the same against the branch it goes into.</p>
 <table>
 <thead><tr><th>Code, 637.2 KB of the 713.7</th><th class="n">KB</th><th class="n">Share</th></tr></thead>
 <tbody>
-<tr><td><b>fenecdb's own</b></td><td class="n"><b>510.5</b></td><td class="n"><b>80.1%</b></td></tr>
-<tr><td>the engine, <code>fenec_core::engine</code></td><td class="n">202.0</td><td class="n">31.7%</td></tr>
-<tr><td>FenecQL's parser and lexer</td><td class="n">49.7</td><td class="n">7.8%</td></tr>
+<tr><td><b>fennecdb's own</b></td><td class="n"><b>510.5</b></td><td class="n"><b>80.1%</b></td></tr>
+<tr><td>the engine, <code>fennec_core::engine</code></td><td class="n">202.0</td><td class="n">31.7%</td></tr>
+<tr><td>FennecQL's parser and lexer</td><td class="n">49.7</td><td class="n">7.8%</td></tr>
 <tr><td>the vector index</td><td class="n">41.9</td><td class="n">6.6%</td></tr>
 <tr><td><code>@sorted</code></td><td class="n">20.6</td><td class="n">3.2%</td></tr>
 <tr><td>the rest</td><td class="n">196.3</td><td class="n">30.8%</td></tr>

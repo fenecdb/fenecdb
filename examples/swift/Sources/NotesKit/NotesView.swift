@@ -1,4 +1,4 @@
-import FenecDB
+import FennecDB
 import SwiftUI
 
 /// One screen: an add form, a search box and filters over a live list.

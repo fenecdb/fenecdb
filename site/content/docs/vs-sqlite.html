@@ -1,16 +1,16 @@
 <!--
-title: fenecdb and SQLite — fenecdb
-description: When to choose SQLite, with FTS5, its official WebAssembly build and sqlite-vec, and when fenecdb, feature by feature, with what is measured and what is not.
+title: fennecdb and SQLite — fennecdb
+description: When to choose SQLite, with FTS5, its official WebAssembly build and sqlite-vec, and when fennecdb, feature by feature, with what is measured and what is not.
 -->
 
-<h1>fenecdb and SQLite</h1>
+<h1>fennecdb and SQLite</h1>
 <p class="kicker">SQLite is an embedded SQL database in one file; FTS5 adds
-full-text search to it and sqlite-vec vector search. fenecdb is an embedded
+full-text search to it and sqlite-vec vector search. fennecdb is an embedded
 document database, which also runs as a server over HTTP, with full-text
 and vector search built in.</p>
 
 <p>The facts about SQLite, sqlite-vec and FTS5 on this page were checked on
-2026-10-02 against the pages each one links to. fenecdb is at version {{version}},
+2026-10-02 against the pages each one links to. fennecdb is at version {{version}},
 and is alpha software.</p>
 
 <h2 id="choose">Which to choose</h2>
@@ -35,7 +35,7 @@ and is alpha software.</p>
     sqlite-vec.</li>
 </ul>
 
-<p><b>Choose fenecdb when</b></p>
+<p><b>Choose fennecdb when</b></p>
 
 <ul>
   <li><b>The page or app should stay in step with a server:</b> a replica
@@ -46,21 +46,21 @@ and is alpha software.</p>
     syncs, 516 a second from 16 writers against SQLite's 258, and readers
     keep reading beside them (<a href="#measured">measured below</a>).</li>
   <li><b>A search box needs typos and facets</b> in the query that ranks
-    the words (<a href="fenecql-search.html#typos">Typos and words
-    begun</a>, <a href="fenecql-search.html#facets">Facets</a>).</li>
+    the words (<a href="fennecql-search.html#typos">Typos and words
+    begun</a>, <a href="fennecql-search.html#facets">Facets</a>).</li>
   <li><b>You want an approximate vector index:</b> HNSW with
     quantization and filtered search
-    (<a href="fenecql-vector.html#the-vector-clause">The vector clause</a>).
+    (<a href="fennecql-vector.html#the-vector-clause">The vector clause</a>).
     sqlite-vec's approximate indexes are in its alpha releases.</li>
   <li><b>You search by meaning and by words in one query,</b> fused by
-    rank (<a href="fenecql-search.html#hybrid">Hybrid search</a>).</li>
+    rank (<a href="fennecql-search.html#hybrid">Hybrid search</a>).</li>
 </ul>
 
 <h2 id="features">Feature by feature</h2>
 
 <div class="tbl">
 <table>
-<thead><tr><th>&nbsp;</th><th>fenecdb</th><th>SQLite + sqlite-vec + FTS5</th></tr></thead>
+<thead><tr><th>&nbsp;</th><th>fennecdb</th><th>SQLite + sqlite-vec + FTS5</th></tr></thead>
 <tbody>
 <tr><td>Where it runs</td>
   <td>Browser (WebAssembly), Rust, iOS, Android, Flutter, a server over HTTP (<a href="concepts.html#where-it-runs">Where it runs</a>)</td>
@@ -69,10 +69,10 @@ and is alpha software.</p>
   <td>IndexedDB, or a file of the origin private file system in a worker (<a href="javascript.html#keeping">Keeping a database</a>)</td>
   <td><code>kvvfs</code> (localStorage), <code>opfs</code> (a worker and COOP/COEP headers), <code>opfs-sahpool</code> (<a href="https://sqlite.org/wasm/doc/trunk/persistence.md">persistence</a>)</td></tr>
 <tr><td>Data model</td>
-  <td>Typed documents in collections, <code>json</code> fields (<a href="fenecql-schema.html#json">Objects and paths</a>)</td>
+  <td>Typed documents in collections, <code>json</code> fields (<a href="fennecql-schema.html#json">Objects and paths</a>)</td>
   <td>Relational tables</td></tr>
 <tr><td>Query language</td>
-  <td>FenecQL; builders in JS, Python, Go, .NET, Swift, Kotlin, Dart (<a href="fenecql.html">FenecQL</a>)</td>
+  <td>FennecQL; builders in JS, Python, Go, .NET, Swift, Kotlin, Dart (<a href="fennecql.html">FennecQL</a>)</td>
   <td>SQL</td></tr>
 <tr><td>Clients</td>
   <td>JS/TS, Python, Go, .NET, Swift, Kotlin, Dart; any language over HTTP (<a href="languages.html">Your language</a>)</td>
@@ -90,25 +90,25 @@ and is alpha software.</p>
   <td>Typed schema, <code>alter collection</code>, a schema declared in code and checked at every open (<a href="javascript.html#schema">Schema in code</a>)</td>
   <td>SQL DDL; migrations by your own code or tools</td></tr>
 <tr><td>Full text</td>
-  <td>BM25 (<a href="fenecql-search.html#the-text-clause">The text clause</a>)</td>
+  <td>BM25 (<a href="fennecql-search.html#the-text-clause">The text clause</a>)</td>
   <td>FTS5 with <code>bm25()</code>; unicode61, ascii, porter and trigram tokenizers (<a href="https://sqlite.org/fts5.html">FTS5</a>)</td></tr>
 <tr><td>Highlights and snippets</td>
-  <td><code>highlight()</code> and <code>snippet()</code>, as UTF-16 offsets or between tags, by the index's own tokenizer (<a href="fenecql-search.html#highlights">Highlights and snippets</a>)</td>
+  <td><code>highlight()</code> and <code>snippet()</code>, as UTF-16 offsets or between tags, by the index's own tokenizer (<a href="fennecql-search.html#highlights">Highlights and snippets</a>)</td>
   <td>FTS5's <code>highlight()</code> and <code>snippet()</code>, the marked text between tags (<a href="https://sqlite.org/fts5.html">FTS5</a>)</td></tr>
 <tr><td>Facets</td>
-  <td><code>facet</code>, each value's count over every match, beside the page (<a href="fenecql-search.html#facets">Facets</a>)</td>
+  <td><code>facet</code>, each value's count over every match, beside the page (<a href="fennecql-search.html#facets">Facets</a>)</td>
   <td>None built in; a <code>GROUP BY</code> a facet, a query each</td></tr>
 <tr><td>Vector index</td>
-  <td>HNSW (<a href="fenecql-vector.html#the-vector-clause">The vector clause</a>)</td>
+  <td>HNSW (<a href="fennecql-vector.html#the-vector-clause">The vector clause</a>)</td>
   <td>sqlite-vec's <code>vec0</code>; ANN indexes (rescore, DiskANN) in the v0.1.10 alpha releases, "pre-v1, so expect breaking changes" (<a href="https://github.com/asg017/sqlite-vec/releases">releases</a>, <a href="https://github.com/asg017/sqlite-vec">README</a>)</td></tr>
 <tr><td>Quantization</td>
-  <td><code>f16</code> storage; <code>int8</code> and <code>bit</code> codes, re-ordered by the full vectors (<a href="fenecql-vector.html#quantized">Quantized indexes</a>)</td>
+  <td><code>f16</code> storage; <code>int8</code> and <code>bit</code> codes, re-ordered by the full vectors (<a href="fennecql-vector.html#quantized">Quantized indexes</a>)</td>
   <td>float, int8 and binary vectors (<a href="https://github.com/asg017/sqlite-vec">README</a>)</td></tr>
 <tr><td>Filtered vector search</td>
   <td>Planned with the filter, an exact fallback when the filter leaves too few (<a href="concepts.html#a-filter-and-a-vector-together">A filter and a vector together</a>)</td>
   <td>Up to 16 metadata columns and 4 partition keys, filtered inside the KNN query (<a href="https://alexgarcia.xyz/sqlite-vec/features/vec0.html">vec0</a>)</td></tr>
 <tr><td>Hybrid search</td>
-  <td><code>fuse</code>, reciprocal rank fusion (<a href="fenecql-search.html#hybrid">Hybrid search</a>)</td>
+  <td><code>fuse</code>, reciprocal rank fusion (<a href="fennecql-search.html#hybrid">Hybrid search</a>)</td>
   <td>None built in; FTS5's page has no vector search (<a href="https://sqlite.org/fts5.html">FTS5</a>)</td></tr>
 <tr><td>Browser module, brotli</td>
   <td>274 KB (<a href="#size">below</a>)</td>
@@ -128,15 +128,15 @@ and is alpha software.</p>
 needs no COOP/COEP headers but "does not support multiple simultaneous
 connections to the same database"
 (<a href="https://sqlite.org/wasm/doc/trunk/persistence.md">persistence</a>).
-fenecdb's <code>openFile</code> also holds its file for one worker; other
+fennecdb's <code>openFile</code> also holds its file for one worker; other
 tabs reach it through the one that holds it, or share a synced replica
 (<a href="sync.html#multiple-tabs-share-one-stream">Multiple tabs</a>).</p>
 
 <p>FTS5's <code>bm25()</code> has its constants fixed at k1 = 1.2 and
-b = 0.75 (<a href="https://sqlite.org/fts5.html">FTS5</a>). fenecdb's
+b = 0.75 (<a href="https://sqlite.org/fts5.html">FTS5</a>). fennecdb's
 <code>@text</code> also splits Chinese, Japanese, Korean and Thai text into
 character runs and can index word prefixes
-(<a href="fenecql-search.html#the-text-clause">The text clause</a>).</p>
+(<a href="fennecql-search.html#the-text-clause">The text clause</a>).</p>
 
 <p>sqlite-vec's first stable release, v0.1.0, searched by brute force
 (<a href="https://alexgarcia.xyz/blog/2024/sqlite-vec-stable-release/index.html">announcement</a>).
@@ -148,14 +148,14 @@ v0.1.10-alpha.4, from 2026-05-18
 
 <h2 id="measured">Measured</h2>
 
-<p>YCSB's core workloads over a million records, fenecdb and SQLite in
+<p>YCSB's core workloads over a million records, fennecdb and SQLite in
 one process, operations a second, the median of three runs (<a
 href="benchmarks-ycsb.html#ycsb">every cell</a>). We measured these on one
 laptop; the method is below.</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>YCSB, 1 000 000 records</th><th class="n">fenecdb</th><th class="n">SQLite</th></tr></thead>
+<thead><tr><th>YCSB, 1 000 000 records</th><th class="n">fennecdb</th><th class="n">SQLite</th></tr></thead>
 <tbody>
 <tr><td>B, 95% reads, 16 threads, buffered</td><td class="n"><b>545 k</b></td><td class="n">47.9 k</td></tr>
 <tr><td>A, 50% updates, 16 threads, durable</td><td class="n"><b>3.22 k</b></td><td class="n">0.45 k</td></tr>
@@ -168,7 +168,7 @@ laptop; the method is below.</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>&nbsp;</th><th class="n">fenecdb</th><th class="n">SQLite</th></tr></thead>
+<thead><tr><th>&nbsp;</th><th class="n">fennecdb</th><th class="n">SQLite</th></tr></thead>
 <tbody>
 <tr><td>durable writes/s, 1 / 4 / 16 writers</td><td class="n">252 / 487 / <b>516</b></td><td class="n">248 / 248 / 258</td></tr>
 <tr><td>reads/s from 4 threads, beside 4 writers</td><td class="n"><b>701 k</b>, p99 75 µs</td><td class="n">344 k, p99 79 µs</td></tr>
@@ -178,11 +178,11 @@ laptop; the method is below.</p>
 </div>
 
 <p>And 100 000 rows of 128 dimensions, SQLite with no vector extension:
-its rows are read back and scored by fenecdb's own code.</p>
+its rows are read back and scored by fennecdb's own code.</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>100 000 × 128</th><th class="n">fenecdb</th><th class="n">SQLite</th></tr></thead>
+<thead><tr><th>100 000 × 128</th><th class="n">fennecdb</th><th class="n">SQLite</th></tr></thead>
 <tbody>
 <tr><td>data write, no index</td><td class="n"><b>936 k rows/s</b></td><td class="n">430 k/s</td></tr>
 <tr><td>disk size</td><td class="n"><b>59.3 MB</b></td><td class="n">59.8 MB</td></tr>
@@ -196,12 +196,12 @@ its rows are read back and scored by fenecdb's own code.</p>
 </div>
 
 <ul>
-  <li><b>fenecdb writes a record again at its file's end on every
+  <li><b>fennecdb writes a record again at its file's end on every
     update</b>, where SQLite updates its page in place; the file compacts
     itself once half of it is dead, beside the reads. Before it did, C at
     one thread read 30.1 k after the updates, where SQLite read 279 k.</li>
   <li><b>SQLite opens faster</b>, and its readers never wait for a block of
-    writes. fenecdb's wait only while one lands: its rows are built and
+    writes. fennecdb's wait only while one lands: its rows are built and
     encoded beside them first, and the block holds the lock about 0.15 ms
     for 1 000 rows.</li>
   <li><b>Not measured yet:</b> sqlite-vec, by brute force or with its
@@ -231,10 +231,10 @@ make compare
     <code>synchronous=NORMAL</code>, the rows written in one transaction and
     the index built afterwards; the median of three runs.</li>
   <li><b>SQLite had no vector index.</b> Its exact search reads every row
-    and scores it with the same kernel fenecdb uses, so the difference is
+    and scores it with the same kernel fennecdb uses, so the difference is
     in reading the rows, not in the arithmetic.</li>
   <li><b>Writers and readers</b> ran in one process, after idle minutes,
-    once: fenecdb's threads share one database behind a lock, SQLite's hold
+    once: fennecdb's threads share one database behind a lock, SQLite's hold
     a connection each with a 30 s busy timeout. Durable is an fsync a
     commit, <code>F_FULLFSYNC</code> for both.</li>
 </ul>
@@ -249,14 +249,14 @@ the way a static file is served.</p>
 <table>
 <thead><tr><th>&nbsp;</th><th class="n">brotli</th><th class="n">gzip</th></tr></thead>
 <tbody>
-<tr><td>fenecdb's module, <code>fenec.wasm</code> {{version}}</td><td class="n"><b>274 KB</b></td><td class="n"><b>330 KB</b></td></tr>
+<tr><td>fennecdb's module, <code>fennec.wasm</code> {{version}}</td><td class="n"><b>274 KB</b></td><td class="n"><b>330 KB</b></td></tr>
 <tr><td>SQLite's official build, <code>sqlite3.wasm</code> 3.53.4-build2</td><td class="n">341 KB</td><td class="n">393 KB</td></tr>
 </tbody>
 </table>
 </div>
 
 <details class="deep"><summary>Method, and what is left out of the sizes</summary>
-<p>Measured on 2026-10-02: fenecdb's module as <code>make wasm</code> builds
+<p>Measured on 2026-10-02: fennecdb's module as <code>make wasm</code> builds
 it, and <code>dist/sqlite3.wasm</code> from the npm package
 <code>@sqlite.org/sqlite-wasm</code> 3.53.4-build2, each compressed with
 <code>brotli -q 11</code> and <code>gzip -9</code>. A KB is 1 024 bytes.
@@ -266,10 +266,10 @@ size is not published, and is not in the figure.</p>
 
 <h2 id="moving">Moving from SQLite</h2>
 
-<p><code>fenec import</code> reads a SQLite file directly, with no SQLite
+<p><code>fennec import</code> reads a SQLite file directly, with no SQLite
 library installed, and makes a collection of a table.</p>
 
-<pre data-lang="bash">fenec import data.sqlite --table docs --into articles \
+<pre data-lang="bash">fennec import data.sqlite --table docs --into articles \
     --vector embed:384 --index "embed@hnsw(cosine)" --dry-run
 </pre>
 
@@ -289,7 +289,7 @@ ORDER BY published DESC
 LIMIT 10;
 </pre>
 
-<pre data-lang="fenecql">get articles select title
+<pre data-lang="fennecql">get articles select title
   where year >= 2024
   order published desc
   limit 10
@@ -300,7 +300,7 @@ SELECT rowid, distance FROM vec_articles
 WHERE embed MATCH ?1 AND k = 10 AND year >= 2024;
 </pre>
 
-<pre data-lang="fenecql">get articles select title
+<pre data-lang="fennecql">get articles select title
   where year >= 2024
   near embed $1
   limit 10
@@ -312,7 +312,7 @@ from the first 1 000 rows. A table with no equivalent type is refused until
 <code>--cast</code> says what to do (<a href="import.html#type-mapping">Type
 mapping</a>). A join
 becomes <code>lookup</code> or <code>in (get …)</code>
-(<a href="fenecql-lookup.html#the-lookup-clause">The lookup clause</a>), and a
+(<a href="fennecql-lookup.html#the-lookup-clause">The lookup clause</a>), and a
 transaction becomes a batch that lands whole
 (<a href="http.html#batches">Batches</a>).</p>
 </details>

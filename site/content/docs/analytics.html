@@ -1,5 +1,5 @@
 <!--
-title: Analytics and market data — fenecdb
+title: Analytics and market data — fennecdb
 description: Rollups by the minute, distinct users, funnels and retention over events; bars, VWAP and the latest price over ticks — each a statement, with what it costs over a million rows.
 -->
 
@@ -14,11 +14,11 @@ expression — <code>px * qty</code>, or an aggregate of one,
 keys, and <code>bucket(at, 1m)</code> makes a time one. <code>count(distinct
 user)</code> counts values, exactly. And <code>first(px by at)</code> and
 <code>last(px by at)</code> take the value of the earliest and latest row of
-a group. See <a href="/docs/fenecql-aggregates#aggregates">Aggregates</a> for the
+a group. See <a href="/docs/fennecql-aggregates#aggregates">Aggregates</a> for the
 rules.</p>
 
-<p>Every FenecQL block on this page is run, statement by statement, by a
-test (<code>crates/fenec-core/tests/analytics_docs.rs</code>), and each
+<p>Every FennecQL block on this page is run, statement by statement, by a
+test (<code>crates/fennec-core/tests/analytics_docs.rs</code>), and each
 <code>-- → x</code> is the first value of the first row it checks. The
 costs are <code>make analytics-bench</code> on an M1 Air, in process, over
 a million events and a million ticks; over HTTP a request adds its round
@@ -32,7 +32,7 @@ visitors</a> among them, are recipes of <a href="/docs/redis">Instead of
 Redis</a>.</p>
 
 <p>These recipes make a whole application in
-<a href="https://github.com/fenecdb/fenecdb/tree/main/examples/analytics">examples/analytics</a>:
+<a href="https://github.com/fennec-db/fennecdb/tree/main/examples/analytics">examples/analytics</a>:
 a 572-byte tracker, beacons written once however often they are sent,
 rollups kept from the change stream exactly once, a dashboard that reads
 the raw events for a day and the rollups past it, a site a tenant, and
@@ -45,7 +45,7 @@ scores and measurements at ten million events.</p>
 or <code>@ttl(30d)</code>, which is an ordered index whose rows expire — so
 a time range reads only its rows.</p>
 
-<pre data-lang="fenecql">create collection events (user int @hash, name text @hash, at timestamp @sorted, country text, props json)
+<pre data-lang="fennecql">create collection events (user int @hash, name text @hash, at timestamp @sorted, country text, props json)
 put events [{user: 1, name: "view", at: "2026-05-03T09:00:10Z", country: "TR", props: {plan: "pro", v: 3}}, {user: 1, name: "cart", at: "2026-05-03T09:02:00Z", country: "TR", props: {plan: "pro", v: 1}}, {user: 1, name: "buy", at: "2026-05-03T09:05:30Z", country: "TR", props: {plan: "pro", v: 9}}, {user: 2, name: "view", at: "2026-05-03T09:01:00Z", country: "US", props: {plan: "free", v: 2}}, {user: 2, name: "view", at: "2026-05-03T10:15:00Z", country: "US", props: {plan: "free", v: 2}}, {user: 3, name: "view", at: "2026-05-03T10:20:00Z", country: "DE", props: {plan: "free", v: 1}}, {user: 3, name: "buy", at: "2026-05-03T10:40:00Z", country: "DE", props: {plan: "free", v: 5}}, {user: 1, name: "view", at: "2026-05-04T08:00:00Z", country: "TR", props: {plan: "pro", v: 1}}]
 </pre>
 
@@ -57,7 +57,7 @@ timestamp to the interval it falls in, in UTC — <code>ms</code>,
 epoch, <code>w</code> from a Monday, <code>mo</code> and <code>y</code> by
 the calendar. Name it with <code>as</code> and group by the name.</p>
 
-<pre data-lang="fenecql">get events select bucket(at, 1h) as hour, count(*) as n where at >= "2026-05-03" and at < "2026-05-04" group hour   -- → "2026-05-03T09:00:00Z"
+<pre data-lang="fennecql">get events select bucket(at, 1h) as hour, count(*) as n where at >= "2026-05-03" and at < "2026-05-04" group hour   -- → "2026-05-03T09:00:00Z"
 get events select count(*) as n, bucket(at, 1h) as hour where at >= "2026-05-03" and at < "2026-05-04" group hour   -- → 4: the first hour's
 get events select count(*) as n, name, bucket(at, 1d) as day group name, day order n desc, name   -- → 4: views on the 3rd
 get events select sum(props.v) as v, props.plan group props.plan order v desc   -- → 14: a json path summed
@@ -76,7 +76,7 @@ before the raw rows go.</p>
 clock — an IANA name, or an offset written out. A day then starts at local
 midnight: Istanbul's 3rd of May began at 21:00 UTC on the 2nd.</p>
 
-<pre data-lang="fenecql">get events select bucket(at, 1d, "Europe/Istanbul") as day, count(*) as n group day order day   -- → "2026-05-02T21:00:00Z"
+<pre data-lang="fennecql">get events select bucket(at, 1d, "Europe/Istanbul") as day, count(*) as n group day order day   -- → "2026-05-02T21:00:00Z"
 get events select count(*) as n, bucket(at, 1d, "Europe/Istanbul") as day group day order day   -- → 7: the 3rd in Istanbul
 get events select count(*) as n, bucket(at, 1h, "+05:30") as hour where at < "2026-05-04" group hour order hour   -- → 4: 14:00 to 15:00 in India
 </pre>
@@ -86,7 +86,7 @@ an offset written into the statement — <code>bucket(at + 10800000,
 1d)</code> — cannot follow it. Berlin's clocks went back on the 25th of
 October 2026, so that day holds the hour its clock showed twice.</p>
 
-<pre data-lang="fenecql">create collection beats (at timestamp @sorted)
+<pre data-lang="fennecql">create collection beats (at timestamp @sorted)
 put beats [{at: "2026-10-24T22:30:00Z"}, {at: "2026-10-25T22:30:00Z"}, {at: "2026-10-26T00:30:00Z"}]
 get beats select bucket(at, 1d, "Europe/Berlin") as day, count(*) as n group day order day   -- → "2026-10-24T22:00:00Z"
 get beats select count(*) as n, bucket(at, 1d, "Europe/Berlin") as day group day order day   -- → 2: one day of 25 hours
@@ -109,7 +109,7 @@ one statement for a page of keys, the set reading the row it finds and
 <code>put hourly $1 if absent else set {n: n + new.n}</code>, its text is
 the same whatever the page holds.</p>
 
-<pre data-lang="fenecql">create collection hourly (key text @unique, n int)
+<pre data-lang="fennecql">create collection hourly (key text @unique, n int)
 put hourly [{key: "2026-05-03T09|view", n: 2}, {key: "2026-05-03T09|buy", n: 1}] if absent else set {n: n + new.n}   -- → 2: made
 put hourly [{key: "2026-05-03T09|view", n: 3}, {key: "2026-05-03T10|view", n: 2}] if absent else set {n: n + new.n}   -- → 2: one added to, one made
 get hourly select n where key = "2026-05-03T09|view"   -- → 5
@@ -125,7 +125,7 @@ old ones over took 1.49 ms and a round trip more.</p>
 up to a million values a query — about 70 MB — and refuses a query past
 that rather than count short.</p>
 
-<pre data-lang="fenecql">get events select count(distinct user) as users, bucket(at, 1d) as day group day   -- → 3: on the 3rd
+<pre data-lang="fennecql">get events select count(distinct user) as users, bucket(at, 1d) as day group day   -- → 3: on the 3rd
 get events select count(distinct user) where at >= "2026-05-04"   -- → 1
 get events select user, count(distinct bucket(at, 1d)) as days group user order days desc, user   -- → 1: active two days
 </pre>
@@ -145,7 +145,7 @@ counts added, which counts a user of two days twice. Sketches are the same
 bytes wherever made, the browser's or a server's. A query's sketches are
 held to 64 MB, 4 096 dense groups, and refused past that.</p>
 
-<pre data-lang="fenecql">get events select approx_count_distinct(user) as users   -- → 3
+<pre data-lang="fennecql">get events select approx_count_distinct(user) as users   -- → 3
 get events select hll_estimate(hll_accumulate(user)) as users where at >= "2026-05-04"   -- → 1
 get events select bucket(at, 1d) as day, hll_accumulate(user) as users group day   -- → "2026-05-03T00:00:00Z"
 </pre>
@@ -159,19 +159,19 @@ root mean square is 0.77%.</p>
 <p>How many users reached each step, and how many of the viewers
 bought:</p>
 
-<pre data-lang="fenecql">get events select count(distinct user) as users, name where name in ["view", "cart", "buy"] group name order users desc   -- → 3: viewed
+<pre data-lang="fennecql">get events select count(distinct user) as users, name where name in ["view", "cart", "buy"] group name order users desc   -- → 3: viewed
 get events select count(distinct user) where name = "buy" and user in (get events select user where name = "view")   -- → 2: viewed and bought
 </pre>
 
 <p>The inner <code>get</code> is a list of up to 100 000 values; past that
 ask from the users' side with <code>lookup … required</code> (<a
-href="/docs/fenecql-lookup#subqueries">Subqueries</a>). An ordered funnel — a
+href="/docs/fennecql-lookup#subqueries">Subqueries</a>). An ordered funnel — a
 view, then a buy within the hour — compares each user's first of each:
 <code>having</code> keeps the groups a condition holds for, over their
 keys, the list's columns by name and any aggregate, and
 <code>count</code> after it counts them rather than send a row a user.</p>
 
-<pre data-lang="fenecql">get events select user, min(case when name = "view" then at end) as viewed, min(case when name = "buy" then at end) as bought where name in ["view", "buy"] group user having bought >= viewed and bought <= viewed + 3600000 count   -- → 2
+<pre data-lang="fennecql">get events select user, min(case when name = "view" then at end) as viewed, min(case when name = "buy" then at end) as bought where name in ["view", "buy"] group user having bought >= viewed and bought <= viewed + 3600000 count   -- → 2
 get events select user, count(*) as n group user having n >= 3 order n desc   -- → 1
 </pre>
 
@@ -181,7 +181,7 @@ get events select user, count(*) as n group user having n >= 3 order n desc   --
 a group of two keys. The table of cohorts by days since is folded from
 these two answers on the client.</p>
 
-<pre data-lang="fenecql">get events select user, min(bucket(at, 1d)) as cohort group user   -- → 1
+<pre data-lang="fennecql">get events select user, min(bucket(at, 1d)) as cohort group user   -- → 1
 get events select user, bucket(at, 1d) as day, count(*) as events group user, day   -- → 1
 </pre>
 
@@ -190,7 +190,7 @@ get events select user, bucket(at, 1d) as day, count(*) as events group user, da
 <p>Ticks, one row each, written as they come — not always in time
 order.</p>
 
-<pre data-lang="fenecql">create collection ticks (sym text @hash, at timestamp @sorted, px float, qty int)
+<pre data-lang="fennecql">create collection ticks (sym text @hash, at timestamp @sorted, px float, qty int)
 put ticks [{sym: "S07", at: "2026-05-03T10:00:05Z", px: 100.25, qty: 10}, {sym: "S07", at: "2026-05-03T10:00:40Z", px: 101.5, qty: 5}, {sym: "S07", at: "2026-05-03T10:00:20Z", px: 99.75, qty: 20}, {sym: "S07", at: "2026-05-03T10:01:10Z", px: 102.25, qty: 1}, {sym: "S07", at: "2026-05-03T10:01:50Z", px: 101.75, qty: 4}, {sym: "S08", at: "2026-05-03T10:00:30Z", px: 50.5, qty: 100}, {sym: "S08", at: "2026-05-03T10:01:30Z", px: 51.25, qty: 50}]
 </pre>
 
@@ -202,7 +202,7 @@ were written in; a tie in <code>at</code> goes to the row written first,
 and <code>last</code>'s to the row written last. Without <code>by</code>
 they take the order the rows were written in.</p>
 
-<pre data-lang="fenecql">get ticks select bucket(at, 1m) as bar, first(px by at) as open, max(px) as high, min(px) as low, last(px by at) as close, sum(qty) as volume where sym = "S07" group bar   -- → "2026-05-03T10:00:00Z"
+<pre data-lang="fennecql">get ticks select bucket(at, 1m) as bar, first(px by at) as open, max(px) as high, min(px) as low, last(px by at) as close, sum(qty) as volume where sym = "S07" group bar   -- → "2026-05-03T10:00:00Z"
 get ticks select first(px by at) as open, bucket(at, 1m) as bar where sym = "S07" group bar   -- → 100.25
 get ticks select last(px by at) as close, bucket(at, 1m) as bar where sym = "S07" group bar   -- → 101.5
 get ticks select max(px) - min(px) as range where sym = "S07"   -- → 2.5
@@ -217,7 +217,7 @@ queries a bar, 120 for the hour: 195 ms in process, 278 over HTTP.</p>
 <p>The volume-weighted average price is an expression over two
 aggregates:</p>
 
-<pre data-lang="fenecql">get ticks select sum(px * qty) / sum(qty) as vwap, sym group sym order sym   -- → 100.35625
+<pre data-lang="fennecql">get ticks select sum(px * qty) / sum(qty) as vwap, sym group sym order sym   -- → 100.35625
 get ticks select sym, sum(px * qty) as notional, sum(qty) as volume group sym order notional desc   -- → "S08"
 </pre>
 
@@ -227,7 +227,7 @@ over the wire.</p>
 
 <h3 id="latest">The latest price</h3>
 
-<pre data-lang="fenecql">get ticks select last(px by at) as px, sym group sym order sym   -- → 101.75
+<pre data-lang="fennecql">get ticks select last(px by at) as px, sym group sym order sym   -- → 101.75
 </pre>
 
 <p>Every symbol's, a scan of the million ticks: 108 ms, against 129 for
@@ -235,7 +235,7 @@ a query a symbol (<code>where sym = $1 order at desc limit 1</code>, each
 sorting its symbol's 20 000 rows). A page that shows it all the time
 keeps a row a symbol instead:</p>
 
-<pre data-lang="fenecql">create collection quotes (sym text @unique, px float, high float, low float)
+<pre data-lang="fennecql">create collection quotes (sym text @unique, px float, high float, low float)
 put quotes {sym: "S07", px: 101.75, high: 101.75, low: 101.75} if absent   -- → 1
 set quotes {px: 99.5, high: greatest(high, 99.5), low: least(low, 99.5)} where sym = "S07"   -- → 1
 get quotes select low where sym = "S07"   -- → 99.5

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Write the Homebrew formula of a fenecdb release.
+"""Write the Homebrew formula of a fennecdb release.
 
-    tools/homebrew-formula.py --version 0.1.11 --sums SHA256SUMS -o Formula/fenecdb.rb
-    tools/homebrew-formula.py --check packaging/homebrew/Formula/fenecdb.rb
-    tools/homebrew-formula.py --verify Formula/fenecdb.rb
+    tools/homebrew-formula.py --version 0.1.11 --sums SHA256SUMS -o Formula/fennecdb.rb
+    tools/homebrew-formula.py --check packaging/homebrew/Formula/fennecdb.rb
+    tools/homebrew-formula.py --verify Formula/fennecdb.rb
 
-The formula installs `fenec` and `fenec-server` from the release's tarballs
-(`fenec-vX.Y.Z-<target>.tar.gz`, release.yml) and names each one's SHA-256,
+The formula installs `fennec` and `fennec-server` from the release's tarballs
+(`fennec-vX.Y.Z-<target>.tar.gz`, release.yml) and names each one's SHA-256,
 read from the release's own `SHA256SUMS`. The release job (packages.yml,
 `homebrew`) and a maintainer by hand both come through here, so the formula
 in the tap is never typed. Two checks hold a copy, and neither is enough
@@ -26,7 +26,7 @@ import re
 import sys
 import urllib.request
 
-REPO = "fenecdb/fenecdb"
+REPO = "fennec-db/fennecdb"
 
 # (Homebrew's block, target triple in the tarball's name), in the order the
 # formula lists them.
@@ -45,8 +45,8 @@ TEMPLATE = """\
 # Written by tools/homebrew-formula.py in {repo} from release v{version}'s
 # SHA256SUMS, not by hand: `--check` writes it again from the same release and
 # compares, and `--verify` holds its sums to the release's files.
-class Fenecdb < Formula
-  desc "Embedded database with its own query language, FenecQL"
+class Fennecdb < Formula
+  desc "Embedded database with its own query language, FennecQL"
   homepage "https://fenecdb.com"
   license "Apache-2.0"
 
@@ -57,12 +57,12 @@ class Fenecdb < Formula
 
 {blocks}
   def install
-    bin.install "fenec", "fenec-server"
+    bin.install "fennec", "fennec-server"
   end
 
   test do
 {test}    script = "create collection t (n int)\\nput t {{id: 1, n: 7}}\\nget t\\n"
-    assert_match(/^1\\s+7$/, pipe_output("#{{bin}}/fenec", script))
+    assert_match(/^1\\s+7$/, pipe_output("#{{bin}}/fennec", script))
   end
 end
 """
@@ -71,8 +71,8 @@ end
 # `<name> <version>` on stdout and exits 0. The formula of a release before it
 # -- whichever of those the tap holds, or one written again for an older tag
 # -- must still pass `brew test`, so it reads the version where those
-# binaries put it, the first line of `fenec-server --help`, on stderr;
-# `fenec --version` there is an unknown option, and that formula comes out as
+# binaries put it, the first line of `fennec-server --help`, on stderr;
+# `fennec --version` there is an unknown option, and that formula comes out as
 # it did before the flag. tools/linux-packages-check.sh cuts over at the same
 # release.
 VERSION_FLAG = (0, 1, 13)
@@ -81,14 +81,14 @@ VERSION_FLAG = (0, 1, 13)
 TEST_VERSION_FLAG = """\
     # Each binary names its version on stdout, and the shell is run on a
     # script, in memory.
-    assert_equal "fenec #{version}", shell_output("#{bin}/fenec --version").chomp
-    assert_equal "fenec-server #{version}", shell_output("#{bin}/fenec-server --version").chomp
+    assert_equal "fennec #{version}", shell_output("#{bin}/fennec --version").chomp
+    assert_equal "fennec-server #{version}", shell_output("#{bin}/fennec-server --version").chomp
 """
 
 TEST_HELP_LINE = """\
-    # Neither binary has a version flag: fenec-server names its version on the
+    # Neither binary has a version flag: fennec-server names its version on the
     # first line of --help, and the shell is run on a script, in memory.
-    assert_match "fenec-server #{version}", shell_output("#{bin}/fenec-server --help 2>&1")
+    assert_match "fennec-server #{version}", shell_output("#{bin}/fennec-server --help 2>&1")
 """
 
 
@@ -107,7 +107,7 @@ def parse_sums(text):
 
 
 def tarball(version, target):
-    return f"fenec-v{version}-{target}.tar.gz"
+    return f"fennec-v{version}-{target}.tar.gz"
 
 
 def render(version, sums, repo=REPO):

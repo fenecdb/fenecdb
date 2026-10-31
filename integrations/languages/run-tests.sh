@@ -1,11 +1,11 @@
 #!/bin/sh
 # Each language's example on the docs' Your language page, run against a
-# real fenec-server over HTTP: Python (the fenecdb client), Java
+# real fennec-server over HTTP: Python (the fennecdb client), Java
 # (java.net.http), PHP (curl) and Ruby (Net::HTTP) from containers of their
 # own, as integrations/python runs its stores -- a runner need not carry the
 # toolchains, and every machine runs the same -- then JavaScript (fetch, and
-# @fenecdb/web's client) with the Node, Go (net/http, and the fenecdb SDK
-# in integrations/go) with the Go, C# (HttpClient, and the FenecDb SDK in
+# @fennecdb/web's client) with the Node, Go (net/http, and the fennecdb SDK
+# in integrations/go) with the Go, C# (HttpClient, and the FennecDb SDK in
 # integrations/dotnet) with the .NET and Rust (ureq) with the Rust on the
 # machine.
 # The Quickstart's programs (quickstart/) are the files its fourth step
@@ -26,7 +26,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
 cargo=${CARGO:-cargo}
 [ -x "$HOME/.cargo/bin/cargo" ] && cargo="$HOME/.cargo/bin/cargo"
-"$cargo" build -q -p fenec-server --manifest-path "$root/Cargo.toml"
+"$cargo" build -q -p fennec-server --manifest-path "$root/Cargo.toml"
 
 dir=$(mktemp -d)
 port=
@@ -42,13 +42,13 @@ trap 'stop; rm -rf "$dir"' EXIT INT TERM
 serve() {
     rm -f "$dir/server.log"
     if [ "${2:-}" = open ]; then
-        "$root/target/debug/fenec-server" --file "$dir/$1.fenec" \
+        "$root/target/debug/fennec-server" --file "$dir/$1.fennec" \
             --http 127.0.0.1:0 2>"$dir/server.log" &
     elif [ "${2:-}" = insecure ]; then
-        "$root/target/debug/fenec-server" --file "$dir/$1.fenec" \
+        "$root/target/debug/fennec-server" --file "$dir/$1.fennec" \
             --http 0.0.0.0:0 --insecure 2>"$dir/server.log" &
     else
-        "$root/target/debug/fenec-server" --file "$dir/$1.fenec" \
+        "$root/target/debug/fennec-server" --file "$dir/$1.fennec" \
             --http 0.0.0.0:0 --http-token "$token" 2>"$dir/server.log" &
     fi
     server=$!
@@ -80,9 +80,9 @@ container() {
     image=$1
     src=$2
     shift 2
-    docker run --rm -v "$src:/src:ro" -v "$root/integrations/python:/fenecdb:ro" \
+    docker run --rm -v "$src:/src:ro" -v "$root/integrations/python:/fennecdb:ro" \
         --add-host=host.docker.internal:host-gateway \
-        -e FENEC_URL="http://host.docker.internal:$port" -e FENEC_TOKEN="$token" \
+        -e FENNEC_URL="http://host.docker.internal:$port" -e FENNEC_TOKEN="$token" \
         "$image" sh -c "cp -r /src /work && cd /work && $*"
 }
 
@@ -119,8 +119,8 @@ quickstart_tests() {
         qs_copy "$lang" "http://host.docker.internal:$port"
         case $lang in
             python) out=$(container python:3.13-slim "$dir/qs-python" \
-                "cp -r /fenecdb /tmp/fenecdb &&
-                 pip install -q --root-user-action=ignore --disable-pip-version-check /tmp/fenecdb &&
+                "cp -r /fennecdb /tmp/fennecdb &&
+                 pip install -q --root-user-action=ignore --disable-pip-version-check /tmp/fennecdb &&
                  python3 notes.py") ;;
             java) out=$(container eclipse-temurin:21 "$dir/qs-java" "java Notes.java") ;;
             php) out=$(container php:8.3-cli "$dir/qs-php" "php notes.php") ;;
@@ -178,8 +178,8 @@ fi
 
 serve python
 container python:3.13-slim "$here/python" \
-    "cp -r /fenecdb /tmp/fenecdb &&
-     pip install -q --root-user-action=ignore --disable-pip-version-check /tmp/fenecdb &&
+    "cp -r /fennecdb /tmp/fennecdb &&
+     pip install -q --root-user-action=ignore --disable-pip-version-check /tmp/fennecdb &&
      python search.py"
 stop
 
@@ -197,10 +197,10 @@ stop
 
 if command -v node >/dev/null 2>&1; then
     serve javascript
-    FENEC_URL="$local_url" FENEC_TOKEN="$token" node "$here/javascript/search.mjs"
+    FENNEC_URL="$local_url" FENNEC_TOKEN="$token" node "$here/javascript/search.mjs"
     stop
     serve javascript-client
-    FENEC_URL="$local_url" FENEC_TOKEN="$token" node "$here/javascript/client.mjs"
+    FENNEC_URL="$local_url" FENNEC_TOKEN="$token" node "$here/javascript/client.mjs"
     stop
 else
     missing node "JavaScript's example"
@@ -208,10 +208,10 @@ fi
 
 if command -v go >/dev/null 2>&1; then
     serve go
-    (cd "$here/go" && FENEC_URL="$local_url" FENEC_TOKEN="$token" go run .)
+    (cd "$here/go" && FENNEC_URL="$local_url" FENNEC_TOKEN="$token" go run .)
     stop
     serve go-sdk
-    (cd "$here/go-sdk" && FENEC_URL="$local_url" FENEC_TOKEN="$token" go run .)
+    (cd "$here/go-sdk" && FENNEC_URL="$local_url" FENNEC_TOKEN="$token" go run .)
     stop
 else
     missing go "Go's example"
@@ -219,11 +219,11 @@ fi
 
 if command -v dotnet >/dev/null 2>&1; then
     serve dotnet
-    (cd "$here/dotnet" && FENEC_URL="$local_url" FENEC_TOKEN="$token" \
+    (cd "$here/dotnet" && FENNEC_URL="$local_url" FENNEC_TOKEN="$token" \
         dotnet run -c Release)
     stop
     serve dotnet-sdk
-    (cd "$here/dotnet-sdk" && FENEC_URL="$local_url" FENEC_TOKEN="$token" \
+    (cd "$here/dotnet-sdk" && FENNEC_URL="$local_url" FENNEC_TOKEN="$token" \
         dotnet run -c Release)
     stop
 else
@@ -231,7 +231,7 @@ else
 fi
 
 serve rust
-(cd "$here/rust" && FENEC_URL="$local_url" FENEC_TOKEN="$token" "$cargo" run -q)
+(cd "$here/rust" && FENNEC_URL="$local_url" FENNEC_TOKEN="$token" "$cargo" run -q)
 stop
 
 # The docs against these programs: the statements each HTTP tab of Your

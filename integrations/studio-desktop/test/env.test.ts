@@ -17,8 +17,8 @@ test("the server gets the few variables a process needs and the token, and nothi
 			// What a shell that launched the app may have exported, and what the server reads.
 			OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector:4318",
 			OTEL_SERVICE_NAME: "x",
-			FENEC_JWT_SECRET: "leak",
-			FENEC_HTTP_TOKEN: "an old one",
+			FENNEC_JWT_SECRET: "leak",
+			FENNEC_HTTP_TOKEN: "an old one",
 			AWS_SECRET_ACCESS_KEY: "leak",
 			ELECTROBUN_APPLEAPIKEYPATH: "/tmp/key.p8",
 			GITHUB_TOKEN: "leak",
@@ -26,21 +26,21 @@ test("the server gets the few variables a process needs and the token, and nothi
 		},
 		"the token",
 	);
-	assert.deepEqual(Object.keys(given).sort(), ["FENEC_HTTP_TOKEN", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "LOGNAME", "PATH", "TMPDIR", "TZ", "USER"]);
-	assert.equal(given["FENEC_HTTP_TOKEN"], "the token", "the app's token, not one that was in the environment");
+	assert.deepEqual(Object.keys(given).sort(), ["FENNEC_HTTP_TOKEN", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "LOGNAME", "PATH", "TMPDIR", "TZ", "USER"]);
+	assert.equal(given["FENNEC_HTTP_TOKEN"], "the token", "the app's token, not one that was in the environment");
 });
 
 test("a variable that is not set is not passed as the text 'undefined'", () => {
-	assert.deepEqual(serverEnvironment({ HOME: undefined, PATH: "/bin" }, "t"), { PATH: "/bin", FENEC_HTTP_TOKEN: "t" });
+	assert.deepEqual(serverEnvironment({ HOME: undefined, PATH: "/bin" }, "t"), { PATH: "/bin", FENNEC_HTTP_TOKEN: "t" });
 });
 
 test("the replication token a backup asks with is the app's, and none is none", () => {
-	const env = { PATH: "/bin", FENEC_REPLICATION_TOKEN: "an old one", FENEC_KEY_FILE: "/tmp/leak.key" };
-	assert.deepEqual(serverEnvironment(env, "t", "r"), { PATH: "/bin", FENEC_HTTP_TOKEN: "t", FENEC_REPLICATION_TOKEN: "r" });
+	const env = { PATH: "/bin", FENNEC_REPLICATION_TOKEN: "an old one", FENNEC_KEY_FILE: "/tmp/leak.key" };
+	assert.deepEqual(serverEnvironment(env, "t", "r"), { PATH: "/bin", FENNEC_HTTP_TOKEN: "t", FENNEC_REPLICATION_TOKEN: "r" });
 	// Under --sync off the server refuses one, so it is given none, not the shell's.
-	assert.deepEqual(serverEnvironment(env, "t", null), { PATH: "/bin", FENEC_HTTP_TOKEN: "t" });
+	assert.deepEqual(serverEnvironment(env, "t", null), { PATH: "/bin", FENNEC_HTTP_TOKEN: "t" });
 	// The shell is given the allowlist and what is named, and never a key file of the app's environment.
-	assert.deepEqual(childEnvironment(env, { FENEC_REPLICATION_TOKEN: "r" }), { PATH: "/bin", FENEC_REPLICATION_TOKEN: "r" });
+	assert.deepEqual(childEnvironment(env, { FENNEC_REPLICATION_TOKEN: "r" }), { PATH: "/bin", FENNEC_REPLICATION_TOKEN: "r" });
 	assert.deepEqual(childEnvironment(env, {}), { PATH: "/bin" });
-	assert.deepEqual(childEnvironment(env, { FENEC_REPLICATION_TOKEN: "" }), { PATH: "/bin" }, "an empty secret is none, as the shell reads it");
+	assert.deepEqual(childEnvironment(env, { FENNEC_REPLICATION_TOKEN: "" }), { PATH: "/bin" }, "an empty secret is none, as the shell reads it");
 });

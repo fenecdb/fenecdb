@@ -1,10 +1,10 @@
-// The catalog's reads: what each page asks fenec-server, through the query
-// builder of `@fenecdb/web/client`. Every value a shopper types or clicks
+// The catalog's reads: what each page asks fennec-server, through the query
+// builder of `@fennecdb/web/client`. Every value a shopper types or clicks
 // goes in as a parameter ($1, $2, ...), never into the text, so a search
 // for `"; del products; --` is a search for those characters.
 import 'server-only';
 import { cache } from 'react';
-import { and, or } from '@fenecdb/web/client';
+import { and, or } from '@fennecdb/web/client';
 import { db } from './db';
 import { products, categories, inventory } from './schema';
 import { PRICE_BANDS } from './generate';

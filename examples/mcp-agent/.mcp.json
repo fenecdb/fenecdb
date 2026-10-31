@@ -1,9 +1,9 @@
 {
   "mcpServers": {
-    "fenecdb": {
+    "fennecdb": {
       "type": "stdio",
-      "command": "fenec",
-      "args": ["mcp", "--file", "agent.fenec", "--memory", "memories"]
+      "command": "fennec",
+      "args": ["mcp", "--file", "agent.fennec", "--memory", "memories"]
     }
   }
 }

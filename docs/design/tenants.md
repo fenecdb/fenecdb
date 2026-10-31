@@ -4,7 +4,7 @@ The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *Tenant
 
 ## Scaling out by tenant
 
-**Scaling out is by tenant, one file each** (`fenec-server --dir`, `fenec-shard`,
+**Scaling out is by tenant, one file each** (`fennec-server --dir`, `fennec-shard`,
 whose directory replicates to a standby router like any other file, the
 standby's maps catching up from the change ring -- 4 us a change at 100 000
 tenants against 38 ms reading them all again under the router's write lock,
@@ -18,7 +18,7 @@ a delete between two of them is seen), never from the query, so tenants
 cannot share a file -- they
 would read each other's rows. A file each also keeps ids, the change sequence,
 BM25 statistics and `lookup` per tenant, which is why the router forwards bytes
-and never parses a query. The registry (`fenec-http/src/tenants.rs`) opens a
+and never parses a query. The registry (`fennec-http/src/tenants.rs`) opens a
 file only under its lock after checking the open map, and closes one only when
 the map holds the last `Arc` -- a second `Database` over one file corrupts it
 exactly as a second process would. `freeze` takes a per-tenant gate
@@ -45,8 +45,8 @@ the database holds the file's `<file>.lock`, let go only as it drops, and a
 close meanwhile had every request's open wait 5 s for it and answer 500
 (`docs/design/engine.md`, single writer). The router cannot tell a node that is gone from one it cannot reach,
 and guessing makes two primaries, so it promotes on its own only under a
-lease (`fenec-shard --auto-failover`, nodes `fenec-server --dir --lease`;
-`fenec-shard/src/lease.rs`, `fenec-http/src/lease.rs`): a node stops
+lease (`fennec-shard --auto-failover`, nodes `fennec-server --dir --lease`;
+`fennec-shard/src/lease.rs`, `fennec-http/src/lease.rs`): a node stops
 writing as its lease lapses by its own clock -- measured from a moment the
 router acknowledged, where the router measures from when that answer came
 back, and waits a tenth more -- and only then are its tenants promoted.
@@ -55,7 +55,7 @@ process, `Leases::number`) and names the newest grant whose answer came
 back within the pool's third of a lease (`acked`); the node keeps when it
 answered each of its last 16 (`State::answered`, cleared as the holder
 changes) and runs its lease from the one acknowledged, never from a
-grant's reading (`fenec_http::lease::Numbered`, `grant_from`). Run from the
+grant's reading (`fennec_http::lease::Numbered`, `grant_from`). Run from the
 reading, a grant the router gave up on (`Answer::Silent`) and the node read
 late -- held on its way, or left unread by a node stopped or slow -- was a
 whole lease after the router had failed the node over, both copies
@@ -129,7 +129,7 @@ and the append, a suspend, or a durability that outlasted the lease -- a
 cut stream waits out `SENT_WAIT`, a second, where a lease's tenth is half
 of one at the default -- had it answered 200 and lost in the failover. It
 is answered 500 with `"outcome": "unknown"`, and `seq` and `history` in the
-body rather than in `Fenec-Seq`, which a client would take as its own (Go's
+body rather than in `Fennec-Seq`, which a client would take as its own (Go's
 and .NET's code `outcome_unknown`, JavaScript's and Python's `outcome`); a
 keyed one is told to send it again with its key, which the lapsed node
 refuses before the key is looked up and the tenant settled replays or
@@ -251,8 +251,8 @@ lease runs from its tenants' creates' grants: 3.9-4.1 s against 3.9-4.3). A
 node's first create with a schema, its second grant sent at once, took 8.8
 ms either way, eight a side; the router's added p50 stayed 20.5 and 20.6 us
 against 20.5 in two sets of sixteen ABBA rounds (per round -0.3 to +0.4,
-one +1.3; nothing on the path changed), and `fenec-shard`'s `__text` grew 64
-bytes, `fenec-server`'s 2.3 KB. The fence is
+one +1.3; nothing on the path changed), and `fennec-shard`'s `__text` grew 64
+bytes, `fennec-server`'s 2.3 KB. The fence is
 the engine's (`Database::set_fence`), asked in `commit` as a block lands and
 in `may_write` before a schema change or a maintenance, so every write path
 honours it; asked as a lone write started too, it took a `put` from 827 to
@@ -330,7 +330,7 @@ halts the follower before it writes the file again: `mark_heard`,
 `heard_since_told`; renamed and removed durably, `fs::sync_dir`, or a power
 loss could bring back the file before), since the history alone goes stale: a primary's file
 restored in place to before that failover (`DELETE` and `PUT .../file`,
-`fenec restore --tenants`) keeps its lineage and lacks the fork, so does
+`fennec restore --tenants`) keeps its lineage and lacks the fork, so does
 every copy that took it, and every failover after was refused, on a lease
 for good (the review's `restore_trap.rs`). Kept across a restart, where
 `ready` is not: a node restarted between a follow and its hello still
@@ -355,7 +355,7 @@ the tenant into, on main -- and runs again for those it passed over
 (`repair_later`, 2 s doubling to 60, eight times): a repair runs only when
 a node failed over answers again or an operator asks, so a primary slow at
 the one look left its tenant with no replica until then. A name is
-looked up within the call's own bound (`fenec_http::dial`, the
+looked up within the call's own bound (`fennec_http::dial`, the
 router's connections below). In deploy-kit's drill at a lease of 2 s, the
 routers' unknown names sent to a resolver that never answers, us-a's
 failover was done 2.7-2.8 s after its kill in three runs against main's
@@ -397,7 +397,7 @@ last renewal), its 10 tenants took writes again 1.27 to 1.36 s after. A
 write is on the standby 0.089 ms after the primary answered it (p99 0.448),
 and 20 tenants failed over in 63.5 to 79 ms, the medians of three rounds
 (`make shard-bench`). A standby waits
-idle and takes all of a node at once, so with `fenec-shard --replicas` a
+idle and takes all of a node at once, so with `fennec-shard --replicas` a
 tenant on a node in no pair gets a replica of its own instead (the
 `replicas` collection): on the node holding the fewest replicas of its node,
 then the fewest in all -- the fewest in all alone had every tenant of a node
@@ -415,7 +415,7 @@ nodes, 10 tenants each: one node's failover took 57 ms, 5 onto each other.
 
 **A replica whose attach failed is tried again, and a file the router left
 on a node is reported** (`Router::replicate`, `repair`, `try_again`,
-`left_on`, `look_at_leftovers`, `directory::Leftover`). With `fenec-shard --replicas`
+`left_on`, `look_at_leftovers`, `directory::Leftover`). With `fennec-shard --replicas`
 a create, a move and a repair each give a tenant its replica on another
 node: the file made there (`PUT /_admin/tenants/<t>`) and told to follow
 the primary (`POST .../follow`). An attach that failed -- the node refused,
@@ -491,8 +491,8 @@ after.
 
 **Such a file is reported, never taken off.** Every repair lists each under
 `left` (`{tenant, node, why}`, said too where its node did not answer the
-look), `fenec_router_files_left` counts them (no label: a tenant's name is
-in no label), and `FenecFilesLeftOnNodes` alerts once the count has held
+look), `fennec_router_files_left` counts them (no label: a tenant's name is
+in no label), and `FennecFilesLeftOnNodes` alerts once the count has held
 half an hour on the router keeping the directory; the RUNBOOK says how to
 look at one and remove it by hand. A repair's look forgets one it finds
 gone -- its node answered the look and lists no such tenant -- or that the
@@ -536,14 +536,14 @@ on a node holding a copy of it makes that copy follow (adoption, above) --
 over a reported file that is the tenant's, of another lineage, the follow
 takes the primary's image. Both predate this branch, and row 47 covers them.
 
-`fenec_router_tenants_unreplicated{region}`, with `--replicas`, counts the
+`fennec_router_tenants_unreplicated{region}`, with `--replicas`, counts the
 tenants with no copy a failover could promote -- no replica of their own and
 no standby on their node (`Directory::uncopied`, one pass at the scrape, as
 `same_zone_copies` is), every region a node names at 0 or not, no tenant
 in a label, the unnamed region unlabelled as `same_zone_copies` sends it --
-and `FenecTenantsWithoutReplica` reads it, its summary naming the region
-where there is one: the rule was the difference of `fenec_router_tenants`
-and `fenec_router_replicas` by router, which counted a paired node's
+and `FennecTenantsWithoutReplica` reads it, its summary naming the region
+where there is one: the rule was the difference of `fennec_router_tenants`
+and `fennec_router_replicas` by router, which counted a paired node's
 tenants, whose copy is the standby's, as missing theirs. A router without
 `--replicas` sends none, its tenants in no pair kept with no copy by design.
 
@@ -613,7 +613,7 @@ against main's 20.75 (20.6-21.8), eight runs a side in ABBA turns at loads
 of 1.8-2.05, the quartets' differences -0.65, 0, -0.2 and -0.35 us; a pass
 before it at loads of 2.2-2.5, other agents' work beside it, had outliers
 on both sides (main 21.8, this 27.7) and medians of 20.75 and 20.7.
-`fenec-shard`'s code grew 25.0 KB (`__text`, aarch64-apple-darwin,
+`fennec-shard`'s code grew 25.0 KB (`__text`, aarch64-apple-darwin,
 `size_report.py --bin`, 2 737.4 -> 2 762.4): the directory's `leftovers`,
 `failed_from` and `uncopied` 5.7 and `write_block` out of line now that two
 call it 3.5, noting a file 4.2 (`left_on` with the directory's write in it,
@@ -621,4 +621,4 @@ call it 3.5, noting a file 4.2 (`left_on` with the directory's write in it,
 `repair_later`'s, the repair's look and the move's notes 5.4 net of where
 inlining moved them (`repair` and `relocate` out of line, `admin` and
 `promote_on` smaller), the rest the delete's and the attach's notes and
-the gauge. `fenec-http`, and so `fenec-server`, is main's to the byte.
+the gauge. `fennec-http`, and so `fennec-server`, is main's to the byte.

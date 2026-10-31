@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { commandShown, DEFAULT_SETTINGS, factsOf, parsePort, serverArgs, servePlan, settingsFrom, snippets, taskPlan, windowPlan } from "../src/bun/serving.ts";
 
-const FILE = "/Users/me/Data/shop.fenec";
+const FILE = "/Users/me/Data/shop.fennec";
 
 test("a window's server: this Mac, any port, the studio, and its stdin watched", () => {
 	assert.deepEqual(serverArgs(windowPlan(FILE, "250")), ["--file", FILE, "--http", "127.0.0.1:0", "--sync", "250", "--studio", "--exit-on-stdin-close"]);
@@ -48,9 +48,9 @@ test("the stream, and the change feed it turns on, only where a backup reads it"
 
 test("the command the sheet shows has its secrets as dots and the home folder as ~", () => {
 	const shown = commandShown(servePlan(FILE, "250", { ...DEFAULT_SETTINGS, port: 8080 }, true), "/Users/me");
-	assert.match(shown, /^FENEC_HTTP_TOKEN=•••• FENEC_REPLICATION_TOKEN=•••• fenec-server --file ~\/Data\/shop\.fenec \\\n {2}--http 127\.0\.0\.1:8080 \\\n {2}--sync 250/);
+	assert.match(shown, /^FENNEC_HTTP_TOKEN=•••• FENNEC_REPLICATION_TOKEN=•••• fennec-server --file ~\/Data\/shop\.fennec \\\n {2}--http 127\.0\.0\.1:8080 \\\n {2}--sync 250/);
 	assert.ok(shown.endsWith("--exit-on-stdin-close"));
-	assert.match(commandShown(servePlan("/Users/me/My Data/it's.fenec", "off", DEFAULT_SETTINGS), "/Users/me"), /^FENEC_HTTP_TOKEN=•••• fenec-server --file '~\/My Data\/it'\\''s\.fenec'/);
+	assert.match(commandShown(servePlan("/Users/me/My Data/it's.fennec", "off", DEFAULT_SETTINGS), "/Users/me"), /^FENNEC_HTTP_TOKEN=•••• fennec-server --file '~\/My Data\/it'\\''s\.fennec'/);
 });
 
 test("a port as typed: empty is any, a number is one, anything else is said", () => {
@@ -74,10 +74,10 @@ test("what a served database's card says", () => {
 test("the snippets an app connects with carry the address and never the token", () => {
 	const s = snippets("http://127.0.0.1:8080", "notes");
 	for (const text of Object.values(s)) assert.ok(text.includes("http://127.0.0.1:8080"), text);
-	assert.match(s.curl, /Bearer \$FENEC_TOKEN/);
+	assert.match(s.curl, /Bearer \$FENNEC_TOKEN/);
 	assert.match(s.curl, /get notes limit 5/);
-	assert.match(s.js, /from '@fenecdb\/web\/client'/);
-	assert.match(s.js, /process\.env\.FENEC_TOKEN/);
-	assert.match(s.py, /from fenecdb import Client/);
-	assert.match(s.env, /^FENEC_URL=http:\/\/127\.0\.0\.1:8080\nFENEC_TOKEN=<copy it from Settings>$/);
+	assert.match(s.js, /from '@fennecdb\/web\/client'/);
+	assert.match(s.js, /process\.env\.FENNEC_TOKEN/);
+	assert.match(s.py, /from fennecdb import Client/);
+	assert.match(s.env, /^FENNEC_URL=http:\/\/127\.0\.0\.1:8080\nFENNEC_TOKEN=<copy it from Settings>$/);
 });

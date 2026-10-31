@@ -1,7 +1,7 @@
 // Runs the scripted checks one after another, each in a process of its own,
 // and says which passed. `make studio-desktop-test` runs it after the unit
 // tests; it needs a window server (a logged-in Mac, or a CI runner's) and
-// the test variant of the app built (FENEC_DESKTOP_TEST_BUILD=1).
+// the test variant of the app built (FENNEC_DESKTOP_TEST_BUILD=1).
 //
 //   node scripts/checks/run.mjs            # all of them
 //   ONLY=files,remote node scripts/checks/run.mjs

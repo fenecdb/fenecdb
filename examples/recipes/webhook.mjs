@@ -1,10 +1,10 @@
 // A webhook for a table, docs/functions: a consumer of the change stream
-// (`fenec-server --cdc`) that POSTs each write it is asked for to a URL as
+// (`fennec-server --cdc`) that POSTs each write it is asked for to a URL as
 // signed JSON, and moves on only when the URL has said yes. The server keeps
 // the consumer's place, so the relay can be stopped, killed or run on another
 // machine and carry on from the last delivery that was answered.
 //
-//   FENEC_URL=... ADMIN_TOKEN=... HOOK_URL=https://... HOOK_SECRET=... node webhook.mjs orders
+//   FENNEC_URL=... ADMIN_TOKEN=... HOOK_URL=https://... HOOK_SECRET=... node webhook.mjs orders
 //
 // What goes out is the change as the stream has it: `put` carries the whole
 // document, every field of it. A receiver is told as much as the stream says,
@@ -47,11 +47,11 @@ const RETRY = (status) => status === 408 || status === 429 || status >= 500;
  * `secrets` is one secret, or two while one is being rotated out.
  */
 export async function relay({
-  fenec, adminToken, url, secrets, collections, ops = ['put', 'del'], shape = 'full', name = 'webhook',
+  fennec, adminToken, url, secrets, collections, ops = ['put', 'del'], shape = 'full', name = 'webhook',
   tries = 5, backoff = 500, wait = 10_000, signal, log = console.log,
 }) {
   const headers = { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' };
-  const server = (path, init) => fetch(`${fenec}${path}`, { headers, ...init });
+  const server = (path, init) => fetch(`${fennec}${path}`, { headers, ...init });
   // Made at every start: a POST makes the consumer (201) and leaves one that
   // exists where it stands (200), so a restart carries on from the last commit.
   const made = await server(`/_changes/consumers/${name}`, { method: 'POST' });
@@ -111,7 +111,7 @@ export async function relay({
     }
     missed = 0;
     if (!page.ok) throw new Error(`/_changes: ${page.status} ${await page.text()}`);
-    const next = Number(page.headers.get('fenec-next'));
+    const next = Number(page.headers.get('fennec-next'));
     for (const line of (await page.text()).split('\n').filter(Boolean)) {
       const change = JSON.parse(line);
       if (!collections.includes(change.collection) || !ops.includes(change.op)) continue;
@@ -132,7 +132,7 @@ if (isMain(import.meta.url)) {
   const env = process.env;
   try {
     await relay({
-      fenec: env.FENEC_URL, adminToken: env.ADMIN_TOKEN, url: env.HOOK_URL,
+      fennec: env.FENNEC_URL, adminToken: env.ADMIN_TOKEN, url: env.HOOK_URL,
       secrets: env.HOOK_SECRET.split(','), // two, comma between, while one is rotated out
       collections: process.argv.slice(2), shape: env.HOOK_SHAPE ?? 'full',
     });

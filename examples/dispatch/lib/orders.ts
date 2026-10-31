@@ -2,7 +2,7 @@
 // policy pins the customer to the token and the order to `ready` -- with
 // the merchant's own reference, which `@unique(merchant, ref)` makes the
 // order's key: sent twice after a timeout, it is one order.
-import { asUser, FenecError, one, rows } from './db';
+import { asUser, FennecError, one, rows } from './db';
 import type { Point } from './city';
 import type { Who } from './tokens';
 import type { Job } from './dispatch';
@@ -37,7 +37,7 @@ export async function placeOrder(who: Who, o: NewOrder): Promise<{ id: number; a
     );
     return { id: made!.id, again: false };
   } catch (e) {
-    if (!(e instanceof FenecError) || e.status !== 409) throw e;
+    if (!(e instanceof FennecError) || e.status !== 409) throw e;
     const kept = await one<{ id: number }>(db, 'get orders select id where merchant = $1 and ref = $2', [o.merchant.code, o.ref]);
     if (!kept) throw e;
     return { id: kept.id, again: true };
@@ -58,7 +58,7 @@ export async function cancel(who: Who, id: number): Promise<boolean> {
     );
     return true;
   } catch (e) {
-    if (e instanceof FenecError && e.status === 412) return false;
+    if (e instanceof FennecError && e.status === 412) return false;
     throw e;
   }
 }

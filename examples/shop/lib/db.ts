@@ -1,25 +1,25 @@
-// How the shop's server reaches fenec-server. Two kinds of token:
+// How the shop's server reaches fennec-server. Two kinds of token:
 //
-// - the server's own (`FENEC_TOKEN`), for the catalog and for checkout,
+// - the server's own (`FENNEC_TOKEN`), for the catalog and for checkout,
 //   whose stock moves across every shopper's orders;
 // - a JSON Web Token minted per shopper (`as(owner)`), for the cart and the
 //   order history. The server holds it to `policy.txt` -- `where owner =
 //   $jwt.sub` -- so a bug here that passed another shopper's id would read
 //   nothing and write nothing: the database refuses, not just this code.
 import 'server-only';
-import { connect, FenecError, type FenecHttp, type SchemaOf } from '@fenecdb/web/client';
+import { connect, FennecError, type FennecHttp, type SchemaOf } from '@fennecdb/web/client';
 import { schema } from './schema';
 import { mint } from './jwt';
 
-type Shop = FenecHttp<SchemaOf<typeof schema>>;
+type Shop = FennecHttp<SchemaOf<typeof schema>>;
 
-export const FENEC_URL = process.env.FENEC_URL ?? 'http://127.0.0.1:8080';
-const ROOT = process.env.FENEC_TOKEN ?? 'shop-dev-token'; // a dev default; never deploy it
+export const FENNEC_URL = process.env.FENNEC_URL ?? 'http://127.0.0.1:8080';
+const ROOT = process.env.FENNEC_TOKEN ?? 'shop-dev-token'; // a dev default; never deploy it
 
 /** The catalog's connection: the server's token, the code's schema checked once. */
 let rootDb: Promise<Shop> | null = null;
 export function db(): Promise<Shop> {
-  rootDb ??= connect(FENEC_URL, { token: ROOT, schema }).catch((e: unknown) => {
+  rootDb ??= connect(FENNEC_URL, { token: ROOT, schema }).catch((e: unknown) => {
     rootDb = null;
     throw e;
   });
@@ -28,7 +28,7 @@ export function db(): Promise<Shop> {
 
 /** A connection that can only reach `owner`'s rows (policy.txt). */
 export function as(owner: string): Shop {
-  return connect<SchemaOf<typeof schema>>(FENEC_URL, { token: tokenFor(owner) });
+  return connect<SchemaOf<typeof schema>>(FENNEC_URL, { token: tokenFor(owner) });
 }
 
 // A token is minted for ten minutes and used for five: the server keeps a
@@ -66,18 +66,18 @@ export interface BatchResult {
  * which line of the order it was.
  */
 export async function batch(statements: Statement[], opts: { key?: string; token?: string } = {}): Promise<BatchResult> {
-  const conn = opts.token ? connect(FENEC_URL, { token: opts.token }) : await db();
+  const conn = opts.token ? connect(FENNEC_URL, { token: opts.token }) : await db();
   try {
     const r = await conn.batch(statements, { idempotencyKey: opts.key });
     return { status: 200, replayed: r.replayed, results: r.results };
   } catch (e) {
-    if (!(e instanceof FenecError) || e.status === undefined) throw e;
+    if (!(e instanceof FennecError) || e.status === undefined) throw e;
     return { status: e.status, replayed: false, results: [], error: e.message, at: e.at };
   }
 }
 
 /** One statement over `/query`, for what the builder cannot say. */
 export async function query<T = Record<string, unknown>>(text: string, params: unknown[] = [], token = ROOT): Promise<T[]> {
-  const conn = token === ROOT ? await db() : connect(FENEC_URL, { token });
+  const conn = token === ROOT ? await db() : connect(FENNEC_URL, { token });
   return (await conn.rows(text, params)) as T[];
 }

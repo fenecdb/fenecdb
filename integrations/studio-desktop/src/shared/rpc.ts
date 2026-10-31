@@ -74,7 +74,7 @@ export type Overview = {
 	checks: Record<string, Check>;
 	open: string[];
 	keychain: string;
-	/** `fenec-server 0.1.12`, the server the app carries. */
+	/** `fennec-server 0.1.12`, the server the app carries. */
 	bundled: string;
 	/** The home folder, which a path under it is shown with as ~. */
 	home: string;
@@ -150,7 +150,7 @@ export type NewDbForm = {
 	/** Empty, or restored from an archive folder of backups. */
 	start: "empty" | "archive";
 	archive?: { dir: string; keyFile: string | null };
-	/** A first collection, written as FenecQL writes one: `notes` and `title text, done bool`. */
+	/** A first collection, written as FennecQL writes one: `notes` and `title text, done bool`. */
 	collection?: { name: string; fields: string };
 	/** Show the serve sheet for it once it is made, rather than a studio window. */
 	serve: boolean;

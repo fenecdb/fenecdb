@@ -4,7 +4,7 @@
 //
 // prints the studio's address and a token of each kind, and stops on
 // Ctrl+C, its directory removed. The studio's files are embedded, so a
-// change to them shows after `cargo build -p fenec-server` and a restart.
+// change to them shows after `cargo build -p fennec-server` and a restart.
 
 import { startServer, seed, jwt, TOKEN } from './harness.mjs';
 

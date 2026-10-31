@@ -1,15 +1,15 @@
 // The database in the page: opened with the schema, restored from
 // IndexedDB, and every write persisted. The page (main.ts) and the smoke
 // test (test/smoke.ts) share it.
-import { Fenec, persist, restore, type SchemaOf } from '@fenecdb/web';
+import { Fennec, persist, restore, type SchemaOf } from '@fennecdb/web';
 import { notes, SEEDS, embed } from './tables.js';
 
-export type Db = Fenec<SchemaOf<{ notes: typeof notes }>>;
+export type Db = Fennec<SchemaOf<{ notes: typeof notes }>>;
 export const KEY = 'notes'; // the IndexedDB key
 
 /** `wasm` is the module's URL in a page, its bytes in Node. */
 export async function open(wasm: string | BufferSource): Promise<Db> {
-  const db = await Fenec.open(wasm, { schema: { notes } });
+  const db = await Fennec.open(wasm, { schema: { notes } });
   // The stored database in its place, checked against the schema; or seeds.
   if (!(await restore(db, KEY))) {
     for (const s of SEEDS) await add(db, s.title, s.body, s.tags, s.done, s.at);

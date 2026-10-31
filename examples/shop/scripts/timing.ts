@@ -1,12 +1,12 @@
 // How long the shop's server takes to answer each kind of page, with the
-// data in fenec-server: one request at a time, from the first byte sent to
+// data in fennec-server: one request at a time, from the first byte sent to
 // the last received, on this machine (no network between). Each page kind
 // is asked 200 times over different addresses -- 30 categories and their
 // pages and filters, 40 searches, 200 products -- after 20 to warm up.
 // A product page is measured twice: made (the first request for it) and
 // kept (incremental static regeneration answering from its cache).
 //
-//   npm run timing            SHOP_URL, FENEC_URL as the tests read them
+//   npm run timing            SHOP_URL, FENNEC_URL as the tests read them
 import { pct, ms, timed } from './stats';
 import { CATEGORIES, COLOURS } from '../lib/catalog-data';
 

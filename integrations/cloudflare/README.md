@@ -1,15 +1,15 @@
-# @fenecdb/cloudflare
+# @fennecdb/cloudflare
 
-fenecdb in a Cloudflare Durable Object. The database lives in the object's
+fennecdb in a Cloudflare Durable Object. The database lives in the object's
 memory and is kept in its storage the way a file would hold it: an image,
 then the writes since. After an eviction or a deploy, the object comes back
 with its database.
 
 ```js
 import { DurableObject } from 'cloudflare:workers';
-import { Fenec } from '@fenecdb/web';
-import { maintain, persist, release, restore, schedule } from '@fenecdb/cloudflare';
-import wasm from '@fenecdb/web/fenec.wasm';
+import { Fennec } from '@fennecdb/web';
+import { maintain, persist, release, restore, schedule } from '@fennecdb/cloudflare';
+import wasm from '@fennecdb/web/fennec.wasm';
 
 export class Tenant extends DurableObject {
   #db = null;
@@ -17,7 +17,7 @@ export class Tenant extends DurableObject {
   db() {
     // Opened once, with every other event held back while it restores.
     return (this.#db ??= this.ctx.blockConcurrencyWhile(async () => {
-      const db = await Fenec.open(wasm);
+      const db = await Fennec.open(wasm);
       await restore(db, this.ctx.storage);
       return db;
     }));
@@ -65,27 +65,27 @@ export class Tenant extends DurableObject {
 }
 ```
 
-One object is one database, as a tenant is one file on a fenec-server node:
+One object is one database, as a tenant is one file on a fennec-server node:
 the object's single thread is the single writer.
 
-- `persist(fenec, storage, { key, piece })` writes the image the first
+- `persist(fennec, storage, { key, piece })` writes the image the first
   time and only the writes since after that, until they outgrow half the
   image (and 64 KiB) and a new image replaces them. It resolves once they
   are durable.
-- `restore(fenec, storage, { key })` loads what `persist` kept, and later
+- `restore(fennec, storage, { key })` loads what `persist` kept, and later
   `persist` calls go on from it.
-- `schedule(fenec, storage, { quiet, every })`, after a write, sets the
-  object's alarm when maintenance has come due, and `maintain(fenec,
+- `schedule(fennec, storage, { quiet, every })`, after a write, sets the
+  object's alarm when maintenance has come due, and `maintain(fennec,
   storage, { grace, every, sweep, min })` is the alarm's work
-  ([Maintenance](#maintenance)). `due(fenec, storage)` says when it next
+  ([Maintenance](#maintenance)). `due(fennec, storage)` says when it next
   has any, for an object that sets its alarm itself.
-- `release(fenec)` lets a database go before the object opens it again:
+- `release(fennec)` lets a database go before the object opens it again:
   nothing it holds is stored after -- one never kept, too, and a `restore`
   into it is refused -- and it resolves once a flush under way has
   settled. A refused `persist`, `checkpoint` or `maintain` likewise
   answers once none is, so the database restored next reads all the first
   stored and is the only one writing.
-- `checkpoint(fenec, storage, { key, min })` writes a new image now, the
+- `checkpoint(fennec, storage, { key, min })` writes a new image now, the
   graphs in it, when the writes since the last one reach `min` bytes (64
   KiB by default). A start then restores the graph rather than link every
   vector written since -- 157 ms against 175 for the first `near` over
@@ -95,7 +95,7 @@ the object's single thread is the single writer.
 
 A SQLite-backed object -- the only kind a new account can make -- has
 `ctx.storage.sql`, and `persist` keeps the database in a table a
-generation, `<key>:<gen>` (`fenec:1`, `fenec:2`, ...): the image's rows,
+generation, `<key>:<gen>` (`fennec:1`, `fennec:2`, ...): the image's rows,
 then a row each time it stores writes. An object is billed by the row
 written ($1.00 a million past the 50 million a month included), so a write
 costs one row and nothing more: no record beside it naming where the
@@ -147,12 +147,12 @@ row written each time it is set and wakes the object -- restored, if it
 was evicted -- each time it rings. So the work is one call the alarm makes,
 `maintain`, and the alarm is set only when there is some:
 
-- `schedule(fenec, storage)`, after a write, sets it once something has
+- `schedule(fennec, storage)`, after a write, sets it once something has
   come due -- a row that will expire, an image owed -- `quiet` (5 s) after
   the write at the soonest, and not when one is set no later than `every`
   (60 s) after that. A write that brings nothing due sets none, and nor
   does a read: an idle object costs nothing.
-- `maintain(fenec, storage)` deletes the rows a minute (`grace`) past their
+- `maintain(fennec, storage)` deletes the rows a minute (`grace`) past their
   time, 10 000 a call (`sweep`), as ordinary deletes stored as any write
   is; until then `expired()` reads them, as on a server, for a reaper to
   give back what they held. Past the bound, the alarm rings again at once:
@@ -234,8 +234,8 @@ without it, and a reload.
 
 ## The global entry
 
-`entry/` is a different Worker, for a fenecdb run in several regions with
-`fenec-shard` routers (`--region`): one URL for every tenant.
+`entry/` is a different Worker, for a fennecdb run in several regions with
+`fennec-shard` routers (`--region`): one URL for every tenant.
 `https://<host>/t/<tenant>/...` goes to the routers of the region the
 tenant lives in, and their answer comes back as it arrives -- a
 subscription event by event, a held write for as long as it is held. A
@@ -268,8 +268,8 @@ tunnel's own rules (`deploy/cloudflared/config.yml`) let only a tenant's
 paths through, a tenant's replication stream not among them.
 
 - **Where a tenant lives** is learnt from the routers, not asked of
-  anyone: each request carries `Fenec-Home: 1`, and the router that
-  forwards it to the tenant's node answers `Fenec-Home: <region>`, which
+  anyone: each request carries `Fennec-Home: 1`, and the router that
+  forwards it to the tenant's node answers `Fennec-Home: <region>`, which
   the entry takes off the answer. A tenant not heard goes to the region of
   the client's continent (`continents`) or `DEFAULT_REGION`, whose router
   relays it home once -- and on to the other regions in turn where that
@@ -282,13 +282,13 @@ paths through, a tenant's replication stream not among them.
   learns with the colo through the Cache API (`HOMES_CACHE=off` not to),
   which needs a custom domain.
 - **Headers**: what a client sends goes on, but hop-by-hop headers, the
-  routers' marks (`Fenec-Router`, `Fenec-Global`, `Fenec-Verified`) and
+  routers' marks (`Fennec-Router`, `Fennec-Global`, `Fennec-Verified`) and
   any address a client claims (`X-Forwarded-For`, `X-Real-IP`,
   `Forwarded`, `True-Client-IP`, `CF-*`). The client is named in
-  `Fenec-Client: <address> <seconds> <mark>`, the mark an HMAC of
-  `fenec-client <address> <seconds>` under `ENTRY_TOKEN` (`entry.js`),
+  `Fennec-Client: <address> <seconds> <mark>`, the mark an HMAC of
+  `fennec-client <address> <seconds>` under `ENTRY_TOKEN` (`entry.js`),
   which the routers believe from the entry alone: started with the same
-  token (`fenec-shard --entry-token`, or `FENEC_SHARD_ENTRY_TOKEN`; one of
+  token (`fennec-shard --entry-token`, or `FENNEC_SHARD_ENTRY_TOKEN`; one of
   its own, which a router refuses equal to its `--token`, its
   `--replication-token` or a node's admin token), a
   router takes the address for the request's -- a refused token waits by
@@ -297,7 +297,7 @@ paths through, a tenant's replication stream not among them.
   router -- where every client would otherwise be Cloudflare's address. A
   mark is believed for a minute either side of the router's clock. A
   router without the flag, or a header that does not check, counts the
-  connection's address, and `fenec_router_entry_clients_total` counts
+  connection's address, and `fennec_router_entry_clients_total` counts
   each (`absent` too: an entry with no `ENTRY_TOKEN` names nobody). To
   change the token, start the routers with the new one, then put it here;
   in between, requests are served and counted by Cloudflare's address.
@@ -313,7 +313,7 @@ paths through, a tenant's replication stream not among them.
   `/_shard/` goes to the routers `ADMIN` names where it is set, and
   everything else is a 404.
 - **Failure**: a region's routers are tried from the one that answered
-  last. An answer without the router's mark (`Fenec-Shard: 1`) is not the
+  last. An answer without the router's mark (`Fennec-Shard: 1`) is not the
   router's.
   One Cloudflare could not reach (521, 523, 525, 526, 530) is passed over
   for any request; one that may have reached it -- a failed fetch,

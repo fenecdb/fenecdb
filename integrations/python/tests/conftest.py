@@ -1,15 +1,15 @@
-"""The server the tests talk to: FENEC_URL and FENEC_TOKEN, as run-tests.sh
-sets them for a fenec-server it starts."""
+"""The server the tests talk to: FENNEC_URL and FENNEC_TOKEN, as run-tests.sh
+sets them for a fennec-server it starts."""
 
 import os
 import uuid
 
 import pytest
 
-from fenecdb import Client
+from fennecdb import Client
 
-URL = os.environ.get("FENEC_URL", "http://127.0.0.1:8080")
-TOKEN = os.environ.get("FENEC_TOKEN")
+URL = os.environ.get("FENNEC_URL", "http://127.0.0.1:8080")
+TOKEN = os.environ.get("FENNEC_TOKEN")
 
 
 @pytest.fixture()

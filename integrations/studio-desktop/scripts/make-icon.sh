@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 
 svg=icon/icon.svg
 set_dir=icon.iconset
-big=$(mktemp -d "${TMPDIR:-/tmp}/fenec-icon.XXXXXX")
+big=$(mktemp -d "${TMPDIR:-/tmp}/fennec-icon.XXXXXX")
 trap 'rm -rf "$big"' EXIT
 
 # One 1024-point render, every other size is cut from it. sips keeps the alpha

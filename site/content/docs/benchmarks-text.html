@@ -1,5 +1,5 @@
 <!--
-title: Text search benchmarks — fenecdb
+title: Text search benchmarks — fennecdb
 description: What a search box costs (match ranked by BM25, marks, facets, typos and half-typed words), and how good the answers are on two BEIR datasets, with the method behind every number.
 -->
 
@@ -56,9 +56,9 @@ difference over the ten rows of <code>match</code> alone. The words a typo
 reaches are timed over FiQA's own words, 2 000 query words with a typo in
 each, and the sorted words over 100 000 documents of made-up words, many an
 edit or two from another, as a language's are (<a
-href="fenecql-search.html#typos">Typos and words begun</a>, <a
-href="fenecql-search.html#highlights">Highlights and snippets</a>, <a
-href="fenecql-search.html#facets">Facets</a>).</p>
+href="fennecql-search.html#typos">Typos and words begun</a>, <a
+href="fennecql-search.html#highlights">Highlights and snippets</a>, <a
+href="fennecql-search.html#facets">Facets</a>).</p>
 
 <pre data-lang="bash">make search-bench
 make fuzzy-bench BEIR=path/to/fiqa
@@ -67,7 +67,7 @@ make fuzzy-bench BEIR=path/to/fiqa
 
 <h2 id="retrieval-quality">Retrieval quality</h2>
 
-<p>How good the answers are, not how fast: every way fenecdb ranks
+<p>How good the answers are, not how fast: every way fennecdb ranks
 documents, scored by nDCG@10 on two public BEIR datasets. Fusing keyword
 and vector search (<code>fuse</code>) is the one path near the top of
 both.</p>
@@ -116,7 +116,7 @@ written whole where they were.</p>
 
 <details class="deep"><summary>How the typos were made</summary>
 <p>One typo a query, by a generator seeded by the query's place
-(<code>crates/fenec-bench/src/bin/beir.rs</code>): in one word of four
+(<code>crates/fennec-bench/src/bin/beir.rs</code>): in one word of four
 letters or more, a letter dropped, a key beside it on the keyboard typed as
 well or instead, or two letters swapped — the four kinds Damerau found four
 misspellings in five to be — and in the first letter 7% of the time, as
@@ -130,7 +130,7 @@ query's, the words found and their lists merged included.</p>
 </details>
 
 <details class="deep"><summary>Method, and what the BEIR runs found</summary>
-<pre data-lang="bash">cd crates/fenec-bench/beir &amp;&amp; npm install
+<pre data-lang="bash">cd crates/fennec-bench/beir &amp;&amp; npm install
 node embed.mjs path/to/scifact     # dense: all-MiniLM-L6-v2, 90 MB
 node splade.mjs path/to/scifact    # sparse: SPLADE++, 532 MB, optional
 make beir BEIR=path/to/scifact
@@ -145,7 +145,7 @@ closing <code>[SEP]</code> kept. transformers.js drops it when it cuts a
 text, so both scripts cut texts themselves: for SPLADE that was worth 0.46
 of SciFact's nDCG@10, for the dense vectors up to 0.003. Each of the
 engine's ways of ranking ten documents is then scored by nDCG@10, through
-FenecQL: the answers are the engine's own.</p>
+FennecQL: the answers are the engine's own.</p>
 
 <p>The two datasets pull opposite ways. In SciFact a claim shares its words
 with the evidence and BM25 alone beats the transformer; in FiQA a question

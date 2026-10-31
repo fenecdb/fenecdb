@@ -3,7 +3,7 @@ plugins {
     application
 }
 
-val fenecVersion: String by project
+val fennecVersion: String by project
 
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11) } }
 java {
@@ -13,8 +13,8 @@ java {
 
 dependencies {
     implementation(project(":notes"))
-    // The library for the JVM; the native library comes from FENEC_LIBRARY (README).
-    implementation("com.fenecdb:fenecdb:$fenecVersion")
+    // The library for the JVM; the native library comes from FENNEC_LIBRARY (README).
+    implementation("com.fennecdb:fennecdb:$fennecVersion")
 }
 
 application {
@@ -22,9 +22,9 @@ application {
 }
 
 tasks.named<JavaExec>("run") {
-    // Gradle runs a program in the project's directory; notes.fenec goes
+    // Gradle runs a program in the project's directory; notes.fennec goes
     // where `gradle` was started instead.
     workingDir = gradle.startParameter.currentDir
-    System.getenv("FENEC_LIBRARY")?.let { systemProperty("fenec.library", it) }
+    System.getenv("FENNEC_LIBRARY")?.let { systemProperty("fennec.library", it) }
     standardInput = System.`in`
 }

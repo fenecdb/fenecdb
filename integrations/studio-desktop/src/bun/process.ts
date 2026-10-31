@@ -1,8 +1,8 @@
-// How a fenec-server is started and watched, over a `spawn` handed in: Bun's
+// How a fennec-server is started and watched, over a `spawn` handed in: Bun's
 // in the app (server.ts), Node's in `node --test`, which drives the real
 // binary through this same code (test/process.test.ts).
 //
-//   fenec-server --file <path> --http <host>:<port> --sync <s> ... --exit-on-stdin-close
+//   fennec-server --file <path> --http <host>:<port> --sync <s> ... --exit-on-stdin-close
 //
 // (serving.ts writes the arguments) with its tokens in its environment, never
 // in argv: `ps` shows argv to every user. Found by the `listening on:
@@ -81,7 +81,7 @@ export type FileServer = {
 	/** Its metrics endpoint's origin, when it has one of its own. */
 	metrics: string | null;
 	token: string;
-	/** What `fenec backup` asks for its image with; null under `--sync off`. */
+	/** What `fennec backup` asks for its image with; null under `--sync off`. */
 	replicationToken: string | null;
 	pid: number;
 	startedAt: number;
@@ -200,7 +200,7 @@ export async function startServer(
 		// Not the server this app started, or one that went where it was not asked to: no token goes there.
 		proc.kill("SIGKILL");
 		await exited;
-		throw new StartFailed(`fenec-server says it listens on ${first.refused}, not on ${plan.host}${plan.port ? `:${plan.port}` : ""} as it was asked to`, null);
+		throw new StartFailed(`fennec-server says it listens on ${first.refused}, not on ${plan.host}${plan.port ? `:${plan.port}` : ""} as it was asked to`, null);
 	}
 	if (first === "exited" || first === "timeout") {
 		if (first === "timeout") proc.kill("SIGKILL");
@@ -210,7 +210,7 @@ export async function startServer(
 		const text = tail.join("\n");
 		if (text.includes("it is open already")) throw new AlreadyOpen(text);
 		if (/address already in use/i.test(text)) throw new PortTaken(text, plan.port);
-		throw new StartFailed(text || `fenec-server ${first === "timeout" ? "did not start in time" : "exited"}`, first === "timeout" ? null : code);
+		throw new StartFailed(text || `fennec-server ${first === "timeout" ? "did not start in time" : "exited"}`, first === "timeout" ? null : code);
 	}
 
 	let stopping: Promise<number | null> | null = null;

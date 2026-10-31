@@ -1,24 +1,25 @@
-# fenecdb for Go
+# fennecdb for Go
 
-A client for fenec-server's HTTP endpoint, the standard library alone.
+A client for fennec-server's HTTP endpoint, the standard library alone.
 
 ```sh
-go get github.com/fenecdb/fenecdb/integrations/go
+go get github.com/fennec-db/fennecdb/integrations/go
 ```
 
 The module's path follows the repository's name. v0.1.11 and earlier were
 published as `github.com/fenecdb/fenec/integrations/go`, before the
-repository became `fenecdb`, and declare that path: an app on one of them
-keeps importing it, and moves to the new path with the first release that
-declares it.
+repository became `fenecdb`, and v0.1.12 as
+`github.com/fenecdb/fenecdb/integrations/go`, before fenecdb became
+fennecdb; each declares its path: an app on one of them keeps importing it,
+and moves to the new path with the first release that declares it.
 
 ```go
-import fenecdb "github.com/fenecdb/fenecdb/integrations/go"
+import fennecdb "github.com/fennec-db/fennecdb/integrations/go"
 
-db := fenecdb.New("http://127.0.0.1:8080", fenecdb.WithToken("secret"))
+db := fennecdb.New("http://127.0.0.1:8080", fennecdb.WithToken("secret"))
 w, err := db.Exec(ctx, "put docs {title: $1, embed: $2}", "Dunes", []float32{0.9, 0.1, 0})
 rows, err := db.Query(ctx, "get docs select title near embed $1 limit 5", []float32{0.1, 0.2, 0.3})
-hits, err := fenecdb.QueryAs[Hit](ctx, db, "get docs select title near embed $1 limit 5", vec)
+hits, err := fennecdb.QueryAs[Hit](ctx, db, "get docs select title near embed $1 limit 5", vec)
 ```
 
 The query builder writes the statement -- every value a parameter, every name checked -- the same text the
@@ -29,21 +30,21 @@ first refused step comes back from whatever ends the chain:
 docs := db.From("articles")
 q := docs.Select("title").
 	Where("year", ">=", 2024).
-	WhereCond(fenecdb.Or(fenecdb.Fields("lang", "tr"), fenecdb.Fields("tags", fenecdb.Ops("has", "rust")))).
-	Near("embed", vec, fenecdb.Ef(64)).
+	WhereCond(fennecdb.Or(fennecdb.Fields("lang", "tr"), fennecdb.Fields("tags", fennecdb.Ops("has", "rust")))).
+	Near("embed", vec, fennecdb.Ef(64)).
 	Limit(5)
-rows, err := q.Rows(ctx)                       // or fenecdb.RowsAs[Hit](ctx, q), q.First(ctx), q.Count(ctx)
-docs.Insert(ctx, fenecdb.D("title", "Dunes", "year", 2021))
-docs.Where("year", "<", 2000).Delete(ctx)      // no filter: refused unless fenecdb.All()
+rows, err := q.Rows(ctx)                       // or fennecdb.RowsAs[Hit](ctx, q), q.First(ctx), q.Count(ctx)
+docs.Insert(ctx, fennecdb.D("title", "Dunes", "year", 2021))
+docs.Where("year", "<", 2000).Delete(ctx)      // no filter: refused unless fennecdb.All()
 ```
 
 - `Query` gives rows as `[]map[string]any`, `QueryAs[T]` decodes them by `json` tags; `Exec` a write's count and its `Seq`.
-- `Batch(ctx, fenecdb.Stmt(q, params...), ...)` runs statements as one block: all land, or none.
-- `IdempotencyKey(key)` makes a write once; `After(seq)` reads a write on a replica (`Fenec-After`), and
+- `Batch(ctx, fennecdb.Stmt(q, params...), ...)` runs statements as one block: all land, or none.
+- `IdempotencyKey(key)` makes a write once; `After(seq)` reads a write on a replica (`Fennec-After`), and
   `Wait(d)` beside it bounds how long the server holds the read for the change.
-- `New(url, fenecdb.WithReadsNearest())` sends the builder's reads, and a `Read()` copy's, to the tenant's read
-  replica near the client through a fenec-shard router (`Fenec-Read: replica`), each after the furthest position
-  an answer from home named (`Fenec-After`, `Fenec-History`); writes go home. A `Read()` copy's `Subscribe`
+- `New(url, fennecdb.WithReadsNearest())` sends the builder's reads, and a `Read()` copy's, to the tenant's read
+  replica near the client through a fennec-shard router (`Fennec-Read: replica`), each after the furthest position
+  an answer from home named (`Fennec-After`, `Fennec-History`); writes go home. A `Read()` copy's `Subscribe`
   and `Changes` go so too, and the server holds the stream until a copy has the client's writes.
 - `QueryRaw` and `BatchRaw` hand the answer back as the server wrote it, its columns in the select list's order
   (a map loses it); `IfNoneMatch(r.ETag).QueryRaw(...)` is answered `NotModified` while nothing the statement
@@ -51,7 +52,7 @@ docs.Where("year", "<", 2000).Delete(ctx)      // no filter: refused unless fene
 - `Subscribe(ctx, collection, url.Values{"year": {"gte.2024"}})` is a channel of `seed` and `change` events (SSE).
 - `Changes(ctx, since, wait)` reads every write on disk (`/_changes`); `Health(ctx)` asks `/_health`.
 - `WithTenant("acme")` sends everything under `/t/acme/`; `WithTimeout`, `WithHTTPClient` as they say.
-- A refusal is an `*fenecdb.Error` with `Status`, `Code` and `Message`, for `errors.As`; a failed `Batch`'s also
+- A refusal is an `*fennecdb.Error` with `Status`, `Code` and `Message`, for `errors.As`; a failed `Batch`'s also
   says which statement stopped it, `At` (from 0; -1 otherwise), and how many stayed applied, `Completed`.
   `Reason("insufficient funds")` beside `Require(1)` (`require 1 else '...'`, written into the text) comes back
   as `Reason`, which tells one guard's refusal from another's where `At` moves with every statement added in
@@ -66,21 +67,21 @@ docs.Where("year", "<", 2000).Delete(ctx)      // no filter: refused unless fene
   document a `D(...)` in its order, a map in its sorted keys, or a struct.
 - `Facet(field, Ranges(0, 25, 50))` counts by ranges of numbers, each value `[from, to]`; `Disjunctive()` counts past
   the filter's own condition on the field, as a shop's filter list does.
-- Aggregates go in `Select` as FenecQL spells them (`"count(*)"`, `"sum(total)"`), and `Group` takes one key or
+- Aggregates go in `Select` as FennecQL spells them (`"count(*)"`, `"sum(total)"`), and `Group` takes one key or
   more; `Bucket(field, "1m")`, `CountDistinct`, `First(field, by)`, `Last` and `Expr` make a column, named with
-  `.As(name)`: `Select(fenecdb.Bucket("at", "1h").As("hour"), "count(*)").Group("hour")`.
+  `.As(name)`: `Select(fennecdb.Bucket("at", "1h").As("hour"), "count(*)").Group("hour")`.
 - `Highlight(field, Tags(pre, post))` and `Snippet(field, words, Ellipsis("…"))` answer a `match`'s marks under
   `highlight(field)` and `snippet(field)`; `Facet(field, Top(n))` counts values over every matched row, which
   `q.Answer(ctx)` (or `db.QueryAnswer`, a `BatchItem`'s `Facets`) hands back beside the rows, `Facets.Of(field)`.
 - `Order` and `Limit` before `Update` or `Delete` pick the rows it writes, and `Returning("*")` (or the fields)
   answers them in `Result.Rows`: a job queue's claim is
-  `From("jobs").WhereCond(fenecdb.Raw("run_at <= now()")).Order("run_at", "asc").Limit(10).Update(ctx,
-  fenecdb.D("owner", me, "run_at", fenecdb.Expr("now() + ?", 30000)), fenecdb.Returning("*"))`.
+  `From("jobs").WhereCond(fennecdb.Raw("run_at <= now()")).Order("run_at", "asc").Limit(10).Update(ctx,
+  fennecdb.D("owner", me, "run_at", fennecdb.Expr("now() + ?", 30000)), fennecdb.Returning("*"))`.
   Through `db.Wait(30 * time.Second)` a claim that finds no job is held at the server until one comes, or the
-  wait ends with none (`Fenec-Wait`); the request's context gives it up.
-- To see the text and parameters a chain builds, for logging or a test, `q.ToFenecQL()` returns them and runs
+  wait ends with none (`Fennec-Wait`); the request's context gives it up.
+- To see the text and parameters a chain builds, for logging or a test, `q.ToFennecQL()` returns them and runs
   nothing; a query needs no call to it before it runs.
 
-`go test` runs against `fenec-server` processes it starts (`cargo build -p fenec-server`, or `FENEC_SERVER`), and the
+`go test` runs against `fennec-server` processes it starts (`cargo build -p fennec-server`, or `FENNEC_SERVER`), and the
 builder against every case of `integrations/builder-golden.json`.
 Full reference: https://fenecdb.com/docs/languages

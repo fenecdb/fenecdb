@@ -7,20 +7,20 @@ on:
     branches: [main]
     paths:
       - 'site/**'
-      # The playground is fenec studio's files, served from the site.
+      # The playground is fennec studio's files, served from the site.
       - 'studio/**'
-      - 'web/fenec.js'
+      - 'web/fennec.js'
       - 'web/builder.js'
       - 'web/http.js'
       - 'web/client.js'
-      # The FenecQL pages' builder tabs are rendered from the golden cases.
+      # The FennecQL pages' builder tabs are rendered from the golden cases.
       - 'integrations/builder-golden.json'
       - 'web/golden.mjs'
       - 'wrangler.jsonc'
-      - 'crates/fenec-wasm/**'
-      - 'crates/fenec-abi/**'
-      - 'crates/fenec-core/**'
-      - 'crates/fenec-ql/**'
+      - 'crates/fennec-wasm/**'
+      - 'crates/fennec-abi/**'
+      - 'crates/fennec-core/**'
+      - 'crates/fennec-ql/**'
       - '.github/workflows/site.yml'
   workflow_dispatch:
 

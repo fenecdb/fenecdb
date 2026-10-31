@@ -19,8 +19,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { HERE, log } from './lib.mjs';
 
-const release = process.argv[2] ?? `${HERE}build/stable-macos-arm64/fenec studio.app`;
-const test = process.argv[3] ?? `${HERE}build-test/stable-macos-arm64/fenec studio test.app`;
+const release = process.argv[2] ?? `${HERE}build/stable-macos-arm64/fennec studio.app`;
+const test = process.argv[3] ?? `${HERE}build-test/stable-macos-arm64/fennec studio test.app`;
 
 /** The main process's bundle and the notice page, out of an app's payload, or of the app itself once it has been launched. */
 function bundle(app) {
@@ -33,7 +33,7 @@ function bundle(app) {
   return read('bun/index.js');
 }
 
-const HOOKS = ['FENEC_DESKTOP_REPORT', 'FENEC_DESKTOP_CONTROL', 'FENEC_DESKTOP_OPEN', 'FENEC_DESKTOP_LAUNCHER', 'FENEC_DESKTOP_HOLD_OPEN_URL', 'FENEC_SERVER_BIN', 'FENEC_CLI_BIN', '"close-direct"'];
+const HOOKS = ['FENNEC_DESKTOP_REPORT', 'FENNEC_DESKTOP_CONTROL', 'FENNEC_DESKTOP_OPEN', 'FENNEC_DESKTOP_LAUNCHER', 'FENNEC_DESKTOP_HOLD_OPEN_URL', 'FENNEC_SERVER_BIN', 'FENNEC_CLI_BIN', '"close-direct"'];
 
 const shipped = bundle(release);
 const testing = existsSync(test) ? bundle(test) : null;

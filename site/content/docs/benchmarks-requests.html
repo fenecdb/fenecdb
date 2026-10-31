@@ -1,21 +1,21 @@
 <!--
-title: Concurrency and request benchmarks — fenecdb
-description: Many writers and the readers beside them against SQLite, what one request to fenec-server costs and where its time goes, and what loading rows costs against PostgreSQL with pgvector.
+title: Concurrency and request benchmarks — fennecdb
+description: Many writers and the readers beside them against SQLite, what one request to fennec-server costs and where its time goes, and what loading rows costs against PostgreSQL with pgvector.
 -->
 
 <h1>Concurrency and request benchmarks</h1>
 <p class="kicker">Writers and readers at once, what one request to
-<code>fenec-server</code> costs and where its time goes, and what loading rows
+<code>fennec-server</code> costs and where its time goes, and what loading rows
 costs.</p>
 
 <h2 id="concurrency">Writers and readers at once</h2>
 
-<p>fenecdb and SQLite both allow one writer at a time. This measures what
+<p>fennecdb and SQLite both allow one writer at a time. This measures what
 that costs when many want to write, and how fast readers go meanwhile.</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>&nbsp;</th><th class="n">fenecdb</th><th class="n">SQLite</th></tr></thead>
+<thead><tr><th>&nbsp;</th><th class="n">fennecdb</th><th class="n">SQLite</th></tr></thead>
 <tbody>
 <tr><td>durable writes/s, 1 / 4 / 16 writers</td><td class="n">252 / 487 / <b>516</b></td><td class="n">248 / 248 / 258</td></tr>
 <tr><td>writes/s without an fsync, 1 / 4 / 16 writers</td><td class="n"><b>1 497 k</b> / 821 k / 611 k</td><td class="n">128 k / 128 k / 126 k</td></tr>
@@ -54,23 +54,23 @@ and pinned, over two runs.</p>
 </div>
 
 <details class="deep"><summary>Method, and what holds the write lock and who waits for it</summary>
-<p>fenecdb and SQLite both take one writer at a time. What that costs when
+<p>fennecdb and SQLite both take one writer at a time. What that costs when
 many want to write, and what readers wait meanwhile, measured in one process:
-fenecdb's threads share one database behind a lock, as <code>fenec-server</code>
+fennecdb's threads share one database behind a lock, as <code>fennec-server</code>
 does; SQLite's hold a connection each, WAL, with a 30 s busy timeout. A row a
 write, a row by id a read, one run on an M1 after idle minutes. Durable is an fsync
 per commit, <code>F_FULLFSYNC</code> for both (Rust's <code>sync_data</code>
 on macOS; <code>PRAGMA fullfsync</code> for SQLite, <code>synchronous=FULL</code>);
-without one, fenecdb's writes stay in its buffer and SQLite's reach the
+without one, fennecdb's writes stay in its buffer and SQLite's reach the
 operating system (<code>synchronous=NORMAL</code>).</p>
 
 <pre data-lang="bash">make concurrency-bench
 </pre>
 
-<p><b>Durable writes scale with the writers.</b> fenecdb's fsync runs after
+<p><b>Durable writes scale with the writers.</b> fennecdb's fsync runs after
 its lock is released, and a write an earlier fsync already covered waits for
 none, so sixteen writers share their fsyncs; SQLite syncs a commit while it
-holds the write lock. Without an fsync, one fenecdb writer is twelve times
+holds the write lock. Without an fsync, one fennecdb writer is twelve times
 SQLite's, and handing the lock between sixteen costs more than half of that. A
 write, or a <code>/batch</code> of them, holds the
 lock only while it runs — microseconds for a row — and there is no
@@ -154,7 +154,7 @@ that one too now.</p>
 
 <h2 id="requests">A request over HTTP</h2>
 
-<p>What one request to <code>fenec-server</code> costs a client on the same
+<p>What one request to <code>fennec-server</code> costs a client on the same
 machine, over HTTP. Most of each round trip is the network stack, not the
 server's work.</p>
 
@@ -171,7 +171,7 @@ server's work.</p>
 </div>
 
 <details class="deep"><summary>Method, and why the round trip is mostly loopback</summary>
-<p>What one request costs a client of <code>fenec-server</code>, on loopback: a
+<p>What one request costs a client of <code>fennec-server</code>, on loopback: a
 row by id, a filter with a limit, a <code>near</code> for the top ten and a
 put, over 10 000 rows of 128 dimensions, asked by one client at a time — the
 round trip's p50 — and by eight at once. Each is <code>POST /query</code>
@@ -199,13 +199,13 @@ reads that way.</p>
 <h2 id="round-trip">One request's round trip, taken apart</h2>
 <p>A <a href="benchmarks-ycsb.html">YCSB</a> read by key (a 1 KB record of ten fields) and an update of one
 field, one client over 100 000 records, the client's parts and the
-process's CPU from <code>getrusage</code>, fenec-server's phases from a
+process's CPU from <code>getrusage</code>, fennec-server's phases from a
 build with <code>--features timing</code> (<code>GET /_timing</code>), and
 PostgreSQL's bind and execute from its own log; means but the totals, which
 are medians (<code>make roundtrip-bench</code>):</p>
 <div class="tbl">
 <table>
-<thead><tr><th>a read by key</th><th class="n">fenec-server, Mac</th><th class="n">fenec-server, Docker</th><th class="n">PostgreSQL, Docker</th></tr></thead>
+<thead><tr><th>a read by key</th><th class="n">fennec-server, Mac</th><th class="n">fennec-server, Docker</th><th class="n">PostgreSQL, Docker</th></tr></thead>
 <tbody>
 <tr><td>round trip, p50</td><td class="n">0.025 ms</td><td class="n"><b>0.288 ms</b></td><td class="n">0.333 ms</td></tr>
 <tr><td>inside the server</td><td class="n">0.010 ms</td><td class="n">0.023 ms</td><td class="n">0.016 ms, bind and execute</td></tr>
@@ -233,7 +233,7 @@ are medians (<code>make roundtrip-bench</code>):</p>
     durable write now syncs a log of fixed size beside the file, and the
     file is synced once the log is full (<a href="file-format.html">File
     format</a>): 392 -> 92 µs of a durable update's server time.</li>
-  <li><b>A scan was fenec-server's own.</b> Fifty 1 KB records are 56.9
+  <li><b>A scan was fennec-server's own.</b> Fifty 1 KB records are 56.9
     KB of JSON against PostgreSQL's 53.4 KB of binary rows, each handed to
     the network card at once, so the bytes were not it: the server spent
     213-220 µs inside on them, half decoding each row's ten fields into
@@ -285,12 +285,12 @@ at 56 232; with an HNSW index kept up to date as they land, at about
 <p>What loading 100 000 rows of a text, an int and a 128-dim vector costs,
 each way a client can send them, into an empty collection: with the
 vector's HNSW graph kept as the rows land, and with no vector index.
-<code>fenec-server</code> on loopback, 1 000 rows a request —
+<code>fennec-server</code> on loopback, 1 000 rows a request —
 <code>POST /docs</code> with a JSON array; a <code>put</code> of 1 000 sent
 to <code>POST /query</code>; a <code>POST /batch</code> of single puts.
 PostgreSQL with pgvector is sent the same rows by <code>COPY</code> and by
 <code>INSERT</code>s of 1 000, with <code>synchronous_commit = off</code>, as
-fenec-server's writes reach the disk within <code>--sync 250</code>. One
+fennec-server's writes reach the disk within <code>--sync 250</code>. One
 run on an M1, after idle minutes.</p>
 
 <pre data-lang="bash">make pgvector-up      # optional: PostgreSQL's arm, skipped without it
@@ -300,7 +300,7 @@ make load-bench
 <p><b>Without a vector index, the vectors' text is the cost.</b> Each
 row's vector is 128 numbers written out, read straight into its
 <code>f32</code>s wherever it comes from — a JSON array, a parameter, a
-FenecQL literal — in one pass that finds each number's end. In process the
+FennecQL literal — in one pass that finds each number's end. In process the
 rows arrive parsed, which is what the rest can at most reach. PostgreSQL
 answers from inside Docker's virtual machine on the same Mac, whose network
 carries every byte.</p>

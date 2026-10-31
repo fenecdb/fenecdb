@@ -1,12 +1,12 @@
 <!--
-title: HTTP endpoint — fenecdb
-description: Start fenec-server over HTTP and send it FenecQL from curl, fetch or any language's standard library: REST routes derived from the schema, raw statements with parameters, batches and writes that are safe to retry.
+title: HTTP endpoint — fennecdb
+description: Start fennec-server over HTTP and send it FennecQL from curl, fetch or any language's standard library: REST routes derived from the schema, raw statements with parameters, batches and writes that are safe to retry.
 -->
 
 {{moved_script}}
 
 <h1>HTTP endpoint</h1>
-<p class="kicker">Talk to fenecdb with <code>fetch</code>, <code>curl</code> or
+<p class="kicker">Talk to fennecdb with <code>fetch</code>, <code>curl</code> or
 any standard library — no driver needed.</p>
 
 <p>This page is the way in: start a server, send it statements, write in
@@ -16,16 +16,16 @@ and policies in <a href="http-access.html">HTTP security and scoped access</a>.<
 
 <h2>Start it</h2>
 
-<p>Add <code>--http</code> to <code>fenec-server</code>. Every collection gets
-REST routes from its schema, and <code>POST /query</code> takes any FenecQL
+<p>Add <code>--http</code> to <code>fennec-server</code>. Every collection gets
+REST routes from its schema, and <code>POST /query</code> takes any FennecQL
 statement.</p>
 
-<pre data-lang="bash">fenec-server --file data.fenec --http 127.0.0.1:8080</pre>
+<pre data-lang="bash">fennec-server --file data.fennec --http 127.0.0.1:8080</pre>
 
 <p>Then send it a statement. Each example makes a collection of a text and a
 number, each indexed, writes two rows, reads them back by a filter and an
 order, searches the words with a typo in them and handles a refusal. Each
-sends one FenecQL statement a request to <code>POST /query</code>, its values
+sends one FennecQL statement a request to <code>POST /query</code>, its values
 as <code>$1</code>, <code>$2</code>, ... in <code>params</code>.</p>
 
 <div class="langs" data-langs>
@@ -98,7 +98,7 @@ the database, so the surface is derived from it.</p>
 
 <div class="note">
   <p><b>Not a separate binary.</b> The HTTP endpoint is a second listener in
-  the same process as <code>fenec-server</code>. fenecdb has a single writer, and
+  the same process as <code>fennec-server</code>. fennecdb has a single writer, and
   two processes writing one file corrupt it. Being in the same process also
   keeps the sync policy, the checkpoint, the memory ceiling and the shutdown
   signal in one place — <code>--sync always</code> covers HTTP writes too.</p>
@@ -106,9 +106,9 @@ the database, so the surface is derived from it.</p>
 </details>
 
 
-<h2>Raw FenecQL</h2>
+<h2>Raw FennecQL</h2>
 
-<p>When the REST routes do not fit, send FenecQL to <code>/query</code>.
+<p>When the REST routes do not fit, send FennecQL to <code>/query</code>.
 Parameters stay parameters.</p>
 
 <pre data-lang="bash">curl -X POST http://127.0.0.1:8080/query \
@@ -120,16 +120,16 @@ Parameters stay parameters.</p>
   <li><b>A text is parsed once.</b> <code>/query</code> keeps what it
     parsed by the text, so the values go as parameters — a page's
     <code>limit</code> and <code>offset</code> too (<a
-    href="/docs/fenecql-reading#paging">Pages by parameters</a>): written into the
+    href="/docs/fennecql-reading#paging">Pages by parameters</a>): written into the
     text, every page was a statement of its own.</li>
   <li><b>The answer is the rows</b>, a JSON array — or, when the query asks
-    for <a href="/docs/fenecql-search#facets">facets</a>,
+    for <a href="/docs/fennecql-search#facets">facets</a>,
     <code>{"rows": [...], "facets": {"brand": [{"value": "acme", "count":
     12}, ...]}}</code>. A write answers <code>{"affected": n}</code>, and
-    one with <a href="/docs/fenecql-writing#pick"><code>returning</code></a> the
-    rows it wrote, as a read does, with its <code>Fenec-Seq</code>: a job
+    one with <a href="/docs/fennecql-writing#pick"><code>returning</code></a> the
+    rows it wrote, as a read does, with its <code>Fennec-Seq</code>: a job
     queue's claim (<a href="/docs/queues">Job queues</a>).</li>
-  <li><b>From Python:</b> <code>pip install fenecdb</code> gives a client
+  <li><b>From Python:</b> <code>pip install fennecdb</code> gives a client
     with no dependencies.</li>
 </ul>
 
@@ -138,20 +138,20 @@ Parameters stay parameters.</p>
 they go beside the rows rather than into one, and a query that asks for none
 keeps the bare array every client reads. The same holds for a line of a
 <code>/batch</code> (<code>{"rows": [...], "facets": {...}}</code>), for
-<code>GET /&lt;name&gt;?facet=...</code>, whose list is FenecQL's
+<code>GET /&lt;name&gt;?facet=...</code>, whose list is FennecQL's
 (<code>facet=brand top 5,color</code>), and beside a count
 (<code>{"count": 3, "facets": {...}}</code>). A <a
 href="http-reference.html#subscriptions">subscription</a> keeps a shape's rows and carries no
 facets; a live query over the server (<code>live</code> on
 <code>connect()</code>, <code>useLiveQuery</code>) runs its query again
 after each write, facets and all. A <a
-href="/docs/fenecql-search#highlights"><code>highlight()</code></a> is a column
+href="/docs/fennecql-search#highlights"><code>highlight()</code></a> is a column
 like any other, under its label.</p>
 
-<p>From Python, <code>pip install fenecdb</code> — the standard library
+<p>From Python, <code>pip install fennecdb</code> — the standard library
 alone — makes the same calls, blocking or in an event loop:</p>
 
-<pre data-lang="python">from fenecdb import AsyncClient, Client
+<pre data-lang="python">from fennecdb import AsyncClient, Client
 
 db = Client("http://127.0.0.1:8080", token="...")
 db.query("get articles where year >= $1 limit 10", [2024])
@@ -163,7 +163,7 @@ async with AsyncClient("http://127.0.0.1:8080", token="...") as db:
 when the server has closed it; calls made at once over one client go one
 after another over it, so requests side by side take a client each.
 <code>Client.follow</code> reads the <a href="http-reference.html#changes">change stream</a>
-as a consumer, and <code>python -m fenecdb.relay</code> hands it on to
+as a consumer, and <code>python -m fennecdb.relay</code> hands it on to
 another program or a webhook: see <a href="/docs/microservices">Services
 and events</a>.</p>
 </details>
@@ -182,7 +182,7 @@ answer says so.</p>
 make a count a condition, end the write with <code>require N</code>: unless
 it wrote exactly <code>N</code> rows the batch stops with
 <b>412</b> and is put back, a transfer's debit and its credit together
-(<a href="/docs/fenecql-writing#transfers">Transfers</a>).</p>
+(<a href="/docs/fennecql-writing#transfers">Transfers</a>).</p>
 
 <pre data-lang="json">{"error":"unmet: `set accounts` wrote 0 rows, and requires 1","completed":0,"at":1}
 </pre>
@@ -190,7 +190,7 @@ it wrote exactly <code>N</code> rows the batch stops with
 <p>Say why with <code>require N else '<i>reason</i>'</code>: the error leads
 with the reason, and a <code>"reason"</code> key carries it, for a caller to
 tell one refusal from another by, where <code>at</code> moves with every
-statement added in front (<a href="/docs/fenecql-writing#require-reason">A reason
+statement added in front (<a href="/docs/fennecql-writing#require-reason">A reason
 for the refusal</a>).</p>
 
 <pre data-lang="json">{"error":"unmet: no account to credit (`set accounts` wrote 0 rows, and requires 1)","completed":0,"at":1,"reason":"no account to credit"}
@@ -212,7 +212,7 @@ how many stay applied — none of a block.</p>
 
 <p>A batch whose every statement only reads — a <code>get</code>, with or
 without <code>require</code> — is a snapshot instead: every read at the one
-change <code>Fenec-Seq</code> names, no write landing between the first and
+change <code>Fennec-Seq</code> names, no write landing between the first and
 the last. When it is long — an aggregate, a scan, a filtered count over
 10 000 rows or more — the server pins what it reads under the read lock and
 reads it with no lock held, so writes land beside it; otherwise, and where
@@ -233,7 +233,7 @@ says what it left behind, because a silent error would
 permanently separate a client's optimistic local state from the
 server's.</p>
 
-<p>The body is NDJSON rather than a JSON array because fenecdb's JSON parser
+<p>The body is NDJSON rather than a JSON array because fennecdb's JSON parser
 deliberately does not accept nested objects, so
 <code>{"statements":[{...}]}</code> could not be parsed anyway. Instead of
 writing a second parser, the boundary was put at the end of a line — by the
@@ -264,8 +264,8 @@ knowing whether the first landed — may write it twice. Send an
 <code>Idempotency-Key</code> with it, one per write, and a request sent again
 with the key is answered as the first was, with
 <code>Idempotent-Replayed: true</code>, and not made again. Its
-<code>Fenec-Seq</code> is where the database stands as it replays, which
-holds the write, so a read sent to a replica with <code>Fenec-After</code>
+<code>Fennec-Seq</code> is where the database stands as it replays, which
+holds the write, so a read sent to a replica with <code>Fennec-After</code>
 waits for it as after the first answer.</p>
 
 <ul>
@@ -286,7 +286,7 @@ waits for it as after the first answer.</p>
   it. An answer over 64 KB is kept as its status and a note.</li>
   <li>Keys are kept for <code>--idempotency-ttl</code> seconds, a day unless
   given, in a <code>_idempotency</code> collection the change stream leaves
-  out. Its <code>at</code> is <a href="/docs/fenecql-indexes#ttl"><code>@ttl</code></a>:
+  out. Its <code>at</code> is <a href="/docs/fennecql-indexes#ttl"><code>@ttl</code></a>:
   a key past its time is gone at once, and the sweeper deletes it.</li>
 </ul>
 
@@ -305,5 +305,5 @@ second over HTTP against 18 300 without.</p>
   <li><a href="languages.html">Your language</a>
     <p>The same calls in Python, JavaScript, Go, Rust, .NET, Java, PHP and Ruby, and the apps that keep the database on the device.</p></li>
   <li><a href="server.html">Server</a>
-    <p>Running <code>fenec-server</code>: flags, durability, limits, containers.</p></li>
+    <p>Running <code>fennec-server</code>: flags, durability, limits, containers.</p></li>
 </ul>

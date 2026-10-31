@@ -1,9 +1,9 @@
-// fenecdb's query builder, its error and the schema check: what every
+// fennecdb's query builder, its error and the schema check: what every
 // way of reaching a database shares -- the database in the page
-// (`fenec.js`), a server over HTTP (`http.js`, and `client.js`, the entry
+// (`fennec.js`), a server over HTTP (`http.js`, and `client.js`, the entry
 // that leaves the engine out) and a synced replica.
 //
-// No dependencies, no build step. `@fenecdb/web` and `@fenecdb/web/client`
+// No dependencies, no build step. `@fennecdb/web` and `@fennecdb/web/client`
 // export what a page uses of it; the rest of its exports are for the
 // modules beside it.
 
@@ -11,11 +11,11 @@
 // one; failing here never sends the query.
 const MAX_LOOKUP_DEPTH = 8;
 
-export class FenecError extends Error {}
+export class FennecError extends Error {}
 
 /**
  * What each database, endpoint and replica was opened with when its code
- * declares its schema (`@fenecdb/web/schema`): the tables, the relations
+ * declares its schema (`@fennecdb/web/schema`): the tables, the relations
  * `lookup` names, the migrations.
  */
 export const declared = new WeakMap();
@@ -23,8 +23,8 @@ export const declared = new WeakMap();
 /**
  * The code's schema checked against `to` -- the database in the page or
  * the server's -- and applied where `how` says (`apply`; `follow` compares a
- * schema another owns). The schema is FenecQL text, or tables declared in
- * code (`@fenecdb/web/schema`), which write themselves as it: this module
+ * schema another owns). The schema is FennecQL text, or tables declared in
+ * code (`@fennecdb/web/schema`), which write themselves as it: this module
  * imports none of that one. The engine decides; a refusal throws, naming
  * every difference and how to resolve it (`refusals`).
  */
@@ -32,8 +32,8 @@ export async function checked(to, opts, how) {
   const s = opts?.schema;
   if (!s) return to;
   declared.set(to, opts);
-  const fenecql = typeof s === 'string' ? s : Object.values(s).map((t) => t.toFenecQL()).join('\n');
-  const description = { format: 1, fenecql, migrations: opts.migrations ?? [] };
+  const fennecql = typeof s === 'string' ? s : Object.values(s).map((t) => t.toFennecQL()).join('\n');
+  const description = { format: 1, fennecql, migrations: opts.migrations ?? [] };
   for (;;) {
     let out;
     try {
@@ -52,11 +52,11 @@ export async function checked(to, opts, how) {
     // The engine writes a rebuild as a description holds it; here, as the helper that makes one.
     const fix = (f) => f.replace(/\{"rebuild": \{"collection": "([^"]+)", "field": "([^"]+)"\}\} \(rebuild in the SDKs\)/, "rebuild('$1', '$2')");
     const lines = out.refusals.map((r) => `  - ${r.message}\n    ${fix(r.fix)}`);
-    throw Object.assign(new FenecError(`${head}:\n${lines.join('\n')}`), { refusals: out.refusals });
+    throw Object.assign(new FennecError(`${head}:\n${lines.join('\n')}`), { refusals: out.refusals });
   }
 }
 
-/** A collection's name, or a table's (`fenecTable`). */
+/** A collection's name, or a table's (`fennecTable`). */
 export const nameOf = (n) => (n && typeof n === 'object' ? n.$name : n);
 
 /**
@@ -71,28 +71,28 @@ export function rowsOf(res) {
 }
 
 /**
- * A `batch` item as `[text, params]`: a builder query, a FenecQL text, or
- * `[text, params]` -- what `FenecHttp.batch` and `Fenec.batch` take.
+ * A `batch` item as `[text, params]`: a builder query, a FennecQL text, or
+ * `[text, params]` -- what `FennecHttp.batch` and `Fennec.batch` take.
  */
 export function statementOf(item, i) {
-  if (item instanceof Query) return item.toFenecQL();
+  if (item instanceof Query) return item.toFennecQL();
   if (typeof item === 'string') return [item, []];
   if (Array.isArray(item) && typeof item[0] === 'string' && (item[1] === undefined || Array.isArray(item[1]))) {
     return [item[0], item[1] ?? []];
   }
-  throw new FenecError(`batch statement ${i}: a query, a FenecQL text or [text, params]`);
+  throw new FennecError(`batch statement ${i}: a query, a FennecQL text or [text, params]`);
 }
 
 // ----------------------------------------------------------- query builder
 //
 // Why it exists: every interface with conditional filters forced manual
 // string concatenation and manual `$n` bookkeeping. The builder produces
-// the same FenecQL -- but every leaf value is bound to a parameter, the only
+// the same FennecQL -- but every leaf value is bound to a parameter, the only
 // injection boundary is name validation, and the generated text can be
-// inspected with `toFenecQL()`.
+// inspected with `toFennecQL()`.
 //
 // The builder is transport independent: `from('docs')` works on its own and
-// `bind()` attaches it to any executor (wasm, HTTP, fenec-server).
+// `bind()` attaches it to any executor (wasm, HTTP, fennec-server).
 
 /**
  * Operator names -- both symbols and words are accepted. No prototype: a
@@ -112,7 +112,7 @@ const OPS = {
   in: 'in',
 };
 
-// FenecQL identifier: the same rule as the lexer (starts with a Unicode
+// FennecQL identifier: the same rule as the lexer (starts with a Unicode
 // letter or `_`, then letters/digits/`_`). Names cannot be parameterised,
 // so this is exactly where the injection boundary sits.
 const IDENT = /^[\p{Alphabetic}_][\p{Alphabetic}\p{N}_]*$/u;
@@ -139,7 +139,7 @@ function orderKeys(spec, columns = false) {
 function direction(dir) {
   const d = String(dir).toLowerCase();
   if (d !== 'asc' && d !== 'desc') {
-    throw new FenecError(`order direction must be 'asc' or 'desc': ${dir}`);
+    throw new FennecError(`order direction must be 'asc' or 'desc': ${dir}`);
   }
   return d === 'asc';
 }
@@ -151,7 +151,7 @@ const COLLATIONS = ['und', 'tr'];
 export function collation(name) {
   if (name === undefined || name === null) return null;
   if (!COLLATIONS.includes(name)) {
-    throw new FenecError(`unknown collation: ${JSON.stringify(name)}; there are 'und' and 'tr'`);
+    throw new FennecError(`unknown collation: ${JSON.stringify(name)}; there are 'und' and 'tr'`);
   }
   return name;
 }
@@ -163,7 +163,7 @@ function sortKey(o) {
 
 export function ident(name, what = 'field') {
   if (typeof name !== 'string' || !IDENT.test(name)) {
-    throw new FenecError(`invalid ${what} name: ${JSON.stringify(name)}`);
+    throw new FennecError(`invalid ${what} name: ${JSON.stringify(name)}`);
   }
   return name;
 }
@@ -171,13 +171,13 @@ export function ident(name, what = 'field') {
 /** A field's name, or a path into a json field: `'meta.lang'`. */
 export function path(name) {
   if (typeof name !== 'string' || !PATH.test(name)) {
-    throw new FenecError(`invalid field name: ${JSON.stringify(name)}`);
+    throw new FennecError(`invalid field name: ${JSON.stringify(name)}`);
   }
   return name;
 }
 
 /**
- * A select-list item: a field, or an aggregate of one spelled as FenecQL
+ * A select-list item: a field, or an aggregate of one spelled as FennecQL
  * spells it -- `count(*)`, `count(distinct user)`, `sum(total)`, `avg(f)`,
  * `min(f)`, `max(f)`, `first(f)`, `last(f)`, a path where a field goes --
  * which answers under that same name.
@@ -206,7 +206,7 @@ function column(name) {
 
 /** `group`'s keys: a field or a path, a name the list gives, or an expression. */
 function keysOf(flat) {
-  if (flat.length === 0) throw new FenecError('group takes at least one key');
+  if (flat.length === 0) throw new FennecError('group takes at least one key');
   return flat.map((k) => (k !== null && typeof k === 'object' && k[EXPR] === 'expr'
     ? { node: k }
     : { text: path(k) }));
@@ -224,24 +224,24 @@ function columnText(c, bind) {
  * `limit`, `offset` and a facet's `top` go as parameters, so a page of any
  * size or place is one text -- one statement a server parses and keeps;
  * `ef`, `candidates`, `k` and a snippet's words are written in, as
- * FenecQL takes them.
+ * FennecQL takes them.
  */
 export function whole(n, what) {
   if (!Number.isSafeInteger(n) || n < 0) {
-    throw new FenecError(`${what} must be a non-negative integer: ${n}`);
+    throw new FennecError(`${what} must be a non-negative integer: ${n}`);
   }
   return n;
 }
 
 /**
- * Coerces a JS value into the shape fenecdb understands, before it reaches
+ * Coerces a JS value into the shape fennecdb understands, before it reaches
  * JSON. `Float32Array` is the natural type for shipping embeddings, but
- * `JSON.stringify` turns it into an object -- which fenecdb would reject
- * with "a JSON object is not supported as a fenecdb value".
+ * `JSON.stringify` turns it into an object -- which fennecdb would reject
+ * with "a JSON object is not supported as a fennecdb value".
  */
 export function normalize(v, what = 'value') {
   if (v === undefined) {
-    throw new FenecError(`${what} is undefined -- did you mean 'null'?`);
+    throw new FennecError(`${what} is undefined -- did you mean 'null'?`);
   }
   if (v === null || typeof v !== 'object') return v;
   if (v instanceof Date) return v.toISOString();
@@ -256,7 +256,7 @@ export function normalize(v, what = 'value') {
     }
     return out;
   }
-  throw new FenecError(`this object cannot be used as a fenecdb value (${what})`);
+  throw new FennecError(`this object cannot be used as a fennecdb value (${what})`);
 }
 
 export function isSpec(v) {
@@ -274,7 +274,7 @@ export function isSpec(v) {
 // What `or`, `and`, `not` and `raw` make carries this mark, which no object
 // written by hand can: told apart by its `t` alone, `where({ t: 'or' })` --
 // a field called `t` -- was taken for a node and failed with a TypeError.
-const NODE = Symbol('fenec.condition');
+const NODE = Symbol('fennec.condition');
 
 function marked(node) {
   node[NODE] = true;
@@ -306,16 +306,16 @@ export function not(cond) {
  * one, bind it as a parameter too (`raw('title ~ ?', "?")`), do not quote it.
  */
 export function raw(sql, ...params) {
-  if (typeof sql !== 'string') throw new FenecError('raw() expects text');
+  if (typeof sql !== 'string') throw new FennecError('raw() expects text');
   return marked({ t: 'raw', sql, params });
 }
 
 // ------------------------------------------------------- values that compute
 
 // What `inc` and `expr` make: a value worked out over the row a `set`
-// writes, rendered as FenecQL with its values as parameters. Marked as a
+// writes, rendered as FennecQL with its values as parameters. Marked as a
 // condition node is, so a json field's object value is never taken for one.
-const EXPR = Symbol('fenec.expr');
+const EXPR = Symbol('fennec.expr');
 
 /**
  * What `expr()`, `bucket()`, `countDistinct()`, `first()` and `last()`
@@ -343,19 +343,19 @@ class Computed {
  */
 export function inc(by = 1) {
   if (typeof by !== 'number' || !Number.isFinite(by)) {
-    throw new FenecError(`inc() takes a number: ${JSON.stringify(by)}`);
+    throw new FennecError(`inc() takes a number: ${JSON.stringify(by)}`);
   }
   return { [EXPR]: 'inc', by };
 }
 
 /**
- * A value as a FenecQL expression over the row it is written into, `?`s
+ * A value as a FennecQL expression over the row it is written into, `?`s
  * bound to the parameters in order: `{ at: expr('now()') }`,
  * `{ total: expr('price * ?', 1.2) }`, `{ entry: expr('? + ":dr"', ref) }`
  * (`+` joins two texts, and only two texts).
  */
 export function expr(sql, ...params) {
-  if (typeof sql !== 'string') throw new FenecError('expr() expects text');
+  if (typeof sql !== 'string') throw new FennecError('expr() expects text');
   return new Computed(sql, params);
 }
 
@@ -377,13 +377,13 @@ const INTERVAL = /^[1-9][0-9]*(ms|s|m|h|d|w|mo|y)$/;
  */
 export function bucket(field, interval, zone) {
   if (typeof interval !== 'string' || !INTERVAL.test(interval)) {
-    throw new FenecError(
+    throw new FennecError(
       `bucket() takes an interval such as '15m', '1h', '1d', '1w' or '1mo': ${JSON.stringify(interval)}`,
     );
   }
   if (zone === undefined) return new Computed(`bucket(${path(field)}, ${interval})`, []);
   if (typeof zone !== 'string' || zone === '') {
-    throw new FenecError(`bucket() takes a zone's name, such as 'Europe/Istanbul', or an offset, such as '+03:00': ${JSON.stringify(zone)}`);
+    throw new FennecError(`bucket() takes a zone's name, such as 'Europe/Istanbul', or an offset, such as '+03:00': ${JSON.stringify(zone)}`);
   }
   return new Computed(`bucket(${path(field)}, ${interval}, ?)`, [zone]);
 }
@@ -425,25 +425,25 @@ function value(k, v, bind, write) {
   if (!(v !== null && typeof v === 'object' && v[EXPR])) return bind(v, k);
   if (v[EXPR] === 'inc') {
     if (write === 'insert') {
-      throw new FenecError(`inc() reads the row it changes: use it in update (field: ${k})`);
+      throw new FennecError(`inc() reads the row it changes: use it in update (field: ${k})`);
     }
     return `coalesce(${k}, 0) + ${bind(v.by, k)}`;
   }
   let i = 0;
   const out = v.sql.replace(/\?/g, () => {
     if (i >= v.params.length) {
-      throw new FenecError('expr(): more `?` placeholders than parameters');
+      throw new FennecError('expr(): more `?` placeholders than parameters');
     }
     return bind(v.params[i++], k);
   });
-  if (i !== v.params.length) throw new FenecError('expr(): too many parameters given');
+  if (i !== v.params.length) throw new FennecError('expr(): too many parameters given');
   return out;
 }
 
 function toCond(x) {
   if (isSpec(x) && x[NODE]) return x;
   if (isSpec(x)) return objectCond(x);
-  throw new FenecError(`expected an object as a condition: ${JSON.stringify(x)}`);
+  throw new FennecError(`expected an object as a condition: ${JSON.stringify(x)}`);
 }
 
 /** `{ year: {gte: 2024}, tags: {has: 'rust'} }` -> an `and` tree */
@@ -480,12 +480,12 @@ function fieldCond(field, spec) {
     }
     const op = OPS[k];
     if (!op) {
-      throw new FenecError(`unknown operator \`${k}\` (field: ${field})`);
+      throw new FennecError(`unknown operator \`${k}\` (field: ${field})`);
     }
     items.push(op === 'in' ? inCond(field, v) : cmp(field, op, v));
   }
   if (items.length === 0) {
-    throw new FenecError(`empty condition object (field: ${field})`);
+    throw new FennecError(`empty condition object (field: ${field})`);
   }
   return items.length === 1 ? items[0] : { t: 'and', items };
 }
@@ -496,19 +496,19 @@ function fieldCond(field, spec) {
  */
 function distanceCond(field, spec) {
   if (!isSpec(spec) || !Array.isArray(spec.from)) {
-    throw new FenecError(`distance takes { from: [lon, lat], <op>: metres } (field: ${field})`);
+    throw new FennecError(`distance takes { from: [lon, lat], <op>: metres } (field: ${field})`);
   }
   const items = [];
   for (const [k, v] of Object.entries(spec)) {
     if (k === 'from') continue;
     const op = OPS[k];
     if (!op || op === 'in' || op === 'has' || op === '~' || typeof v !== 'number') {
-      throw new FenecError(`distance compares metres with lt, lte, gt, gte, eq or ne: ${k} (field: ${field})`);
+      throw new FennecError(`distance compares metres with lt, lte, gt, gte, eq or ne: ${k} (field: ${field})`);
     }
     items.push({ t: 'dist', field, from: spec.from, op, value: v });
   }
   if (items.length === 0) {
-    throw new FenecError(`distance needs a comparison, as lte: metres (field: ${field})`);
+    throw new FennecError(`distance needs a comparison, as lte: metres (field: ${field})`);
   }
   return items.length === 1 ? items[0] : { t: 'and', items };
 }
@@ -519,21 +519,21 @@ function inCond(field, values) {
   // list -- `customer in (get customers select id where ...)`.
   if (values instanceof Query) return { t: 'sub', field, query: values };
   if (!Array.isArray(values)) {
-    throw new FenecError(`\`in\` expects an array (field: ${field})`);
+    throw new FennecError(`\`in\` expects an array (field: ${field})`);
   }
   if (values.length === 0) {
-    throw new FenecError(`\`in\` does not accept an empty array (field: ${field})`);
+    throw new FennecError(`\`in\` does not accept an empty array (field: ${field})`);
   }
   return { t: 'in', field, values };
 }
 
-// `= null` is always false in FenecQL; the intent is `is null`. Rather than
+// `= null` is always false in FennecQL; the intent is `is null`. Rather than
 // silently returning an empty result, we generate the right expression.
 function cmp(field, op, value) {
   if (value === null) {
     if (op === '=') return { t: 'null', field, negated: false };
     if (op === '!=') return { t: 'null', field, negated: true };
-    throw new FenecError(`\`${op}\` cannot be used with null (field: ${field})`);
+    throw new FennecError(`\`${op}\` cannot be used with null (field: ${field})`);
   }
   return { t: 'cmp', field, op, value };
 }
@@ -557,7 +557,7 @@ function prune(c) {
   return c;
 }
 
-/** Renders the condition tree as FenecQL text; values go through `bind`. */
+/** Renders the condition tree as FennecQL text; values go through `bind`. */
 export function render(c, bind, parent = null) {
   switch (c.t) {
     case 'and':
@@ -586,17 +586,17 @@ export function render(c, bind, parent = null) {
       let i = 0;
       const out = c.sql.replace(/\?/g, () => {
         if (i >= c.params.length) {
-          throw new FenecError('raw(): more `?` placeholders than parameters');
+          throw new FennecError('raw(): more `?` placeholders than parameters');
         }
         return bind(c.params[i++], 'raw');
       });
       if (i !== c.params.length) {
-        throw new FenecError('raw(): too many parameters given');
+        throw new FennecError('raw(): too many parameters given');
       }
       return out;
     }
     default:
-      throw new FenecError(`unknown condition node \`${c.t}\``);
+      throw new FennecError(`unknown condition node \`${c.t}\``);
   }
 }
 
@@ -616,7 +616,7 @@ export class Query {
     this.#s = { cond: [], order: [], offset: 0, lookups: [], marks: [], facets: [], ...state };
   }
 
-  // Cloned through `this.constructor`: subclasses such as `FenecSync.from()`
+  // Cloned through `this.constructor`: subclasses such as `FennecSync.from()`
   // keep their own behaviour along the chain (`.where(...).update(...)`
   // still goes through the optimistic write path).
   #with(patch) {
@@ -687,7 +687,7 @@ export class Query {
     return new Query({ ...this.#s });
   }
 
-  /** Binds the query to an executor: a `Fenec` instance or a `(sql, params)` fn. */
+  /** Binds the query to an executor: a `Fennec` instance or a `(sql, params)` fn. */
   bind(exec) {
     // A read's mark and a write's `{ wait, signal }` go on, as from `from()`.
     const fn = typeof exec === 'function' ? exec : (s, p, o) => (o ? exec.run(s, p, o) : exec.run(s, p));
@@ -696,7 +696,7 @@ export class Query {
 
   /**
    * `select a, b` -- no arguments, or `'*'`, means every field. Aggregates
-   * go in the same list, spelled as FenecQL spells them, and answer under
+   * go in the same list, spelled as FennecQL spells them, and answer under
    * that name; an expression -- `expr()`, `bucket()`, `countDistinct()`,
    * `first()`, `last()` -- answers under the name its `as` gives it:
    *
@@ -735,7 +735,7 @@ export class Query {
    */
   snippet(field, words, opts = {}) {
     const mark = { field: ident(field), words: whole(words, 'snippet words'), ...tags(opts, 'snippet') };
-    if (mark.words === 0) throw new FenecError('snippet shows at least one word');
+    if (mark.words === 0) throw new FennecError('snippet shows at least one word');
     if (opts.ellipsis !== undefined) mark.ellipsis = text(opts.ellipsis, 'snippet ellipsis');
     return this.#mark(mark);
   }
@@ -744,7 +744,7 @@ export class Query {
     // Each answers under its label, and a row holds a name once.
     const kind = (m) => (m.words === null ? 'highlight' : 'snippet');
     if (this.#s.marks.some((m) => kind(m) === kind(mark) && m.field === mark.field)) {
-      throw new FenecError(`${kind(mark)}(${mark.field}) is asked twice`);
+      throw new FennecError(`${kind(mark)}(${mark.field}) is asked twice`);
     }
     return this.#with({ marks: [...this.#s.marks, mark] });
   }
@@ -768,9 +768,9 @@ export class Query {
    */
   facet(field, opts = {}) {
     const f = { field: path(field), top: opts.top === undefined ? null : whole(opts.top, 'facet top') };
-    if (f.top === 0) throw new FenecError(`facet ${f.field} top 0 answers nothing`);
+    if (f.top === 0) throw new FennecError(`facet ${f.field} top 0 answers nothing`);
     if (this.#s.facets.some((g) => g.field === f.field)) {
-      throw new FenecError(`facet ${f.field} is asked twice`);
+      throw new FennecError(`facet ${f.field} is asked twice`);
     }
     if (opts.ranges !== undefined) {
       const r = opts.ranges;
@@ -781,14 +781,14 @@ export class Query {
         r.length < 2 ||
         r.some((b, i) => typeof b !== 'number' || !Number.isFinite(b) || (i > 0 && !(b > r[i - 1])))
       ) {
-        throw new FenecError(
+        throw new FennecError(
           `facet ${f.field} ranges takes 2 to 10 001 numbers, each above the one before, and no top: every range answers, in order`,
         );
       }
       f.ranges = r.map(String);
     }
     if (opts.disjunctive !== undefined && typeof opts.disjunctive !== 'boolean') {
-      throw new FenecError(`facet ${f.field} disjunctive is true or false`);
+      throw new FennecError(`facet ${f.field} disjunctive is true or false`);
     }
     f.disjunctive = opts.disjunctive === true;
     return this.#with({ facets: [...this.#s.facets, f] });
@@ -845,9 +845,9 @@ export class Query {
   match(field, query, opts = {}) {
     const { fuzzy = false, prefix = false } = opts;
     if (fuzzy !== true && fuzzy !== false && !(Number.isInteger(fuzzy) && fuzzy >= 0 && fuzzy <= 2)) {
-      throw new FenecError(`fuzzy is true, false or 0 to 2 edits: ${fuzzy}`);
+      throw new FennecError(`fuzzy is true, false or 0 to 2 edits: ${fuzzy}`);
     }
-    if (typeof prefix !== 'boolean') throw new FenecError(`prefix is true or false: ${prefix}`);
+    if (typeof prefix !== 'boolean') throw new FennecError(`prefix is true or false: ${prefix}`);
     return this.#with({ match: { field: ident(field), query, fuzzy, prefix } });
   }
 
@@ -891,7 +891,7 @@ export class Query {
    * attached to it.
    *
    * Everything in `opts` binds to the looked-up collection, which is what
-   * the clause's position means in FenecQL. `limit` in particular counts
+   * the clause's position means in FennecQL. `limit` in particular counts
    * children **per parent**, not rows in the page: asking twenty products
    * for three reviews each is one query, and no join expresses it.
    *
@@ -936,7 +936,7 @@ export class Query {
    *     .lookup('couriers', { on: 'user', parentKey: 'courier', select: ['name'] })
    *
    * Call it again to chain: the second call binds to the collection the
-   * first one named, the way position scopes it in FenecQL.
+   * first one named, the way position scopes it in FennecQL.
    *
    *   db.from('shops')
    *     .lookup('orders', { on: 'shop_id', limit: 3 })
@@ -954,16 +954,16 @@ export class Query {
     if (rel) [name, opts] = [rel.collection, { ...rel, ...opts }];
     name = nameOf(name);
     if (!opts.on) {
-      throw new FenecError('lookup needs `on`: the child field holding the key');
+      throw new FennecError('lookup needs `on`: the child field holding the key');
     }
     const select = opts.select === undefined ? null : [opts.select].flat();
     const on = [opts.on].flat().map((f) => ident(f));
     const parent = opts.parentKey === undefined ? [] : [opts.parentKey].flat().map((f) => ident(f));
-    if (!on.length) throw new FenecError('lookup needs `on`: the child field holding the key');
+    if (!on.length) throw new FennecError('lookup needs `on`: the child field holding the key');
     // One child field alone pairs with `id` unless named; several, each
     // with its own.
     if ((on.length > 1 || parent.length) && parent.length !== on.length) {
-      throw new FenecError(`lookup pairs ${on.length} child fields with ${parent.length} parent fields`);
+      throw new FennecError(`lookup pairs ${on.length} child fields with ${parent.length} parent fields`);
     }
     const list = select === null || select.includes('*') ? null : select.map((c) => column(c));
     const aggregate = !!list?.some((c) => c.aggregate);
@@ -971,7 +971,7 @@ export class Query {
     // The engine refuses it too; failing here never sends a query.
     if (group && !aggregate) {
       const keys = group.map((k) => k.text ?? k.node.sql).join(', ');
-      throw new FenecError(`group ${keys} needs an aggregate in select: 'count(*)'`);
+      throw new FennecError(`group ${keys} needs an aggregate in select: 'count(*)'`);
     }
     const level = {
       collection: ident(name, 'collection'),
@@ -980,7 +980,7 @@ export class Query {
       // A level selects its children's fields, or aggregates of them.
       project: aggregate ? list : list?.map((c) => {
         if (c.text === undefined) {
-          throw new FenecError('a lookup selects its children\'s fields, or aggregates of them');
+          throw new FennecError('a lookup selects its children\'s fields, or aggregates of them');
         }
         return c;
       }) ?? null,
@@ -1033,17 +1033,17 @@ export class Query {
    */
   require(n, opts) {
     if (opts !== undefined && (opts === null || typeof opts !== 'object')) {
-      throw new FenecError('require takes its reason as an option: require(n, { reason })');
+      throw new FennecError('require takes its reason as an option: require(n, { reason })');
     }
     return this.#with({ require: requireClause({ require: n, reason: opts?.reason }) });
   }
 
   /**
-   * The generated FenecQL and its parameters: `[sql, params]`.
+   * The generated FennecQL and its parameters: `[sql, params]`.
    * This is the builder's only output -- it can be inspected before running,
    * logged, or handed to another transport.
    */
-  toFenecQL() {
+  toFennecQL() {
     const params = [];
     return [this.#text(binder(params)), params];
   }
@@ -1053,12 +1053,12 @@ export class Query {
     const { project, count, lookups, marks, facets } = this.#s;
     // One column is the list; the engine refuses the rest too.
     if (!project || project.length !== 1 || count || lookups.length || marks.length || facets.length) {
-      throw new FenecError(
+      throw new FennecError(
         `an inner query of \`in\` selects exactly one column: from('${this.#s.collection}').select('id')`,
       );
     }
     if (this.#s.require) {
-      throw new FenecError('an inner query of `in` takes no require: the query around it does');
+      throw new FennecError('an inner query of `in` takes no require: the query around it does');
     }
     return this.#text(bind);
   }
@@ -1069,56 +1069,56 @@ export class Query {
     // The engine refuses these too; failing here never sends a query.
     if (group && !aggregate) {
       const keys = group.map((k) => k.text ?? k.node.sql).join(', ');
-      throw new FenecError(`group ${keys} needs an aggregate in select: 'count(*)'`);
+      throw new FennecError(`group ${keys} needs an aggregate in select: 'count(*)'`);
     }
     if (aggregate) {
       // Ungrouped, `order`, `limit` and `offset` pick the rows folded; a
       // lookup hangs off the groups, keyed by a column.
       const clash = near ? 'near' : match ? 'match' : count && !group ? 'count' : null;
-      if (clash) throw new FenecError(`aggregates cannot be combined with ${clash}`);
+      if (clash) throw new FennecError(`aggregates cannot be combined with ${clash}`);
       if (!group && this.#s.require) {
-        throw new FenecError('require counts the rows a query answers, and an aggregate answers one');
+        throw new FennecError('require counts the rows a query answers, and an aggregate answers one');
       }
     }
     if (marks.length) {
       const what = marks[0].words === null ? 'highlight' : 'snippet';
-      if (!match) throw new FenecError(`${what} needs match: it marks the terms match found`);
-      if (aggregate) throw new FenecError(`${what} marks a row's text; aggregates answer groups`);
+      if (!match) throw new FennecError(`${what} needs match: it marks the terms match found`);
+      if (aggregate) throw new FennecError(`${what} marks a row's text; aggregates answer groups`);
     }
     if (facets.length) {
-      if (near) throw new FenecError('facet counts the rows a filter or match selects, and near ranks every row: ask the facets without near');
-      if (aggregate) throw new FenecError('facet cannot be combined with aggregates: group counts by value');
+      if (near) throw new FennecError('facet counts the rows a filter or match selects, and near ranks every row: ask the facets without near');
+      if (aggregate) throw new FennecError('facet cannot be combined with aggregates: group counts by value');
     }
     // The engine refuses both of these too; failing here never sends a query.
     if (rerank && !match) {
-      throw new FenecError('rerank needs match: it reorders what match found');
+      throw new FennecError('rerank needs match: it reorders what match found');
     }
     if (match && near && !fuse) {
-      throw new FenecError(
+      throw new FennecError(
         'match and near cannot be combined: both order the result; fuse() ranks by both',
       );
     }
     if (fuse && !(match && near)) {
-      throw new FenecError('fuse combines match and near: the query needs both');
+      throw new FennecError('fuse combines match and near: the query needs both');
     }
     if (fuse && rerank) {
-      throw new FenecError('fuse and rerank are two ways to use a vector with match: pick one');
+      throw new FennecError('fuse and rerank are two ways to use a vector with match: pick one');
     }
     // Refused in the engine too: a score spanning a parent and its children
     // has no meaning, and `count` collapses the rows they would hang from.
     if (lookups.length) {
       const clash = near ? 'near' : match ? 'match' : rerank ? 'rerank' : null;
-      if (clash) throw new FenecError(`lookup cannot be combined with ${clash}`);
+      if (clash) throw new FennecError(`lookup cannot be combined with ${clash}`);
       // `count` collapses the rows children would hang from -- unless they
       // are only deciding who is counted.
       if (count && !lookups[0].required) {
-        throw new FenecError(
+        throw new FennecError(
           'count cannot be used with lookup unless it is required: there is ' +
             'nothing to attach children to',
         );
       }
       if (lookups.length > MAX_LOOKUP_DEPTH) {
-        throw new FenecError(
+        throw new FennecError(
           `lookup chained too deep: at most ${MAX_LOOKUP_DEPTH} levels`,
         );
       }
@@ -1129,7 +1129,7 @@ export class Query {
       const seen = [collection];
       for (const l of lookups) {
         if (seen.includes(l.collection)) {
-          throw new FenecError(
+          throw new FennecError(
             `${l.collection} cannot look itself up: both sides would answer ` +
               'to the same name',
           );
@@ -1219,7 +1219,7 @@ export class Query {
 
   /** The raw response (`{columns, rows}`, and `facets` when asked). */
   async run() {
-    const [sql, params] = this.toFenecQL();
+    const [sql, params] = this.toFennecQL();
     return this.#exec(sql, params, READ);
   }
 
@@ -1251,13 +1251,13 @@ export class Query {
    * stage read -- one line a step. The query runs to find out.
    */
   async explain() {
-    const [sql, params] = this.toFenecQL();
+    const [sql, params] = this.toFennecQL();
     const r = await this.#exec(`explain ${sql}`, params, READ);
     return (r.rows ?? []).map((row) => row.plan);
   }
 
   // The text of the write statements, **without running them**. The write
-  // side counterpart of `toFenecQL()`: inspectable, loggable, handable to
+  // side counterpart of `toFennecQL()`: inspectable, loggable, handable to
   // another transport -- and synchronous. The optimistic layer depends on
   // that: there must be no `await` between applying locally and sending to
   // the server, or the "visible immediately" promise would be a lie, even
@@ -1276,7 +1276,7 @@ export class Query {
   toInsert(docs, opts = {}) {
     this.#assertPlain('insert');
     const list = Array.isArray(docs) ? docs : [docs];
-    if (list.length === 0) throw new FenecError('cannot write an empty document list');
+    if (list.length === 0) throw new FennecError('cannot write an empty document list');
     const params = [];
     const bind = binder(params);
     const body = list.map((d) => renderDoc(d, bind, 'insert')).join(', ');
@@ -1320,7 +1320,7 @@ export class Query {
   toUpsert(docs, patch, opts = {}) {
     this.#assertPlain('upsert');
     const list = Array.isArray(docs) ? docs : [docs];
-    if (list.length === 0) throw new FenecError('cannot write an empty document list');
+    if (list.length === 0) throw new FennecError('cannot write an empty document list');
     const params = [];
     const bind = binder(params);
     const body = list.map((d) => renderDoc(d, bind, 'insert')).join(', ');
@@ -1394,17 +1394,17 @@ export class Query {
   // its documents, and takes neither.
   #assertPlain(verb) {
     if (this.#s.require) {
-      throw new FenecError(`${verb} takes require as its option: ${verb}(..., { require: n })`);
+      throw new FennecError(`${verb} takes require as its option: ${verb}(..., { require: n })`);
     }
     const extra = this.#extraClause(verb === 'update' || verb === 'delete');
-    if (extra) throw new FenecError(`${verb} cannot be used with \`${extra}\``);
+    if (extra) throw new FennecError(`${verb} cannot be used with \`${extra}\``);
     // Not among the read clauses `count` refuses, since a required lookup
     // decides what a count counts; a write has no use for one, and left
     // out, `.lookup(...).delete()` deleted every parent it filtered.
-    if (this.#s.lookups.length) throw new FenecError(`${verb} cannot be used with \`lookup\``);
-    if (this.#s.facets.length) throw new FenecError(`${verb} cannot be used with \`facet\``);
+    if (this.#s.lookups.length) throw new FennecError(`${verb} cannot be used with \`lookup\``);
+    if (this.#s.facets.length) throw new FennecError(`${verb} cannot be used with \`facet\``);
     if ((verb === 'insert' || verb === 'upsert') && this.#s.cond.length) {
-      throw new FenecError(`${verb} cannot be used with \`where\``);
+      throw new FennecError(`${verb} cannot be used with \`where\``);
     }
   }
 
@@ -1413,7 +1413,7 @@ export class Query {
   // The engine checks the same thing; failing here never sends the query.
   #assertCountable() {
     const extra = this.#extraClause() ?? (this.#s.require ? 'require' : null);
-    if (extra) throw new FenecError(`count cannot be used with \`${extra}\``);
+    if (extra) throw new FennecError(`count cannot be used with \`${extra}\``);
   }
 
   #extraClause(picks = false) {
@@ -1446,7 +1446,7 @@ export class Query {
     const where = this.#where(bind);
     if (where) return ` where ${where}`;
     if ((opts && opts.all === true) || this.#s.limit !== undefined) return '';
-    throw new FenecError(
+    throw new FennecError(
       `an unfiltered ${verb} covers the whole collection; if you mean it, ` +
         `${verb}({ all: true })`,
     );
@@ -1460,9 +1460,9 @@ export class Query {
 
   #exec(sql, params, held) {
     if (!this.#s.exec) {
-      throw new FenecError(
+      throw new FennecError(
         'query is not bound to a connection: use db.from(...) or q.bind(db) ' +
-          '(toFenecQL() if you only want the text)',
+          '(toFennecQL() if you only want the text)',
       );
     }
     return held ? this.#s.exec(sql, params, held) : this.#s.exec(sql, params);
@@ -1471,12 +1471,12 @@ export class Query {
 
 /**
  * What a query's reads hand `exec` beside their text: they only read, which
- * `FenecHttp.run` marks for a read replica near the client. A database in
+ * `FennecHttp.run` marks for a read replica near the client. A database in
  * the page, which has no other copy, passes it over.
  */
 const READ = Object.freeze({ read: true });
 
-/** A write's `{ wait, signal }` for `FenecHttp.run`, null without either. */
+/** A write's `{ wait, signal }` for `FennecHttp.run`, null without either. */
 function heldOf(opts) {
   if (opts?.wait === undefined && opts?.signal === undefined) return null;
   return { wait: opts.wait, signal: opts.signal };
@@ -1489,13 +1489,13 @@ export const LOCAL_WAIT = 'wait holds a write at a server: a database in the pag
 function tags(opts, what) {
   if (opts.pre === undefined && opts.post === undefined) return {};
   if (opts.pre === undefined || opts.post === undefined) {
-    throw new FenecError(`${what} takes both pre and post, or neither`);
+    throw new FennecError(`${what} takes both pre and post, or neither`);
   }
   return { pre: text(opts.pre, `${what} pre`), post: text(opts.post, `${what} post`) };
 }
 
 function text(v, what) {
-  if (typeof v !== 'string') throw new FenecError(`${what} must be text: ${JSON.stringify(v)}`);
+  if (typeof v !== 'string') throw new FennecError(`${what} must be text: ${JSON.stringify(v)}`);
   return v;
 }
 
@@ -1505,11 +1505,11 @@ function condOf(args) {
   if (args.length === 2) return fieldCond(path(args[0]), args[1]);
   if (args.length === 3) {
     const op = OPS[args[1]];
-    if (!op) throw new FenecError(`unknown operator \`${args[1]}\``);
+    if (!op) throw new FennecError(`unknown operator \`${args[1]}\``);
     const field = path(args[0]);
     return op === 'in' ? inCond(field, args[2]) : cmp(field, op, args[2]);
   }
-  throw new FenecError('where(field, op, value) | where(field, value) | where(object)');
+  throw new FennecError('where(field, op, value) | where(field, value) | where(object)');
 }
 
 function binder(params) {
@@ -1520,7 +1520,7 @@ function binder(params) {
 }
 
 // ` require n` for a write's `{ require: n }`: the rows it must write, a
-// whole number from 0 written in -- FenecQL takes no parameter there: the
+// whole number from 0 written in -- FennecQL takes no parameter there: the
 // count is what the statement guards, a constant of the code, where a
 // page's `limit` and `offset` change with each request and go as
 // parameters.
@@ -1529,18 +1529,18 @@ function requireClause(opts) {
   const reason = opts?.reason;
   if (n === undefined || n === null) {
     if (reason !== undefined && reason !== null) {
-      throw new FenecError('a reason says why a require refused, and goes with one');
+      throw new FennecError('a reason says why a require refused, and goes with one');
     }
     return '';
   }
   if (typeof n !== 'number' || !Number.isSafeInteger(n) || n < 0) {
-    throw new FenecError(`require takes a count of rows, a whole number from 0 (got ${String(n)})`);
+    throw new FennecError(`require takes a count of rows, a whole number from 0 (got ${String(n)})`);
   }
   return ` require ${n}${reasonClause(reason)}`;
 }
 
 // ` else '<reason>'` for a require's `reason`: written into the text, a
-// quote doubled and a backslash escaped, as FenecQL takes it -- never a
+// quote doubled and a backslash escaped, as FennecQL takes it -- never a
 // parameter, as the count is not: it is the statement's own words, which a
 // caller tells one refusal from another by. 1 to 200 bytes of UTF-8, as the
 // parser holds it, and no backtick: the refusal quotes its statement with
@@ -1549,9 +1549,9 @@ const encoder = new TextEncoder();
 function reasonClause(reason) {
   if (reason === undefined || reason === null) return '';
   if (typeof reason !== 'string' || reason === '' || encoder.encode(reason).length > 200) {
-    throw new FenecError("a require's reason is a text of 1 to 200 bytes");
+    throw new FennecError("a require's reason is a text of 1 to 200 bytes");
   }
-  if (reason.includes('`')) throw new FenecError("a require's reason holds no backtick");
+  if (reason.includes('`')) throw new FennecError("a require's reason holds no backtick");
   return ` else '${reason.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`;
 }
 
@@ -1562,27 +1562,27 @@ function returningClause(opts) {
   if (r === undefined || r === null || r === false) return '';
   if (r === true) return ' returning *';
   if (!Array.isArray(r) || r.length === 0) {
-    throw new FenecError('returning names the fields it answers, or * for every one');
+    throw new FennecError('returning names the fields it answers, or * for every one');
   }
   if (r.includes('*')) {
-    if (r.length > 1) throw new FenecError('returning * answers every field: it takes no other');
+    if (r.length > 1) throw new FennecError('returning * answers every field: it takes no other');
     return ' returning *';
   }
   return ` returning ${r.map(path).join(', ')}`;
 }
 
 function renderDoc(doc, bind, write) {
-  if (!isSpec(doc)) throw new FenecError('expected a document object');
+  if (!isSpec(doc)) throw new FennecError('expected a document object');
   const pairs = Object.entries(doc)
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) => `${path(k)}: ${value(k, v, bind, write)}`);
-  if (pairs.length === 0) throw new FenecError('cannot write an empty document');
+  if (pairs.length === 0) throw new FennecError('cannot write an empty document');
   return `{${pairs.join(', ')}}`;
 }
 
 /**
  * Unbound query builder. For handing the generated text to another
- * transport, or comparing it in a test: `from('docs').where(...).toFenecQL()`.
+ * transport, or comparing it in a test: `from('docs').where(...).toFennecQL()`.
  */
 export function from(name) {
   return new Query({ collection: ident(nameOf(name), 'collection') });

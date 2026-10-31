@@ -1,14 +1,14 @@
 // What the scripted checks (scripts/checks/) drive the app with. Bundled into
 // the test variant only: every use is behind `__TESTABLE__`, which
-// electrobun.config.ts sets true for FENEC_DESKTOP_TEST_BUILD=1 and false in
+// electrobun.config.ts sets true for FENNEC_DESKTOP_TEST_BUILD=1 and false in
 // every other build, and the bundler drops what it guards. A shipped app
 // reads none of these variables, runs no command from a file and reports
 // nothing (scripts/checks/release.mjs holds the shipped bundle to it).
 //
-//   FENEC_DESKTOP_REPORT   a file the app appends one JSON line a fact to
-//   FENEC_DESKTOP_CONTROL  a file of JSON commands, one a line, read as it grows
-//   FENEC_DESKTOP_OPEN     files to open at start, joined by ":"
-//   FENEC_DESKTOP_LAUNCHER show the launcher at start
+//   FENNEC_DESKTOP_REPORT  a file the app appends one JSON line a fact to
+//   FENNEC_DESKTOP_CONTROL a file of JSON commands, one a line, read as it grows
+//   FENNEC_DESKTOP_OPEN    files to open at start, joined by ":"
+//   FENNEC_DESKTOP_LAUNCHER show the launcher at start
 //
 // A page reports through the event-only bridge a window keeps even when it is
 // sandboxed (`__electrobunSendToHost`), which a server's page cannot reach
@@ -53,8 +53,8 @@ import { showLauncher, showNewDatabase } from "./pages.ts";
 import { openStudioWindow, type StudioWindow } from "./windows.ts";
 
 const T0 = Date.now();
-const REPORT = process.env["FENEC_DESKTOP_REPORT"] ?? "";
-const CONTROL = process.env["FENEC_DESKTOP_CONTROL"] ?? "";
+const REPORT = process.env["FENNEC_DESKTOP_REPORT"] ?? "";
+const CONTROL = process.env["FENNEC_DESKTOP_CONTROL"] ?? "";
 
 /** One fact for the check that is watching. */
 export function report(what: string, extra: Record<string, unknown> = {}) {
@@ -80,7 +80,7 @@ export function pagePreload(origin: string): string {
 		`(function(){if(location.origin!==${o})return;`,
 		`var n=0,last="",t=setInterval(function(){n++;`,
 		`var txt=document.body?document.body.innerText:"";`,
-		`var signin=/Connect to a fenecdb server/.test(txt);`,
+		`var signin=/Connect to a fennecdb server/.test(txt);`,
 		// The collections and their counts come from the sidebar's own elements, not
 		// the page's text: a narrow window slides the sidebar out of sight, and the
 		// shell's own words ("Rows", "Schema") are there long before any data is.
@@ -260,8 +260,8 @@ export async function boot(): Promise<boolean> {
 		}, 150);
 	}
 	report("ready");
-	const open = process.env["FENEC_DESKTOP_OPEN"];
+	const open = process.env["FENNEC_DESKTOP_OPEN"];
 	if (open) for (const p of open.split(":")) await openFile(p);
-	if (process.env["FENEC_DESKTOP_LAUNCHER"]) await showLauncher();
-	return Boolean(open) || Boolean(process.env["FENEC_DESKTOP_LAUNCHER"]);
+	if (process.env["FENNEC_DESKTOP_LAUNCHER"]) await showLauncher();
+	return Boolean(open) || Boolean(process.env["FENNEC_DESKTOP_LAUNCHER"]);
 }

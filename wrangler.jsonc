@@ -18,7 +18,7 @@
     "directory": "./site/dist",
     "binding": "ASSETS",
     "run_worker_first": ["/api/*"],
-    // Default. `/docs/` serves docs/index.html; `/docs/fenecql.html` serves
+    // Default. `/docs/` serves docs/index.html; `/docs/fennecql.html` serves
     // itself. Both spellings appear in the generated links.
     "html_handling": "auto-trailing-slash",
     // Anything unmatched gets 404.html rather than a bare Cloudflare error.

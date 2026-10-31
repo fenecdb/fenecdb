@@ -1,28 +1,28 @@
-// `make grafana-check`, the plugin's half: the "fenecdb data (plugin)"
-// dashboard as Grafana serves it, through fenecdb-datasource, against
-// fenec-server. Every panel's query, the variables' and the annotation's are
+// `make grafana-check`, the plugin's half: the "fennecdb data (plugin)"
+// dashboard as Grafana serves it, through fennecdb-datasource, against
+// fennec-server. Every panel's query, the variables' and the annotation's are
 // asked of Grafana's /api/ds/query as an anonymous viewer would ask them --
 // the browser's part done here: the variables' values beside the query,
 // nothing written into its text -- and the same statement, bound here by
-// hand the way the plugin's backend binds it, is sent to fenec-server
+// hand the way the plugin's backend binds it, is sent to fennec-server
 // directly with the server's token. The frames must hold the rows column
 // by column, in the select list's order. Then the alert rule must have
 // evaluated, an instance a symbol, firing exactly where the server's rows
 // say; and what the data source must refuse, and must not show.
 //
 //   GRAFANA_URL       http://127.0.0.1:3000
-//   FENEC_URL         http://127.0.0.1:8080
-//   FENEC_HTTP_TOKEN  the server's token, for the direct runs
+//   FENNEC_URL        http://127.0.0.1:8080
+//   FENNEC_HTTP_TOKEN the server's token, for the direct runs
 //   GRAFANA_ADMIN     admin:admin, for the alert rules and the data source's settings
 import assert from 'node:assert/strict';
 
 const GRAFANA = (process.env.GRAFANA_URL ?? 'http://127.0.0.1:3000').replace(/\/$/, '');
-const FENEC = (process.env.FENEC_URL ?? 'http://127.0.0.1:8080').replace(/\/$/, '');
-const TOKEN = process.env.FENEC_HTTP_TOKEN;
-if (!TOKEN) throw new Error('set FENEC_HTTP_TOKEN');
+const FENNEC = (process.env.FENNEC_URL ?? 'http://127.0.0.1:8080').replace(/\/$/, '');
+const TOKEN = process.env.FENNEC_HTTP_TOKEN;
+if (!TOKEN) throw new Error('set FENNEC_HTTP_TOKEN');
 const ADMIN = `Basic ${Buffer.from(process.env.GRAFANA_ADMIN ?? 'admin:admin').toString('base64')}`;
 const DAY = 86_400_000;
-const DS = { type: 'fenecdb-datasource', uid: 'fenecdb' };
+const DS = { type: 'fennecdb-datasource', uid: 'fennecdb' };
 
 async function json(url, init) {
   const res = await fetch(url, init);
@@ -33,7 +33,7 @@ async function json(url, init) {
 let dashboard;
 for (let i = 0; ; i++) {
   try {
-    const r = await json(`${GRAFANA}/api/dashboards/uid/fenecdb-data-plugin`);
+    const r = await json(`${GRAFANA}/api/dashboards/uid/fennecdb-data-plugin`);
     if (r.status === 200) {
       dashboard = r.body.dashboard;
       break;
@@ -41,7 +41,7 @@ for (let i = 0; ; i++) {
   } catch {
     // not listening yet
   }
-  if (i === 120) throw new Error(`no fenecdb-data-plugin dashboard at ${GRAFANA} after two minutes`);
+  if (i === 120) throw new Error(`no fennecdb-data-plugin dashboard at ${GRAFANA} after two minutes`);
   await new Promise((r) => setTimeout(r, 1000));
 }
 
@@ -89,9 +89,9 @@ function bind(target, vars, range = { from, to, intervalMs }) {
 
 async function direct(target, vars) {
   const body = bind(target, vars);
-  const res = await fetch(`${FENEC}/query`, { method: 'POST', headers: { authorization: `Bearer ${TOKEN}` }, body: JSON.stringify(body) });
+  const res = await fetch(`${FENNEC}/query`, { method: 'POST', headers: { authorization: `Bearer ${TOKEN}` }, body: JSON.stringify(body) });
   const rows = await res.json();
-  assert.equal(res.status, 200, `fenec-server answered ${res.status}: ${JSON.stringify(rows)}`);
+  assert.equal(res.status, 200, `fennec-server answered ${res.status}: ${JSON.stringify(rows)}`);
   return { rows, body };
 }
 
@@ -103,7 +103,7 @@ async function same(name, target, vars) {
   assert.equal(g.status, 200, `${name}: Grafana answered ${g.status}: ${JSON.stringify(g.result)}`);
   assert.ok(!g.result.error, `${name}: ${g.result.error}`);
   const { rows, body } = await direct(target, vars);
-  assert.ok(rows.length > 0, `${name}: fenec-server has no rows for it`);
+  assert.ok(rows.length > 0, `${name}: fennec-server has no rows for it`);
   const frame = g.frames[0];
   // The statement the plugin sent, as the query inspector shows it.
   assert.equal(frame.schema.meta.executedQueryString.split('\n')[0], body.query, `${name}: the statement sent`);
@@ -159,7 +159,7 @@ for (const a of dashboard.annotations.list) {
 // plugin kept, sent with If-None-Match and answered 304.
 {
   const again = await viaPlugin(variable('sym'), {});
-  assert.equal(again.frames[0].schema.meta.custom.fenecdb.notModified, true, 'the variable asked again was not a 304');
+  assert.equal(again.frames[0].schema.meta.custom.fennecdb.notModified, true, 'the variable asked again was not a 304');
   console.log('ok  a query asked again unchanged: a 304, answered from the kept answer');
 }
 
@@ -167,7 +167,7 @@ for (const a of dashboard.annotations.list) {
 // firing where the last ten minutes of the server's rows traded more than
 // the threshold.
 {
-  const rule = (await json(`${GRAFANA}/api/v1/provisioning/alert-rules/fenecdb-volume`, { headers: { authorization: ADMIN } })).body;
+  const rule = (await json(`${GRAFANA}/api/v1/provisioning/alert-rules/fennecdb-volume`, { headers: { authorization: ADMIN } })).body;
   const query = rule.data.find((d) => d.refId === 'A').model;
   const threshold = rule.data.find((d) => d.refId === 'C').model.conditions[0].evaluator.params[0];
   let state;
@@ -183,7 +183,7 @@ for (const a of dashboard.annotations.list) {
   assert.equal(state.health, 'ok', `the rule's health: ${state.health} ${state.lastError ?? ''}`);
   // The same statement over the rule's last six hours, bound by hand.
   const now = Date.now();
-  const res = await fetch(`${FENEC}/query`, {
+  const res = await fetch(`${FENNEC}/query`, {
     method: 'POST',
     headers: { authorization: `Bearer ${TOKEN}` },
     body: JSON.stringify(bind(query, {}, { from: now - rule.data[0].relativeTimeRange.from * 1000, to: now, intervalMs: query.intervalMs })),
@@ -199,12 +199,12 @@ for (const a of dashboard.annotations.list) {
 }
 
 // What the data source refuses: a write, before it is sent; and a symbol
-// trying to be FenecQL, which stays one value and matches nothing.
+// trying to be FennecQL, which stays one value and matches nothing.
 {
   const candles = panels.find((p) => p.type === 'candlestick').targets[0];
   const write = await viaPlugin({ ...candles, queryText: 'put ticks {sym: "HACK", px: 1}' }, vars);
   assert.match(write.result.error ?? '', /the data source runs reads/, `a write: ${JSON.stringify(write.result)}`);
-  const n = (await (await fetch(`${FENEC}/query`, {
+  const n = (await (await fetch(`${FENNEC}/query`, {
     method: 'POST',
     headers: { authorization: `Bearer ${TOKEN}` },
     body: JSON.stringify({ query: 'get ticks select count(*) as n where sym = "HACK"' }),
@@ -224,13 +224,13 @@ for (const a of dashboard.annotations.list) {
 {
   const boot = await json(`${GRAFANA}/api/frontend/settings`);
   assert.ok(!/eyJ[\w-]+\.eyJ/.test(boot.text), 'a token in the frontend settings');
-  const settings = await json(`${GRAFANA}/api/datasources/uid/fenecdb`, { headers: { authorization: ADMIN } });
+  const settings = await json(`${GRAFANA}/api/datasources/uid/fennecdb`, { headers: { authorization: ADMIN } });
   assert.equal(settings.body.secureJsonFields?.token, true, 'the token is not set');
   assert.ok(!/eyJ[\w-]+\.eyJ/.test(settings.text), "a token in the data source's settings");
-  const health = await json(`${GRAFANA}/api/datasources/uid/fenecdb/health`, { headers: { authorization: ADMIN } });
+  const health = await json(`${GRAFANA}/api/datasources/uid/fennecdb/health`, { headers: { authorization: ADMIN } });
   assert.equal(health.body.status, 'OK', `health: ${health.text}`);
   console.log(`ok  the token: in no browser's reach; health: ${health.body.message}`);
-  const explain = await json(`${GRAFANA}/api/datasources/uid/fenecdb/resources/explain`, {
+  const explain = await json(`${GRAFANA}/api/datasources/uid/fennecdb/resources/explain`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ query: { ...panels[1].targets[0], vars }, from, to, intervalMs, maxDataPoints }),

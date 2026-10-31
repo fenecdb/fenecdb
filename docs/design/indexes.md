@@ -104,9 +104,9 @@ inner `get`'s, a `set`'s and a `del`'s, `changes_since`'s shape -- has
 planner never takes it for a range, and a row whose field is null, with
 no time to expire from, lives. `now` is the system's clock natively and
 `Database::set_clock`'s where set -- the browser module's, handed
-`Date.now()` (`db.now`) as `fenec_query`'s last argument, and refused
+`Date.now()` (`db.now`) as `fennec_query`'s last argument, and refused
 without one rather than answered at a time it was not. A server's
-`fenec_http::sweep` looks at every database it serves once a minute and
+`fennec_http::sweep` looks at every database it serves once a minute and
 deletes what is past its time, a range of the index found under the
 read lock (`Database::expired`) and 1 000 rows deleted under the write
 lock as a block of ordinary deletes (`Database::sweep`, the filter
@@ -145,7 +145,7 @@ the collection or a look), sleeps until then if no write comes first --
 `Hub::wait`'s timeout, writing no keep-alive for it -- and reads the rows
 that reached their time since it last looked: `expired()` and the field's
 window, the shape ANDed in, every row of the collection for an unscoped
-shape that holds nothing (`FenecHttp.live`'s, told of any write to it),
+shape that holds nothing (`FennecHttp.live`'s, told of any write to it),
 sent as deletions at the change the stream stands at -- a scoped stream's
 held to the ids it was sent, a quiet one's emptied -- and a resumed stream
 tells every row past its time not yet swept. The sweep's delete comes
@@ -345,7 +345,7 @@ documents (`rebuild_indexes_with`): listed for every collection, they were
 ## warm
 
 **A server warms what an open left for the first read** (`--warm`,
-`fenec_http::warm`). The first `match` after a start built its `@text`
+`fennec_http::warm`). The first `match` after a start built its `@text`
 index inside the request: a shop's first search page took 2.68 s to its
 largest paint against 1.40 warm. `Database::unbuilt_indexes` lists the
 derived indexes nothing has built, `warm_index` builds one as its first read
@@ -366,7 +366,7 @@ against 88 for a cold one that had searched. On by default for a file (an
 index is declared to be read; `--warm off`, or a list of collections and
 `collection.field`s), off for a `--dir` node's tenants, which open per
 request and close when idle (`Tenants::with_warm` when asked). The native
-library has `fenec_warm` (and each binding a `warm`), embedded Rust
+library has `fennec_warm` (and each binding a `warm`), embedded Rust
 `Database::warm`.
 
 ## @geo
@@ -426,7 +426,7 @@ order, page and nearest to a twin collection without the index over 2 000
 rows round both poles, the antimeridian and a city, radius 0 to past half
 the earth, through writes, an index made later and a block put back, and
 Redis's own `GEOSEARCH` examples. Over a million points round 48 cities (`make
-geo-bench`: fenecdb in process; PostGIS 3.5 and Redis 7 in Docker, each
+geo-bench`: fennecdb in process; PostGIS 3.5 and Redis 7 in Docker, each
 server's own mean time read from `pg_stat_statements`, planning included,
 and `INFO commandstats`): the index builds in 34 ms and holds 20 MB
 (PostGIS's GiST 5.4 s and 82 MB, Redis's sorted set 86 MB); within 100 m

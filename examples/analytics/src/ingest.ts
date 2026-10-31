@@ -8,7 +8,7 @@
 // so a retry of a batch that landed is answered and not written again, and
 // each event's id is `<batch>:<place>`, `@unique` and written `if absent`,
 // so a batch sent again under another key is not counted twice either.
-import { FenecError } from '@fenecdb/web/client';
+import { FennecError } from '@fennecdb/web/client';
 import { COUNTRY_HEADER } from './config.ts';
 import { db } from './db.ts';
 
@@ -210,7 +210,7 @@ export async function write(site: string, b: Beacon, ctx: Context): Promise<Writ
     const a = r.results[0] as { affected?: number };
     return { written: r.replayed ? 0 : (a.affected ?? 0), duplicate: r.replayed, seq: r.seq };
   } catch (e) {
-    if (e instanceof FenecError && e.status === 422) return { written: 0, duplicate: true, seq: null };
+    if (e instanceof FennecError && e.status === 422) return { written: 0, duplicate: true, seq: null };
     throw e;
   }
 }

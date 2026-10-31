@@ -5,9 +5,9 @@ The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *Read r
 ## Marked reads
 
 **A tenant may keep read replicas in other regions, which a router near
-them answers the reads its clients mark from** (`fenec-shard/src/readers.rs`,
-`PUT /_shard/tenants/<t>/read-replicas/<region>`, `fenec-shard --near`,
-`Fenec-Read: replica`; `site/content/docs/sharding-read-replicas.html#read-replicas`). A
+them answers the reads its clients mark from** (`fennec-shard/src/readers.rs`,
+`PUT /_shard/tenants/<t>/read-replicas/<region>`, `fennec-shard --near`,
+`Fennec-Read: replica`; `site/content/docs/sharding-read-replicas.html#read-replicas`). A
 client in Singapore of a tenant living in Frankfurt paid 158 ms a read. A
 read replica is a follower of the tenant's primary node (`POST
 /_admin/tenants/<t>/follow`, as a replica of its own) on the node of the
@@ -63,7 +63,7 @@ or an import, `"lineage"` in `POST /_shard/placements`; the record's
 (`lineage <8 hex>`, `Follower::expect_lineage`): a copy whose primary is of
 another lineage takes nothing from it and deletes itself, file and
 `.follows`, through the registry it is served from (`refused_copy`,
-`Tenants::shared`, `fenec_copies_refused_total`) -- stopped and kept, it
+`Tenants::shared`, `fennec_copies_refused_total`) -- stopped and kept, it
 held the deleted tenant's rows on the node for anyone to read -- and a look
 finding a replica's tenant of another lineage takes it off
 (`another_lineage`). The delete is the copy's that refused alone:
@@ -95,7 +95,7 @@ every look, for good. A tenant made again through a router keeps no
 `was`: its create records a lineage of its own. A copy lost three times
 in a row anyway -- refusing a primary whose lineage the router cannot
 learn -- is made again no more (`REMAKES`, `may_remake`): said once,
-`"given_up": true` in its list and `fenec_router_read_replicas_given_up`,
+`"given_up": true` in its list and `fennec_router_read_replicas_given_up`,
 until its primary or its lineage changes or an operator places it again.
 `reader_near` passes it by: still asked, every marked read of its region
 went to its node, was answered that the tenant was not there and went
@@ -184,8 +184,8 @@ where the copy promoted stood -- a write the old primary answered and the
 copy never got is lost, the new primary's next write takes its number, and a
 read replica still on the old branch held a change of that number, the lost
 write, and answered a read sent after the new one with it. So every answer
-carrying `Fenec-Seq` of a database with a history of its own carries
-`Fenec-History: <term>-<id>` too (`http::Fork`, the term the lineage's
+carrying `Fennec-Seq` of a database with a history of its own carries
+`Fennec-History: <term>-<id>` too (`http::Fork`, the term the lineage's
 length; a `NonZeroU64` id, so `Response` grew 16 bytes, not 24 -- past 128 a
 `Result` of one was clippy's `result_large_err`), the root's naming nothing,
 and `after` answers once the copy holds that change of that history
@@ -223,16 +223,16 @@ request near whatever its route, a stream copied as it comes -- wait for
 it on the copy as a read does, and their 504 sends them home: both were
 answered before the wait, a stream seeded from the replica as it stood,
 behind the client's own write or on the branch a failover left, and a
-page whose `Fenec-Seq` said every write there was had been read (the
-`Fenec-After` paragraph below). The router parses no FenecQL, so a
+page whose `Fennec-Seq` said every write there was had been read (the
+`Fennec-After` paragraph below). The router parses no FennecQL, so a
 read goes near only where its client marked it: a `GET` alone was not taken
-for one, since a client that sends no `Fenec-After` would have lost reading
+for one, since a client that sends no `Fennec-After` would have lost reading
 its own writes. A router stands in a region (`--near`, or a region's
 router's `--region`) and sends a marked request of a tenant with a read
 replica there, and not living there, to it -- one header looked for on every
 forward, the lookup only for a marked one, and one more on the node, which
 reads the mark once a request in `serve_connection` -- bounded by the wait its
-`Fenec-After` asks, a `/_changes` page's own `wait` (`cdc::page_wait`;
+`Fennec-After` asks, a `/_changes` page's own `wait` (`cdc::page_wait`;
 left out, a consumer's long poll near an idle tenant was cut at the
 timeout, its copy rested and the page asked again home for the whole
 wait, `wait=10000` answered in 17 s, which
@@ -259,7 +259,7 @@ and one willing to wait longer stay the copy's: rested whole, two of
 reach where the copy answered them
 (`a_read_replica_behind_its_wait_is_let_be_and_the_reads_after_go_home`).
 Left so: a client holding a tenant's token can send that tenant's
-positioned reads through a router home, with a `Fenec-After` past its last
+positioned reads through a router home, with a `Fennec-After` past its last
 change and a wait of a second or more once every rest -- as a failover that
 lost writes does on its own, its clients' positions on the lost branch --
 at the cost of the trip home, never a wrong answer;
@@ -299,12 +299,12 @@ the registry free; while a tenant's slot is held through its open,
 seconds for a large file, so a node opening one copy would read as hung
 and rest every tenant's. It goes home too where the replica
 answers 503 or 504, or a 404 with
-`Fenec-Tenant: absent` (the file gone, made again at the next look; every
+`Fennec-Tenant: absent` (the file gone, made again at the next look; every
 `CHECK_EVERY`, 10 s, a thread of its own asks each replica's node what it
 holds, a set of its names, since a standby or another region's router routes
 the reads and keeps no record -- in the look, a node out of reach held each
 re-pointing after a failover up for its call, 10 s);
-`fenec_router_replica_reads_total{outcome}`. Every server runs a marked
+`fennec_router_replica_reads_total{outcome}`. Every server runs a marked
 request read-only on every route, the one place `serve_connection` reads the
 mark (`marked`, a `Config` with `read_only` and `marked`, whose refusals say
 why, `read_only_refused`): the MCP endpoint was answered before the mark was
@@ -312,7 +312,7 @@ read, a consumer's commit before `handle`, and a frozen or unleased tenant's
 skip let a request through on the header alone -- it passes a freeze and a
 lease only where `read_only` holds. The router replays a marked request on a
 pooled connection's end only for the value a node runs read-only
-(`fenec_http::marks_read`). Every router looks once a second (`FOLLOW_EVERY`)
+(`fennec_http::marks_read`). Every router looks once a second (`FOLLOW_EVERY`)
 at where each primary it keeps a read replica of is -- its directory, its
 copy of the global one, or another region's router through `POST
 /_shard/placements`, one call a region a look -- and re-points the ones
@@ -352,7 +352,7 @@ Go's and .NET's clients do (`reads: .nearest`, `Reads.NEAREST`,
 held to a real global router, its standby near the replica and two nodes in
 its own tests. JavaScript's `live` keeps its streams home and reads its
 runs near, each after the change a stream told of, and polls home
-(`FenecHttp.live`, below). Not done: reads of a bounded staleness (a
+(`FennecHttp.live`, below). Not done: reads of a bounded staleness (a
 decision, not a detail), JavaScript's `subscribe` near and the synced
 replicas' streams, which go home (Go's and .NET's read copies mark a
 subscription, held for its position as a read is, above).
@@ -409,9 +409,9 @@ alone, a name no region traced made with every region cut off -- a router
 following a region's saying `changing: null`, a placement the directory
 cannot record answering and taking its copy off (a directory database made
 to fail its writes), and a node that does not answer holding up no other's
-re-pointing (fenec-http's `archive.rs` a restore's and a backup's
-lineage); fenec-http's `api.rs`, `mcp.rs` and `cdc.rs` a marked
-statement, MCP write and consumer commit refused; `web/fenec.replicas.test.js`
+re-pointing (fennec-http's `archive.rs` a restore's and a backup's
+lineage); fennec-http's `api.rs`, `mcp.rs` and `cdc.rs` a marked
+statement, MCP write and consumer commit refused; `web/fennec.replicas.test.js`
 the JS client against real nodes and routers, eu1 killed, and its position
 taken from a 504 -- over its own alone, a write answered meanwhile and an
 earlier term's 504 left where they stand, another lineage's taken from a 504
@@ -420,7 +420,7 @@ theirs, and a live query's runs read near (below). A marked read through
 the replica's region's router took 59.2-68.2 us p50 against 58.8-66.9 sent
 home, three runs at loads of 4.3-7.8, each node behind a loopback proxy,
 and 60.9-70.3 sent after a position the replica
-held, `Fenec-History` and its check included, 1.8-3.4 us over home where
+held, `Fennec-History` and its check included, 1.8-3.4 us over home where
 the number alone was 1.4 (`make shard-bench ARGS=reads`); a client's read
 of the write it was just answered 168-386 us on the replica, its wait
 included, against 165-343 at home, run by run. `make requests-bench` in
@@ -434,7 +434,7 @@ check of the mark after its prologue, a marked read handed to
 the replica's path the unmarked request ran 0.4-0.65 us slower at the
 median in ABBA turns against main (23.7 against 23.2 us), the work the
 same. Split, and with every per-request addition taken out besides --
-the mark looked for on neither side, no `Fenec-History`, no readers'
+the mark looked for on neither side, no `Fennec-History`, no readers'
 threads -- builds still sat 0.2-0.5 us over main, and builds differing
 only off the path (the tail inlined or not, the threads started or not)
 0.1-0.3 us apart either way, so what was left was where the code lands:
@@ -449,8 +449,8 @@ quartiles) against 20.7 (20.6-20.9), the branch's per-round difference
 -0.15 us and positive in 5 of 16; against main as it is, 20.6 against
 23.6, lower in all 20 rounds. A request straight to the node stays
 0.15-0.25 us over main's 21.3, which the aligned builds put on layout.
-What the unmarked path does more: `Fenec-Read` looked for once on the
-router and once on the node, `Fenec-History` written where an answer
+What the unmarked path does more: `Fennec-Read` looked for once on the
+router and once on the node, `Fennec-History` written where an answer
 names a history, and a `Response` 16 bytes larger; the pool asks
 `replayable` only where a send failed (`Replay`), where every request
 scanned its headers for it before.

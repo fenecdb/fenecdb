@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""How well an agent queries fenecdb in FenecQL, against in the SQL it knows.
+"""How well an agent queries fennecdb in FennecQL, against in the SQL it knows.
 
-    eval.py fixture --server target/debug/fenec-server --work DIR
+    eval.py fixture --server target/debug/fennec-server --work DIR
     eval.py run --condition A --models haiku,sonnet --server ... --work DIR --out runs.jsonl
     eval.py report runs.jsonl [--tsv results/DATE.tsv]
 
-Each run is one task, fresh: the fixture file copied, a fenec-server started
+Each run is one task, fresh: the fixture file copied, a fennec-server started
 over the copy on a port the system picks, and `claude -p` given the task
 with one tool, `fq`, which sends a statement to that server's /query. The
 run is scored from what fq logged and, for a write, from the database
@@ -67,13 +67,13 @@ not ask for. When you are done, reply with one short line.
 
 CONDITIONS = {
     # A: told what the database speaks, and given the brief /llms.txt opens with.
-    "A": "The database is fenecdb. Its query language is FenecQL, which is not "
-         "SQL: write FenecQL. Its brief, from https://fenecdb.com/llms.txt:\n\n"
+    "A": "The database is fennecdb. Its query language is FennecQL, which is not "
+         "SQL: write FennecQL. Its brief, from https://fenecdb.com/llms.txt:\n\n"
          "{brief}\n"
-         "The schema, as the server gives it (GET /_schema?as=fenecql):\n\n{schema}",
+         "The schema, as the server gives it (GET /_schema?as=fennecql):\n\n{schema}",
     # B and C: the same schema, and SQL by habit. C is B against another build.
-    "B": "The database is fenecdb. Write SQL as you normally would.\n\n"
-         "The schema, as the server gives it (GET /_schema?as=fenecql):\n\n{schema}",
+    "B": "The database is fennecdb. Write SQL as you normally would.\n\n"
+         "The schema, as the server gives it (GET /_schema?as=fennecql):\n\n{schema}",
 }
 CONDITIONS["C"] = CONDITIONS["B"]
 
@@ -91,7 +91,7 @@ def brief(build_py=ROOT / "site" / "build.py"):
 # --- the server --------------------------------------------------------------
 
 class Server:
-    """A fenec-server over one file, on the port it says it took."""
+    """A fennec-server over one file, on the port it says it took."""
 
     def __init__(self, binary, file, log):
         self.log = open(log, "w")
@@ -107,7 +107,7 @@ class Server:
                 return
             if self.proc.poll() is not None or time.time() > deadline:
                 self.stop()
-                raise RuntimeError(f"fenec-server did not start: {text[-500:]}")
+                raise RuntimeError(f"fennec-server did not start: {text[-500:]}")
             time.sleep(0.05)
 
     def stop(self):
@@ -133,9 +133,9 @@ def post(url, statement, params=None):
 
 
 def fixture(binary, work):
-    """work/fixture.fenec and work/schema.fenecql, from seed.py."""
+    """work/fixture.fennec and work/schema.fennecql, from seed.py."""
     work.mkdir(parents=True, exist_ok=True)
-    path = work / "fixture.fenec"
+    path = work / "fixture.fennec"
     if path.exists():
         path.unlink()
     server = Server(binary, path, work / "fixture.log")
@@ -146,11 +146,11 @@ def fixture(binary, work):
         for name, docs in seed.data().items():
             status, body = post(server.url, f"put {name} $1", [docs])
             assert status == 200 and body == {"affected": len(docs)}, body
-        with urllib.request.urlopen(server.url + "/_schema?as=fenecql") as r:
-            schema = json.loads(r.read())["fenecql"]
+        with urllib.request.urlopen(server.url + "/_schema?as=fennecql") as r:
+            schema = json.loads(r.read())["fennecql"]
     finally:
         server.stop()
-    (work / "schema.fenecql").write_text(schema)
+    (work / "schema.fennecql").write_text(schema)
     print(f"{path}\n{schema}")
 
 
@@ -289,8 +289,8 @@ def run_one(job):
     if rd.exists():
         shutil.rmtree(rd)
     (rd / "bin").mkdir(parents=True)
-    db = rd / "db.fenec"
-    shutil.copyfile(a.work / "fixture.fenec", db)
+    db = rd / "db.fennec"
+    shutil.copyfile(a.work / "fixture.fennec", db)
     server = Server(a.server, db, rd / "server.log")
     record = {"date": dt.date.today().isoformat(), "condition": cond, "build": a.build, "model": model,
               "task": task["id"], "area": task["area"], "kind": task["kind"], "rep": rep}
@@ -345,7 +345,7 @@ def run_one(job):
 
 def run(a):
     a.work = a.work.resolve()
-    schema = (a.work / "schema.fenecql").read_text()
+    schema = (a.work / "schema.fennecql").read_text()
     base = brief(a.brief)
     a.prompts = {c: COMMON + "\n" + CONDITIONS[c].format(brief=base, schema=schema) for c in CONDITIONS}
     wanted = set(a.tasks.split(",")) if a.tasks else None
@@ -383,7 +383,7 @@ def run(a):
 
 
 def check(a):
-    """Each task's reference FenecQL through the scoring an agent meets."""
+    """Each task's reference FennecQL through the scoring an agent meets."""
     a.work = a.work.resolve()
     failed = 0
     for task in tasklib.tasks():
@@ -391,8 +391,8 @@ def check(a):
         if rd.exists():
             shutil.rmtree(rd)
         rd.mkdir(parents=True)
-        shutil.copyfile(a.work / "fixture.fenec", rd / "db.fenec")
-        server = Server(a.server, rd / "db.fenec", rd / "server.log")
+        shutil.copyfile(a.work / "fixture.fennec", rd / "db.fennec")
+        server = Server(a.server, rd / "db.fennec", rd / "server.log")
         try:
             status, body = post(server.url, task["ref"])
             call = {"statement": task["ref"], "params": [], "status": status,
@@ -410,7 +410,7 @@ def check(a):
 # --- the report ------------------------------------------------------------------
 
 TSV_COLUMNS = ["date", "condition", "build", "model", "model_id", "task", "area", "kind", "rep", "success",
-               "first_try", "failure", "n_calls", "blame", "sql", "fenecql", "turns", "cost_usd",
+               "first_try", "failure", "n_calls", "blame", "sql", "fennecql", "turns", "cost_usd",
                "seconds", "state_ok", "answer_ok", "handpicked", "tokens", "reply", "calls"]
 
 
@@ -421,7 +421,9 @@ def read_runs(path):
     text = path.read_text(encoding="utf-8").splitlines()
     if path.suffix != ".tsv":
         return [json.loads(line) for line in text]
-    head = text[0].split("\t")
+    # A TSV written before fenecdb became fennecdb keeps its bytes, and its
+    # `fenecql` column is the `fennecql` one.
+    head = ["fennecql" if h == "fenecql" else h for h in text[0].split("\t")]
     runs = []
     for line in text[1:]:
         r = {}
@@ -430,7 +432,7 @@ def read_runs(path):
                 r[k] = None
             elif v in ("True", "False"):
                 r[k] = v == "True"
-            elif k in ("blame", "sql", "fenecql", "tokens", "calls"):
+            elif k in ("blame", "sql", "fennecql", "tokens", "calls"):
                 r[k] = json.loads(v)
             elif k in ("rep", "n_calls", "turns"):
                 r[k] = int(v)
@@ -478,7 +480,7 @@ def rescore(r, task):
         c["blame"] = None if ok(c) else classify.blame(
             c["statement"], c["status"], json.dumps({"error": c["error"]}))
     r["sql"] = sorted({k for c in calls for k in classify.constructs(c["statement"])})
-    r["fenecql"] = sorted({k for c in calls for k in classify.constructs(c["statement"], classify.FENECQL)})
+    r["fennecql"] = sorted({k for c in calls for k in classify.constructs(c["statement"], classify.FENNECQL)})
     good = [c for c in calls if ok(c)]
     if r["success"] and good and handpicked(task, good[-1]["statement"]):
         r["handpicked"] = True
@@ -594,17 +596,17 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
     f = sub.add_parser("fixture")
-    f.add_argument("--server", type=Path, default=ROOT / "target" / "debug" / "fenec-server")
+    f.add_argument("--server", type=Path, default=ROOT / "target" / "debug" / "fennec-server")
     f.add_argument("--work", type=Path, required=True)
     c = sub.add_parser("check")
-    c.add_argument("--server", type=Path, default=ROOT / "target" / "debug" / "fenec-server")
+    c.add_argument("--server", type=Path, default=ROOT / "target" / "debug" / "fennec-server")
     c.add_argument("--work", type=Path, required=True)
     r = sub.add_parser("run")
     r.add_argument("--condition", default="A", help="A, B or C, or several: A,B")
     r.add_argument("--models", default="haiku,sonnet")
     r.add_argument("--tasks", help="T01,T02,... (every task when absent)")
     r.add_argument("--reps", type=int, default=1)
-    r.add_argument("--server", type=Path, default=ROOT / "target" / "debug" / "fenec-server")
+    r.add_argument("--server", type=Path, default=ROOT / "target" / "debug" / "fennec-server")
     r.add_argument("--work", type=Path, required=True)
     r.add_argument("--out", type=Path, required=True)
     r.add_argument("--jobs", type=int, default=4)

@@ -1,16 +1,16 @@
 {
-  "name": "fenecdb-notes-react",
+  "name": "fennecdb-notes-react",
   "private": true,
   "type": "module",
-  "description": "Notes in React with useLiveQuery: a database in the page, or a replica synced with fenec-server, by one line",
+  "description": "Notes in React with useLiveQuery: a database in the page, or a replica synced with fennec-server, by one line",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "smoke": "tsx test/smoke.ts"
   },
   "dependencies": {
-    "@fenecdb/react": "^0.1.12",
-    "@fenecdb/web": "^0.1.12",
+    "@fennecdb/react": "^0.1.12",
+    "@fennecdb/web": "^0.1.12",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

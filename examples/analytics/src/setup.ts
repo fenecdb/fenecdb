@@ -1,19 +1,19 @@
 // Tenants made ready: Kestrel's own (the sites and who signs in), a tenant
 // per site with its schema, and the market data tenant. Runs with the
 // node's admin and operator tokens.
-import { ADMIN_TOKEN, CONTROL, CONTROL_SCHEMA, FENEC_URL, MARKETS, MARKETS_SCHEMA, OPERATOR_TOKEN, SITE_SCHEMA, tenantUrl } from './config.ts';
+import { ADMIN_TOKEN, CONTROL, CONTROL_SCHEMA, FENNEC_URL, MARKETS, MARKETS_SCHEMA, OPERATOR_TOKEN, SITE_SCHEMA, tenantUrl } from './config.ts';
 import { db } from './db.ts';
 import { INSERT } from './ingest.ts';
 import type { SimEvent } from './sim.ts';
 import { hashPassword } from './users.ts';
 
 export async function createTenant(tenant: string, schema: string): Promise<void> {
-  const res = await fetch(`${FENEC_URL}/_admin/tenants/${tenant}`, { method: 'PUT', headers: { authorization: `Bearer ${ADMIN_TOKEN}` } });
+  const res = await fetch(`${FENNEC_URL}/_admin/tenants/${tenant}`, { method: 'PUT', headers: { authorization: `Bearer ${ADMIN_TOKEN}` } });
   if (!res.ok && res.status !== 409) throw new Error(`create tenant ${tenant}: ${res.status} ${await res.text()}`);
   const applied = await fetch(`${tenantUrl(tenant)}/_schema/apply`, {
     method: 'POST',
     headers: { authorization: `Bearer ${OPERATOR_TOKEN}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ format: 1, fenecql: schema }),
+    body: JSON.stringify({ format: 1, fennecql: schema }),
   });
   if (!applied.ok) throw new Error(`schema of ${tenant}: ${applied.status} ${await applied.text()}`);
 }

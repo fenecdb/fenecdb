@@ -6,7 +6,7 @@
 
 import type { Notice } from "../shared/rpc.ts";
 
-const notice = (window as unknown as { __notice?: Notice }).__notice ?? { title: "fenec studio", message: "" };
+const notice = (window as unknown as { __notice?: Notice }).__notice ?? { title: "fennec studio", message: "" };
 const host = (m: unknown) => (window as unknown as { __electrobunSendToHost?: (m: unknown) => void }).__electrobunSendToHost?.(m);
 const send = (id: string) => host({ type: "notice", id });
 

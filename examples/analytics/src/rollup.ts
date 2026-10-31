@@ -31,8 +31,8 @@
 // by the change counter, so the change number is the event's key here; the
 // events' own ids (`eid`, `@unique`) have kept a beacon sent twice from
 // being written twice before the stream ever saw it.
-import type { FenecHttp } from '@fenecdb/web/client';
-import { FenecError } from '@fenecdb/web/client';
+import type { FennecHttp } from '@fennecdb/web/client';
+import { FennecError } from '@fennecdb/web/client';
 import { OPERATOR_TOKEN, tenantUrl } from './config.ts';
 import { db } from './db.ts';
 import { dayOf, HOUR, iso, MINUTE, minuteOf, weekOf } from './time.ts';
@@ -277,7 +277,7 @@ interface Change {
 /** One site's rollups, kept from its change stream. */
 export class RollupWorker {
   readonly site: string;
-  readonly #db: FenecHttp;
+  readonly #db: FennecHttp;
   #stopped = false;
   #pulse = { checked: 0, active: -1, views: -1, minutes: '' };
   /** The change the rollups stand at, as `rollup_state` holds it. */
@@ -290,7 +290,7 @@ export class RollupWorker {
   refused = 0;
   /** Writes the last page held, events or not: 0 at the stream's end. */
   lines = 0;
-  /** The last write the node held as the last page was read (`Fenec-Seq`). */
+  /** The last write the node held as the last page was read (`Fennec-Seq`). */
   end = 0;
 
   constructor(readonly opts: WorkerOptions) {
@@ -355,10 +355,10 @@ export class RollupWorker {
       return 0;
     }
     if (!res.ok) throw new Error(`/_changes: ${res.status} ${await res.text()}`);
-    const next = Number(res.headers.get('fenec-next') ?? this.cursor);
+    const next = Number(res.headers.get('fennec-next') ?? this.cursor);
     // The last write the node holds, on disk or not yet: once the cursor
     // reaches it there is nothing more to read.
-    this.end = Math.max(next, Number(res.headers.get('fenec-seq') ?? next));
+    this.end = Math.max(next, Number(res.headers.get('fennec-seq') ?? next));
     const events: RawEvent[] = [];
     this.lines = 0;
     for (const line of (await res.text()).split('\n')) {
@@ -390,7 +390,7 @@ export class RollupWorker {
     try {
       await this.#db.batch(block(f, this.seq, next, known, cohorts, seen));
     } catch (e) {
-      if (e instanceof FenecError && e.status === 412 && e.at === 0) {
+      if (e instanceof FennecError && e.status === 412 && e.at === 0) {
         // Another block moved the place first -- this worker's own, landed
         // before a crash, or a second worker's. Nothing of this one landed:
         // read where the rollups stand and go on from there.
@@ -411,7 +411,7 @@ export class RollupWorker {
 
   /**
    * The rollups from `since`'s week on made again from the raw events: read
-   * in one block, which names the change it saw (`Fenec-Seq`), and written
+   * in one block, which names the change it saw (`Fennec-Seq`), and written
    * in one block that moves the worker's place there. The raw events are
    * kept 30 days, so this reaches back that far at most.
    */
@@ -494,7 +494,7 @@ export class RollupWorker {
     try {
       await this.#db.batch(w);
     } catch (e) {
-      if (e instanceof FenecError && e.status === 412 && e.at === 0) {
+      if (e instanceof FennecError && e.status === 412 && e.at === 0) {
         this.refused++;
         await this.open();
         return;
@@ -538,7 +538,7 @@ export class RollupWorker {
 
   /**
    * Opens and applies pages until the cursor reaches the last write the
-   * node holds, which each answer names (`Fenec-Seq`): the stream's end,
+   * node holds, which each answer names (`Fennec-Seq`): the stream's end,
    * for now. A write not on disk yet -- under `--sync 250`, for up to 250
    * ms -- is not in the stream, so a page short of the end waits for it
    * (`wait`), at most `quiet` ms. Before the header said where the writes

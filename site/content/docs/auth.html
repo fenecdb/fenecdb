@@ -1,18 +1,18 @@
 <!--
-title: Auth with your identity provider — fenecdb
-description: Clerk, Auth0, Supabase Auth, Amazon Cognito, Firebase or Cloudflare Access sign the users in; fenec-server checks their tokens against the provider's keys and holds each to a policy down to the rows and fields. What it checks and what it does not, the keys kept fresh, the flags that hold a token to your application, claims by name in a rule, and a run.
+title: Auth with your identity provider — fennecdb
+description: Clerk, Auth0, Supabase Auth, Amazon Cognito, Firebase or Cloudflare Access sign the users in; fennec-server checks their tokens against the provider's keys and holds each to a policy down to the rows and fields. What it checks and what it does not, the keys kept fresh, the flags that hold a token to your application, claims by name in a rule, and a run.
 -->
 
 <h1>Auth with your identity provider</h1>
-<p class="kicker">Sign-in stays with a provider you already use. fenec-server
+<p class="kicker">Sign-in stays with a provider you already use. fennec-server
 checks the token it hands out, and a policy file decides, row by row and
 field by field, what that person may read and write.</p>
 
 <p>A backend platform bundles three things: sign-in, rules about who may touch
-which rows, and a database. fenecdb is the last two. The provider (Clerk,
+which rows, and a database. fennecdb is the last two. The provider (Clerk,
 Auth0, Supabase Auth, Amazon Cognito, Firebase, Cloudflare Access) signs a user
 in and issues a JSON Web Token. The app, or the browser, sends it to
-fenec-server as <code>Authorization: Bearer</code>. The server checks the
+fennec-server as <code>Authorization: Bearer</code>. The server checks the
 signature against the provider's public keys, takes only the tokens made for
 your application (the issuer and audience it is given), and holds every
 statement the token sends to
@@ -39,11 +39,11 @@ and good for an hour unless the claims say otherwise.</p>
 
 <pre data-lang="bash">head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' &gt; jwt.secret
 
-fenec-server --file app.fenec --http 127.0.0.1:8080 --http-token "$ROOT" \
+fennec-server --file app.fennec --http 127.0.0.1:8080 --http-token "$ROOT" \
     --jwt-secret-file jwt.secret --policy policy.txt
 
-fenec-server --jwt-secret-file jwt.secret --mint-token '{"sub":"alice"}'
-fenec-server --jwt-secret-file jwt.secret --mint-token '{"sub":"carol","role":"admin"}'
+fennec-server --jwt-secret-file jwt.secret --mint-token '{"sub":"alice"}'
+fennec-server --jwt-secret-file jwt.secret --mint-token '{"sub":"carol","role":"admin"}'
 </pre>
 
 <p>The policy is one line a rule. It holds per-user rows, an admin role,
@@ -69,11 +69,11 @@ audit         append-only</pre>
 
 <p>What the server answered alice, bob, an admin and a token that has lapsed,
 statement by statement. <code>sh examples/recipes/auth.sh</code> runs it from
-a clone, with a <code>fenec-server</code> built by <code>cargo build -p
-fenec-server</code> (or any binary, as <code>FENEC_SERVER=</code>), and it
+a clone, with a <code>fennec-server</code> built by <code>cargo build -p
+fennec-server</code> (or any binary, as <code>FENNEC_SERVER=</code>), and it
 needs Node, curl and jq; it also creates the collections of
-<code>schema.fenecql</code>. The scripts are in
-<a href="https://github.com/fenecdb/fenecdb/tree/main/examples/recipes">examples/recipes</a>,
+<code>schema.fennecql</code>. The scripts are in
+<a href="https://github.com/fennec-db/fennecdb/tree/main/examples/recipes">examples/recipes</a>,
 and <code>make recipes-test</code> holds this page's outputs to what they print:</p>
 
 <pre data-lang="text">alice writes a note                        {"affected":1} [200]
@@ -163,7 +163,7 @@ values is refused (401). The whole story of rules and claims is in
 <h2 id="keys">Keys: the provider's JWKS, in a file kept fresh</h2>
 
 <p>Every provider publishes its public keys as a JWKS, a JSON document
-<code>{"keys": [...]}</code>. fenec-server reads one from a file. A job that
+<code>{"keys": [...]}</code>. fennec-server reads one from a file. A job that
 fetches it every few minutes is the other half.</p>
 
 <div class="tbl">
@@ -210,12 +210,12 @@ no more than a megabyte (the stand-in provider below is plain
 is for).</p>
 
 <pre data-lang="bash" data-label="refresh-jwks.sh">#!/bin/sh
-# Keep the JWKS file fenec-server reads (--jwt-keys) as fresh as the provider's.
-# fenec-server fetches no URL: it reads this file, and again whenever its
+# Keep the JWKS file fennec-server reads (--jwt-keys) as fresh as the provider's.
+# fennec-server fetches no URL: it reads this file, and again whenever its
 # modification time changes (at most once a second). Run this from cron or a
 # systemd timer every few minutes.
 #
-#   refresh-jwks.sh https://acme.us.auth0.com/.well-known/jwks.json /etc/fenec/jwks.json [own-keys.json]
+#   refresh-jwks.sh https://acme.us.auth0.com/.well-known/jwks.json /etc/fennec/jwks.json [own-keys.json]
 #
 # The new file is written beside the old one and renamed over it, so the server
 # never reads half of one, and only a file holding a key the server verifies
@@ -258,11 +258,11 @@ mv "$tmp" "$file"
 trap - EXIT</pre>
 
 <pre data-lang="bash"># crontab: every five minutes, well inside what any of them asks
-*/5 * * * *  /usr/local/bin/refresh-jwks.sh https://acme.us.auth0.com/.well-known/jwks.json /etc/fenec/jwks.json /etc/fenec/service-jwks.json
+*/5 * * * *  /usr/local/bin/refresh-jwks.sh https://acme.us.auth0.com/.well-known/jwks.json /etc/fennec/jwks.json /etc/fennec/service-jwks.json
 
-fenec-server --file app.fenec --http 0.0.0.0:8080 --http-token "$ROOT" \
-    --jwt-keys /etc/fenec/jwks.json --policy policy.txt \
-    --jwt-issuer https://acme.us.auth0.com/ --jwt-issuer urn:fenec:services \
+fennec-server --file app.fennec --http 0.0.0.0:8080 --http-token "$ROOT" \
+    --jwt-keys /etc/fennec/jwks.json --policy policy.txt \
+    --jwt-issuer https://acme.us.auth0.com/ --jwt-issuer urn:fennec:services \
     --jwt-audience https://api.example.test
 </pre>
 
@@ -327,7 +327,7 @@ an ES384 token                             {"error":"only HS256, RS256 and ES256
 
 <h3 id="services">Tokens your own services call with</h3>
 
-<p>A backend or a Worker that calls fenec-server needs a token too, and the
+<p>A backend or a Worker that calls fennec-server needs a token too, and the
 provider has none for it. <code>--mint-token</code> cannot make one: it signs
 with the first <code>oct</code> key of the file, and a file of a provider's RSA
 keys has none (an RSA key's private half is its owner's). A token minted by
@@ -342,7 +342,7 @@ and a token naming its <code>kid</code> is checked against that key alone.</p>
 <pre data-lang="bash">openssl genrsa -out svc-1.pem 2048
 node idp.mjs jwk svc-1.pem svc-1 &gt; service-jwks.json     # the public half as a JWKS, kid svc-1
 
-refresh-jwks.sh https://acme.us.auth0.com/.well-known/jwks.json /etc/fenec/jwks.json /etc/fenec/service-jwks.json
+refresh-jwks.sh https://acme.us.auth0.com/.well-known/jwks.json /etc/fennec/jwks.json /etc/fennec/service-jwks.json
 
 # a Worker's secret is the same key as base64 of the PKCS#8 DER, on one line
 openssl pkcs8 -topk8 -nocrypt -in svc-1.pem -outform DER | base64 | tr -d '\n'
@@ -361,7 +361,7 @@ the server's view of the service's token   {"kind":"scoped","sub":"files-backend
 <ul>
   <li><b>A service is an <code>iss</code> and a <code>sub</code>, never a
     <code>role</code>.</b> A rule that means a service says
-    <code>$jwt.sub = 'files-backend' and $jwt.iss = 'urn:fenec:services'</code>
+    <code>$jwt.sub = 'files-backend' and $jwt.iss = 'urn:fennec:services'</code>
     (<a href="/docs/files">Files</a> and <a href="/docs/functions">Functions</a>
     use it). A <code>sub</code> alone is not enough: a provider assigns one, but
     a provider's token can say <code>files-backend</code> too (a Firebase
@@ -379,7 +379,7 @@ the server's view of the service's token   {"kind":"scoped","sub":"files-backend
     a repository or a <code>.dev.vars</code> that is committed; one key for each
     service, so that one can be dropped without the others. <code>--jwt-issuer</code>
     is the server's list of issuers, not a key's: it does not tie
-    <code>svc-1</code> to <code>urn:fenec:services</code>, and a key of the
+    <code>svc-1</code> to <code>urn:fennec:services</code>, and a key of the
     provider's could sign that issuer too. Binding a key to an issuer, so that a
     key signs only for its own, is a known gap and future work.</li>
   <li><b>Rotating it:</b> add <code>svc-2</code> to <code>service-jwks.json</code>
@@ -397,7 +397,7 @@ the server's view of the service's token   {"kind":"scoped","sub":"files-backend
 the issuer of your services goes beside the provider's, and the token names an
 audience the server takes. The lists admit the provider's tokens and the
 service's alike, so the rule that means a service still asks for
-<code>$jwt.iss = 'urn:fenec:services'</code>.
+<code>$jwt.iss = 'urn:fennec:services'</code>.
 <code>serviceTokens({ pem, sub, aud })</code> in <code>service-token.mjs</code> signs
 the audience in:</p>
 
@@ -546,7 +546,7 @@ why).</p>
     (<a href="https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/">docs</a>).</li>
   <li><b>A role:</b> none of its own. Rows (<a href="#rows">below</a>), or the email.</li>
   <li><b>Out of reach:</b> the token reaches the origin in <code>Cf-Access-Jwt-Assertion</code>,
-    and fenec-server reads <code>Authorization: Bearer</code> alone: a Worker or proxy in front
+    and fennec-server reads <code>Authorization: Bearer</code> alone: a Worker or proxy in front
     moves it. <code>aud</code> is a list holding the application's tag, and a team's
     applications are signed with the same keys: <code>--jwt-audience</code> is the
     tag.</li>
@@ -567,7 +567,7 @@ access: sub 3d9a0f0e-5c1b-4a3e-8f61-2b7d9c4e1a55 [{"owner":"3d9a0f0e-5c1b-4a3e-8
 that needs nothing from it: the app verifies the provider's token with the
 provider's own SDK and signs one of its own, short, with the
 <code>role</code> and <code>tenant</code> the policy reads
-(<a href="https://github.com/fenecdb/fenecdb/tree/main/examples/saas">examples/saas</a>
+(<a href="https://github.com/fennec-db/fennecdb/tree/main/examples/saas">examples/saas</a>
 does that, with RS256 and its own keys file).</p>
 
 <h2 id="application">Holding a token to your application</h2>
@@ -649,7 +649,7 @@ claim can say: a list it holds, a flag the provider sets, a role under a name of
 its own. The server is given the provider's flags in each run.</p>
 
 <pre data-lang="text" data-label="policy-claims.txt"># Rules that name a claim's value. What pins a token to the application the
-# database is for is not here: fenec-server is started with the provider's
+# database is for is not here: fennec-server is started with the provider's
 # issuer and audience (--jwt-issuer, --jwt-audience, --jwt-client), and
 # refuses a token made for another application, on every route, before a rule
 # is read (docs/http-access, "Whom a token is for"). A rule names what only a claim
@@ -739,7 +739,7 @@ alice reads                                [{"title":"alice note"}] [200]</pre>
 
 <ul>
   <li><b>Short tokens are normal.</b> A Clerk JWT template lives 60 seconds
-    by default. <code>FenecHttp</code> holds the token it was made with, so an
+    by default. <code>FennecHttp</code> holds the token it was made with, so an
     app that gets a fresh one per request makes a client per token
     (<code>connect</code> opens no connection), and one that keeps a client
     makes a new one when its provider refreshes.</li>

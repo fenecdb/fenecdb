@@ -9,7 +9,7 @@
 // once, and this does it: start, wait for the app, quit it, end the helper.
 import { cmd, describe, mine, sleep, startApp, step, waitFor, log, now } from './lib.mjs';
 
-const app = startApp('warmup', { FENEC_DESKTOP_LAUNCHER: '1' });
+const app = startApp('warmup', { FENNEC_DESKTOP_LAUNCHER: '1' });
 await waitFor((l) => l.what === 'ready', 90000, 'the app, after unpacking itself');
 await waitFor((l) => l.what === 'page-text' && l.key === 'launcher' && /Open file/.test(l.text), 20000, 'the launcher drawn');
 log('the app is up');

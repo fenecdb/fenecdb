@@ -1,5 +1,5 @@
 """The change stream: every write on the server's disk, read as a consumer
-the server keeps the cursor of (`fenec-server --cdc`)."""
+the server keeps the cursor of (`fennec-server --cdc`)."""
 
 import os
 import subprocess
@@ -8,7 +8,7 @@ import sys
 import pytest
 
 from conftest import TOKEN, URL, fresh
-from fenecdb import FenecError
+from fennecdb import FennecError
 
 
 def mine(writes, name):
@@ -89,13 +89,13 @@ def test_a_consumer_made_again_goes_on_from_where_it_stood(client):
         assert [(w["op"], w["doc"]["t"]) for w in got] == [("put", "while stopped")]
         # A commit sent the old way, as a make ahead of where it stands, is
         # refused rather than taken for a make and left where it was.
-        with pytest.raises(FenecError) as stale:
+        with pytest.raises(FennecError) as stale:
             client.consumer(consumer, got[0]["seq"])
         assert stale.value.status == 409
         assert client.consumer(consumer)["since"] == first.next
         # A consumer that is not there is not moved into being.
         client.forget_consumer(consumer)
-        with pytest.raises(FenecError) as refused:
+        with pytest.raises(FennecError) as refused:
             client.move_consumer(consumer, first.next)
         assert refused.value.status == 404
     finally:
@@ -106,8 +106,8 @@ def test_a_consumer_made_again_goes_on_from_where_it_stood(client):
 def test_the_relay_hands_writes_on_and_moves_the_cursor_after(client):
     name, consumer = fresh("cdc"), fresh("relay")
     client.query(f"create collection {name} (t text)")
-    env = dict(os.environ, FENEC_TOKEN=TOKEN or "")
-    relay = [sys.executable, "-m", "fenecdb.relay", URL, "--consumer", consumer, "--once"]
+    env = dict(os.environ, FENNEC_TOKEN=TOKEN or "")
+    relay = [sys.executable, "-m", "fennecdb.relay", URL, "--consumer", consumer, "--once"]
     try:
         # Made at the last write on disk: what comes after is relayed.
         subprocess.run(relay, env=env, check=True, capture_output=True, timeout=60)

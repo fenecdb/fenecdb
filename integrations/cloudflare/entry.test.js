@@ -1,5 +1,5 @@
 // The global entry (entry/) under `wrangler dev`, in front of real
-// fenec-shard routers and fenec-server nodes (entry/cluster.mjs): two
+// fennec-shard routers and fennec-server nodes (entry/cluster.mjs): two
 // regions keeping their own directory, us with a standby router, behind a
 // global router. What it holds: a tenant goes to its home region, learnt
 // from the routers' answers, and to its new one after a move; a tenant not
@@ -12,8 +12,8 @@
 // cannot reach -- is passed over for its standby, and a known home gone is
 // a 503 to come back from, never another region; a read marked for a
 // replica goes to the client's nearest region whatever the home. Needs `npm ci` here
-// (wrangler) and the debug binaries (cargo build -p fenec-server -p
-// fenec-shard).
+// (wrangler) and the debug binaries (cargo build -p fennec-server -p
+// fennec-shard).
 
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -30,7 +30,7 @@ import { BUFFER_AT, State, clientMark, configure, corsHeaders, entry, judged, ma
 const { DATA, ORIGIN, ROOT, query, request, shard, until } = cluster;
 
 const ready = (await cluster.built()) && (await access(new URL('node_modules/.bin/wrangler', import.meta.url)).then(() => true, () => false));
-const skip = ready ? false : 'needs wrangler (npm ci) and fenec-server and fenec-shard (cargo build -p fenec-server -p fenec-shard)';
+const skip = ready ? false : 'needs wrangler (npm ci) and fennec-server and fennec-shard (cargo build -p fennec-server -p fennec-shard)';
 // CI builds both and installs wrangler (make cloudflare-test): skipped
 // there, these would pass unrun.
 if (skip && process.env.CI) throw new Error(`entry.test.js cannot run: ${skip}`);
@@ -43,9 +43,9 @@ after(() => {
 const SECRET = 'entry-secret';
 /** A client's mark as a router would work it out, here with node:crypto. */
 const markOf = (address, seconds) =>
-  createHmac('sha256', SECRET).update(`fenec-client ${address} ${seconds}`).digest().subarray(0, 16).toString('base64url');
+  createHmac('sha256', SECRET).update(`fennec-client ${address} ${seconds}`).digest().subarray(0, 16).toString('base64url');
 
-/** Holds a `Fenec-Client` value to `address`: its time within a minute of now, its mark the router's. */
+/** Holds a `Fennec-Client` value to `address`: its time within a minute of now, its mark the router's. */
 function namesClient(value, address) {
   const [ip, seconds, mark] = value.split(' ');
   assert.equal(ip, address);
@@ -73,8 +73,8 @@ test("the client's mark is HMAC-SHA256 of its address and time, 16 bytes, base64
   assert.notEqual(await clientMark(key, '203.0.113.7', 1_800_000_001), markOf('203.0.113.7', 1_800_000_000));
 });
 
-test('a path is read as fenec-http reads one: decoded, then cut at its slashes', () => {
-  // fenec-http's own cases (http.rs, `percent_decode`).
+test('a path is read as fennec-http reads one: decoded, then cut at its slashes', () => {
+  // fennec-http's own cases (http.rs, `percent_decode`).
   assert.equal(percentDecode('a%20b'), 'a b');
   assert.equal(percentDecode('a+b'), 'a b');
   assert.equal(percentDecode('%C3%BCst'), 'üst');
@@ -137,12 +137,12 @@ test('a request goes on less its hops, the marks and every address a client clai
     new Headers({
       Authorization: 'Bearer t',
       'Idempotency-Key': 'k',
-      'Fenec-Wait': '100',
+      'Fennec-Wait': '100',
       traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
-      'Fenec-Router': '9.9.9.9 forged',
-      'Fenec-Global': '1',
-      'Fenec-Verified': '1',
-      'Fenec-Client': '8.8.8.8 forged',
+      'Fennec-Router': '9.9.9.9 forged',
+      'Fennec-Global': '1',
+      'Fennec-Verified': '1',
+      'Fennec-Client': '8.8.8.8 forged',
       'X-Forwarded-For': '6.6.6.6',
       'CF-Connecting-IP': '203.0.113.7',
       'CF-Ray': '8f1e2d3c4b5a6978-FRA',
@@ -152,14 +152,14 @@ test('a request goes on less its hops, the marks and every address a client clai
   assert.deepEqual(Object.fromEntries(sent), {
     authorization: 'Bearer t',
     'idempotency-key': 'k',
-    'fenec-wait': '100',
+    'fennec-wait': '100',
     traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
-    'fenec-home': '1',
-    'fenec-client': client,
+    'fennec-home': '1',
+    'fennec-client': client,
     'x-request-id': '8f1e2d3c4b5a6978-FRA',
   });
   // No mark, no client named: the address alone would be believed of anyone.
-  assert.equal(sentHeaders(new Headers({ 'CF-Connecting-IP': '203.0.113.7' }), null).has('fenec-client'), false);
+  assert.equal(sentHeaders(new Headers({ 'CF-Connecting-IP': '203.0.113.7' }), null).has('fennec-client'), false);
   // The entry's Access service token goes to the router, a client's never.
   const forged = new Headers({ 'CF-Access-Client-Id': 'forged', 'CF-Access-Client-Secret': 'forged' });
   assert.equal(sentHeaders(forged, null).has('cf-access-client-id'), false);
@@ -173,30 +173,30 @@ test("an answer goes back less its hops, the router's marks and any cookie Acces
     status: 200,
     headers: [
       ['Content-Type', 'application/json'],
-      ['Fenec-Home', 'eu'],
-      ['Fenec-Verified', '1'],
-      ['Fenec-Seq', '7'],
+      ['Fennec-Home', 'eu'],
+      ['Fennec-Verified', '1'],
+      ['Fennec-Seq', '7'],
       ['Set-Cookie', 'CF_Authorization=eyJ.jwt.sig; Path=/; Secure; HttpOnly'],
       ['Set-Cookie', 'other=1'],
     ],
   });
   const out = passed(answer);
   assert.equal(out.headers.get('set-cookie'), null);
-  assert.equal(out.headers.get('fenec-home'), null);
-  assert.equal(out.headers.get('fenec-verified'), null);
-  assert.equal(out.headers.get('fenec-seq'), '7');
+  assert.equal(out.headers.get('fennec-home'), null);
+  assert.equal(out.headers.get('fennec-verified'), null);
+  assert.equal(out.headers.get('fennec-seq'), '7');
   assert.equal(out.headers.get('content-type'), 'application/json');
 });
 
 test("an answer is a router's where it carries the router's mark, as every answer a router writes does", () => {
   const answer = (status, headers = {}) => new Response(null, { status, headers });
   assert.equal(judged(answer(200)), 'router');
-  assert.equal(judged(answer(502, { 'X-Request-Id': 'r', 'Fenec-Shard': '1' })), 'router');
-  assert.equal(judged(answer(503, { 'Fenec-Shard': '1' })), 'router');
+  assert.equal(judged(answer(502, { 'X-Request-Id': 'r', 'Fennec-Shard': '1' })), 'router');
+  assert.equal(judged(answer(503, { 'Fennec-Shard': '1' })), 'router');
   // Written as the router took the connection, the request never read.
-  assert.equal(judged(answer(503, { 'Fenec-Shard': '1', 'Fenec-Unserved': 'no_thread' })), 'unserved');
-  assert.equal(judged(answer(503, { 'Fenec-Shard': '1', 'Fenec-Unserved': 'ceiling' })), 'unserved');
-  assert.equal(judged(answer(503, { 'Fenec-Unserved': 'ceiling' })), 'unknown', 'not the router\'s without its mark');
+  assert.equal(judged(answer(503, { 'Fennec-Shard': '1', 'Fennec-Unserved': 'no_thread' })), 'unserved');
+  assert.equal(judged(answer(503, { 'Fennec-Shard': '1', 'Fennec-Unserved': 'ceiling' })), 'unserved');
+  assert.equal(judged(answer(503, { 'Fennec-Unserved': 'ceiling' })), 'unknown', 'not the router\'s without its mark');
   // A load balancer's 502 with a request id of its own is not a router's.
   assert.equal(judged(answer(502, { 'X-Request-Id': 'lb-1' })), 'unknown');
   // A tunnel's connector that could not reach the router, Cloudflare timing out.
@@ -254,7 +254,7 @@ async function forwarded(router) {
   const m = await shard(router.url, 'GET', '/_metrics');
   return m.text
     .split('\n')
-    .filter((l) => l.startsWith('fenec_router_requests_total{route="tenant"'))
+    .filter((l) => l.startsWith('fennec_router_requests_total{route="tenant"'))
     .reduce((n, l) => n + Number(l.split(' ').pop()), 0);
 }
 
@@ -295,7 +295,7 @@ describe('the entry in front of two regions', { skip, timeout: 300_000 }, () => 
       entryToken: SECRET,
       audit: true,
     });
-    state = await mkdtemp(join(tmpdir(), 'fenecdb-entry-state-'));
+    state = await mkdtemp(join(tmpdir(), 'fennecdb-entry-state-'));
     const regions = { us: { routers: [w.us.url, w.usStandby.url] }, eu: { routers: [w.eu.url] } };
     // Its clients are Europe's, eu that continent's region: a marked read
     // goes to the client's continent's region alone, never the default.
@@ -347,7 +347,7 @@ describe('the entry in front of two regions', { skip, timeout: 300_000 }, () => 
     for (let i = 0; i < 5; i++) {
       const r = await query(front.url, 'acme', 'put notes {title: $1}', [`n${i}`]);
       assert.equal(r.status, 200, r.text);
-      assert.equal(r.header('fenec-home'), undefined);
+      assert.equal(r.header('fennec-home'), undefined);
     }
     for (let i = 0; i < 3; i++) assert.equal((await query(front.url, 'beta', 'get notes count')).status, 200);
     // eu answered acme's first request alone, and beta's; us all of acme's.
@@ -366,12 +366,12 @@ describe('the entry in front of two regions', { skip, timeout: 300_000 }, () => 
     const placed = await shard(w.eu.url, 'PUT', '/_shard/tenants/near/read-replicas/eu');
     assert.equal(placed.status, 201, placed.text);
     await until(async () => {
-      const r = await query(w.nodes.eu.url, 'near', 'get notes count', undefined, { 'Fenec-Read': 'replica' });
+      const r = await query(w.nodes.eu.url, 'near', 'get notes count', undefined, { 'Fennec-Read': 'replica' });
       return r.status === 200 && r.json()[0]?.count === 2;
     }, "near's read replica in eu");
     const [eu, us] = [await forwarded(w.eu), await forwarded(w.us)];
     for (let i = 0; i < 3; i++) {
-      const r = await query(front.url, 'near', 'get notes count', undefined, { 'Fenec-Read': 'replica' });
+      const r = await query(front.url, 'near', 'get notes count', undefined, { 'Fennec-Read': 'replica' });
       assert.equal(r.status, 200, r.text);
       assert.deepEqual(r.json(), [{ count: 2 }]);
     }
@@ -386,7 +386,7 @@ describe('the entry in front of two regions', { skip, timeout: 300_000 }, () => 
     // One marked for a replica is sent as a marked read is, the entry
     // reading no query, and runs read-only where it lands: eu's replica
     // refuses it, and it is written nowhere.
-    const marked = await query(front.url, 'near', 'put notes {title: "marked"}', undefined, { 'Fenec-Read': 'replica' });
+    const marked = await query(front.url, 'near', 'put notes {title: "marked"}', undefined, { 'Fennec-Read': 'replica' });
     assert.equal(marked.status, 403, marked.text);
     assert.equal(await forwarded(w.eu), eu + 4);
     assert.equal(await forwarded(w.us), us + 1);
@@ -397,10 +397,10 @@ describe('the entry in front of two regions', { skip, timeout: 300_000 }, () => 
     // The router names it on the refusal too: the entry drops it.
     const r = await request(`${front.url}/t/acme/query`, { method: 'POST', body: '{"query":"get notes count"}' });
     assert.equal(r.status, 401, r.text);
-    assert.equal(r.header('fenec-home'), undefined);
-    const asked = await query(front.url, 'acme', 'get notes count', undefined, { 'Fenec-Home': '1' });
+    assert.equal(r.header('fennec-home'), undefined);
+    const asked = await query(front.url, 'acme', 'get notes count', undefined, { 'Fennec-Home': '1' });
     assert.equal(asked.status, 200);
-    assert.equal(asked.header('fenec-home'), undefined);
+    assert.equal(asked.header('fennec-home'), undefined);
   });
 
   test("a refused token waits by the client the entry names, never by the entry's own address", async () => {
@@ -514,12 +514,12 @@ describe('the entry in front of two regions', { skip, timeout: 300_000 }, () => 
 
   test('a held claim waits at the node until a job comes, and /_changes until a write', async () => {
     const claim = 'set jobs {owner: $1, run_at: now() + 60000} where run_at <= now() order run_at limit 1 returning n';
-    const answer = query(front.url, 'live', claim, ['w1'], { 'Fenec-Wait': '20000' });
+    const answer = query(front.url, 'live', claim, ['w1'], { 'Fennec-Wait': '20000' });
     // The job put once the claim is held at the node, as its
-    // `fenec_held_requests` says: the answer is the held claim's.
+    // `fennec_held_requests` says: the answer is the held claim's.
     const held = async () => {
       const m = await request(`${w.nodes.us.url}/_metrics`, { headers: { Authorization: 'Bearer adm-us' } });
-      return m.text.split('\n').includes('fenec_held_requests 1');
+      return m.text.split('\n').includes('fennec_held_requests 1');
     };
     await until(held, 'the claim held at the node');
     const put = await query(w.us.url, 'live', 'put jobs {n: 7, run_at: now(), owner: ""}');
@@ -535,7 +535,7 @@ describe('the entry in front of two regions', { skip, timeout: 300_000 }, () => 
     const set = await request(`${w.nodes.us.url}/_admin/tenants/feed/quota`, { method: 'PUT', headers: admin, body: '{"streams": 100}' });
     assert.ok(set.status < 300, `${set.status} ${set.text}`);
     const first = await query(w.us.url, 'feed', 'put notes {title: "first"}');
-    const seq = Number(first.header('fenec-seq'));
+    const seq = Number(first.header('fennec-seq'));
     const changes = request(`${front.url}/t/feed/_changes?since=${seq}&wait=20000`, { headers: { Authorization: `Bearer ${DATA}` } });
     const waiting = async () => {
       const q = await request(`${w.nodes.us.url}/_admin/tenants/feed/quota`, { headers: admin });
@@ -701,7 +701,7 @@ test('a request held at its router is let go of with its client', async () => {
     const answered = fetchOf('/t/held/query', {
       method: 'POST',
       body: '{"query":"set jobs {owner: 1} limit 1"}',
-      headers: { 'Fenec-Wait': '30000' },
+      headers: { 'Fennec-Wait': '30000' },
       signal: ac.signal,
     });
     const at = await until(() => stub.seen[0], 'the request at the router', 10_000);
@@ -716,7 +716,7 @@ test('a request held at its router is let go of with its client', async () => {
 
 test("a read marked for a replica goes to its continent's region, and home alone from a continent no region names", async () => {
   const answering = (home) => (req, res) => {
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Fenec-Shard': '1', 'Fenec-Home': home });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Fennec-Shard': '1', 'Fennec-Home': home });
     res.end('[]');
   };
   // eu's router names the tenant's home, us, as one that relays it does.
@@ -727,7 +727,7 @@ test("a read marked for a replica goes to its continent's region, and home alone
       DEFAULT_REGION: 'eu',
       HOMES_CACHE: 'off',
     });
-    const read = { method: 'POST', body: '{"query":"get notes"}', headers: { 'Fenec-Read': 'replica' } };
+    const read = { method: 'POST', body: '{"query":"get notes"}', headers: { 'Fennec-Read': 'replica' } };
     // Its home learnt.
     assert.equal((await fetchOf('/t/acme/query', { method: 'POST', body: '{"query":"get notes"}' }, { continent: 'NA' })).status, 200);
     const [atUs, atEu] = [us.seen.length, eu.seen.length];
@@ -749,7 +749,7 @@ test('a change of the global router marked for a replica that may have run is no
   // The router reads it whole and is gone before it answers.
   const dying = await standIn((req, res) => res.socket.destroy());
   const standby = await standIn((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Fenec-Shard': '1' });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Fennec-Shard': '1' });
     res.end('{}');
   });
   try {
@@ -757,7 +757,7 @@ test('a change of the global router marked for a replica that may have run is no
     const moved = await fetchOf('/_shard/tenants/acme/move', {
       method: 'POST',
       body: '{"region":"eu"}',
-      headers: { Authorization: 'Bearer admin', 'Fenec-Read': 'replica' },
+      headers: { Authorization: 'Bearer admin', 'Fennec-Read': 'replica' },
     });
     assert.equal(moved.status, 502);
     assert.match(await moved.text(), /may have run/);
@@ -773,16 +773,16 @@ test("a guessed region's router that cannot reach the home is passed for a read,
   // cut's router is cut off from the tenant's home: it answers 502, its
   // own, naming no home. home's router places the tenant.
   const cut = await standIn((req, res) => {
-    res.writeHead(502, { 'Content-Type': 'application/json', 'X-Request-Id': 'c1', 'Fenec-Shard': '1' });
+    res.writeHead(502, { 'Content-Type': 'application/json', 'X-Request-Id': 'c1', 'Fennec-Shard': '1' });
     res.end('{"error":"region `home`\'s routers did not answer"}');
   });
   const home = await standIn((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'application/json', 'X-Request-Id': 'h1', 'Fenec-Shard': '1', 'Fenec-Home': 'home' });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'X-Request-Id': 'h1', 'Fennec-Shard': '1', 'Fennec-Home': 'home' });
     res.end('[]');
   });
   // A home's own failure names the home: the answer, not passed.
   const failing = await standIn((req, res) => {
-    res.writeHead(502, { 'Content-Type': 'application/json', 'X-Request-Id': 'f1', 'Fenec-Shard': '1', 'Fenec-Home': 'cut' });
+    res.writeHead(502, { 'Content-Type': 'application/json', 'X-Request-Id': 'f1', 'Fennec-Shard': '1', 'Fennec-Home': 'cut' });
     res.end('{"error":"node `n1` did not answer"}');
   });
   try {
@@ -812,13 +812,13 @@ test('a router that refused the connection as it took it is passed over for the 
     res.writeHead(503, {
       'Content-Type': 'application/json',
       'Retry-After': '1',
-      'Fenec-Shard': '1',
-      'Fenec-Unserved': 'no_thread',
+      'Fennec-Shard': '1',
+      'Fennec-Unserved': 'no_thread',
     });
     res.end('{"error":"no thread for the connection","retry_after":1}');
   });
   const standby = await standIn((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Fenec-Shard': '1', 'Fenec-Home': 'us' });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Fennec-Shard': '1', 'Fennec-Home': 'us' });
     res.end('{"affected":1}');
   });
   try {
@@ -839,7 +839,7 @@ test('a router that refused the connection as it took it is passed over for the 
     const refused = await fetchOf('/t/acme/query', write);
     assert.equal(refused.status, 503);
     assert.equal(refused.headers.get('retry-after'), '1');
-    assert.equal(refused.headers.get('fenec-unserved'), null);
+    assert.equal(refused.headers.get('fennec-unserved'), null);
     assert.match(await refused.text(), /"retry_after":1/);
     assert.equal(busy.seen.length, 2);
   } finally {
@@ -854,16 +854,16 @@ test("a change meeting the global router busy is its 503, and the standby's refu
   const primary = await standIn((req, res) => {
     if (busy) {
       busy = false;
-      res.writeHead(503, { 'Content-Type': 'application/json', 'Retry-After': '1', 'Fenec-Shard': '1', 'Fenec-Unserved': 'no_thread' });
+      res.writeHead(503, { 'Content-Type': 'application/json', 'Retry-After': '1', 'Fennec-Shard': '1', 'Fennec-Unserved': 'no_thread' });
       res.end('{"error":"no thread for the connection","retry_after":1}');
       return;
     }
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Fenec-Shard': '1' });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Fennec-Shard': '1' });
     res.end('{}');
   });
-  // A standby takes no change: its 409, as fenec-shard words and marks it.
+  // A standby takes no change: its 409, as fennec-shard words and marks it.
   const standby = await standIn((req, res) => {
-    res.writeHead(409, { 'Content-Type': 'application/json', 'Fenec-Shard': '1', 'Fenec-Follows': '1' });
+    res.writeHead(409, { 'Content-Type': 'application/json', 'Fennec-Shard': '1', 'Fennec-Follows': '1' });
     res.end('{"error":"this router follows another: send /_shard/ changes to the primary, or promote this one (POST /_replication/promote)"}');
   });
   try {
@@ -960,10 +960,10 @@ describe('the entry in front of stand-in routers', { skip, timeout: 180_000 }, (
       res.writeHead(200, {
         'Content-Type': 'application/json',
         'X-Request-Id': 'stub',
-        'Fenec-Shard': '1',
-        'Fenec-Verified': '1',
-        'Fenec-Seq': '5',
-        ...(home ? { 'Fenec-Home': home } : {}),
+        'Fennec-Shard': '1',
+        'Fennec-Verified': '1',
+        'Fennec-Seq': '5',
+        ...(home ? { 'Fennec-Home': home } : {}),
       });
       res.end(JSON.stringify({ body: e.body }));
     });
@@ -988,7 +988,7 @@ describe('the entry in front of stand-in routers', { skip, timeout: 180_000 }, (
     });
     // A router's own 502 -- a node it could not reach -- is an answer.
     failing = await standIn((req, res) => {
-      res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8', 'X-Request-Id': 'r1', 'Fenec-Shard': '1' });
+      res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8', 'X-Request-Id': 'r1', 'Fennec-Shard': '1' });
       res.end('{"error":"node `n1` did not answer"}');
     });
     // A load balancer in front of a router it cannot reach: a 502 with a
@@ -999,7 +999,7 @@ describe('the entry in front of stand-in routers', { skip, timeout: 180_000 }, (
     });
     // The global router, for /_shard/ when it is let through.
     w = await cluster.world({});
-    state = await mkdtemp(join(tmpdir(), 'fenecdb-entry-stub-'));
+    state = await mkdtemp(join(tmpdir(), 'fennecdb-entry-stub-'));
     front = await serve('entry', state, {
       REGIONS: JSON.stringify({
         stub: [stub.url],
@@ -1028,7 +1028,7 @@ describe('the entry in front of stand-in routers', { skip, timeout: 180_000 }, (
   async function homed(region) {
     const r = await request(`${front.url}/t/to-${region}/query`, { method: 'POST', body: '{}' });
     assert.equal(r.status, 200, r.text);
-    assert.equal(r.header('fenec-home'), undefined);
+    assert.equal(r.header('fennec-home'), undefined);
     return `/t/to-${region}`;
   }
 
@@ -1039,17 +1039,17 @@ describe('the entry in front of stand-in routers', { skip, timeout: 180_000 }, (
         Authorization: 'Bearer t',
         'Content-Type': 'application/json',
         'Idempotency-Key': 'k-2',
-        'Fenec-Wait': '5',
-        'Fenec-After': '3',
+        'Fennec-Wait': '5',
+        'Fennec-After': '3',
         traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
         tracestate: 'a=b',
         'X-Request-Id': 'rid-1',
         'If-None-Match': '"e"',
-        'Fenec-Router': '9.9.9.9 forged',
-        'Fenec-Global': '1',
-        'Fenec-Verified': '1',
-        'Fenec-Client': '8.8.8.8 forged',
-        'Fenec-Home': 'eu',
+        'Fennec-Router': '9.9.9.9 forged',
+        'Fennec-Global': '1',
+        'Fennec-Verified': '1',
+        'Fennec-Client': '8.8.8.8 forged',
+        'Fennec-Home': 'eu',
         'X-Forwarded-For': '6.6.6.6',
         'X-Real-IP': '6.6.6.6',
         Forwarded: 'for=6.6.6.6',
@@ -1068,24 +1068,24 @@ describe('the entry in front of stand-in routers', { skip, timeout: 180_000 }, (
       ['authorization', 'Bearer t'],
       ['content-type', 'application/json'],
       ['idempotency-key', 'k-2'],
-      ['fenec-wait', '5'],
-      ['fenec-after', '3'],
+      ['fennec-wait', '5'],
+      ['fennec-after', '3'],
       ['traceparent', '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'],
       ['tracestate', 'a=b'],
       ['x-request-id', 'rid-1'],
       ['if-none-match', '"e"'],
-      ['fenec-home', '1'],
+      ['fennec-home', '1'],
     ]) {
       assert.equal(h[k], v, k);
     }
-    namesClient(h['fenec-client'], '203.0.113.7');
-    for (const k of ['fenec-router', 'fenec-global', 'fenec-verified', 'x-real-ip', 'forwarded', 'true-client-ip']) assert.equal(h[k], undefined, k);
+    namesClient(h['fennec-client'], '203.0.113.7');
+    for (const k of ['fennec-router', 'fennec-global', 'fennec-verified', 'x-real-ip', 'forwarded', 'true-client-ip']) assert.equal(h[k], undefined, k);
     // Nothing the client claimed reaches the router, under any name.
     const all = JSON.stringify(h);
     for (const ip of ['6.6.6.6', '8.8.8.8', '9.9.9.9']) assert.ok(!all.includes(ip), `${ip} in ${all}`);
     // The answer: the router's, less whether a node verified a token.
-    assert.equal(r.header('fenec-verified'), undefined);
-    assert.equal(r.header('fenec-seq'), '5');
+    assert.equal(r.header('fennec-verified'), undefined);
+    assert.equal(r.header('fennec-seq'), '5');
     // No CORS configured: a preflight goes on to the router.
     const pre = await request(`${front.url}/t/acme/query`, { method: 'OPTIONS', headers: { Origin: ORIGIN } });
     assert.equal(pre.status, 200);

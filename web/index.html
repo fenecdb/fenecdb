@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>fenecdb</title>
+<title>fennecdb</title>
 <style>
   :root {
     --bg: #0b0d10;
@@ -85,7 +85,7 @@
 </head>
 <body>
 <header>
-  <h1>fenec<span>db</span></h1>
+  <h1>fennec<span>db</span></h1>
   <span class="tag" id="ver">loading…</span>
   <span class="tag">running in the browser · no server</span>
   <span class="tag" id="wasmsize"></span>
@@ -130,7 +130,7 @@
 </main>
 
 <script type="module">
-import { Fenec, persist, restore, sync } from './fenec.js';
+import { Fennec, persist, restore, sync } from './fennec.js';
 
 const $ = (s) => document.querySelector(s);
 const out = $('#out');
@@ -272,7 +272,7 @@ async function seed() {
 //   make serve                           # this page
 //
 // If the server sends no CORS header the browser blocks the request:
-//   fenec-server --file data.fenec --http 127.0.0.1:8080 --http-cors 'http://localhost:8787'
+//   fennec-server --file data.fennec --http 127.0.0.1:8080 --http-cors 'http://localhost:8787'
 //
 // Try it in two tabs: only one of them opens the stream (leader election),
 // the other receives the same batches over BroadcastChannel.
@@ -291,14 +291,14 @@ async function connectSync() {
   try {
     synced = await sync({
       url,
-      local: await Fenec.open('./fenec.wasm'),
+      local: await Fennec.open('./fennec.wasm'),
       shapes: [{ collection }],
       onError: (e) => showSync(String(e.message ?? e)),
     });
     await synced.ready();
     synced.live(synced.from(collection), () => showSync());
-    // To poke at it from the console: `fenecsync.status()`, `fenecsync.local.run(...)`
-    globalThis.fenecsync = synced;
+    // To poke at it from the console: `fennecsync.status()`, `fennecsync.local.run(...)`
+    globalThis.fennecsync = synced;
     showSync();
   } catch (e) {
     $('#syncstat').innerHTML =
@@ -318,10 +318,10 @@ function showSync(note) {
 }
 
 (async () => {
-  db = await Fenec.open('./fenec.wasm');
+  db = await Fennec.open('./fennec.wasm');
   $('#ver').textContent = `v${db.version}`;
   try {
-    const r = await fetch('./fenec.wasm', { method: 'HEAD' });
+    const r = await fetch('./fennec.wasm', { method: 'HEAD' });
     const n = +r.headers.get('content-length');
     if (n) $('#wasmsize').textContent = `${(n / 1024).toFixed(0)} KB wasm`;
   } catch {}
@@ -343,7 +343,7 @@ function showSync(note) {
     say(`${(n / 1024).toFixed(1)} KB written to IndexedDB`, 'ok');
   };
   $('#load').onclick = async () => {
-    const fresh = await Fenec.open('./fenec.wasm');
+    const fresh = await Fennec.open('./fennec.wasm');
     if (await restore(fresh)) {
       db.close(); db = fresh;
       say('restored from IndexedDB', 'ok');

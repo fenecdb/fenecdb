@@ -1,6 +1,6 @@
-// Type declarations for `@fenecdb/web/schema`: a database's schema declared
+// Type declarations for `@fennecdb/web/schema`: a database's schema declared
 // in TypeScript, Drizzle ORM 1.0's way, compiled to the description every
-// fenecdb SDK compiles its declarations to. `web/fenec.d.ts` says how it is
+// fennecdb SDK compiles its declarations to. `web/fennec.d.ts` says how it is
 // opened and checked.
 
 import type {
@@ -22,7 +22,7 @@ import type {
   Tables,
   Timestamp,
   Vector,
-} from './fenec.js';
+} from './fennec.js';
 
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
 
@@ -36,7 +36,7 @@ type Kind = 'text' | 'int' | 'float' | 'bool' | 'timestamp' | 'bytes' | 'json' |
 /**
  * A column: what a field reads as (`T`), whether `.notNull()` made it
  * required (`NN`), and its kind, which says which modifiers it takes.
- * Nullable unless `.notNull()`, as in Drizzle -- FenecQL's `required`.
+ * Nullable unless `.notNull()`, as in Drizzle -- FennecQL's `required`.
  */
 export interface Column<T = unknown, NN extends boolean = boolean, K extends Kind = Kind> {
   /** Types alone: never read at run time. */
@@ -53,7 +53,7 @@ export interface Column<T = unknown, NN extends boolean = boolean, K extends Kin
   asc(): PartRef;
   /** The column descending, a part of an index over several. */
   desc(): PartRef;
-  // No `default`, `primaryKey` or `references`: FenecQL has no column
+  // No `default`, `primaryKey` or `references`: FennecQL has no column
   // defaults, every document has an `id` of its own, and a relation is
   // `defineRelations`. Called from JavaScript, each throws saying so.
   toJSON(): FieldDescription;
@@ -134,11 +134,11 @@ export function boolean(): Col<boolean, false, 'bool'>;
 export function timestamp(): Col<Timestamp, false, 'timestamp'>;
 /** `bytes`. */
 export function bytea(): Col<Bytes, false, 'bytes'>;
-/** `bytes`, by fenecdb's own name. */
+/** `bytes`, by fennecdb's own name. */
 export function bytes(): Col<Bytes, false, 'bytes'>;
 /** `json`: any value JSON holds. */
 export function json(): Col<Json, false, 'json'>;
-/** `json`: fenecdb has one json type, which is jsonb over the wire. */
+/** `json`: fennecdb has one json type, which is jsonb over the wire. */
 export function jsonb(): Col<Json, false, 'json'>;
 /** `vector<N>`, pgvector's `vector`. */
 export function vector(opts: { dimensions: number }): Col<Vector, false, 'vector'>;
@@ -174,7 +174,7 @@ export interface Bm25Options {
 /** A duration: `'45s'`, `'30m'`, `'12h'`, `'7d'`. */
 export type Duration = `${number}${'ms' | 's' | 'm' | 'h' | 'd'}`;
 
-/** An index, made: what the third argument of `fenecTable` returns. */
+/** An index, made: what the third argument of `fennecTable` returns. */
 export interface IndexDef<O = never> {
   readonly method: string;
   /** Options, by the method: `HnswOptions` for hnsw, `Bm25Options` for bm25. */
@@ -202,9 +202,9 @@ export interface IndexBuilder {
   using(method: 'hash', target: AnyColumn | PathRef): IndexDef;
   /** `@hnsw`: nearest neighbours, by the operator class's distance. */
   using(method: 'hnsw', target: VectorOpRef | Column<Vector, boolean, 'vector'>): IndexDef<HnswOptions>;
-  /** `@text`: ranked text search, BM25 (fenecdb's own). */
+  /** `@text`: ranked text search, BM25 (fennecdb's own). */
   using(method: 'bm25', target: TextColumn): IndexDef<Bm25Options>;
-  /** `@inverted`: a sparse vector's dot product (fenecdb's own). */
+  /** `@inverted`: a sparse vector's dot product (fennecdb's own). */
   using(method: 'inverted', target: Column<Sparse, boolean, 'sparse'>): IndexDef;
   /** `@geo`: a point's radius, box and nearest, PostGIS's spatial index. */
   using(method: 'gist', target: Column<Point, boolean, 'geo'>): IndexDef;
@@ -219,7 +219,7 @@ export interface UniqueIndexBuilder {
 }
 
 /**
- * An index. The name is Drizzle's, and fenecdb has none: it is checked to
+ * An index. The name is Drizzle's, and fennecdb has none: it is checked to
  * be the table's one of it, and kept nowhere.
  */
 export function index(name?: string): IndexBuilder;
@@ -227,21 +227,21 @@ export function uniqueIndex(name?: string): UniqueIndexBuilder;
 
 // ------------------------------------------------------------------ tables
 
-/** What each column of `C` reads as: `fenec types`'s fields for the collection. */
+/** What each column of `C` reads as: `fennec types`'s fields for the collection. */
 export type FieldsOf<C> = {
   [K in keyof C]: C[K] extends Column<infer T, infer NN, any> ? (NN extends true ? T : T | null) : never;
 };
 
 /** A table: its columns by name, and its types. */
-export type FenecTable<N extends string = string, C extends Record<string, AnyColumn> = Record<string, AnyColumn>> = C &
+export type FennecTable<N extends string = string, C extends Record<string, AnyColumn> = Record<string, AnyColumn>> = C &
   TableRef<N, FieldsOf<C>> & {
-    /** A row as read, `id` and all: what `Row<FenecSchema[N]>` is. */
+    /** A row as read, `id` and all: what `Row<FennecSchema[N]>` is. */
     readonly $inferSelect: Simplify<Row<FieldsOf<C>>>;
     /** A row as written by `insert`: the `.notNull()` fields given. */
     readonly $inferInsert: Simplify<InsertRow<FieldsOf<C>>>;
     toJSON(): CollectionDescription;
-    /** The collection as FenecQL: `create collection`, then a `create index` a path. */
-    toFenecQL(): string;
+    /** The collection as FennecQL: `create collection`, then a `create index` a path. */
+    toFennecQL(): string;
     /** Its indexes over several fields, as the description writes them. */
     readonly $indexes: readonly CompositeDescription[];
   };
@@ -250,24 +250,24 @@ export type FenecTable<N extends string = string, C extends Record<string, AnyCo
  * A collection, as `pgTable` declares a table: its columns, and its indexes
  * in the third argument. `id` is every document's own and is not declared.
  */
-export function fenecTable<N extends string, C extends Record<string, AnyColumn>>(
+export function fennecTable<N extends string, C extends Record<string, AnyColumn>>(
   name: N,
   columns: C,
   extra?: (t: C) => IndexDef<any>[],
-): FenecTable<N, C>;
-/** `fenecTable` by fenecdb's own word. */
-export const collection: typeof fenecTable;
+): FennecTable<N, C>;
+/** `fennecTable` by fennecdb's own word. */
+export const collection: typeof fennecTable;
 
 /** The table's columns by name, as Drizzle's `getColumns`. */
-export function getColumns<C extends Record<string, AnyColumn>>(table: FenecTable<string, C>): C;
+export function getColumns<C extends Record<string, AnyColumn>>(table: FennecTable<string, C>): C;
 
 /** The description of `schema` and its migrations: what `checkSchema` and `/_schema` take. */
 export function describe(schema: Tables, migrations?: readonly Migration[]): SchemaDescription;
 /**
- * The schema as FenecQL, `schema.fenecql`: each table's `create collection`
+ * The schema as FennecQL, `schema.fennecql`: each table's `create collection`
  * and the `create index` of each path. What an open hands the engine.
  */
-export function toFenecQL(schema: Tables): string;
+export function toFennecQL(schema: Tables): string;
 
 // -------------------------------------------------------------- migrations
 
@@ -321,7 +321,7 @@ type RelationHelpers<T extends Tables> = {
  *     products: { reviews: r.many.reviews({ from: r.products.id, to: r.reviews.productId }) },
  *     orders: { lines: r.many.lines({ from: [r.orders.org, r.orders.id], to: [r.lines.org, r.lines.order] }) },
  *   }));
- *   const db = await Fenec.open(wasm, { schema: { products, reviews }, relations });
+ *   const db = await Fennec.open(wasm, { schema: { products, reviews }, relations });
  *   await db.from(products).lookup('reviews').rows();
  */
 export function defineRelations<T extends Tables, C extends { [K in keyof T]?: Record<string, Relation> }>(

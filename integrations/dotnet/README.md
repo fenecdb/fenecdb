@@ -1,15 +1,15 @@
-# FenecDb for .NET
+# FennecDb for .NET
 
-A client for fenec-server's HTTP endpoint, `HttpClient` and `System.Text.Json` alone, for .NET 8 and newer.
+A client for fennec-server's HTTP endpoint, `HttpClient` and `System.Text.Json` alone, for .NET 8 and newer.
 
 ```sh
-dotnet add package FenecDb
+dotnet add package FennecDb
 ```
 
 ```csharp
-using FenecDb;
+using FennecDb;
 
-using var db = new FenecClient("http://127.0.0.1:8080", new() { Token = "secret" });
+using var db = new FennecClient("http://127.0.0.1:8080", new() { Token = "secret" });
 var w = await db.ExecAsync("put docs {title: $1, embed: $2}", ["Dunes", new[] { 0.9f, 0.1f, 0f }]);
 var rows = await db.QueryAsync("get docs select title near embed $1 limit 5", [new[] { 0.1f, 0.2f, 0.3f }]);
 var hits = await db.QueryAsync<Hit>("get docs select title near embed $1 limit 5", [vector]);
@@ -33,18 +33,18 @@ await docs.Lookup("reviews", on: "article_id", limit: 3, order: [new("created", 
 
 - `QueryAsync` gives rows as `JsonElement`s, `QueryAsync<T>` maps them to records or classes by property name, any case; `ExecAsync` a write's count and its `Seq`.
 - `BatchAsync([new Statement(q, params), ...])` runs statements as one block: all land, or none.
-- `WithIdempotencyKey(key)` makes a write once; `After(seq)` reads a write on a replica (`Fenec-After`);
-  `WithWait(TimeSpan.FromSeconds(30))` holds a job queue's claim at the server until a job comes (`Fenec-Wait`),
+- `WithIdempotencyKey(key)` makes a write once; `After(seq)` reads a write on a replica (`Fennec-After`);
+  `WithWait(TimeSpan.FromSeconds(30))` holds a job queue's claim at the server until a job comes (`Fennec-Wait`),
   its cancellation token giving it up.
-- `new FenecClientOptions { ReadsNearest = true }` sends the builder's reads, and an `AsRead()` copy's, to the
-  tenant's read replica near the client through a fenec-shard router (`Fenec-Read: replica`), each after the
-  furthest position an answer from home named (`Fenec-After`, `Fenec-History`); writes go home. An `AsRead()`
+- `new FennecClientOptions { ReadsNearest = true }` sends the builder's reads, and an `AsRead()` copy's, to the
+  tenant's read replica near the client through a fennec-shard router (`Fennec-Read: replica`), each after the
+  furthest position an answer from home named (`Fennec-After`, `Fennec-History`); writes go home. An `AsRead()`
   copy's `SubscribeAsync` and `ChangesAsync` go so too, and the server holds the stream until a copy has the
   client's writes.
 - `SubscribeAsync(collection, [new("year", "gte.2024")])` is an `IAsyncEnumerable<Event>` of `seed` and `change` events (SSE).
 - `ChangesAsync(since, wait)` reads every write on disk (`/_changes`); `HealthAsync()` asks `/_health`.
-- `FenecClientOptions` takes `Token`, `Tenant` (`/t/<tenant>/`), `Timeout` and an `HttpClient` of your own.
-- A refusal is a `FenecException` with `Status`, `Code` and the server's message; a failed batch's also says which
+- `FennecClientOptions` takes `Token`, `Tenant` (`/t/<tenant>/`), `Timeout` and an `HttpClient` of your own.
+- A refusal is a `FennecException` with `Status`, `Code` and the server's message; a failed batch's also says which
   statement stopped it, `At` (from 0; `null` otherwise), and how many stayed applied, `Completed`.
   `reason: "insufficient funds"` beside `require: 1` (`require 1 else '...'`, written into the text) comes back as
   `Reason`, which tells one guard's refusal from another's where `At` moves with every statement added in front; a
@@ -57,13 +57,13 @@ await docs.Lookup("reviews", on: "article_id", limit: 3, order: [new("created", 
 - `Facet(field, ranges: [0, 25, 50])` counts by ranges of numbers, each value `[from, to]`; `disjunctive: true`
   counts past the filter's own condition on the field, as a shop's filter list does.
 - A `Dictionary<string, object?>` is the builder's object condition, its operators a dictionary too; a refused
-  step throws `FenecQueryException` with the JS builder's message.
-- Aggregates go in `Select` as FenecQL spells them (`"count(*)"`, `"sum(total)"`), and `Group` takes one key or
+  step throws `FennecQueryException` with the JS builder's message.
+- Aggregates go in `Select` as FennecQL spells them (`"count(*)"`, `"sum(total)"`), and `Group` takes one key or
   more; `Computed.Bucket(field, "1m")`, `CountDistinct`, `First(field, by)`, `Last` and `Expr` make a column,
   named with `.As(name)`: `Select(Computed.Bucket("at", "1h").As("hour"), "count(*)").Group("hour")`.
-- To see the text and parameters a chain builds, for logging or a test, `q.ToFenecQL()` returns them and runs
+- To see the text and parameters a chain builds, for logging or a test, `q.ToFennecQL()` returns them and runs
   nothing; a query needs no call to it before it runs.
 
-`dotnet test FenecDb.Tests` runs against `fenec-server` processes it starts (`cargo build -p fenec-server`, or
-`FENEC_SERVER`), and the builder against every case of `integrations/builder-golden.json`.
+`dotnet test FennecDb.Tests` runs against `fennec-server` processes it starts (`cargo build -p fennec-server`, or
+`FENNEC_SERVER`), and the builder against every case of `integrations/builder-golden.json`.
 Full reference: https://fenecdb.com/docs/languages

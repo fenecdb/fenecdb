@@ -1,10 +1,10 @@
 // The lines of a server's stderr the app acts on: where it listens, and where
 // its metrics are.
 //
-//   fenec-http 0.1.12 listening on: http://127.0.0.1:52341  [token]
+//   fennec-http 0.1.12 listening on: http://127.0.0.1:52341  [token]
 //   metrics on: http://127.0.0.1:52340/_metrics  [token]
 //
-// (crates/fenec-http/src/lib.rs). Anchored to the whole line, not found
+// (crates/fennec-http/src/lib.rs). Anchored to the whole line, not found
 // anywhere in it: stderr also carries what a database says about its own data
 // (a collection's name, a log of a statement), and a line that merely
 // *contains* `listening on: http://...` must not name the server's address,
@@ -14,7 +14,7 @@
 // unless it was 0. A server that listens elsewhere is not the one it started.
 // Pure, so `node --test` holds it (test/listening.test.ts).
 
-const LINE = /^fenec-http \S+ listening on: (http:\/\/\S+)(?:\s|$)/;
+const LINE = /^fennec-http \S+ listening on: (http:\/\/\S+)(?:\s|$)/;
 const METRICS = /^metrics on: (http:\/\/127\.0\.0\.1:\d{1,5})\/_metrics(?:\s|$)/;
 
 export type Listening = { origin: string; port: number } | { refused: string } | null;

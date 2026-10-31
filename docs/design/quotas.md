@@ -5,7 +5,7 @@ The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *Quotas
 ## Tenant quotas
 
 **A tenant is held to its quota by its node, a block as it lands**
-(`fenec_http::quota`, `fenec_core::engine::limit`). A node's tenants
+(`fennec_http::quota`, `fennec_core::engine::limit`). A node's tenants
 share its disk, memory and threads, and only `--max-connections` and
 `--max-memory` bounded them together. The node's flags
 (`--tenant-max-bytes`, `-rows`, `-streams`, `-requests`,
@@ -26,7 +26,7 @@ always runs, and a file within a quarter of its quota is compacted by the
 node once an eighth of the quota is dead (`link::quota_policy`), where the
 policy every file has waits for 64 MB and a tenant at a 10 MB quota would
 have deleted to no avail. Streams (subscriptions, `/_changes` waits,
-`Fenec-After` waits -- once `after` has looked and must wait, its `slot`
+`Fennec-After` waits -- once `after` has looked and must wait, its `slot`
 taken then: taken for every request sent with the header, a tenant whose
 live queries' subscriptions filled its quota, 25 of a default node's
 connections, had every read after a write the node held refused 429, each
@@ -37,7 +37,7 @@ in three ABBA quartets under the bench lock at loads of 3.4-4.9, a row by
 id 0.022 ms p50 in every run either way, eight clients 143.6-147.2k a
 second against main's 143.9-147.4k, a put 0.022-0.023 ms and 124.9-129.2k
 against 0.022-0.023 and 127.5-128.6k, one branch run at a load of 4.7 left
-out), held writes (`held`, `Fenec-Wait`'s: a plan sizes how
+out), held writes (`held`, `Fennec-Wait`'s: a plan sizes how
 many workers wait apart from how many dashboards stream, and counted
 together forty couriers waiting left a dispatcher's map no stream to open)
 and requests in flight are counters a request takes in `serve_connection`,
@@ -65,10 +65,10 @@ and held write is a connection and its thread, `--http-max-streams` counts
 a database's own -- each tenant's on a node, not all of theirs together --
 and nothing counted a tenant's held writes, so a hundred workers of one
 tenant took every connection of a default node and its neighbours were
-answered 503. Every refusal carries `Fenec-Quota`
+answered 503. Every refusal carries `Fennec-Quota`
 and `"quota"` (with `"retry_after"`, a rate's `"retry_after_ms"` too, which
 SDKs reading no header take),
-and `quota::noted` counts it by quota (`fenec_quota_refused_total`, never
+and `quota::noted` counts it by quota (`fennec_quota_refused_total`, never
 a tenant label) and logs it as an audit `quota` event; its message names
 the bound, never what the tenant holds, so a scoped user is told the
 tenant is full and not how many rows the others make. Left out: memory
@@ -127,7 +127,7 @@ through the C ABI and three bindings, and a page on another origin reads
 too (below). Five scenarios hold both runners to it, and the Swift,
 Kotlin, Dart and browser tests a real tenant node at its rows quota: the
 insert refused naming `rows`, the keyed delete behind it landing.
-`fenec.js` grew 99.4 -> 102.4 KB, 27.0 -> 27.9 KB brotli, 0.26 KB of
+`fennec.js` grew 99.4 -> 102.4 KB, 27.0 -> 27.9 KB brotli, 0.26 KB of
 that code (minified, 12.2 -> 12.5 KB); the native library's code 2.3 KB,
 its file 16 bytes on aarch64-apple-darwin; the browser module not by a
 byte, the sync being outside it.

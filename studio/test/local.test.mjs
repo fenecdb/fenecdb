@@ -1,4 +1,4 @@
-// The playground: fenec studio over a database in the page, as the site
+// The playground: fennec studio over a database in the page, as the site
 // serves it (site/dist, `python3 site/build.py`), in a headless Chrome.
 // The studio is the playground's frame; every test drives it there --
 // browse, sort, filter, edit, a query and its plan, a live row, the schema,
@@ -113,7 +113,7 @@ test('the first screen: an example run in the editor, the database said to be in
   assert.ok(examples.includes('Search by meaning') && examples.includes('Visitors by day'), examples.join(', '));
   // Where the token is on a server, the line that says where this runs.
   assert.equal(await frame.$eval('.who.here .here-long', (e) => e.textContent), 'Running in your browser.');
-  assert.match(await frame.$eval('.here-server', (e) => e.textContent), /On your server: fenec-server --studio/);
+  assert.match(await frame.$eval('.here-server', (e) => e.textContent), /On your server: fennec-server --studio/);
   assert.match(await page.$eval('.pg-say', (e) => e.textContent), /Nothing you\s+type leaves your browser/);
   // No sign-in, no token, no tenant and no admin view: they are a server's.
   assert.deepEqual(await frame.$$eval('.view-tab', (ts) => ts.map((t) => t.dataset.view)), ['rows', 'query', 'schema', 'live']);

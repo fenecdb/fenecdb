@@ -1,4 +1,4 @@
-// Time buckets as FenecQL's `bucket` makes them: UTC, from the epoch, and a
+// Time buckets as FennecQL's `bucket` makes them: UTC, from the epoch, and a
 // week from a Monday. The worker keys its rollups by these, and the
 // dashboard's raw queries group by `bucket`, so both must agree to the ms
 // (test/correctness.test.ts holds them to the server's).
@@ -16,7 +16,7 @@ export const weekOf = (ms: number) => floor(ms - MONDAY, WEEK) + MONDAY;
 
 export const iso = (ms: number) => new Date(ms).toISOString().replace('.000Z', 'Z');
 
-/** FenecQL's text for a bucket width. */
+/** FennecQL's text for a bucket width. */
 export function interval(ms: number): string {
   if (ms % WEEK === 0) return `${ms / WEEK}w`;
   if (ms % DAY === 0) return `${ms / DAY}d`;

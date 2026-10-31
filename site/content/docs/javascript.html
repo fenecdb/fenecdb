@@ -1,10 +1,10 @@
 <!--
-title: JavaScript and TypeScript — fenecdb
-description: Run fenecdb in the page with one ES module: open a database, query it with the builder, keep it in IndexedDB or a file, use it as the app's state with live queries, and declare its schema in code, Drizzle's way, or type it from the live one.
+title: JavaScript and TypeScript — fennecdb
+description: Run fennecdb in the page with one ES module: open a database, query it with the builder, keep it in IndexedDB or a file, use it as the app's state with live queries, and declare its schema in code, Drizzle's way, or type it from the live one.
 -->
 
 <h1>JavaScript and TypeScript</h1>
-<p class="kicker">Dependency-free ES modules run fenecdb in the page:
+<p class="kicker">Dependency-free ES modules run fennecdb in the page:
 open a database, query it, and keep it between visits — or query a server
 through the client alone. Their types come with them.</p>
 
@@ -12,12 +12,12 @@ through the client alone. Their types come with them.</p>
 is the script of <a href="quickstart-browser.html">Quickstart: in the
 browser</a>, a Vite project that you can follow from an empty folder:</p>
 
-<pre data-lang="bash">npm install @fenecdb/web</pre>
+<pre data-lang="bash">npm install @fennecdb/web</pre>
 
-<pre data-lang="js" data-label="src/main.js, in a Vite project">import { Fenec } from '@fenecdb/web';
-import wasm from '@fenecdb/web/fenec.wasm?url';   // Vite hands over the module's URL
+<pre data-lang="js" data-label="src/main.js, in a Vite project">import { Fennec } from '@fennecdb/web';
+import wasm from '@fennecdb/web/fennec.wasm?url'; // Vite hands over the module's URL
 
-const db = await Fenec.open(wasm);
+const db = await Fennec.open(wasm);
 
 db.run('create collection notes (title text @text, year int @sorted)');
 db.run('put notes {title: $1, year: $2}', ['Dunes', 2021]);
@@ -44,18 +44,18 @@ the page does.</p>
 <table>
 <thead><tr><th>For</th><th>What it imports and loads</th><th class="n">Brotli</th><th>What it can do</th><th>What it cannot</th></tr></thead>
 <tbody>
-<tr><td>Queries on a server</td><td><code>@fenecdb/web/client</code>: <code>connect</code>, no module</td><td class="n">10 KB</td><td>every query and write over HTTP through the builder, live queries over the server's subscriptions, the code's schema checked against the server's</td><td>answer without the network, or keep data in the page</td></tr>
-<tr><td>A database in the page, or a synced replica</td><td><code>Fenec.open('./fenec.wasm')</code>; <code>sync()</code> loads it too</td><td class="n">274 KB</td><td>everything: the graph, every index, the schema check, persistence and files</td><td>—</td></tr>
+<tr><td>Queries on a server</td><td><code>@fennecdb/web/client</code>: <code>connect</code>, no module</td><td class="n">10 KB</td><td>every query and write over HTTP through the builder, live queries over the server's subscriptions, the code's schema checked against the server's</td><td>answer without the network, or keep data in the page</td></tr>
+<tr><td>A database in the page, or a synced replica</td><td><code>Fennec.open('./fennec.wasm')</code>; <code>sync()</code> loads it too</td><td class="n">274 KB</td><td>everything: the graph, every index, the schema check, persistence and files</td><td>—</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>Beside a module the page loads <code>fenec.js</code> and the two modules it
+<p>Beside a module the page loads <code>fennec.js</code> and the two modules it
 imports, 51 KB brotli as they are served with no build step; a bundler keeps
 what the app uses of them. An app whose queries run on a server can import
 the client entry instead:</p>
 
-<pre data-lang="ts">import { connect } from '@fenecdb/web/client';   // or './client.js', beside builder.js and http.js
+<pre data-lang="ts">import { connect } from '@fennecdb/web/client';   // or './client.js', beside builder.js and http.js
 
 const db = connect('https://db.example.com', { token: 'a token' });
 const rows = await db.from('docs').where('year', '>=', 2024).limit(10).rows();
@@ -66,24 +66,24 @@ const stop = db.live(db.from('docs').where('year', 2024), (rows) => console.log(
   <li><b>What the entry guarantees</b> is that it cannot pull in the engine,
     the sync layer or storage. The bytes it saves are few: a page that only
     calls <code>connect</code> never downloaded the module through
-    <code>@fenecdb/web</code> either, since only <code>Fenec.open</code>
+    <code>@fennecdb/web</code> either, since only <code>Fennec.open</code>
     fetches it.</li>
   <li><b>The same builder:</b> a query moves between the client, a replica
     and a database in the page unchanged, and so do its types.</li>
   <li><b>A live query over the server</b> runs the query there again after
-    a write to a collection it reads; a FenecQL text names those with
+    a write to a collection it reads; a FennecQL text names those with
     <code>{ collections }</code>.</li>
 </ul>
 
 <details class="deep"><summary>What each entry bundles, and how a live query over a server runs</summary>
-<p><code>@fenecdb/web/client</code> is <code>client.js</code>, which
+<p><code>@fennecdb/web/client</code> is <code>client.js</code>, which
 re-exports the builder (<code>builder.js</code>) and the HTTP client
-(<code>http.js</code>), the two modules <code>fenec.js</code> imports beside
+(<code>http.js</code>), the two modules <code>fennec.js</code> imports beside
 its glue, persistence and the sync layer. It reaches nothing else — no
 WebAssembly, no IndexedDB, no files — and a test fails if it does. An app
 that calls <code>connect</code> and reads a builder query's rows bundles to
-10 KB brotli through it and to 13 KB through <code>@fenecdb/web</code>,
-whose <code>Fenec</code> class and its glue a bundler cannot drop (esbuild,
+10 KB brotli through it and to 13 KB through <code>@fennecdb/web</code>,
+whose <code>Fennec</code> class and its glue a bundler cannot drop (esbuild,
 minified): 2.5 KB of JavaScript, and no <code>.wasm</code> either way.</p>
 
 <p>Its live queries open a subscription to each collection the query reads
@@ -96,31 +96,31 @@ come between. <code>useLiveQuery</code> takes the endpoint as it takes a
 replica. Under a scoped token the server tells such a stream of the writes
 to rows the token may read, and of no other (<a href="/docs/http-reference#subscriptions">HTTP</a>).
 A token refused, or lapsed under an open stream -- the server ends a stream
-at its token's <code>exp</code> -- is a <code>FenecError</code> of status
+at its token's <code>exp</code> -- is a <code>FennecError</code> of status
 401 to <code>onError</code>, and the live query stops there, for the app to
 open it again with a fresh token.</p>
 </details>
 
 <p>Each way in the table has a full example in the repository, the same Notes app:
 queries on a server from Node through the client entry
-(<a href="https://github.com/fenecdb/fenecdb/tree/main/examples/node-server">node-server</a>),
+(<a href="https://github.com/fennec-db/fennecdb/tree/main/examples/node-server">node-server</a>),
 a database in the page kept in IndexedDB
-(<a href="https://github.com/fenecdb/fenecdb/tree/main/examples/web-local">web-local</a>),
+(<a href="https://github.com/fennec-db/fennecdb/tree/main/examples/web-local">web-local</a>),
 and a React app over either that or a synced replica
-(<a href="https://github.com/fenecdb/fenecdb/tree/main/examples/react">react</a>).
+(<a href="https://github.com/fennec-db/fennecdb/tree/main/examples/react">react</a>).
 A larger one is a shop in Next.js
-(<a href="https://github.com/fenecdb/fenecdb/tree/main/examples/shop">shop</a>):
+(<a href="https://github.com/fennec-db/fennecdb/tree/main/examples/shop">shop</a>):
 10 000 products whose pages the server renders through the client entry,
 search with highlights and facets, carts under each shopper's token, and a
 checkout that cannot oversell, with its Lighthouse scores, timings and
 load test measured. Another is a payments ledger on Node
-(<a href="https://github.com/fenecdb/fenecdb/tree/main/examples/ledger">ledger</a>):
+(<a href="https://github.com/fennec-db/fennecdb/tree/main/examples/ledger">ledger</a>):
 transfers, refunds and holds as guarded <code>/batch</code> blocks, an
 append-only journal, reconciliation and a change-stream sink, held to its
 invariants by 16 clients, a crash under <code>kill -9</code> and its
 security tests. A third is courier dispatch in Next.js
-(<a href="https://github.com/fenecdb/fenecdb/tree/main/examples/dispatch">dispatch</a>):
-a company a tenant behind <code>fenec-shard</code> with its plan's quota,
+(<a href="https://github.com/fennec-db/fennecdb/tree/main/examples/dispatch">dispatch</a>):
+a company a tenant behind <code>fennec-shard</code> with its plan's quota,
 orders claimed by the nearest courier under a lease or held at the server
 until one comes, couriers on a live map, and couriers' and customers'
 tokens held to their own rows, with the gaps it found listed.</p>
@@ -133,7 +133,7 @@ whole shape, then each <code>change</code>, the rows written into it and the
 ids that left it. The shape is the REST surface's: a field's filter,
 <code>where</code> and <code>select</code>.</p>
 
-<pre data-lang="ts">import { connect } from '@fenecdb/web/client';
+<pre data-lang="ts">import { connect } from '@fennecdb/web/client';
 
 const db = connect('https://db.example.com/t/acme', { token: 'a token' });
 const tasks = new Map&lt;number, unknown&gt;();
@@ -160,12 +160,12 @@ cannot send <code>Authorization</code>.</p>
 <h3 id="batch">Batches, retries and polling</h3>
 
 <p><code>db.batch</code> sends statements as one <code>/batch</code>: every
-write lands or none does. Each is a builder query, a FenecQL text, or
+write lands or none does. Each is a builder query, a FennecQL text, or
 <code>[text, params]</code> as <code>toInsert</code>, <code>toUpdate</code>
 and <code>toDelete</code> make them; with an <code>idempotencyKey</code> a
 retry after a timeout is answered as the first was.</p>
 
-<pre data-lang="ts">import { connect, inc, FenecError } from '@fenecdb/web/client';
+<pre data-lang="ts">import { connect, inc, FennecError } from '@fennecdb/web/client';
 
 const db = connect('https://db.example.com', { token: 'a token' });
 const stock = db.from('inventory');
@@ -181,7 +181,7 @@ try {
 } catch (e) {
   // 412: the statement at `at` wrote no row where it required one, and nothing landed;
   // `reason` is the words its `require` gave, undefined where it gave none.
-  if (e instanceof FenecError && e.status === 412) console.log(e.reason, e.at);  // 'sold out' 0
+  if (e instanceof FennecError && e.status === 412) console.log(e.reason, e.at); // 'sold out' 0
 }
 await db.run('put orders {number: $1}', ['SG-2'], { idempotencyKey: 'order-SG-2' });
 await db.withIdempotencyKey('order-SG-3').from('orders').insert({ number: 'SG-3' });
@@ -190,7 +190,7 @@ const stop = db.live(stock.select('available').where('sku', 'TENT-1'), (rows) =>
 </pre>
 
 <ul>
-  <li><b>A refusal names its statement:</b> <code>FenecError</code>'s
+  <li><b>A refusal names its statement:</b> <code>FennecError</code>'s
     <code>at</code> (from 0), its <code>status</code> (412 a
     <code>require</code> not met, 409 a value taken, 422 a key sent with
     another request), <code>completed</code> and <code>reason</code>, the
@@ -231,15 +231,15 @@ const stop = db.live(stock.select('available').where('sku', 'TENT-1'), (rows) =>
 
 <h2>Opening a database</h2>
 
-<p>Copy <code>fenec.js</code>, the <code>builder.js</code> and
-<code>http.js</code> it imports, and <code>fenec.wasm</code> next to your
-page, open the module, and run FenecQL or the query builder.
+<p>Copy <code>fennec.js</code>, the <code>builder.js</code> and
+<code>http.js</code> it imports, and <code>fennec.wasm</code> next to your
+page, open the module, and run FennecQL or the query builder.
 <code>persist</code> keeps the database in IndexedDB and
 <code>restore</code> reads it back.</p>
 
-<pre data-lang="ts">import { Fenec, persist, restore } from './fenec.js';
+<pre data-lang="ts">import { Fennec, persist, restore } from './fennec.js';
 
-const db = await Fenec.open('./fenec.wasm');
+const db = await Fennec.open('./fennec.wasm');
 
 db.run('create collection docs (title text, embed vector<384> @hnsw(cosine))');
 db.run('put docs {title: $1, embed: $2}', ['hello', embedding]);
@@ -253,7 +253,7 @@ await restore(db);     // read it back
 
 <ul>
   <li><b>The examples are TypeScript.</b> The same code runs as plain
-    JavaScript, and the module needs no build step: <code>fenec.d.ts</code>
+    JavaScript, and the module needs no build step: <code>fennec.d.ts</code>
     beside it holds the types (<a href="#typescript">TypeScript</a>).</li>
   <li><b><code>db.run()</code> is synchronous;</b> the builder's endpoints
     return promises.</li>
@@ -262,13 +262,13 @@ await restore(db);     // read it back
 </ul>
 
 <details class="deep"><summary>The four files, and why run() is synchronous</summary>
-<p><code>web/fenec.js</code> is a dependency-free ES module: the
+<p><code>web/fennec.js</code> is a dependency-free ES module: the
 WebAssembly glue, persistence and the sync layer, with the query builder
 and the HTTP client in the two modules it imports and re-exports. Copy four
 files — and the <code>collate/</code> directory beside the module, for text
 in a collation — and you are done.</p>
 
-<p><code>db.run()</code> is synchronous because raw FenecQL is a single wasm
+<p><code>db.run()</code> is synchronous because raw FennecQL is a single wasm
 call. The builder's endpoints return promises, because a builder has to pick
 its transport first.</p>
 </details>
@@ -276,23 +276,23 @@ its transport first.</p>
 <h2 id="keeping">Keeping a database</h2>
 
 <p>In a dedicated worker, <code>openFile</code> keeps the database in a file
-of the origin private file system — the same file <code>fenec-server</code>
+of the origin private file system — the same file <code>fennec-server</code>
 keeps — and each write is flushed before <code>run</code> returns.
 <code>persist</code> and <code>restore</code> keep the same bytes in
 IndexedDB, and work anywhere a page runs.</p>
 
 <pre data-lang="ts">// in a dedicated worker
-import { Fenec, openFile } from './fenec.js';
+import { Fennec, openFile } from './fennec.js';
 
-const db = await Fenec.open('./fenec.wasm');
-const file = await openFile(db, 'notes.fenec');   // loads what it holds, or takes the database's image
+const db = await Fennec.open('./fennec.wasm');
+const file = await openFile(db, 'notes.fennec');   // loads what it holds, or takes the database's image
 db.run('put notes {text: $1}', ['in the file before run returns']);
-const bytes = file.bytes();                        // what fenec and fenec-server open
+const bytes = file.bytes();                        // what fennec and fennec-server open
 </pre>
 
 <ul>
-  <li><b>The file is portable:</b> download it and <code>fenec
-    notes.fenec</code> opens it, and a server's file loads in a page.</li>
+  <li><b>The file is portable:</b> download it and <code>fennec
+    notes.fennec</code> opens it, and a server's file loads in a page.</li>
   <li><b>One owner at a time:</b> a second worker or tab that opens the file
     is refused.</li>
   <li><b>A crash leaves a whole file:</b> the next <code>openFile</code> holds
@@ -301,8 +301,8 @@ const bytes = file.bytes();                        // what fenec and fenec-serve
 
 <details class="deep"><summary>How openFile works, with timings</summary>
 <p><code>openFile</code> keeps the database in a file of the origin private
-file system, byte for byte the file <code>fenec-server</code> keeps on disk:
-download it and <code>fenec notes.fenec</code> opens it, and a server's file
+file system, byte for byte the file <code>fennec-server</code> keeps on disk:
+download it and <code>fennec notes.fennec</code> opens it, and a server's file
 handed to a page loads there. <code>run</code> appends each statement's
 writes to it and flushes the file before it answers. It needs a dedicated
 worker, the one place a page gets synchronous access to a file, and it takes
@@ -311,7 +311,7 @@ where a second process over a server's file would corrupt it.</p>
 
 <p>A <code>compact</code>, and writes appended past half the image (and past
 64 KB), put a new image in the file. It is written into a copy beside the
-file (<code>notes.fenec~</code>) and flushed before the file is touched, so a
+file (<code>notes.fennec~</code>) and flushed before the file is touched, so a
 crash at any point leaves one of the two whole, and the next
 <code>openFile</code> takes whichever holds every write <code>run</code>
 answered. A write a crash cut short is cut off. A new image holds the live
@@ -351,7 +351,7 @@ was not measured.</p>
 stores; <code>restore</code> then needs the same key. Where the key comes
 from is up to the page — never keep it in IndexedDB beside the data.</p>
 
-<pre data-lang="ts">import { persist, restore } from './fenec.js';
+<pre data-lang="ts">import { persist, restore } from './fennec.js';
 
 // A key from a passphrase, never stored: the page asks for it again.
 const salt = new TextEncoder().encode('myapp:' + userId);
@@ -379,7 +379,7 @@ Its cursors and unsent writes are collections of the replica, sealed with it. Th
 Chrome 154: the first image 129 ms against 76, a new row 0.16 ms p50 either
 way, a restore 37 ms against 29. Only the image pays: it is 32 MB to seal.
 The file of <code>openFile</code> stays plain, since it is the file
-<code>fenec-server</code> opens. The disk's own encryption covers it.</p>
+<code>fennec-server</code> opens. The disk's own encryption covers it.</p>
 </details>
 
 <h2 id="state">State in the page</h2>
@@ -390,10 +390,10 @@ Declare its collections in code, and the open makes them.
 and again after every write to a collection the query reads. Event handlers
 write, and <code>persist</code> keeps the state between visits.</p>
 
-<pre data-lang="ts">import { Fenec, persist, restore } from './fenec.js';
-import { fenecTable, text, boolean, timestamp, index } from './schema.js';
+<pre data-lang="ts">import { Fennec, persist, restore } from './fennec.js';
+import { fennecTable, text, boolean, timestamp, index } from './schema.js';
 
-export const todos = fenecTable('todos', {
+export const todos = fennecTable('todos', {
   key: text(),
   title: text().notNull(),
   done: boolean(),
@@ -404,7 +404,7 @@ export const todos = fenecTable('todos', {
   index('todos_at').on(t.at),
 ]);
 
-const db = await Fenec.open('./fenec.wasm', { schema: { todos } });
+const db = await Fennec.open('./fennec.wasm', { schema: { todos } });
 await restore(db, 'todos');     // the stored database in its place, checked against todos
 
 // the rows now, and again after every write to todos
@@ -420,17 +420,17 @@ async function finish(id: number) {
 }
 </pre>
 
-<p>In React, <code>useLiveQuery</code> from <code>@fenecdb/react</code> takes
+<p>In React, <code>useLiveQuery</code> from <code>@fennecdb/react</code> takes
 the same database, and the rows it hands back are typed by the table:</p>
 
-<pre data-lang="ts">import { FenecProvider, useFenec, useLiveQuery } from '@fenecdb/react';
-import type { Fenec, SchemaOf } from './fenec.js';
+<pre data-lang="ts">import { FennecProvider, useFennec, useLiveQuery } from '@fennecdb/react';
+import type { Fennec, SchemaOf } from './fennec.js';
 import { todos } from './tables.js';   // the tables above, in a module of the app's
 
-type Db = Fenec&lt;SchemaOf&lt;{ todos: typeof todos }&gt;&gt;;
+type Db = Fennec&lt;SchemaOf&lt;{ todos: typeof todos }&gt;&gt;;
 
 function Todos() {
-  const db = useFenec&lt;Db&gt;();
+  const db = useFennec&lt;Db&gt;();
   const open = useLiveQuery(db.from(todos).where('done', false).order('at'));
   if (open === undefined) return null;
   return open.map((t) =&gt; (
@@ -438,7 +438,7 @@ function Todos() {
   ));
 }
 
-root.render(&lt;FenecProvider db={db}&gt;&lt;Todos /&gt;&lt;/FenecProvider&gt;);
+root.render(&lt;FennecProvider db={db}&gt;&lt;Todos /&gt;&lt;/FennecProvider&gt;);
 </pre>
 
 <p>To share the todos through a server later, open a
@@ -447,8 +447,8 @@ they are: a replica has the same <code>from</code> and <code>live</code>,
 and its writes reach the server. The server owns the schema there: the
 tables are checked against it, and nothing is applied.</p>
 
-<pre data-lang="ts">import { sync } from './fenec.js';
-import { FenecProvider } from '@fenecdb/react';
+<pre data-lang="ts">import { sync } from './fennec.js';
+import { FennecProvider } from '@fennecdb/react';
 import { todos } from './tables.js';
 
 const db = await sync({
@@ -456,11 +456,11 @@ const db = await sync({
   schema: { todos },
   shapes: [{ collection: todos, key: 'key' }],
 });
-root.render(&lt;FenecProvider db={db}&gt;&lt;Todos /&gt;&lt;/FenecProvider&gt;);
+root.render(&lt;FennecProvider db={db}&gt;&lt;Todos /&gt;&lt;/FennecProvider&gt;);
 </pre>
 
 <p>The whole of it is the repository's
-<a href="https://github.com/fenecdb/fenecdb/tree/main/examples/react">react</a>
+<a href="https://github.com/fennec-db/fennecdb/tree/main/examples/react">react</a>
 example: its database opens in the page or as a replica by one line of
 <code>src/db.ts</code>, and the components are the same.</p>
 
@@ -480,7 +480,7 @@ example: its database opens in the page or as a replica by one line of
 
 <details class="deep"><summary>How a live query learns what changed</summary>
 <p>The engine notes every write in its change ring, a collection id and a
-document id each, and <code>fenec_changes(since)</code> names the collections
+document id each, and <code>fennec_changes(since)</code> names the collections
 written since a cursor. A block's writes are noted as it lands, so a text of
 several statements that fails names nothing. A <code>create</code>, an
 <code>alter</code> and a <code>create index</code> name their collection. A
@@ -520,10 +520,10 @@ and open the database with them. The open compares the database with the
 code: what only adds is made, and anything that could lose data is refused,
 listed with how to resolve it. The tables also type every query.</p>
 
-<pre data-lang="ts">import { Fenec } from './fenec.js';
-import { fenecTable, text, integer, json, vector, index, uniqueIndex, defineRelations } from './schema.js';
+<pre data-lang="ts">import { Fennec } from './fennec.js';
+import { fennecTable, text, integer, json, vector, index, uniqueIndex, defineRelations } from './schema.js';
 
-export const products = fenecTable('products', {
+export const products = fennecTable('products', {
   name: text().notNull().collate('tr'),
   sku: text().unique(),
   meta: json(),
@@ -534,7 +534,7 @@ export const products = fenecTable('products', {
   uniqueIndex('products_lang').on(t.meta.path('lang')),
 ]);
 
-export const reviews = fenecTable('reviews', {
+export const reviews = fennecTable('reviews', {
   productId: integer().notNull(),
   stars: integer(),
 }, (t) =&gt; [index('reviews_product').using('hash', t.productId)]);
@@ -543,7 +543,7 @@ export const relations = defineRelations({ products, reviews }, (r) =&gt; ({
   products: { reviews: r.many.reviews({ from: r.products.id, to: r.reviews.productId }) },
 }));
 
-const db = await Fenec.open('./fenec.wasm', { schema: { products, reviews }, relations });
+const db = await Fennec.open('./fennec.wasm', { schema: { products, reviews }, relations });
 
 type Product = typeof products.$inferSelect;    // { id: number; name: string; sku: string | null; ... }
 const top = await db.from(products).select('name').lookup('reviews', { where: { stars: 5 } }).rows();
@@ -559,32 +559,32 @@ const top = await db.from(products).select('name').lookup('reviews', { where: { 
   <li><b>Refused, nothing is written.</b> A field the code lacks (dropped,
     or renamed?), a type changed, an index changed or taken off, a collation
     changed, a field made required: the open throws a
-    <code>FenecError</code> that names each difference and how to resolve
+    <code>FennecError</code> that names each difference and how to resolve
     it.</li>
   <li><b>Migrations resolve them.</b> <code>migrations: [rename('todos',
     'title', 'name')]</code> runs once, in order, recorded in the database's
     <code>_migrations</code>.</li>
-  <li><b>A schema is FenecQL too.</b> <code>schema</code> also takes the
+  <li><b>A schema is FennecQL too.</b> <code>schema</code> also takes the
     <code>create collection</code> statements of a
-    <code>schema.fenecql</code> file, which every fenecdb SDK can hand
+    <code>schema.fennecql</code> file, which every fennecdb SDK can hand
     over.</li>
 </ul>
 
 <details class="deep"><summary>Declaring columns, indexes and relations</summary>
 <p>A column builder takes no name: the key is the field's name. Columns are
-nullable unless <code>.notNull()</code>, FenecQL's <code>required</code>. A
+nullable unless <code>.notNull()</code>, FennecQL's <code>required</code>. A
 field takes one index, declared on the column (<code>.unique()</code>) or in
 the third argument; two on one field are refused as the table is declared,
-as is anything FenecQL cannot hold. An index over several fields is
+as is anything FennecQL cannot hold. An index over several fields is
 <code>.on()</code> with several columns, each <code>.desc()</code> or
 <code>.asc()</code> as Drizzle writes it, beside a field's own
-(<a href="/docs/fenecql-indexes#composite">Indexes over several fields</a>), and
+(<a href="/docs/fennecql-indexes#composite">Indexes over several fields</a>), and
 <code>dropIndex(table, ...fields)</code> is the migration that takes one
 off.</p>
 
 <div class="tbl">
 <table>
-<thead><tr><th>Declared</th><th>FenecQL</th></tr></thead>
+<thead><tr><th>Declared</th><th>FennecQL</th></tr></thead>
 <tbody>
 <tr><td><code>text()</code> <code>integer()</code> <code>doublePrecision()</code> <code>boolean()</code></td><td><code>text</code> <code>int</code> <code>float</code> <code>bool</code></td></tr>
 <tr><td><code>timestamp()</code> <code>bytea()</code> <code>json()</code></td><td><code>timestamp</code> <code>bytes</code> <code>json</code></td></tr>
@@ -605,7 +605,7 @@ off.</p>
 </div>
 
 <p><code>typeof products.$inferSelect</code> is a row as read, <code>id</code>
-and all, a nullable column <code>T | null</code>: the same type <code>fenec
+and all, a nullable column <code>T | null</code>: the same type <code>fennec
 types</code> generates for the collection, which the tests hold it to field
 for field. <code>$inferInsert</code> is what <code>insert</code> takes: the
 <code>.notNull()</code> columns given, the rest optional. <code>db.from(table)</code>,
@@ -640,7 +640,7 @@ and refuses the same things with the same words. What it does:</p>
 </table>
 </div>
 
-<pre data-lang="text">FenecError: the database's schema differs from the code's, and nothing was applied:
+<pre data-lang="text">FennecError: the database's schema differs from the code's, and nothing was applied:
   - `todos.title` is in the database and not in the code
     if it was renamed to `name`, the migration `alter collection todos rename field title to name`; if it goes, `alter collection todos drop field title`
 </pre>
@@ -658,17 +658,17 @@ the new one; a field it rebuilds is not required.</p>
 
 <p><code>db.describe()</code> is the database's schema as the engine
 describes a server's (<code>GET /_schema</code>), and
-<code>db.describe('fenecql')</code> the statements that make it.
+<code>db.describe('fennecql')</code> the statements that make it.
 <code>db.checkSchema(description, 'plan')</code> says what an open would
 do and writes nothing, the pending migrations run in a block put back. The
 check costs an open of 10 collections 0.09 ms in Node (0.11 ms without, 0.20
 with), and the module 7.5 KB brotli (23 KB raw): the comparison and its
-messages, and FenecQL read into a schema. <code>make wasm SCHEMA=0</code>
+messages, and FennecQL read into a schema. <code>make wasm SCHEMA=0</code>
 leaves it out.</p>
 </details>
 
 <details class="deep"><summary>Where the check runs, and the description</summary>
-<p>A database in the page (<code>Fenec.open</code>, <code>restore</code>,
+<p>A database in the page (<code>Fennec.open</code>, <code>restore</code>,
 <code>openFile</code>) is the code's, and the check applies. A synced
 replica's schema is its server's: <code>sync({ schema })</code> compares
 the code with the server's (<code>POST /_schema/plan?mode=follow</code>),
@@ -684,10 +684,10 @@ as a deploy step runs drizzle-kit's <code>migrate</code>.</p>
 field <code>{"name", "type", "required", "collate", "nocase", "index", "paths"}</code>
 and an index <code>{"kind": "hnsw", "metric", "m", ...}</code> holding what
 the declaration says, the engine's defaults for the rest — or the same
-collections as FenecQL text, <code>{"format": 1, "fenecql": "create
+collections as FennecQL text, <code>{"format": 1, "fennecql": "create
 collection ..."}</code>, which the module reads.
 <code>integrations/schema-golden.json</code> holds declarations and the
-description each compiles to, FenecQL texts, and plans with the statements
+description each compiles to, FennecQL texts, and plans with the statements
 and refusals the engine makes of them, which the Rust tests run and every
 SDK will be held to.</p>
 </details>
@@ -704,10 +704,10 @@ their operator classes, <code>$inferSelect</code>,
 <code>defineRelations</code> with <code>r.many</code> and
 <code>r.one</code>.</p>
 
-<p>fenecdb's own: <code>fenecTable</code> (also <code>collection</code>),
+<p>fennecdb's own: <code>fennecTable</code> (also <code>collection</code>),
 <code>bm25</code> and <code>inverted</code> methods,
 <code>.ttl()</code>, <code>.collate()</code>, <code>t.meta.path(...)</code>,
-and <code>quant</code>. Not there: <code>.default()</code> (FenecQL has no
+and <code>quant</code>. Not there: <code>.default()</code> (FennecQL has no
 defaults), <code>.primaryKey()</code> (every document has its
 <code>id</code>), <code>.references()</code> (no foreign keys; a relation is
 <code>defineRelations</code>), an index on two columns, and index names,
@@ -720,10 +720,10 @@ schema.</p>
 page's state, an app's file, a service that owns its server. Generate the
 types from the database (<a href="#typescript">TypeScript</a>) for an app
 over a database another owns, a server's whose schema changes elsewhere.
-To move from the second to the first, <code>fenec types --schema
-data.fenec &gt; schema.ts</code> writes the tables the file holds, every
-option written, and <code>fenec types --fenecql</code> the same schema as
-FenecQL; an open with either finds no difference.</p>
+To move from the second to the first, <code>fennec types --schema
+data.fennec &gt; schema.ts</code> writes the tables the file holds, every
+option written, and <code>fennec types --fennecql</code> the same schema as
+FennecQL; an open with either finds no difference.</p>
 </details>
 
 <h2 id="collation">Collation data</h2>
@@ -733,9 +733,9 @@ needs each script's sorting data. The module carries Latin and fetches the
 rest from <code>collate/</code> beside it the first time a page needs
 them.</p>
 
-<pre data-lang="ts">import { Fenec } from './fenec.js';
+<pre data-lang="ts">import { Fennec } from './fennec.js';
 
-const db = await Fenec.open('./fenec.wasm');            // collate/ beside it
+const db = await Fennec.open('./fennec.wasm');          // collate/ beside it
 db.run('create collection people (name text collate und @sorted)');
 
 await db.from('people').insert([{ name: 'Ζωή' }, { name: '山田' }]);   // fetches greek, han
@@ -749,22 +749,22 @@ await db.collation('all');                  // every script's: 145 KB, 67 KB gzi
   <li><b><code>db.query()</code> and the builder</b> fetch what is missing
     and run the statement again.</li>
   <li><b><code>db.run()</code></b> cannot wait, so it throws a
-    <code>FenecError</code> naming the chunks to load.</li>
+    <code>FennecError</code> naming the chunks to load.</li>
 </ul>
 
 <details class="deep"><summary>How collation data is loaded</summary>
 <p><code>collate und</code> and <code>collate tr</code> need the weights of
-the scripts they compare (<a href="fenecql-schema.html#collation">Collation</a>).
+the scripts they compare (<a href="fennecql-schema.html#collation">Collation</a>).
 The module carries the Latin ones and is handed the others as a page first
 needs them, a chunk a group of scripts, from <code>collate/</code> beside the
-module — or from where <code>Fenec.open(src, { collation })</code> says: a
+module — or from where <code>Fennec.open(src, { collation })</code> says: a
 URL, or a function handed the chunk's name that returns its bytes.
-<code>make wasm</code> writes the chunks next to <code>fenec.wasm</code>.</p>
+<code>make wasm</code> writes the chunks next to <code>fennec.wasm</code>.</p>
 
 <p>A statement that would compare text of a script whose chunk the module
 has not got is refused rather than answered in another order:
 <code>db.run()</code>, which is synchronous, throws a
-<code>FenecError</code> whose <code>collation</code> names the chunks, and
+<code>FennecError</code> whose <code>collation</code> names the chunks, and
 <code>db.query()</code> and the builder fetch them and run the statement
 again. A write is refused before it changes anything, so running it again is
 safe; of several statements in one text only the first is run again by
@@ -779,7 +779,7 @@ version's tables is refused: its ranks would mean something else.</p>
 <h2 id="features">A smaller module</h2>
 
 <p>A page that does not use every feature can load a module built without
-the rest. The release ships <code>fenec.wasm</code> alone, with every
+the rest. The release ships <code>fennec.wasm</code> alone, with every
 feature; another set is a build option.</p>
 
 <pre data-lang="bash">make wasm                              # every feature: 274 KB brotli
@@ -814,7 +814,7 @@ make wasm FEATURES=none SCHEMA=0       # no feature at all: 180 KB
 
 <div class="tbl">
 <table>
-<thead><tr><th>Rows × dimensions</th><th class="n"><code>fenec.wasm</code>, through the graph</th><th class="n">Built without <code>vector</code></th></tr></thead>
+<thead><tr><th>Rows × dimensions</th><th class="n"><code>fennec.wasm</code>, through the graph</th><th class="n">Built without <code>vector</code></th></tr></thead>
 <tbody>
 <tr><td>1 000 × 128</td><td class="n">0.20 ms</td><td class="n">0.38 ms</td></tr>
 <tr><td>10 000 × 128</td><td class="n">0.22 ms</td><td class="n">2.4 ms</td></tr>
@@ -830,8 +830,8 @@ make wasm FEATURES=none SCHEMA=0       # no feature at all: 180 KB
 <p>The module carries five indexes and six more parts of the language, and
 a page that uses fewer can load one built without the rest:
 <code>FEATURES</code> names what it keeps, <code>indexes</code> and
-<code>language</code> each group. The release and <code>@fenecdb/web</code>
-carry <code>fenec.wasm</code> alone; another set is a <code>make wasm</code>
+<code>language</code> each group. The release and <code>@fennecdb/web</code>
+carry <code>fennec.wasm</code> alone; another set is a <code>make wasm</code>
 away. What each feature weighs is in <a
 href="benchmarks-size.html#module-features">Benchmarks</a>. The builds without
 the indexes and without anything are also tests: CI builds them
@@ -848,7 +848,7 @@ feed, persistence and the sync layer.</p>
 index the module lacks is made and loaded all the same, and its documents
 are read and written. A <code>near</code> over it measures every vector, a
 sparse one scores every document; a <code>match</code>, or a <code>create
-index</code> of the kind, throws a <code>FenecError</code> naming the
+index</code> of the kind, throws a <code>FennecError</code> naming the
 feature. A file declaring a <code>nocase</code> or collated field loads too;
 a statement over that collection throws, the feature named, and the file's
 other collections answer. A module that has the feature builds what it
@@ -858,7 +858,7 @@ other module and take it back.</p>
 
 <h2>The query builder</h2>
 
-<p>The builder writes FenecQL for you, with every value passed as a
+<p>The builder writes FennecQL for you, with every value passed as a
 parameter. Each call returns a new query, so a base query can be shared and
 extended with optional filters.</p>
 
@@ -880,7 +880,7 @@ extended with optional filters.</p>
 </ul>
 
 <details class="deep"><summary>Why a builder instead of strings or an ORM</summary>
-<p>FenecQL reads well, but on the application side the job is still building a
+<p>FennecQL reads well, but on the application side the job is still building a
 string — and every interface with conditional filters ends up here:</p>
 
 <pre data-lang="ts">let q = 'get articles where 1=1';
@@ -914,11 +914,11 @@ articles.where({ year: { gte: 2024 }, tags: { has: 'rust' } });
 articles.where('meta.lang', '=', 'tr');                      // a path into a json field
 </pre>
 
-<p>A path into a <a href="fenecql-schema.html#json"><code>json</code> field</a>
+<p>A path into a <a href="fennecql-schema.html#json"><code>json</code> field</a>
 goes wherever a field does — <code>where</code>, <code>select</code>,
 <code>order</code>, and the keys of <code>update</code>, which sets one key
 inside the field — and a plain object is a <code>json</code> field's value:
-<code>insert({ meta: { lang: 'tr' } })</code>. <code>fenec types</code>
+<code>insert({ meta: { lang: 'tr' } })</code>. <code>fennec types</code>
 writes a <code>json</code> field as <code>Json</code>, and the builder's
 types take <code>'meta.lang'</code> as a path of it.</p>
 
@@ -930,12 +930,12 @@ types take <code>'meta.lang'</code> as a path of it.</p>
 <tr><td><b>Null</b></td><td><code>{ summary: null }</code> becomes <code>is null</code>; <code>{ summary: { not: null } }</code> becomes <code>is not null</code></td></tr>
 <tr><td><b>Combining</b></td><td><code>or(...)</code> <code>not(...)</code> <code>and(...)</code> — <code>where</code> already <code>and</code>s</td></tr>
 <tr><td><b>Escape hatch</b></td><td><code>raw('cosine(embed, ?) > ?', vector, 0.5)</code></td></tr>
-<tr><td><b>Ordering</b></td><td><code>order('year','desc').order('title')</code> — successive calls add keys; <code>order('name', 'asc', { collate: 'und' })</code> puts text in Unicode's order for every language, <code>{ collate: 'tr' }</code> in Turkish order (<a href="fenecql-schema.html#collation">Collation</a>)</td></tr>
-<tr><td><b>Ranking</b></td><td><code>near('embed', v, { ef, exact })</code>, <code>match('body', text)</code>, <code>rerank('embed', v, { candidates })</code> after a <code>match</code>, and <code>match(...).near(...).fuse({ k, candidates })</code> to rank by both (<a href="fenecql-search.html#hybrid">Hybrid search</a>)</td></tr>
+<tr><td><b>Ordering</b></td><td><code>order('year','desc').order('title')</code> — successive calls add keys; <code>order('name', 'asc', { collate: 'und' })</code> puts text in Unicode's order for every language, <code>{ collate: 'tr' }</code> in Turkish order (<a href="fennecql-schema.html#collation">Collation</a>)</td></tr>
+<tr><td><b>Ranking</b></td><td><code>near('embed', v, { ef, exact })</code>, <code>match('body', text)</code>, <code>rerank('embed', v, { candidates })</code> after a <code>match</code>, and <code>match(...).near(...).fuse({ k, candidates })</code> to rank by both (<a href="fennecql-search.html#hybrid">Hybrid search</a>)</td></tr>
 <tr><td><b>Relations</b></td><td><code>lookup('reviews', { on: 'product_id', limit: 3 })</code> — children per row, chainable</td></tr>
-<tr><td><b>Endpoints</b></td><td><code>rows()</code> <code>first()</code> <code>count()</code> <code>run()</code>, and <code>explain()</code>: the path the query took, one line a step (<a href="fenecql-reading.html#explain">Explain</a>)</td></tr>
+<tr><td><b>Endpoints</b></td><td><code>rows()</code> <code>first()</code> <code>count()</code> <code>run()</code>, and <code>explain()</code>: the path the query took, one line a step (<a href="fennecql-reading.html#explain">Explain</a>)</td></tr>
 <tr><td><b>Writes</b></td><td><code>insert(doc|docs)</code> <code>update(object)</code> <code>delete()</code>, each resolving to the rows it changed; <code>insert(doc, { ifAbsent: true })</code> passes over a held id or <code>@unique</code> value (<code>put … if absent</code>); <code>order(...)</code> and <code>limit(n)</code> before an <code>update</code> or a <code>delete</code> pick its rows, and <code>{ returning: true }</code> resolves to them — a job queue's claim (<a href="queues.html">Job queues</a>)</td></tr>
-<tr><td><b>Values worked out</b></td><td><code>update({ n: inc(1) })</code> renders <code>n: coalesce(n, 0) + $1</code>, and <code>expr('price * ?', 1.2)</code> any expression over the row — see <a href="fenecql-writing.html#writes">Writes that read the row</a> and <a href="redis.html">Instead of Redis</a></td></tr>
+<tr><td><b>Values worked out</b></td><td><code>update({ n: inc(1) })</code> renders <code>n: coalesce(n, 0) + $1</code>, and <code>expr('price * ?', 1.2)</code> any expression over the row — see <a href="fennecql-writing.html#writes">Writes that read the row</a> and <a href="redis.html">Instead of Redis</a></td></tr>
 </tbody>
 </table>
 </div>
@@ -962,7 +962,7 @@ three reviews each, in one query:</p>
 // [{ id: 1, name: 'Kahve', price: 12000, reviews: [ {...}, {...} ] }, ...]</pre>
 
 <p>Calling it again chains rather than replaces: the second call binds to the
-collection the first one named, the way position scopes it in FenecQL.</p>
+collection the first one named, the way position scopes it in FennecQL.</p>
 
 <pre data-lang="ts">const rows = await db.from('shops')
   .limit(20)
@@ -980,7 +980,7 @@ folded. A query whose list aggregates hangs a lookup off its groups,
 <code>parentKey</code> naming a column; and <code>bucket(field, interval,
 zone)</code> counts by a zone's clock, the zone a parameter.</p>
 
-<pre data-lang="ts">import { bucket } from './fenec.js';
+<pre data-lang="ts">import { bucket } from './fennec.js';
 
 // Each product's latest 50 reviews, counted and averaged.
 const page = await db.from('products').limit(20)
@@ -1007,13 +1007,13 @@ stay unless <code>orders</code> asks for it too.</p>
 <p>The child's field names cannot be reached from a builder that carries one
 collection's types, so in TypeScript they default to a loose row; naming them
 tightens it:
-<code>.lookup&lt;'reviews', FenecSchema['reviews']&gt;('reviews', {...})</code>.</p>
+<code>.lookup&lt;'reviews', FennecSchema['reviews']&gt;('reviews', {...})</code>.</p>
 
 <p><code>or</code> and <code>not</code> are separate functions because the
 <code>where</code> chain is an <code>and</code>. A nested group is written
 explicitly and the parenthesising is left to the builder:</p>
 
-<pre data-lang="ts">import { or } from './fenec.js';
+<pre data-lang="ts">import { or } from './fennec.js';
 
 db.from('articles')
   .where('year', '>=', 2024)
@@ -1032,7 +1032,7 @@ in order, so the escape hatch does not become string concatenation either.</p>
 and color over every match, from one query:
 <code>highlight()</code> and <code>facet()</code>.</p>
 
-<pre data-lang="ts">import type { Mark } from '@fenecdb/web';
+<pre data-lang="ts">import type { Mark } from '@fennecdb/web';
 
 /** The text with each mark in a &lt;mark&gt;, as text nodes: nothing in it is HTML. */
 function marked(text: string, marks: Mark[]): DocumentFragment {
@@ -1078,7 +1078,7 @@ async function search(words: string, brand: string | null = null) {
     word within a typo or two, <code>prefix</code> the last word as the
     start of one — <code>databse</code> and <code>datab</code> both find
     <code>database</code>, and the marks fall on it (<a
-    href="/docs/fenecql-search#typos">Typos and words begun</a>).</li>
+    href="/docs/fennecql-search#typos">Typos and words begun</a>).</li>
   <li><b>The offsets are a JavaScript string's own</b> (UTF-16), so
     <code>text.slice(start, end)</code> is the marked word, past an emoji
     or an accent.</li>
@@ -1093,17 +1093,17 @@ async function search(words: string, brand: string | null = null) {
 <p><code>.highlight(field, { pre, post })</code> answers the marked text
 instead of the offsets, and <code>.snippet(field, words, { ellipsis, pre,
 post })</code> a window of that many words around the marks — see <a
-href="/docs/fenecql-search#highlights">Highlights and snippets</a>. Text with
+href="/docs/fennecql-search#highlights">Highlights and snippets</a>. Text with
 tags is not escaped, which is why the page above builds its nodes from the
 offsets. <code>.facet(field, { top })</code> takes a field or a path into a
 <code>json</code> one, and <code>run()</code> hands the counts as its
-<code>facets</code> too — see <a href="/docs/fenecql-search#facets">Facets</a>.
+<code>facets</code> too — see <a href="/docs/fennecql-search#facets">Facets</a>.
 A facet beside <code>near</code> is refused: <code>near</code> ranks every
 row rather than selecting some, so the counts would be the filter's alone.
 <code>{ disjunctive: true }</code> counts a facet without the filter's own
 conditions on its field, and <code>{ ranges: [0, 2500, 5000] }</code> counts
-a number by range (<a href="/docs/fenecql-search#disjunctive-facets">
-Counted without its own filter</a>, <a href="/docs/fenecql-search#range-facets">Ranges</a>).</p>
+a number by range (<a href="/docs/fennecql-search#disjunctive-facets">
+Counted without its own filter</a>, <a href="/docs/fennecql-search#range-facets">Ranges</a>).</p>
 
 <p>A query built in steps keeps the type it was declared with, so a facet
 asked after the declaration is typed as any facet: <code>rows.facets</code>
@@ -1111,7 +1111,7 @@ is there, each field's counts <code>FacetCount[]</code>, and maybe absent.
 To keep each field's own type, ask the facets in the declaration and add
 the steps that keep the row's type after it:</p>
 
-<pre data-lang="ts">import { connect } from '@fenecdb/web/client';
+<pre data-lang="ts">import { connect } from '@fennecdb/web/client';
 
 const db = connect('https://db.example.com');
 const chosen: string | undefined = 'acme';
@@ -1125,16 +1125,16 @@ rows.facets.brand.map((f) => f.count);   // typed
 <h2>Seeing what it produces</h2>
 
 <p>To see the text and parameters a chain builds, for logging or a test,
-call <code>toFenecQL()</code>. It returns exactly what will run, and runs
+call <code>toFennecQL()</code>. It returns exactly what will run, and runs
 nothing; a query needs no call to it before it runs.</p>
 
-<pre data-lang="ts">db.from('articles').where('year', '>=', 2024).limit(10).toFenecQL()
+<pre data-lang="ts">db.from('articles').where('year', '>=', 2024).limit(10).toFennecQL()
 // ['get articles where year >= $1 limit $2', [2024, 10]]
 </pre>
 
 <ul>
   <li><b>Values are always parameters,</b> never pasted into the text.</li>
-  <li><b>Collection and field names</b> are checked against FenecQL's
+  <li><b>Collection and field names</b> are checked against FennecQL's
     identifier rule; anything else throws.</li>
 </ul>
 
@@ -1142,7 +1142,7 @@ nothing; a query needs no call to it before it runs.</p>
 <p>Nothing is hidden. Every leaf value is bound to a parameter and text is
 never embedded into the query, which leaves a single injection boundary:
 <b>names</b>. Collection and field names cannot be parameterised, so they are
-validated against FenecQL's identifier rule and anything that does not fit
+validated against FennecQL's identifier rule and anything that does not fit
 errors out.</p>
 
 <pre data-lang="ts">db.from('articles').where('title', '"; del articles; --')
@@ -1164,42 +1164,42 @@ sends it again as JSON, so a plain array keeps its numbers as written and a
 <h2>Independent of the transport</h2>
 
 <p>The same query code runs against the module in the page, a
-<code>fenec-server</code> server or an HTTP endpoint: build it with
+<code>fennec-server</code> server or an HTTP endpoint: build it with
 <code>from()</code>, then <code>bind()</code> it to where it should run.</p>
 
-<pre data-lang="ts">import { from, connect } from './fenec.js';
+<pre data-lang="ts">import { from, connect } from './fennec.js';
 
 const q = from('articles').where('year', '>=', 2024);
 
 await q.bind(db).rows();                                // wasm, local
 await q.bind(connect('http://localhost:8080')).rows();  // remote server
-q.toFenecQL();                                          // or just the text
+q.toFennecQL();                                         // or just the text
 </pre>
 
 <details class="deep"><summary>What connect() sends</summary>
-<p><code>connect()</code> returns the same builder; the FenecQL it produces
+<p><code>connect()</code> returns the same builder; the FennecQL it produces
 goes to <code>POST /query</code> as is. See <a href="http.html">HTTP
 endpoint</a>.</p>
 </details>
 
 <h2 id="typescript">TypeScript</h2>
 
-<p><code>fenec.d.ts</code> beside the module types the client, and
-<code>@fenecdb/web</code> ships it. A schema declared in code types it
+<p><code>fennec.d.ts</code> beside the module types the client, and
+<code>@fennecdb/web</code> ships it. A schema declared in code types it
 (<a href="#schema">Schema in code</a>); for a database another owns,
 generate the schema type from the database file, and queries are checked
 against its real schema: unknown fields, wrong value types and unselected
 fields are compile errors.</p>
 
-<pre data-lang="bash">fenec types data.fenec > web/fenec-schema.d.ts     # or: make types FILE=data.fenec
-fenec types schema.fenecql > web/fenec-schema.d.ts # from a schema file, with no database
-fenec types --lang python data.fenec              # a row in Python, Go, C#, Swift, Kotlin or Dart
+<pre data-lang="bash">fennec types data.fennec > web/fennec-schema.d.ts  # or: make types FILE=data.fennec
+fennec types schema.fennecql > web/fennec-schema.d.ts # from a schema file, with no database
+fennec types --lang python data.fennec              # a row in Python, Go, C#, Swift, Kotlin or Dart
 </pre>
 
-<pre data-lang="ts">import { Fenec } from './fenec.js';
-import type { FenecSchema } from './fenec-schema.js';
+<pre data-lang="ts">import { Fennec } from './fennec.js';
+import type { FennecSchema } from './fennec-schema.js';
 
-const db = await Fenec.open&lt;FenecSchema&gt;('./fenec.wasm');
+const db = await Fennec.open&lt;FennecSchema&gt;('./fennec.wasm');
 
 const rows = await db.from('articles').select('title', 'year').rows();
 //    rows: { title: string | null; year: number | null }[]
@@ -1207,7 +1207,7 @@ const rows = await db.from('articles').select('title', 'year').rows();
 await db.from('articles').insert({ title: 'Dunes', year: 2021, published: new Date() });
 
 const products = await db.from('products')
-  .lookup&lt;'reviews', FenecSchema['reviews']&gt;('reviews', { on: 'product_id', limit: 3 })
+  .lookup&lt;'reviews', FennecSchema['reviews']&gt;('reviews', { on: 'product_id', limit: 3 })
   .rows();
 //    products[0].reviews[0].stars: number | null
 </pre>
@@ -1243,27 +1243,27 @@ schema lives in the call rather than in <code>db</code>. In TypeScript it binds
 through <code>TypedFrom</code>; at runtime it is the same function and the only
 difference is name completion.</p>
 
-<pre data-lang="ts">import { from as fenecFrom, type TypedFrom } from './fenec.js';
-import type { FenecSchema } from './fenec-schema.js';
+<pre data-lang="ts">import { from as fennecFrom, type TypedFrom } from './fennec.js';
+import type { FennecSchema } from './fennec-schema.js';
 
-const from: TypedFrom&lt;FenecSchema&gt; = fenecFrom;
+const from: TypedFrom&lt;FennecSchema&gt; = fennecFrom;
 from('articles').where('year', '>=', 2024);   // completes like db.from
 </pre>
 
-<p><code>fenec.d.ts</code> is hand-written — it is the client's own surface —
-and <code>fenec-schema.d.ts</code> is generated. There is no link between them:
+<p><code>fennec.d.ts</code> is hand-written — it is the client's own surface —
+and <code>fennec-schema.d.ts</code> is generated. There is no link between them:
 the <code>Timestamp</code>, <code>Vector</code> and <code>Bytes</code> brands
 are structural, so the generated file stands alone and imports nothing.</p>
 </details>
 
 <h2>What the builder will not do</h2>
 
-<p>The builder adds nothing FenecQL lacks, and refuses a few things that are
+<p>The builder adds nothing FennecQL lacks, and refuses a few things that are
 easy to get wrong.</p>
 
 <ul>
-  <li><b>No aggregate FenecQL lacks.</b> Aggregates go in
-    <code>select</code> spelled as FenecQL spells them —
+  <li><b>No aggregate FennecQL lacks.</b> Aggregates go in
+    <code>select</code> spelled as FennecQL spells them —
     <code>.select('status', 'count(*)', 'sum(total)').group('status')</code>
     — and each row answers under those names; a median or a distinct count is
     not there to compile to.</li>
@@ -1272,16 +1272,16 @@ easy to get wrong.</p>
     impossible to undo; when it is deliberate you write
     <code>delete({ all: true })</code>. PostgREST decides the same.</li>
   <li><b><code>near</code>, <code>order</code>, <code>limit</code> and
-    <code>lookup</code> error out on write statements.</b> FenecQL does not
+    <code>lookup</code> error out on write statements.</b> FennecQL does not
     support them on <code>set</code> or <code>del</code>, and ignoring them
     silently would breed the illusion that <code>limit(1)</code> deletes a
     single row, or that a required <code>lookup</code> spares the parents
     with no children.</li>
   <li><b>No JOIN, no <code>returning</code>.</b> The builder adds
-    no capability on top of FenecQL — it only builds it safely.
-    <code>lookup</code> is the exception FenecQL itself makes, and
+    no capability on top of FennecQL — it only builds it safely.
+    <code>lookup</code> is the exception FennecQL itself makes, and
     <code>.lookup(name, opts)</code> builds it like any other clause; a
-    query given as an <code>in</code>'s value is FenecQL's
+    query given as an <code>in</code>'s value is FennecQL's
     <code>in (get …)</code>, its parameters bound with the outer one's.</li>
 </ul>
 
@@ -1290,7 +1290,7 @@ easy to get wrong.</p>
 <code>integrations/builder-golden.json</code> holds all four to one text: the
 chains there and what this builder makes of each, which every language's
 tests run (<a href="languages.html#builder">Your language</a>).</p>
-<p>The tests run with <code>node --test web/fenec.test.js</code> and are part
-of <code>make test</code>. When <code>web/fenec.wasm</code> is present, an
+<p>The tests run with <code>node --test web/fennec.test.js</code> and are part
+of <code>make test</code>. When <code>web/fennec.wasm</code> is present, an
 end-to-end test that actually parses the generated text runs too.</p>
 </details>

@@ -1,5 +1,5 @@
 <!--
-title: Sharding: tenants — fenecdb
+title: Sharding: tenants — fennecdb
 description: How to give a tenant its schema and a quota, move it to another node, archive a node's tenants and ask one question of all of them through the router.
 -->
 
@@ -38,7 +38,7 @@ tenant from taking all of them. Set defaults on the node, and a tenant's own
 through the router, which sends it wherever the tenant goes.</p>
 
 <pre data-lang="bash"># every tenant on this node, unless its own quota says otherwise
-fenec-server --dir /data/n1 --admin-token a1 \
+fennec-server --dir /data/n1 --admin-token a1 \
     --tenant-max-bytes 1G --tenant-max-rows 1000000 \
     --tenant-max-streams 50 --tenant-max-held 200 --tenant-max-requests 16 \
     --tenant-writes-per-sec 500 --tenant-write-bytes-per-sec 8M
@@ -113,9 +113,9 @@ the node — not a connection, a thread and an open tenant each — an archive
 a tenant under a root, which restores a tenant or the whole node to a
 moment.</p>
 
-<pre data-lang="bash">fenec archive --tenants http://n1:8081 /backups/n1 --token "$REPL" --image-every 1h --keep 7d
-fenec verify  --tenants /backups/n1
-fenec restore --tenants /backups/n1 /data/n1 --to 2026-09-22T10:14:59Z</pre>
+<pre data-lang="bash">fennec archive --tenants http://n1:8081 /backups/n1 --token "$REPL" --image-every 1h --keep 7d
+fennec verify --tenants /backups/n1
+fennec restore --tenants /backups/n1 /data/n1 --to 2026-09-22T10:14:59Z</pre>
 
 <ul>
   <li><b>Moved or deleted:</b> a tenant that leaves the node is no longer
@@ -176,7 +176,7 @@ curl -X POST localhost:8090/_shard/query -H 'Authorization: Bearer root' \
     failures listed, each with its <code>status</code> and
     <code>error</code>, and the <code>reason</code> a tenant's
     <code>require N else '…'</code> gave
-    (<a href="/docs/fenecql-writing#require-reason">A reason for the refusal</a>).
+    (<a href="/docs/fennecql-writing#require-reason">A reason for the refusal</a>).
     The rows and bytes gathered are bounded, and a query past either is
     refused (413).</li>
   <li><b>Each answer is its tenant's own.</b> Tenants are read at different
@@ -196,7 +196,7 @@ by reading it, where the nodes' data token, which nothing else here needs,
 would reach every tenant and write. The node refuses a statement that
 writes before it runs, and runs the rest in read-only mode besides.</p>
 
-<p>The router still parses no FenecQL. The statement and its parameters go
+<p>The router still parses no FennecQL. The statement and its parameters go
 to every node as they came, and what is done with the rows is said in the
 request, never read out of the query:</p>
 
@@ -294,7 +294,7 @@ node, which closes it again once idle.</p>
 <p>A query across tenants is a span of the router's trace, a span a node
 under it, and each tenant's read on its node under that node's span, all
 with the request's id; the router counts them in
-<code>fenec_router_fanouts_total</code> and two more (<a
+<code>fennec_router_fanouts_total</code> and two more (<a
 href="monitoring.html#router">Monitoring</a>), no label naming a tenant.
 Each is a line of the router's audit log; the nodes' reads for it are not,
 as a read is not.</p>

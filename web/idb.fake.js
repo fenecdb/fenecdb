@@ -1,6 +1,6 @@
 // The part of IndexedDB `persist`, `restore` and the sync layer use, in
 // memory, for the tests: Node has none. Keys are kept sorted as the real
-// one keeps them. web/fenec.persist.test.js has its own, which logs writes.
+// one keeps them. web/fennec.persist.test.js has its own, which logs writes.
 
 export class KeyRange {
   constructor(lo, hi) {

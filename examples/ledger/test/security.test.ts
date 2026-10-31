@@ -1,4 +1,4 @@
-// Who can read and move what. Each refusal is asked of fenec-server
+// Who can read and move what. Each refusal is asked of fennec-server
 // itself, with the token the attacker would hold, and of the console's
 // API: the database refuses, not only the code in front of it.
 import assert from 'node:assert/strict';
@@ -11,7 +11,7 @@ import { ledgerServer } from '../src/server.ts';
 import { DEMO_PASSWORD, seedDemo } from '../src/setup.ts';
 import { HttpStore } from '../src/store.ts';
 import { JWT_SECRET, mint, Tokens } from '../src/tokens.ts';
-import { FENEC_URL, freshTenant, query, raw } from './helpers.ts';
+import { FENNEC_URL, freshTenant, query, raw } from './helpers.ts';
 
 let tenant: string;
 let other: string;
@@ -63,7 +63,7 @@ async function signIn(
 }
 
 describe('a customer sees only their own money', () => {
-  test('reads through fenec-server: accounts, movements, entries and holds are their own, joint ones included', async () => {
+  test('reads through fennec-server: accounts, movements, entries and holds are their own, joint ones included', async () => {
     const accounts = (await query(tenant, ada(), 'get accounts select ext order ext')).body as { ext: string }[];
     assert.deepEqual(
       accounts.map((a) => a.ext),
@@ -167,7 +167,7 @@ describe('the block checks who asks', () => {
   test('a transfer made for a customer requires, inside its block, that they hold the source', async () => {
     // As if the console had a bug that skipped its own check: the block
     // still refuses, under the same lock as the debit.
-    const ledger = new Ledger(new HttpStore(`${FENEC_URL}/t/${tenant}`, tokens.app()), { rateLimit: 1000 });
+    const ledger = new Ledger(new HttpStore(`${FENNEC_URL}/t/${tenant}`, tokens.app()), { rateLimit: 1000 });
     const theft = await ledger.transfer({ ref: 'actor-1-xxxx', from: 'cleo-studio', to: 'ada-main', amount: 100, currency: 'EUR', actor: 'ada' });
     assert.equal(!theft.ok && theft.reason, 'not_holder');
     const joint = await ledger.transfer({ ref: 'actor-2-xxxx', from: 'ada-ben-home', to: 'cleo-studio', amount: 100, currency: 'EUR', actor: 'ben' });
@@ -204,7 +204,7 @@ describe('the journal cannot be rewritten', () => {
     // And the schema: no drop, no alter, no compact.
     for (const q of ['drop collection journal', 'alter collection journal drop field amount', 'compact journal'])
       assert.equal((await query(tenant, app, q)).status, 403, q);
-    const apply = await raw(`/t/${tenant}/_schema/apply`, { method: 'POST', token: app, body: '{"format":1,"fenecql":""}' });
+    const apply = await raw(`/t/${tenant}/_schema/apply`, { method: 'POST', token: app, body: '{"format":1,"fennecql":""}' });
     assert.equal(apply.status, 403);
     // The entries are what they were.
     const legs = (await query(tenant, app, 'get journal select amount where tx = "seed-tr-1" order amount')).body;
@@ -286,9 +286,9 @@ describe('tokens', () => {
     for (const [name, token] of Object.entries({ forged, expired, noExp, none, tampered })) {
       assert.equal((await query(tenant, token, 'get accounts')).status, 401, name);
     }
-    if (process.env.FENEC_AUDIT) {
+    if (process.env.FENNEC_AUDIT) {
       // The node's audit log has a line for each refusal.
-      const refused = readFileSync(process.env.FENEC_AUDIT, 'utf8')
+      const refused = readFileSync(process.env.FENNEC_AUDIT, 'utf8')
         .split('\n')
         .filter((l) => l.includes('"event":"refused"') && l.includes(`/t/${tenant}/query`));
       assert.ok(refused.length >= 5, `${refused.length} refusals logged`);

@@ -26,7 +26,7 @@ before(async () => {
   }
 });
 
-/** Every route of the node under /t/<tenant>/, as fenec-http serves them. */
+/** Every route of the node under /t/<tenant>/, as fennec-http serves them. */
 function routes(t: string): [string, RequestInit][] {
   const q = (query: string) => ({ method: 'POST', body: JSON.stringify({ query }) });
   return [
@@ -47,7 +47,7 @@ function routes(t: string): [string, RequestInit][] {
     [`/t/${t}/events`, { method: 'DELETE' }],
     [`/t/${t}/pulse`, { headers: { accept: 'text/event-stream' } }],
     [`/t/${t}/_schema`, {}],
-    [`/t/${t}/_schema/plan`, { method: 'POST', body: JSON.stringify({ format: 1, fenecql: 'create collection z (a int)' }) }],
+    [`/t/${t}/_schema/plan`, { method: 'POST', body: JSON.stringify({ format: 1, fennecql: 'create collection z (a int)' }) }],
     [`/t/${t}/_changes?since=0`, {}],
     [`/t/${t}/_changes/consumers`, {}],
     [`/t/${t}/_stats/statements`, {}],

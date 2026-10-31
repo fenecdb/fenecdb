@@ -1,10 +1,10 @@
 <!--
-title: Server — fenecdb
-description: Run fenecdb as a server with fenec-server: its flags, durability, security with tokens, JWT policies and the audit log, limits, health checks and containers.
+title: Server — fennecdb
+description: Run fennecdb as a server with fennec-server: its flags, durability, security with tokens, JWT policies and the audit log, limits, health checks and containers.
 -->
 
 <h1>Server</h1>
-<p class="kicker">Run fenecdb as a server: one process over one file, reached
+<p class="kicker">Run fennecdb as a server: one process over one file, reached
 over HTTP from any language.</p>
 
 <h2>Start and query</h2>
@@ -12,7 +12,7 @@ over HTTP from any language.</p>
 <ol class="steps-doc">
   <li>
     <p>Start the server on a file.</p>
-<pre data-lang="bash">fenec-server --file data.fenec --http 127.0.0.1:8080</pre>
+<pre data-lang="bash">fennec-server --file data.fennec --http 127.0.0.1:8080</pre>
   </li>
   <li>
     <p>Send it a query.</p>
@@ -31,7 +31,7 @@ href="/docs/languages">Your language</a>.</p>
 <details class="deep"><summary>One writer process, and a thread a connection</summary>
 <p>One process writes one file. Two processes over the same file corrupt it,
 which is why everything a server does — HTTP, replication, the graph keeper,
-the sweeper of rows past their time (<a href="/docs/fenecql-indexes#ttl"><code>@ttl</code></a>),
+the sweeper of rows past their time (<a href="/docs/fennecql-indexes#ttl"><code>@ttl</code></a>),
 the <code>--follow</code> mirror — runs inside this one process rather than
 as programs of its own.</p>
 
@@ -48,13 +48,13 @@ with it. An <code>Idempotency-Key</code> makes a write, or a
 <code>/batch</code>, safe to retry (<a href="/docs/http">HTTP endpoint</a>).</p>
 
 <p>With <code>--replica-of</code> the process follows another
-<code>fenec-server</code> as a read replica: it serves every read and refuses
+<code>fennec-server</code> as a read replica: it serves every read and refuses
 every write with 403. The flags, promotion and what a failover loses are on <a
 href="/docs/replication">Replication</a>. With <code>--dir &lt;path&gt;</code>
 instead of <code>--file</code> it serves a directory of tenant files, one per
 tenant under <code>/t/&lt;tenant&gt;/</code>; that mode, its
 <code>--admin-token</code> and <code>--idle-close</code> are on <a
-href="/docs/sharding-reference#the-node-fenec-server-dir">Sharding
+href="/docs/sharding-reference#the-node-fennec-server-dir">Sharding
 reference</a>, and the router in front of it on <a
 href="/docs/sharding">Tenants and sharding</a>.</p>
 </details>
@@ -65,10 +65,10 @@ href="/docs/sharding">Tenants and sharding</a>.</p>
 <table>
 <thead><tr><th>Flag</th><th>What it does</th></tr></thead>
 <tbody>
-<tr><td><code>-f, --file &lt;path&gt;</code></td><td>The database file. In memory without it. The server holds <code>&lt;path&gt;.lock</code> while it runs, so a second process over the file — another server, <code>fenec mcp --file</code>, an app through the native library, the <code>fenec</code> shell — is refused rather than let corrupt it, and told which process holds it. To look inside the file while the server runs, <code>fenec --read-only &lt;path&gt;</code> reads it as it stands, writing nothing. A file reached through a symbolic link is the file the link leads to, for its lock and for the checkpoints and compacts that write it anew, the link left a link; but a hard link is a name of its own, and a record lock does not cross a file system that does not pass it on: a Docker Desktop bind mount, a network file system keeping no locks. Open a file from one side of those only.</td></tr>
-<tr><td><code>--dir &lt;path&gt;</code></td><td>One file per tenant in this directory (<a href="/docs/sharding-reference#the-node-fenec-server-dir">Sharding reference</a>). Each open tenant holds <code>&lt;tenant&gt;.fenec.lock</code>, as <code>--file</code> holds its file's, so a shell or an app over a tenant's file is refused while the node has it open, and the node is refused it while they do. A deleted tenant's lock file stays, for the name made again.</td></tr>
+<tr><td><code>-f, --file &lt;path&gt;</code></td><td>The database file. In memory without it. The server holds <code>&lt;path&gt;.lock</code> while it runs, so a second process over the file — another server, <code>fennec mcp --file</code>, an app through the native library, the <code>fennec</code> shell — is refused rather than let corrupt it, and told which process holds it. To look inside the file while the server runs, <code>fennec --read-only &lt;path&gt;</code> reads it as it stands, writing nothing. A file reached through a symbolic link is the file the link leads to, for its lock and for the checkpoints and compacts that write it anew, the link left a link; but a hard link is a name of its own, and a record lock does not cross a file system that does not pass it on: a Docker Desktop bind mount, a network file system keeping no locks. Open a file from one side of those only.</td></tr>
+<tr><td><code>--dir &lt;path&gt;</code></td><td>One file per tenant in this directory (<a href="/docs/sharding-reference#the-node-fennec-server-dir">Sharding reference</a>). Each open tenant holds <code>&lt;tenant&gt;.fennec.lock</code>, as <code>--file</code> holds its file's, so a shell or an app over a tenant's file is refused while the node has it open, and the node is refused it while they do. A deleted tenant's lock file stays, for the name made again.</td></tr>
 <tr><td><code>--http &lt;address&gt;</code></td><td>Where to listen. Default <code>127.0.0.1:8080</code>.</td></tr>
-<tr><td><code>--http-token &lt;value&gt;</code></td><td>Requires <code>Authorization: Bearer &lt;value&gt;</code>. Also read from <code>FENEC_HTTP_TOKEN</code>, since <code>argv</code> shows up in <code>ps</code>.</td></tr>
+<tr><td><code>--http-token &lt;value&gt;</code></td><td>Requires <code>Authorization: Bearer &lt;value&gt;</code>. Also read from <code>FENNEC_HTTP_TOKEN</code>, since <code>argv</code> shows up in <code>ps</code>.</td></tr>
 <tr><td><code>--jwt-secret</code>, <code>--jwt-secret-file</code>, <code>--jwt-keys</code>, <code>--jwt-require-exp</code>, <code>--jwt-max-age</code>, <code>--jwt-tenant-claim</code>, <code>--jwt-unbound-tenants</code>, <code>--policy</code></td><td>Tokens held to rules: which collections, which rows (<a href="#security">Security</a>).</td></tr>
 <tr><td><code>--jwt-issuer &lt;iss&gt;</code>, <code>--jwt-audience &lt;aud&gt;</code></td><td>Takes only a token whose <code>iss</code> is one of the issuers given, and whose <code>aud</code> (a text or a list) holds one of the audiences given; each repeatable, the two lists independent rather than paired. A token refused is 401 naming the check. Without them any token the keys sign is taken, as before, and with <code>--jwt-keys</code> the server says so as it starts. Required for Firebase, whose keys sign every project's tokens; not enough where the caller names its own audience (Google identity tokens, GitHub Actions, Kubernetes), where the rules pin <code>sub</code> too (<a href="/docs/http-access#whom-a-token-is-for">Whom a token is for</a>).</td></tr>
 <tr><td><code>--jwt-client &lt;id&gt;</code></td><td>Takes only a token whose <code>azp</code>, or <code>client_id</code> where it names no <code>azp</code>, is one of the clients given; repeatable. For a Cognito pool, <code>--jwt-client</code> takes its access tokens and <code>--jwt-audience</code> its ID tokens.</td></tr>
@@ -80,22 +80,22 @@ href="/docs/sharding">Tenants and sharding</a>.</p>
 <tr><td><code>--warm all|off|&lt;list&gt;</code></td><td>Builds the hash, text, ordered and sparse indexes after the open, beside the first requests, rather than on the first read of each. Default <code>all</code> for a file, <code>off</code> for a node's tenants (<a href="#warm">Warm-up</a>).</td></tr>
 <tr><td><code>--auto-compact &lt;ratio&gt;|off</code></td><td>Compacts a file on its own once this share of it is dead, beside the queries. Default <code>0.5</code> (<a href="#compaction">Compaction</a>).</td></tr>
 <tr><td><code>--max-connections</code>, <code>--idle-timeout</code>, <code>--max-memory</code></td><td><a href="#limits">Limits</a>.</td></tr>
-<tr><td><code>--http-cors</code>, <code>--http-read-only</code>, <code>--http-max-streams</code>, <code>--http-keepalive</code>, <code>--changes</code>, <code>--idempotency-ttl</code></td><td>The HTTP endpoint's options, each where it is described: <code>--http-cors</code> and <code>--http-read-only</code> under <a href="/docs/http-access#security">Security</a>, <code>--http-max-streams</code> under <a href="/docs/http-reference#subscriptions">Subscriptions</a>, <code>--changes</code> under <a href="/docs/sync#dropped-connections-and-the-horizon">Dropped connections and the horizon</a>, <code>--idempotency-ttl</code> under <a href="/docs/http#idempotency">Retrying a write</a>; <code>--http-keepalive</code> is in <code>fenec-server --help</code>.</td></tr>
+<tr><td><code>--http-cors</code>, <code>--http-read-only</code>, <code>--http-max-streams</code>, <code>--http-keepalive</code>, <code>--changes</code>, <code>--idempotency-ttl</code></td><td>The HTTP endpoint's options, each where it is described: <code>--http-cors</code> and <code>--http-read-only</code> under <a href="/docs/http-access#security">Security</a>, <code>--http-max-streams</code> under <a href="/docs/http-reference#subscriptions">Subscriptions</a>, <code>--changes</code> under <a href="/docs/sync#dropped-connections-and-the-horizon">Dropped connections and the horizon</a>, <code>--idempotency-ttl</code> under <a href="/docs/http#idempotency">Retrying a write</a>; <code>--http-keepalive</code> is in <code>fennec-server --help</code>.</td></tr>
 <tr><td><code>--replication-token</code>, <code>--replica-of</code>, <code>--promote</code>, <code>--replication-buffer</code>, <code>--cdc</code></td><td><a href="/docs/replication">Replication</a> and <a href="/docs/microservices">change data capture</a>.</td></tr>
-<tr><td><code>--admin-token</code>, <code>--idle-close</code>, <code>--lease</code></td><td>A tenant node's (<a href="/docs/sharding-reference#the-node-fenec-server-dir">Sharding: reference</a>). The admin token is also read from <code>FENEC_ADMIN_TOKEN</code>.</td></tr>
+<tr><td><code>--admin-token</code>, <code>--idle-close</code>, <code>--lease</code></td><td>A tenant node's (<a href="/docs/sharding-reference#the-node-fennec-server-dir">Sharding: reference</a>). The admin token is also read from <code>FENNEC_ADMIN_TOKEN</code>.</td></tr>
 <tr><td><code>--follow &lt;postgres://...&gt;</code>, <code>--follow-*</code></td><td>Mirrors a PostgreSQL table into the file and serves it (<a href="import.html#serving">Import</a>).</td></tr>
 <tr><td><code>--metrics</code>, <code>--slow-ms</code>, <code>--audit</code>, <code>--auth-delay</code></td><td><a href="/docs/monitoring">Monitoring</a> and the audit log.</td></tr>
 <tr><td><code>--otlp-endpoint</code>, <code>--otlp-header</code>, <code>--trace-sample</code></td><td>OpenTelemetry traces to a collector; off unless an endpoint is given (<a href="/docs/monitoring#tracing">Tracing</a>).</td></tr>
-<tr><td><code>--studio</code>, <code>--studio-connect</code></td><td>fenec studio, the admin pages, at <code>/_studio/</code>; off unless given (<a href="/docs/studio">Studio</a>).</td></tr>
+<tr><td><code>--studio</code>, <code>--studio-connect</code></td><td>fennec studio, the admin pages, at <code>/_studio/</code>; off unless given (<a href="/docs/studio">Studio</a>).</td></tr>
 <tr><td><code>--mcp</code>, <code>--mcp-write</code>, <code>--mcp-memory</code>, <code>--mcp-max-rows</code>, <code>--mcp-max-bytes</code>, <code>--mcp-calls-per-sec</code></td><td>MCP for agents at <code>POST /_mcp</code>, each tool held to the request's token; off unless given (<a href="/docs/mcp">Agents and MCP</a>).</td></tr>
 <tr><td><code>--insecure</code></td><td>Allows a non-loopback address without a token.</td></tr>
 <tr><td><code>--ping</code></td><td>Asks the server whether it is up and exits (<a href="#limits">health checks</a>).</td></tr>
-<tr><td><code>-V, --version</code></td><td>Prints <code>fenec-server &lt;version&gt;</code> on stdout and exits 0, before the file is opened or a port bound. Releases up to 0.1.12 have no such flag: the first line of <code>--help</code>, on stderr, names theirs.</td></tr>
+<tr><td><code>-V, --version</code></td><td>Prints <code>fennec-server &lt;version&gt;</code> on stdout and exits 0, before the file is opened or a port bound. Releases up to 0.1.12 have no such flag: the first line of <code>--help</code>, on stderr, names theirs.</td></tr>
 </tbody>
 </table>
 </div>
 
-<p><code>fenec-server --help</code> prints every flag with its default.</p>
+<p><code>fennec-server --help</code> prints every flag with its default.</p>
 
 <p>Its exit code says how it ended:</p>
 
@@ -127,7 +127,7 @@ system's queue rather than being refused.</p>
 <p>Give the server a token, or give each user a JSON Web Token that names what
 they may read and write.</p>
 
-<pre data-lang="bash">fenec-server --file data.fenec --http 0.0.0.0:8080 --http-token "$TOKEN"</pre>
+<pre data-lang="bash">fennec-server --file data.fennec --http 0.0.0.0:8080 --http-token "$TOKEN"</pre>
 
 <div class="note trap">
   <p><b>There is no TLS yet.</b> On a network, put a TLS terminator such as
@@ -177,13 +177,13 @@ rules pin <code>sub</code>, <code>azp</code> or <code>repository</code>
 for</a>). On a <code>--dir</code> node a token reaches only
 the tenant its <code>tenant</code> claim names
 (<a href="/docs/sharding-reference#tokens">Tokens</a>). Pass the secret with <code>--jwt-secret-file</code> or
-<code>FENEC_JWT_SECRET</code> — <code>argv</code> shows up in <code>ps</code>
+<code>FENNEC_JWT_SECRET</code> — <code>argv</code> shows up in <code>ps</code>
 output.</p>
 
 <p>Every token and key is read from the environment too:
-<code>FENEC_HTTP_TOKEN</code>, <code>FENEC_ADMIN_TOKEN</code>,
-<code>FENEC_REPLICATION_TOKEN</code>, <code>FENEC_JWT_SECRET</code> and
-<code>FENEC_JWT_KEYS</code>. One set and empty -- an environment file's line
+<code>FENNEC_HTTP_TOKEN</code>, <code>FENNEC_ADMIN_TOKEN</code>,
+<code>FENNEC_REPLICATION_TOKEN</code>, <code>FENNEC_JWT_SECRET</code> and
+<code>FENNEC_JWT_KEYS</code>. One set and empty -- an environment file's line
 left blank -- is no token. One given empty as a flag --
 <code>--http-token "$TOKEN"</code> with <code>TOKEN</code> unset -- is
 refused at the start, as is a secret's file holding nothing: a request that
@@ -251,9 +251,9 @@ stdin, which would be read to its end.</p>
 <pre data-lang="js">import { spawn } from 'node:child_process';
 
 // stdin is a pipe this process holds for as long as the server runs.
-const server = spawn('fenec-server', ['--file', path, '--http', '127.0.0.1:0', '--exit-on-stdin-close'], {
+const server = spawn('fennec-server', ['--file', path, '--http', '127.0.0.1:0', '--exit-on-stdin-close'], {
   stdio: ['pipe', 'ignore', 'pipe'],
-  env: { ...process.env, FENEC_HTTP_TOKEN: token },
+  env: { ...process.env, FENNEC_HTTP_TOKEN: token },
 });
 
 // Read stderr for as long as the server runs: a pipe nobody reads fills,
@@ -295,7 +295,7 @@ half-written checkpoint cannot corrupt anything.</p>
 <h2 id="warm">Warm-up</h2>
 
 <p>An open builds no hash, text, ordered or sparse index: the first query
-that reads one builds it, and pays for it. <code>fenec-server</code> builds
+that reads one builds it, and pays for it. <code>fennec-server</code> builds
 them after the open instead, beside the first requests, one at a time: the
 port opens as soon as before, and the first search finds its index built.
 <code>--warm products,orders.status</code> names the collections and fields
@@ -321,7 +321,7 @@ ever reads is held for nothing, and <code>--warm</code> names the rest. A
 node's tenants open on their first request and close when idle, and
 warming each would build every index of every tenant a request touches, so
 there it is off unless asked. The native library has the same call,
-<code>fenec_warm</code>, and the Rust API <code>Database::warm</code> and
+<code>fennec_warm</code>, and the Rust API <code>Database::warm</code> and
 <code>warm_index</code>.</p>
 </details>
 
@@ -382,7 +382,7 @@ updated 400 000 times at about 900 a second: the file went from 103 to
 at 190 MB against 515 without it; that file fits the page cache either way,
 and the reads ran alike, p99 2.2 µs.</p>
 
-<p><b>Before the file outgrows the page cache.</b> fenecdb keeps no cache of
+<p><b>Before the file outgrows the page cache.</b> fennecdb keeps no cache of
 its own: a document is read where it lies in the mapped file, so what the
 reads need in memory is every page of the file that holds a live record --
 and under updates at keys drawn at random that is every page until a
@@ -446,7 +446,7 @@ file before and after and how long it held the lock.</p>
 </table>
 </div>
 
-<pre data-lang="bash">fenec-server --ping --http 127.0.0.1:8080   # exits 0 when the server is up</pre>
+<pre data-lang="bash">fennec-server --ping --http 127.0.0.1:8080   # exits 0 when the server is up</pre>
 
 <details class="deep"><summary>Connection ceilings and health checks</summary>
 <p>One thread per connection means unlimited connections would leave the stack
@@ -491,12 +491,12 @@ other monitoring systems</a>.</p>
 
 <p>The image is under 3 MB: the binary and nothing else.</p>
 
-<pre data-lang="bash">docker run -d --name fenecdb -v fenecdata:/data \
-  -p 127.0.0.1:8080:8080 -e FENEC_HTTP_TOKEN=a-token \
-  ghcr.io/fenecdb/fenec-server</pre>
+<pre data-lang="bash">docker run -d --name fennecdb -v fennecdata:/data \
+  -p 127.0.0.1:8080:8080 -e FENNEC_HTTP_TOKEN=a-token \
+  ghcr.io/fennec-db/fennec-server</pre>
 
 <p>The image's command is <code>--http 0.0.0.0:8080 --file
-/data/data.fenec --sync 250</code>.</p>
+/data/data.fennec --sync 250</code>.</p>
 
 <ul>
   <li><b>Set a token.</b> Without one it refuses to listen beyond
@@ -541,13 +541,13 @@ in 2.6 s with <code>near</code> at 1.56 ms p50 meanwhile. With no graph
 in the file every vector waits: at 100 000 × 768 never checkpointed the
 first <code>near</code> was answered 1.23 s after the start, against
 67.7 s when the open linked them first, and linking takes 19 s.
-<code>fenec_vectors_unlinked</code> counts down to 0.</p>
+<code>fennec_vectors_unlinked</code> counts down to 0.</p>
 
 <p>Overriding <code>CMD</code> drops <code>--file</code>, and the container
 comes up with an in-memory database. There is no shell in the image, so
 <code>docker exec ... sh</code> does not work; what is left is
 <code>docker logs</code> and <code>docker run --rm
-ghcr.io/fenecdb/fenec-server --help</code>.</p>
+ghcr.io/fennec-db/fennec-server --help</code>.</p>
 
 <p>On machines of your own, the repository's <code>deploy/</code> has a
 systemd unit for a server of every role — a tenant node, a region's router,
@@ -566,7 +566,7 @@ queue: an excess connection does not wait, it gets 503.</p>
 <h2>More</h2>
 
 <ul>
-  <li><b>Mirror a PostgreSQL table.</b> <code>fenec-server --follow
+  <li><b>Mirror a PostgreSQL table.</b> <code>fennec-server --follow
     postgres://...</code> keeps a copy as the table commits, and serves it.
     See <a href="import.html#serving">Import</a>.</li>
   <li><b>Embed it instead.</b> The same engine runs inside a Rust program

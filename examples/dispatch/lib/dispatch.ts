@@ -16,14 +16,14 @@
 // radius -- two round trips, a write of the plan for every batch that lost
 // its candidates, and 50 couriers at once waiting 7.6 ms p50 for each
 // other's batches. With nothing near and ready, the same statement is held
-// at the server (`Fenec-Wait`) and takes the nearest once one is.
+// at the server (`Fennec-Wait`) and takes the nearest once one is.
 //
 // `returning *` answers the order taken. A courier reads a ready order's
 // pickup alone and the whole of the orders they carry, which a ready order
 // is not until the claim is written: the read rules are asked of the order
 // as the claim leaves it, so it is answered as claimed, door and all.
 import { CLAIM_RADIUS_M, LEASE_MS, MAX_ATTEMPTS } from './config';
-import { asUser, FenecError, retrying, rows } from './db';
+import { asUser, FennecError, retrying, rows } from './db';
 import type { Point } from './city';
 import type { Who } from './tokens';
 import { randomUUID } from 'node:crypto';
@@ -79,7 +79,7 @@ export interface Claimed {
   job: Job;
   /**
    * How it was asked for: answered at once, or held at the server
-   * (`Fenec-Wait`) -- which takes an order ready when it comes in as at
+   * (`Fennec-Wait`) -- which takes an order ready when it comes in as at
    * once, and waits only while none is.
    */
   how: 'nearest' | 'held';
@@ -186,7 +186,7 @@ export async function heartbeat(
   try {
     r = await asUser(who).batch(statements);
   } catch (e) {
-    if (e instanceof FenecError && e.status === 429) return { kept: true, throttled: e.retryAfter ?? 1 };
+    if (e instanceof FennecError && e.status === 429) return { kept: true, throttled: e.retryAfter ?? 1 };
     throw e;
   }
   const kept = !p.job || (r.results[1] as { affected?: number }).affected === 1;
@@ -239,7 +239,7 @@ async function ok(f: () => Promise<unknown>): Promise<boolean> {
     await retrying(f);
     return true;
   } catch (e) {
-    if (e instanceof FenecError && e.status === 412) return false;
+    if (e instanceof FennecError && e.status === 412) return false;
     throw e;
   }
 }

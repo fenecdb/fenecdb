@@ -1,4 +1,4 @@
-# Grafana with fenecdb-datasource built from this checkout, and Plover's
+# Grafana with fennecdb-datasource built from this checkout, and Plover's
 # dashboard over each company's tenant, the router being the one `npm run
 # cluster` runs on this machine:
 #
@@ -14,7 +14,7 @@ services:
     build:
       context: ../../..
       dockerfile: integrations/grafana/Dockerfile
-    image: fenecdb-grafana
+    image: fennecdb-grafana
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer

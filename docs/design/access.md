@@ -5,7 +5,7 @@ The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *Access
 ## Scoped tokens
 
 **A scoped token is held to its rules at every level, twice for writes**
-(`fenec-http/src/access.rs`). A JWT's policy filter is ANDed into the statement
+(`fennec-http/src/access.rs`). A JWT's policy filter is ANDed into the statement
 -- the `where`, each `lookup` level, a subscription's shape -- so a new path
 that runs a statement must go through `scoped()` or it reads everything. Writes
 also get `WITH CHECK`: the `Check` write hook tests every document a put or a
@@ -14,7 +14,7 @@ around the execution -- a scoped write executed outside `within` goes
 unchecked. A scoped subscription keeps the ids it sent and reports deletions
 only for those; the unscoped shape's "a changed id that does not match is a
 deletion" would hand every user everyone's ids. A scoped stream of a shape
-that holds nothing (`where=false`, what `FenecHttp.live` opens) follows the
+that holds nothing (`where=false`, what `FennecHttp.live` opens) follows the
 token's own filter instead, its ids kept server side and never sent, and a
 write to one, or one leaving, is a change naming no row: ANDed with the
 filter the shape matched nothing and a scoped live query never ran again,
@@ -22,7 +22,7 @@ and told of every write it would have had the moments of other users'. A
 stream is ended at its token's `exp` (`Scope::expires_ms`, the keep-alive
 wait bounded by it) with `event: error` and `{"error":"the token has
 expired","status":401}`, which every client takes as a refused request --
-`FenecHttp.live` and `subscribe` stop with a `FenecError` of status 401,
+`FennecHttp.live` and `subscribe` stop with a `FennecError` of status 401,
 the sync layer asks for a token (a scenario), Go's stream ends with an
 `*Error` of 401, .NET's with `Event.Status`: a stream opened two seconds
 before `exp` delivered a change written four after, while the token's `get`
@@ -111,7 +111,7 @@ once bob wrote 200 holding the word -- 0.16 -> 0.24 ms for 2.5% of 100
 **A claim names someone or is not there** (`usable`). A rule naming a
 claim the token lacked did not apply, but one the token held as `null` was
 bound as it came: `owner = $jwt.sub` became `owner = null`, which
-FenecQL's `=` holds of a null (`compare`), so a token an app minted with
+FennecQL's `=` holds of a null (`compare`), so a token an app minted with
 `"sub": null` for an anonymous user read, `set` and deleted every row with
 no owner -- every row written before `alter collection notes add field
 owner text` -- through `/query`, REST, `/batch`, a subscription and MCP,
@@ -261,7 +261,7 @@ last); r and s lie in [1, n), and R's x is reduced mod n before it is
 compared. Nothing runs in constant time: a public key and a signature are
 public. It is held to every case of Project Wycheproof's
 `ecdsa_secp256r1_sha256_p1363_test.json` (262: 173 valid, 89 invalid, none
-acceptable, committed with its licence in `fenec-http/tests/es256/`, the
+acceptable, committed with its licence in `fennec-http/tests/es256/`, the
 nine groups giving their key in hex alone included -- they are the ones
 whose R has an x past n), RFC 7515's A.3, and tokens node:crypto signed
 (`tests/es256/tokens.mjs`) taken over HTTP and refused once changed.
@@ -277,7 +277,7 @@ or a reduction using p's special form would take a share of that off, each
 at the price of code a reader has to take on trust, and `verified` already
 makes it once a token on each server: a client sends one token for its
 lifetime, and only a server with more than 4 096 live tokens -- a shard
-emptied as it fills -- checks one again. It made fenec-server's code and
+emptied as it fills -- checks one again. It made fennec-server's code and
 constants 10.2 KB larger (`__TEXT` 4 289 588 -> 4 299 816 bytes), the file
 16.5 KB, Mach-O's 16 KiB pages rounding it.
 
@@ -294,7 +294,7 @@ user meets signs with nothing else, held to its own vectors as these are.
 
 **A read rule may name the fields it shows, and a field it withholds is
 held out of what a statement does, not only of its rows**
-(`fenec-http/src/access/fields.rs`). `read(pickup, run_at)` grants the
+(`fennec-http/src/access/fields.rs`). `read(pickup, run_at)` grants the
 rows its filter admits with those fields and `id`
 (`Rule::read_fields`); a row shows the union of the fields of the read
 rules admitting it, the rest `null` (`Scope::shown`, asked of each row
@@ -436,7 +436,7 @@ id 23.7-23.9 either way; `make requests-bench` in three quartets, one
 client the same to the microsecond and eight inside the spread. A read
 in process moved 1-1.5% either way as the bench's own functions were
 laid out (the server token's reaches nothing this changed, only
-`Database::query`), and nothing below fenec-http changed: the browser
+`Database::query`), and nothing below fennec-http changed: the browser
 module is the same to the byte.
 
 ## Tenant binding
@@ -453,7 +453,7 @@ refusal says nothing of which tenants exist -- and every route below the
 prefix passes there: a new one cannot skip it. The router forwards
 `Authorization` and holds no keys, so the node enforces it. A tenant is
 created with its schema through the router (`PUT /_shard/tenants/<t>
-{schema}`, FenecQL text read before anything is placed, applied on the
+{schema}`, FennecQL text read before anything is placed, applied on the
 node by `POST /_admin/tenants/<t>/schema` with the admin token the router
 holds, once the lease names the tenant, and the tenant taken back off the
 node and the directory when refused): applying it took the nodes'
@@ -499,14 +499,14 @@ StringOrURI: `https://idp.example` is not `https://idp.example/` (Auth0's
 issuer ends in `/`), and a server that trimmed slashes or cases would take
 an issuer that differed. An empty text names nothing: a server told `""`
 takes no token rather than one whose claim is empty, the flags given empty
-are refused at the start (`told` in fenec-server's main), and a library
+are refused at the start (`told` in fennec-server's main), and a library
 `Demands` holding one refuses every token. Asked once a token, in
 `Access::check` after the signature -- so a token no key signed is told
 nothing of what the server takes -- and before it is kept in `verified`: a
 kept token passed them, the demands fixed with the `Access` (`demanding`
 lets the kept ones go). Every route reaches `Access::scope` through
 lib.rs's `authenticate` -- `/query`, REST, `/batch`, a subscription, MCP,
-`/_whoami`, a held write each time it runs -- and fenec-shard verifies no
+`/_whoami`, a held write each time it runs -- and fennec-shard verifies no
 token, forwarding `Authorization` to the node that does. A refusal is 401
 naming the check (`NO_ISSUER`, `NO_AUDIENCE`, `NO_CLIENT`), never the
 value the token holds, which its sender knows and a log or proxy between
@@ -563,20 +563,20 @@ user edits of themselves (`user_metadata`) beside what only the app may
 (`app_metadata`), one word apart in a rule, and a path into the wrong one
 is a user granting themselves rows; a claim at the top of the token is one
 the provider was told to sign there. Before this a path parsed as
-`$1.role`, a FenecQL error naming nothing of the cause. A quoted name holds
+`$1.role`, a FennecQL error naming nothing of the cause. A quoted name holds
 no `\`: a token's member names are read unescaped, and a policy that could
 escape one would be read two ways. A tenant claim named `""` is refused at
 the start, and a library's `Demands` holding one binds every token to no
 tenant: read as a claim no token holds, it left every token unbound, which
 `--jwt-unbound-tenants` took for every tenant. `tests/providers.rs` in
-fenec-http (every route, a refused token's 401 holding the check and not
+fennec-http (every route, a refused token's 401 holding the check and not
 the value, `aud` as a text and a list, a client by `azp` or `client_id`, a
 role from a URL-named list, quoted claims in read and write rules, and the
 same server told nothing taking every token), `access.rs`'s tests (near
 spellings of an issuer or audience, a duplicated member, roles holding
 `for`, a `#` in quotes, `-` and `:`, the roles `/_whoami` names, a minted
 token's age), `tests/audit.rs` (a signed token for another audience clears
-no wait, on a node's every route) and fenec-server's `tests/providers.rs`
+no wait, on a node's every route) and fennec-server's `tests/providers.rs`
 (the flags on the binary, `--mint-token`, the flags given empty or without
 keys, the warning, a refusal's audit line and a nested claim refused at
 the start) fail without it.
@@ -586,22 +586,22 @@ the start) fail without it.
 **An empty token is no token.** Every check reads a request carrying no
 `Authorization` as the empty token (`unwrap_or("")` before the constant-time
 compare), so an empty token configured matched everyone: an empty
-`FENEC_SHARD_TOKEN` -- an environment file's line left blank -- opened
+`FENNEC_SHARD_TOKEN` -- an environment file's line left blank -- opened
 `/_shard/` and passed the router's check against a public address with no
 token, and an empty `--admin-token` opened `/_admin/`. Every token and key
 variable is read through a filter, set and empty being unset
-(`env_secret` in fenec-server, `env` in fenec-shard's main,
-`FENEC_HTTP_TOKEN` and `FENEC_SHARD_ENTRY_TOKEN` as they were), and every
+(`env_secret` in fennec-server, `env` in fennec-shard's main,
+`FENNEC_HTTP_TOKEN` and `FENNEC_SHARD_ENTRY_TOKEN` as they were), and every
 token flag given empty is refused at the start (`--http-token
 "$TOKEN"` with `TOKEN` unset), as is an empty JWT secret's file; the
 library holds an embedder to the same -- `Config::settled` in each
 `Server` constructor, `Router::assemble`, `Replication::new` and
 `Tenants::replication_token` take an empty token for none. The archiver's
-`FENEC_REPLICATION_TOKEN` is unset when empty and its `--token` refused,
-and an empty key file (`--key-file`, `FENEC_KEY_FILE`) is refused, never
+`FENNEC_REPLICATION_TOKEN` is unset when empty and its `--token` refused,
+and an empty key file (`--key-file`, `FENNEC_KEY_FILE`) is refused, never
 none, which would write an archive in the clear. `tests/tokens.rs` in
-fenec-server, fenec-shard and fenec-cli and fenec-http's
+fennec-server, fennec-shard and fennec-cli and fennec-http's
 `tests/empty_tokens.rs` fail without it. A node also reads `--admin-token`
-from `FENEC_ADMIN_TOKEN` and a router `--replication-token` from
-`FENEC_SHARD_REPLICATION_TOKEN`, the two that had no variable, so no token
+from `FENNEC_ADMIN_TOKEN` and a router `--replication-token` from
+`FENNEC_SHARD_REPLICATION_TOKEN`, the two that had no variable, so no token
 need be on a command line `ps` shows.

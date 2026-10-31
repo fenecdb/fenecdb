@@ -1,18 +1,18 @@
 <!--
-title: Sharding: reference — fenecdb
+title: Sharding: reference — fennecdb
 description: The routes of a tenant node and of the router, the router's flags, what each quota bounds, the tokens, a lease's timings, the statuses a client meets, and what the deploy kit holds.
 -->
 
 <h1>Sharding reference</h1>
 <p class="kicker">Where to look a thing up: the routes of a tenant node and of the router, the router's flags, what each quota bounds, the tokens, a lease's timings, the statuses a client meets, and what the deploy kit holds. The steps are in the <a href="sharding.html">tutorial</a> and the guides it lists.</p>
 
-<h2>The node: <code>fenec-server --dir</code></h2>
+<h2>The node: <code>fennec-server --dir</code></h2>
 
-<p>A node is one <code>fenec-server</code> serving a directory of tenant files
+<p>A node is one <code>fennec-server</code> serving a directory of tenant files
 instead of one file. The path names the tenant: <code>/t/acme/</code> is
-<code>acme.fenec</code>.</p>
+<code>acme.fennec</code>.</p>
 
-<pre data-lang="bash">fenec-server --dir /data/n1 --http 127.0.0.1:8081 --admin-token a1
+<pre data-lang="bash">fennec-server --dir /data/n1 --http 127.0.0.1:8081 --admin-token a1
 curl -X POST 127.0.0.1:8081/t/acme/query -d '{"query": "get notes limit 5"}'
 </pre>
 
@@ -25,13 +25,13 @@ curl -X POST 127.0.0.1:8081/t/acme/query -d '{"query": "get notes limit 5"}'
   <li><b>A user's token is bound to its tenant.</b> A JSON Web Token reaches
     <code>/t/acme/</code> only when its <code>tenant</code> claim names
     <code>acme</code> (<a href="#tokens">Tokens</a>).</li>
-  <li><b>Archived as a whole</b> by <code>fenec archive --tenants</code>,
+  <li><b>Archived as a whole</b> by <code>fennec archive --tenants</code>,
     one connection for every tenant (<a href="sharding-tenants.html#archive">Archiving a
     node</a>).</li>
 </ul>
 
 <details class="deep"><summary>How a --dir node opens, closes and shuts down tenants, and its /_admin/ routes</summary>
-<p><code>--dir</code> serves a directory of <code>&lt;tenant&gt;.fenec</code>
+<p><code>--dir</code> serves a directory of <code>&lt;tenant&gt;.fennec</code>
 files instead of one file. It is still one process per directory — the
 single-writer rule is per file, and one process owning all of them is what keeps
 it. <code>--http</code> is required. The tenant is looked up for every
@@ -92,7 +92,7 @@ they become file names, and that set means the same thing on every file
 system.</p>
 </details>
 
-<h2>The router: <code>fenec-shard</code></h2>
+<h2>The router: <code>fennec-shard</code></h2>
 
 <p>The router looks up which node holds a tenant and passes the request there
 unchanged. Its only state is a small directory of nodes and tenants, managed
@@ -103,12 +103,12 @@ under <code>/_shard/</code>.</p>
     region you name, if you name one (<a href="sharding-regions.html#regions">Regions</a>) —
     unless you name the node.</li>
   <li><b>A page on another origin needs <code>--http-cors</code> on the
-    router</b>, as it would on a node: <code>fenec-shard --http-cors
+    router</b>, as it would on a node: <code>fennec-shard --http-cors
     https://app.example</code>.</li>
 </ul>
 
 <details class="deep"><summary>The directory, the node and tenant routes, and CORS through the router</summary>
-<p>Its only state is the <b>directory</b>: two collections in a fenecdb file of
+<p>Its only state is the <b>directory</b>: two collections in a fennecdb file of
 its own, <code>nodes</code> and <code>tenants</code>. Every change is written and
 synced before it takes effect, and a tenant's node and state change in one
 statement, so there is no moment on disk where a tenant belongs to both nodes or
@@ -124,7 +124,7 @@ does not return them.</p>
 <tr><td><code>DELETE /_shard/nodes/&lt;n&gt;</code></td><td>refused while the node holds a tenant</td></tr>
 <tr><td><code>GET /_shard/tenants</code></td><td>name, node, state and region of each tenant; with <code>?bytes</code>, its bytes on disk, asked of each node; with <code>?region=&lt;r&gt;</code>, one region's</td></tr>
 <tr><td><code>GET /_shard/tenants/&lt;t&gt;</code></td><td>one tenant: its node, state, region and zone, and the node holding its copy</td></tr>
-<tr><td><code>PUT /_shard/tenants/&lt;t&gt;</code></td><td>place and create; <code>{region}</code> to place it in a region, <code>{node}</code> to choose the node, otherwise the node with the fewest bytes on disk; <code>{schema}</code>, FenecQL <code>create collection</code> text, applied there before the tenant is answered (<a href="sharding-tenants.html#schema">A tenant with its schema</a>)</td></tr>
+<tr><td><code>PUT /_shard/tenants/&lt;t&gt;</code></td><td>place and create; <code>{region}</code> to place it in a region, <code>{node}</code> to choose the node, otherwise the node with the fewest bytes on disk; <code>{schema}</code>, FennecQL <code>create collection</code> text, applied there before the tenant is answered (<a href="sharding-tenants.html#schema">A tenant with its schema</a>)</td></tr>
 <tr><td><code>DELETE /_shard/tenants/&lt;t&gt;</code></td><td>delete on the node, then forget</td></tr>
 <tr><td><code>POST /_shard/tenants/&lt;t&gt;/move</code></td><td><code>{to}</code>, <code>{region}</code> or both; see <a href="sharding-tenants.html#moving-a-tenant">Moving a tenant</a> and <a href="sharding-regions.html#regions">Regions</a></td></tr>
 <tr><td><code>POST /_shard/query</code></td><td>one read on every tenant, or those named, the answers merged as the request says (<a href="sharding-tenants.html#across-tenants">A query across tenants</a>)</td></tr>
@@ -137,16 +137,16 @@ does not return them.</p>
 tenants, and which ones are open depends on who asked last.</p>
 
 <p id="cors">A page on another origin — an app, the <a href="/docs/sync">sync
-layer</a>, <code>FenecHttp.live</code>, the studio served by a node — reaches
+layer</a>, <code>FennecHttp.live</code>, the studio served by a node — reaches
 its tenants through the router once the router has
-<code>--http-cors &lt;origin&gt;</code>, read as <code>fenec-server</code>
+<code>--http-cors &lt;origin&gt;</code>, read as <code>fennec-server</code>
 reads it (<a href="/docs/http-access#security">Security</a>): <code>*</code> or one
 origin. The router answers a browser's preflight itself, before it looks the
 tenant up, and puts the CORS headers on every answer it gives. Its own — an
 unknown tenant's <code>404</code>, a standby's <code>503</code>, an
 unreachable node's <code>502</code>, the <code>503</code> past
 <code>--max-connections</code> or at its thread limit (marked
-<code>Fenec-Unserved</code>: the request never ran, so the global entry and
+<code>Fennec-Unserved</code>: the request never ran, so the global entry and
 a relaying router ask the region's next router), the <code>401</code> of <code>/_shard/</code> without its token — reach the
 page as the refusals they are; without the headers a browser hands the page a
 network error for each, and the sync layer backs off from what was an answer.
@@ -161,7 +161,7 @@ wrote them, and a preflight goes to the node.</p>
 
 <h2 id="router-flags">Router flags</h2>
 
-<p>Every flag of <code>fenec-shard</code>, as <code>fenec-shard --help</code>
+<p>Every flag of <code>fennec-shard</code>, as <code>fennec-shard --help</code>
 says it, with the part of these pages that explains it. A token is also read
 from the environment (<a href="#tokens">Tokens</a>). The site's build holds this
 table to the program's usage: a flag the usage has and this table lacks fails
@@ -172,12 +172,12 @@ it.</p>
 <thead><tr><th>Flag</th><th>What it does</th></tr></thead>
 <tbody>
 <tr><td><code>-l, --listen &lt;address&gt;</code></td><td>Where the router listens. Port 0 takes one the system picks: the <code>listening on: http://&lt;address&gt;</code> line on stderr names it. Default <code>127.0.0.1:8090</code>.</td></tr>
-<tr><td><code>-d, --directory &lt;path&gt;</code></td><td>The directory file: which node holds which tenant (<a href="#the-router-fenec-shard">The router</a>). Default <code>shard.fenec</code>. The router holds <code>&lt;path&gt;.lock</code> while it runs, as a node holds each open tenant's, so a second router or a shell over the file is refused, the holder named.</td></tr>
+<tr><td><code>-d, --directory &lt;path&gt;</code></td><td>The directory file: which node holds which tenant (<a href="#the-router-fennec-shard">The router</a>). Default <code>shard.fennec</code>. The router holds <code>&lt;path&gt;.lock</code> while it runs, as a node holds each open tenant's, so a second router or a shell over the file is refused, the holder named.</td></tr>
 <tr><td><code>--token &lt;value&gt;</code></td><td>Requires <code>Authorization: Bearer &lt;value&gt;</code> on <code>/_shard/</code>. Data requests pass their own <code>Authorization</code> through to the nodes, which check it against <code>--http-token</code> (<a href="#tokens">Tokens</a>).</td></tr>
 <tr><td><code>--insecure</code></td><td>Allows a non-loopback address without <code>--token</code>. Off by default.</td></tr>
 <tr><td><code>--http-cors &lt;origin&gt;</code></td><td><code>Access-Control-Allow-Origin</code> on every answer the router gives, its own and the nodes' it forwards, whose CORS headers it replaces, and a browser's preflight answered here (<a href="#cors">the router's CORS rule</a>).</td></tr>
-<tr><td><code>--studio</code></td><td>Serves fenec studio, the admin pages, at <code>/_studio/</code>: a tenant's collections and rows in a browser, through this router, with the token pasted in. Keep it on a private network. Off by default.</td></tr>
-<tr><td><code>--entry-token &lt;value&gt;</code></td><td>The global entry's <code>ENTRY_TOKEN</code>: a request whose <code>Fenec-Client</code> header carries the entry's mark for its address, made within 60 s of this clock, is that client's (<a href="sharding-entry.html#global-entry">One URL for every region</a>).</td></tr>
+<tr><td><code>--studio</code></td><td>Serves fennec studio, the admin pages, at <code>/_studio/</code>: a tenant's collections and rows in a browser, through this router, with the token pasted in. Keep it on a private network. Off by default.</td></tr>
+<tr><td><code>--entry-token &lt;value&gt;</code></td><td>The global entry's <code>ENTRY_TOKEN</code>: a request whose <code>Fennec-Client</code> header carries the entry's mark for its address, made within 60 s of this clock, is that client's (<a href="sharding-entry.html#global-entry">One URL for every region</a>).</td></tr>
 <tr><td><code>--audit &lt;path&gt;</code></td><td>Appends a JSON line to this file for each request refused for its token and each <code>/_shard/</code> request that changes something.</td></tr>
 <tr><td><code>--auth-delay &lt;ms&gt;</code></td><td>How long a request refused for its token waits, doubled for each one from the same address within a minute, 5 s at most; 0 turns it off. Default <code>100</code>.</td></tr>
 <tr><td><code>--max-connections &lt;n&gt;</code></td><td>Ceiling on concurrent connections. Default <code>1000</code>.</td></tr>
@@ -192,17 +192,17 @@ it.</p>
 <tr><td><code>--auto-failover &lt;s&gt;</code></td><td>Leases each node the tenants it holds for this long, renewed every third of it, and fails a node over on its own once it has gone a tenth past it unrenewed. The nodes need <code>--lease</code>. 5 is a start (<a href="sharding-failover.html#automatic-failover">Automatic failover</a>). Off by default.</td></tr>
 <tr><td><code>--otlp-endpoint &lt;url&gt;</code></td><td>Sends OpenTelemetry traces, OTLP over HTTP as JSON, to this collector. No TLS. Also read from <code>OTEL_EXPORTER_OTLP_TRACES_ENDPOINT</code> and <code>OTEL_EXPORTER_OTLP_ENDPOINT</code>. Off by default.</td></tr>
 <tr><td><code>--otlp-header &lt;k=v&gt;</code></td><td>A header on every post, such as an API key; repeatable. Also read from <code>OTEL_EXPORTER_OTLP_HEADERS</code>.</td></tr>
-<tr><td><code>--trace-sample &lt;ratio&gt;</code></td><td>The share of the requests that start a trace here that are kept, 0 to 1. A request whose <code>traceparent</code> was sampled is traced whatever the ratio. The service is named by <code>OTEL_SERVICE_NAME</code> (<code>fenec-shard</code> by default). Default <code>1</code> with an endpoint.</td></tr>
+<tr><td><code>--trace-sample &lt;ratio&gt;</code></td><td>The share of the requests that start a trace here that are kept, 0 to 1. A request whose <code>traceparent</code> was sampled is traced whatever the ratio. The service is named by <code>OTEL_SERVICE_NAME</code> (<code>fennec-shard</code> by default). Default <code>1</code> with an endpoint.</td></tr>
 <tr><td><code>--replication-token &lt;value&gt;</code></td><td>Serves the directory to standby routers at <code>/_replication</code>, and presents this to a primary (<a href="sharding-failover.html#standby-router">A standby router</a>).</td></tr>
 <tr><td><code>--replica-of &lt;url&gt;</code></td><td>Follows the primary router at <code>http://host:port</code>: the directory arrives from it, <code>/_shard/</code> changes are refused here, and forwarding goes on as ever.</td></tr>
 <tr><td><code>--promote</code></td><td>Takes writes on a standby's directory file: its history forks here. A standby's file opens only with <code>--replica-of</code> or this. Off by default.</td></tr>
 <tr><td><code>--replication-buffer &lt;MiB&gt;</code></td><td>Directory writes kept for standbys that fall behind. Default <code>8</code>.</td></tr>
 <tr><td><code>--region &lt;name&gt;</code></td><td>Keeps this region's own directory in <code>--directory</code>: its nodes and tenants, leased and failed over by this router with no word from another region. Needs <code>--global</code> and <code>--replication-token</code> (<a href="sharding-regions.html#region-directories">A region that keeps its own directory</a>).</td></tr>
 <tr><td><code>--global &lt;url&gt;</code></td><td>The global router, <code>http://host:port</code>, repeatable or comma-separated, the one keeping the global directory first: a region's router follows its directory from it and sends it the changes it takes.</td></tr>
-<tr><td><code>--global-directory &lt;path&gt;</code></td><td>The region's router's copy of the global directory. Default: the <code>--directory</code> file with <code>.global</code> before <code>.fenec</code>.</td></tr>
-<tr><td><code>--near &lt;region&gt;</code></td><td>The region this router stands in: a read its client marks (<code>Fenec-Read: replica</code>) of a tenant with a read replica there goes to it, every other request home. A region's router (<code>--region</code>) is near its region already (<a href="sharding-read-replicas.html#read-replicas">Read replicas</a>).</td></tr>
-<tr><td><code>--replica-timeout &lt;ms&gt;</code></td><td>How long a read replica has to answer such a read, past the wait its <code>Fenec-After</code> asks for; one that does not is let be for 5 s, its region's reads going home. Default <code>2000</code>.</td></tr>
-<tr><td><code>-V, --version</code></td><td>Prints <code>fenec-shard &lt;version&gt;</code> on stdout and exits 0, before the directory is opened or the address bound. Releases up to 0.1.12 have no such flag: the first line of <code>--help</code>, on stderr, names theirs.</td></tr>
+<tr><td><code>--global-directory &lt;path&gt;</code></td><td>The region's router's copy of the global directory. Default: the <code>--directory</code> file with <code>.global</code> before <code>.fennec</code>.</td></tr>
+<tr><td><code>--near &lt;region&gt;</code></td><td>The region this router stands in: a read its client marks (<code>Fennec-Read: replica</code>) of a tenant with a read replica there goes to it, every other request home. A region's router (<code>--region</code>) is near its region already (<a href="sharding-read-replicas.html#read-replicas">Read replicas</a>).</td></tr>
+<tr><td><code>--replica-timeout &lt;ms&gt;</code></td><td>How long a read replica has to answer such a read, past the wait its <code>Fennec-After</code> asks for; one that does not is let be for 5 s, its region's reads going home. Default <code>2000</code>.</td></tr>
+<tr><td><code>-V, --version</code></td><td>Prints <code>fennec-shard &lt;version&gt;</code> on stdout and exits 0, before the directory is opened or the address bound. Releases up to 0.1.12 have no such flag: the first line of <code>--help</code>, on stderr, names theirs.</td></tr>
 </tbody>
 </table>
 </div>
@@ -217,8 +217,8 @@ it.</p>
 <tbody>
 <tr><td><code>bytes</code></td><td>the tenant's file, as written</td><td><b>507</b>, the write put back whole</td></tr>
 <tr><td><code>rows</code></td><td>the documents of its collections, together</td><td><b>507</b>, the write put back whole</td></tr>
-<tr><td><code>streams</code></td><td>subscriptions, <code>/_changes</code> waits and <code>Fenec-After</code> waits while they wait: a read after a write the node holds takes none</td><td><b>429</b>, <code>Retry-After: 1</code></td></tr>
-<tr><td><code>held</code></td><td>writes held until they can write (<a href="queues.html#wait"><code>Fenec-Wait</code></a>): workers waiting for jobs</td><td><b>429</b>, <code>Retry-After: 1</code></td></tr>
+<tr><td><code>streams</code></td><td>subscriptions, <code>/_changes</code> waits and <code>Fennec-After</code> waits while they wait: a read after a write the node holds takes none</td><td><b>429</b>, <code>Retry-After: 1</code></td></tr>
+<tr><td><code>held</code></td><td>writes held until they can write (<a href="queues.html#wait"><code>Fennec-Wait</code></a>): workers waiting for jobs</td><td><b>429</b>, <code>Retry-After: 1</code></td></tr>
 <tr><td><code>requests</code></td><td>requests in flight</td><td><b>429</b>, <code>Retry-After: 1</code></td></tr>
 <tr><td><code>writes</code></td><td>rows written a second, charged as each write lands</td><td><b>429</b>, <code>retry_after_ms</code> until a row's worth is back</td></tr>
 <tr><td><code>write_bytes</code></td><td>bytes written a second, charged as each lands</td><td><b>429</b>, <code>Retry-After</code> until the debt is paid</td></tr>
@@ -236,13 +236,13 @@ replica's sync read first -- a bucket of 600 rows a second refills a row in
 seconds between them:</p>
 
 <pre data-lang="bash">HTTP/1.1 429 Too Many Requests
-Fenec-Quota: writes
+Fennec-Quota: writes
 Retry-After: 1
 
 {"error":"the tenant writes past its quota of 600 rows a second","quota":"writes","retry_after":1,"retry_after_ms":2}</pre>
 
 <pre data-lang="bash">HTTP/1.1 507 Insufficient Storage
-Fenec-Quota: rows
+Fennec-Quota: rows
 
 {"error":"the write would take the tenant past its quota of 50000 rows: delete rows, or raise the quota","quota":"rows"}</pre>
 
@@ -292,7 +292,7 @@ Fenec-Quota: rows
     replica; a move sends it to the target before the directory points
     there, and a failover finds it on the copy it promotes.</li>
   <li><b>Seen by quota, not by tenant:</b> <code>/_metrics</code> counts
-    refusals as <code>fenec_quota_refused_total{quota="rows"}</code>, the
+    refusals as <code>fennec_quota_refused_total{quota="rows"}</code>, the
     audit log writes each as a <code>quota</code> event naming the tenant,
     and <code>GET /_admin/quotas</code> on a node — or
     <code>/_shard/tenants?quota</code> on the router, which the studio's admin
@@ -305,9 +305,9 @@ Fenec-Quota: rows
 for managing the router. A user's JSON Web Token is bound to the tenant its
 <code>tenant</code> claim names:</p>
 
-<pre data-lang="bash">fenec-server --dir /data/n1 --http 127.0.0.1:8081 --admin-token a1 \
+<pre data-lang="bash">fennec-server --dir /data/n1 --http 127.0.0.1:8081 --admin-token a1 \
          --jwt-secret-file jwt.secret --policy policy.txt
-fenec-server --jwt-secret-file jwt.secret --mint-token '{"sub":"alice","tenant":"acme"}'
+fennec-server --jwt-secret-file jwt.secret --mint-token '{"sub":"alice","tenant":"acme"}'
 </pre>
 
 <details class="deep"><summary>The three tokens, and JWTs on a node</summary>
@@ -346,15 +346,15 @@ single file (<a href="/docs/http-access#scoped-access">Scoped access</a>).</p>
 
 <p>Every token is also read from the environment, which keeps it off a
 command line every user of the machine reads with <code>ps</code>: a node's
-from <code>FENEC_HTTP_TOKEN</code>, <code>FENEC_ADMIN_TOKEN</code> and
-<code>FENEC_REPLICATION_TOKEN</code>, a router's from
-<code>FENEC_SHARD_TOKEN</code>, <code>FENEC_SHARD_REPLICATION_TOKEN</code>
-and <code>FENEC_SHARD_ENTRY_TOKEN</code>, an archiver's from
-<code>FENEC_REPLICATION_TOKEN</code>. A variable set and empty, as an
+from <code>FENNEC_HTTP_TOKEN</code>, <code>FENNEC_ADMIN_TOKEN</code> and
+<code>FENNEC_REPLICATION_TOKEN</code>, a router's from
+<code>FENNEC_SHARD_TOKEN</code>, <code>FENNEC_SHARD_REPLICATION_TOKEN</code>
+and <code>FENNEC_SHARD_ENTRY_TOKEN</code>, an archiver's from
+<code>FENNEC_REPLICATION_TOKEN</code>. A variable set and empty, as an
 environment file leaves a line it does not use, is no token; a token given
 empty as a flag is refused at the start. A request carrying no
 <code>Authorization</code> reads as the empty token, so an empty
-<code>FENEC_SHARD_TOKEN</code>, taken for one, let anyone into
+<code>FENNEC_SHARD_TOKEN</code>, taken for one, let anyone into
 <code>/_shard/</code> -- and past the check that keeps a router with no
 token off a public address. The kit's systemd units hand every one over
 from an environment file (<a href="#deploying">Deploying it</a>).</p>
@@ -392,17 +392,17 @@ in the body.</p>
 <table>
 <thead><tr><th>Status</th><th>When</th></tr></thead>
 <tbody>
-<tr><td><b>401</b></td><td>A request to the router's <code>/_shard/</code> without its <code>--token</code>, a user's token or a node's data token included (<a href="sharding-tenants.html#across-tenants">A query across tenants</a>); a node's <code>/_admin/</code> asked without its <code>--admin-token</code>; where the node was started with none, <code>/_admin/</code> is off and answers <b>404</b> (<a href="#the-node-fenec-server-dir">The node</a>)</td></tr>
-<tr><td><b>403</b></td><td>A token whose <code>tenant</code> claim does not name the tenant under <code>/t/&lt;tenant&gt;/</code> (<a href="#tokens">Tokens</a>); a statement that writes, in a query across tenants, which every node refuses before it runs; a write sent marked as a read, <code>Fenec-Read: replica</code> (<a href="sharding-read-replicas.html#read-replicas">Read replicas</a>)</td></tr>
-<tr><td><b>404</b></td><td>A tenant the router's directory, or a node, does not hold: a request never creates one (<a href="#the-node-fenec-server-dir">The node</a>); at the global entry, every path but <code>/t/&lt;tenant&gt;/...</code> and, where the entry is told to, <code>/_shard/</code> (<a href="sharding-entry.html#global-entry">One URL for every region</a>); a node named as another's standby that the router does not know (<a href="sharding.html#get-started">Get started</a>)</td></tr>
+<tr><td><b>401</b></td><td>A request to the router's <code>/_shard/</code> without its <code>--token</code>, a user's token or a node's data token included (<a href="sharding-tenants.html#across-tenants">A query across tenants</a>); a node's <code>/_admin/</code> asked without its <code>--admin-token</code>; where the node was started with none, <code>/_admin/</code> is off and answers <b>404</b> (<a href="#the-node-fennec-server-dir">The node</a>)</td></tr>
+<tr><td><b>403</b></td><td>A token whose <code>tenant</code> claim does not name the tenant under <code>/t/&lt;tenant&gt;/</code> (<a href="#tokens">Tokens</a>); a statement that writes, in a query across tenants, which every node refuses before it runs; a write sent marked as a read, <code>Fennec-Read: replica</code> (<a href="sharding-read-replicas.html#read-replicas">Read replicas</a>)</td></tr>
+<tr><td><b>404</b></td><td>A tenant the router's directory, or a node, does not hold: a request never creates one (<a href="#the-node-fennec-server-dir">The node</a>); at the global entry, every path but <code>/t/&lt;tenant&gt;/...</code> and, where the entry is told to, <code>/_shard/</code> (<a href="sharding-entry.html#global-entry">One URL for every region</a>); a node named as another's standby that the router does not know (<a href="sharding.html#get-started">Get started</a>)</td></tr>
 <tr><td><b>409</b></td><td>A tenant created that exists; a change asked of a standby router's <code>/_shard/</code>, which answers it naming the primary (<a href="sharding-failover.html#standby-router">A standby router</a>); a region with no node named for a tenant, or a node and a region that disagree (<a href="sharding-regions.html#regions">Regions</a>); a copy a node refuses to promote because it is not its tenant as the directory knows it, unless forced (<a href="sharding-failover.html#replicas-of-tenants">Replicas of tenants</a>); a node's refusal of a grant, a promotion or the re-pointing of replicas from a router that a newer one superseded, naming who holds the node (<code>held_by</code>) (<a href="sharding-regions.html#region-directories">A region that keeps its own directory</a>)</td></tr>
 <tr><td><b>411</b></td><td>At the global entry, a body sent with no length past a mebibyte</td></tr>
 <tr><td><b>413</b></td><td>A query across tenants that gathers more rows or bytes than <code>--fanout-max-rows</code> or <code>--fanout-max-bytes</code> allow (<a href="sharding-tenants.html#across-tenants">A query across tenants</a>)</td></tr>
 <tr><td><b>429</b></td><td>A tenant past a rate or a share of its node: <code>streams</code>, <code>held</code>, <code>requests</code>, <code>writes</code> or <code>write_bytes</code> (<a href="#quota-bounds">Quotas</a>)</td></tr>
 <tr><td><b>500</b></td><td>A write that landed while its node's lease ran and was answered after it lapsed, with <code>"outcome": "unknown"</code> in the body (<a href="sharding-design.html#lease-answered-late">A write answered after the lease lapsed</a>)</td></tr>
 <tr><td><b>502</b></td><td>A node the router could not reach, or a write sent whole whose connection ended before an answer, which the node may have run, so a client sends it again only with an <code>Idempotency-Key</code> (<a href="sharding-design.html#forwarding">How the router forwards a request</a>); a region out of reach (<a href="sharding-regions.html#region-directories">A region that keeps its own directory</a>)</td></tr>
-<tr><td><b>503</b></td><td>A write to a tenant while it is moved (<a href="sharding-tenants.html#moving-a-tenant">Moving a tenant</a>); a write to a node whose lease has lapsed (<a href="sharding-failover.html#automatic-failover">Automatic failover</a>); a standby router whose directory has not arrived (<a href="sharding-failover.html#standby-router">A standby router</a>); a connection past a router's <code>--max-connections</code> or at its thread limit, marked <code>Fenec-Unserved</code> (<a href="#cors">the router's CORS rule</a>); a create, a delete or a move that needs a region that cannot be reached, nothing done by half (<a href="sharding-regions.html#region-directories">A region that keeps its own directory</a>)</td></tr>
-<tr><td><b>504</b></td><td>A read sent after a position (<code>Fenec-After</code>) that the tenant's home has not reached by the end of its wait, or at once where a failover lost the write it names; a replica's <b>504</b> is sent home and never seen (<a href="sharding-read-replicas.html#read-replicas">Read replicas</a>)</td></tr>
+<tr><td><b>503</b></td><td>A write to a tenant while it is moved (<a href="sharding-tenants.html#moving-a-tenant">Moving a tenant</a>); a write to a node whose lease has lapsed (<a href="sharding-failover.html#automatic-failover">Automatic failover</a>); a standby router whose directory has not arrived (<a href="sharding-failover.html#standby-router">A standby router</a>); a connection past a router's <code>--max-connections</code> or at its thread limit, marked <code>Fennec-Unserved</code> (<a href="#cors">the router's CORS rule</a>); a create, a delete or a move that needs a region that cannot be reached, nothing done by half (<a href="sharding-regions.html#region-directories">A region that keeps its own directory</a>)</td></tr>
+<tr><td><b>504</b></td><td>A read sent after a position (<code>Fennec-After</code>) that the tenant's home has not reached by the end of its wait, or at once where a failover lost the write it names; a replica's <b>504</b> is sent home and never seen (<a href="sharding-read-replicas.html#read-replicas">Read replicas</a>)</td></tr>
 <tr><td><b>507</b></td><td>A write that would take a tenant past its <code>bytes</code> or <code>rows</code> quota, put back whole (<a href="#quota-bounds">Quotas</a>)</td></tr>
 </tbody>
 </table>
@@ -414,10 +414,10 @@ in the body.</p>
 
 <h2 id="deploying">Deploying it</h2>
 
-<p>The repository's <a href="https://github.com/fenecdb/fenecdb/tree/main/deploy"><code>deploy/</code></a>
+<p>The repository's <a href="https://github.com/fennec-db/fennecdb/tree/main/deploy"><code>deploy/</code></a>
 is a kit for running everything on these pages on machines of your own: systemd
 units, their environment files, alert rules, and the operator's
-<a href="https://github.com/fenecdb/fenecdb/blob/main/deploy/RUNBOOK.md">runbook</a>.
+<a href="https://github.com/fennec-db/fennecdb/blob/main/deploy/RUNBOOK.md">runbook</a>.
 <code>make drill</code> breaks a deployment of two regions on purpose, in
 Docker, and holds it to losing no acknowledged write.</p>
 
@@ -469,7 +469,7 @@ copied once the bucket is copied back, and a standby router promoted and
 its unit switched as the runbook does it. cloudflared's own matcher is
 asked where the tunnel sends 28 paths, every spelling of a tenant's
 replication stream among them. promtool checks the alert rules and runs
-their tests, and a test of fenec-shard holds every metric and label value
+their tests, and a test of fennec-shard holds every metric and label value
 they read to a real scrape of every kind of process.</p>
 
 <p><code>make drill</code> runs each process in a container of its own on

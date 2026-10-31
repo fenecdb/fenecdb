@@ -1,29 +1,32 @@
-# FenecDB for Swift
+# FennecDB for Swift
 
-fenecdb embedded in a macOS or iOS app: the database is a file on the
-device, the engine the native library (`crates/fenec-ffi`) the server and
+fennecdb embedded in a macOS or iOS app: the database is a file on the
+device, the engine the native library (`crates/fennec-ffi`) the server and
 the browser module share their code and file format with -- on its own, or
 a replica a server keeps in step.
 
 ```swift
-.package(url: "https://github.com/fenecdb/fenecdb", from: "0.1.12")
-// target: .product(name: "FenecDB", package: "fenecdb")
+.package(url: "https://github.com/fennec-db/fennecdb", from: "0.1.12")
+// target: .product(name: "FennecDB", package: "fennecdb")
 ```
 
 SwiftPM names a package after the last component of its URL, and the
-repository was `fenecdb/fenec` before it became `fenecdb`. An app that keeps
-the old URL (GitHub redirects it) keeps the package identity `fenec`, so its
-target dependencies say `package: "fenec"`; one that moves to
-`https://github.com/fenecdb/fenecdb` changes them to `package: "fenecdb"`.
+repository was `fenecdb/fenec`, then `fenecdb/fenecdb`, before it became
+`fennec-db/fennecdb`. An app that keeps an old URL (GitHub redirects it)
+keeps that URL's package identity, `fenec` or `fenecdb`, in its target
+dependencies (`package: "fenecdb"`); one that moves to
+`https://github.com/fennec-db/fennecdb` changes them to
+`package: "fennecdb"`, and its product to `FennecDB`, from the first release
+after 0.1.12.
 
 ```swift
-import FenecDB
+import FennecDB
 
 let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-let db = try await Fenec.open(docs.appendingPathComponent("app.fenec"))
+let db = try await Fennec.open(docs.appendingPathComponent("app.fennec"))
 try await db.execute("create collection todos (title text, done bool @hash)")
 
-struct Todo: Codable, Sendable, FenecValue { var title: String; var done: Bool }
+struct Todo: Codable, Sendable, FennecValue { var title: String; var done: Bool }
 try await db.from("todos").insert(Todo(title: "milk", done: false))
 
 let open = try await db.from("todos").where("done", false).rows(as: Todo.self)
@@ -40,7 +43,7 @@ a collection it reads, once a burst, on the main actor:
 
 `db.live(query)` is the same as an `AsyncThrowingStream`. To see the text
 and parameters a chain builds, for logging or a test, `try
-query.toFenecQL()` returns them and runs nothing.
+query.toFennecQL()` returns them and runs nothing.
 
 Every write is fsynced before it returns unless the file is opened
 `.noSync`, which leaves the writes for `sync()`; `flush()` hands them to the
@@ -56,14 +59,14 @@ condition on the field. The docs: `site/content/docs/mobile.html`.
 ## Sync with a server
 
 ```swift
-let db = try await Fenec.sync(url: "https://api.example.com", token: jwt,
+let db = try await Fennec.sync(url: "https://api.example.com", token: jwt,
                               shapes: [Shape("todos", where: ["owner": me], key: "key")],
-                              path: docs.appendingPathComponent("todos.fenec").path,
+                              path: docs.appendingPathComponent("todos.fennec").path,
                               tokenProvider: { try await refreshToken() })
 await db.replica!.ready()
 ```
 
-The same `Fenec`: reads and live queries are the file's, a write to a
+The same `Fennec`: reads and live queries are the file's, a write to a
 shape's collection shows at once and is sent -- queued in the file while
 the server cannot be reached, under an idempotency key so it lands once --
 and one the server refuses is put back and comes on
@@ -76,10 +79,10 @@ whose `quota` tells a stream the quota of streams refused from the network
 gone; call
 `replica.resume()` as the app comes back to the foreground. The requests and
 the stream are `URLSession`'s, so a server is reached through TLS (App
-Transport Security). `Fenec.connect(url:token:)` is a server with no file:
+Transport Security). `Fennec.connect(url:token:)` is a server with no file:
 every query a request, the same builder. Its `batch([...], idempotencyKey:)`
 runs the builder's `toInsert`/`toUpdate`/`toDelete` as one block, all or
-none, answering `results`, `seq` and `replayed`; a `FenecError` that stops
+none, answering `results`, `seq` and `replayed`; a `FennecError` that stops
 it carries `status` (412 and `.unmet` for a `require` not met) and `at`,
 the statement from 0. A `require` says why with `reason` --
 `update(patch, require: 1, reason: "insufficient funds")`, a read's
@@ -92,19 +95,19 @@ statement put in front. On a tenant node a quota names itself (`.quota`, and
 `retryAfter`, the seconds to wait, as a tenant being moved or failed over
 answers its writes 503. `run(text, params:, idempotencyKey:)` and
 `withIdempotencyKey(key)`, a copy whose every write carries the key, make a
-write once however often it is sent. `Fenec.connect(url:token:reads:
+write once however often it is sent. `Fennec.connect(url:token:reads:
 .nearest)` sends the builder's reads, and an `asRead()` copy's, to the
-tenant's read replica near the app through a fenec-shard router
-(`Fenec-Read: replica`), each after the furthest position an answer from
-home named to the connection or any copy of it (`Fenec-After`,
-`Fenec-History`); writes go home.
+tenant's read replica near the app through a fennec-shard router
+(`Fennec-Read: replica`), each after the furthest position an answer from
+home named to the connection or any copy of it (`Fennec-After`,
+`Fennec-History`); writes go home.
 
 ## Building and testing
 
 `make swift-test` builds the XCFramework's macOS slice for this machine
 (`integrations/swift/build-xcframework.sh --macos`) and runs `swift test`
 at the repository's root, where `Package.swift` is (the sync tests start a
-`fenec-server` it builds, and the read-routing tests `fenec-shard` routers
+`fennec-server` it builds, and the read-routing tests `fennec-shard` routers
 in front of two, macOS alone) -- SwiftPM fetches a
 package by its repository, so the manifest lives there. It takes the
 XCFramework from `integrations/swift/build/` when it is there and from the

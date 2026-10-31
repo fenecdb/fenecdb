@@ -1,6 +1,6 @@
 // Tokens that must not work: forged, expired, without an expiry, `alg:
 // none`, HS256 "signed" with the RSA public key, a key id nobody published,
-// another tenant's, no tenant at all -- against fenec-server through the
+// another tenant's, no tenant at all -- against fennec-server through the
 // router, against this app's own API, and as the identity provider's ID
 // tokens. And single sign-on end to end.
 import assert from 'node:assert/strict';
@@ -53,7 +53,7 @@ function attackerKey(): KeyObject {
   return generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey;
 }
 
-describe('fenec-server refuses', () => {
+describe('fennec-server refuses', () => {
   const cases: [string, () => string, number][] = [
     ['the real token (control)', () => good, 200],
     ['a forged signature: another RSA key under the published key id', () => signJwt(claims(), { kid: appKey.kid, key: attackerKey() }), 401],

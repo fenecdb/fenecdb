@@ -1,7 +1,7 @@
 # Cloudflare Tunnel from this router's machine to Cloudflare's edge: the
 # global entry Worker reaches the router at an HTTPS hostname of the
 # tunnel's (integrations/cloudflare/entry's REGIONS), and the router needs
-# no public address, port or certificate -- fenecdb speaks no TLS, and a
+# no public address, port or certificate -- fennecdb speaks no TLS, and a
 # Worker fetches no bare IP address. One on each router's machine, the
 # standby's too, each tunnel its own hostname.
 #
@@ -27,8 +27,8 @@
 # root's) and run `tunnel run` with neither --config nor --credentials-file.
 
 [Unit]
-Description=Cloudflare Tunnel to the fenecdb router
-Documentation=https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/ file:/usr/local/share/doc/fenecdb/RUNBOOK.md
+Description=Cloudflare Tunnel to the fennecdb router
+Documentation=https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/ file:/usr/local/share/doc/fennecdb/RUNBOOK.md
 After=network-online.target
 Wants=network-online.target
 

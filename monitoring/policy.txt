@@ -1,5 +1,5 @@
-# What a JSON Web Token may do here (fenec-server --policy). The server's own
-# token (FENEC_HTTP_TOKEN) is no JWT and is held to none of this: the seed
+# What a JSON Web Token may do here (fennec-server --policy). The server's own
+# token (FENNEC_HTTP_TOKEN) is no JWT and is held to none of this: the seed
 # writes with it.
 #
 # collection    access          rows   role

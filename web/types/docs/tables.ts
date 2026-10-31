@@ -1,9 +1,9 @@
 // The tables the docs' examples declare and then import from the app's own
 // module ('./tables.js'): the same declarations, written once here.
 
-import { fenecTable, text, boolean, timestamp, vector, index } from '../../schema.js';
+import { fennecTable, text, boolean, timestamp, vector, index } from '../../schema.js';
 
-export const todos = fenecTable(
+export const todos = fennecTable(
   'todos',
   { key: text(), title: text().notNull(), done: boolean(), at: timestamp() },
   (t) => [
@@ -14,7 +14,7 @@ export const todos = fenecTable(
 );
 
 // vs-pglite.html: a note with a text and a vector index.
-export const notes = fenecTable(
+export const notes = fennecTable(
   'notes',
   { title: text(), body: text(), embed: vector({ dimensions: 384 }) },
   (t) => [

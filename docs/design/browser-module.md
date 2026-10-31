@@ -6,14 +6,14 @@ The long form of the invariants [CLAUDE.md](../../CLAUDE.md) lists under *The br
 
 **Threads are `cfg`'d out of WASM.** The parallel HNSW build path must not enter
 the wasm32 target. Likewise wasm32-unknown-unknown has no clock: `now()` reads
-the time the module is handed with every statement (`fenec_query`'s last
+the time the module is handed with every statement (`fennec_query`'s last
 argument, `db.now`'s `Date.now()`, through `Database::set_clock`) and
 errors where it is handed none.
 
 ## Index features
 
 **The indexes are features, and a build without one opens a file that
-declares it.** `fenec-core`'s `vector`, `text`, `sparse`, `sorted` and
+declares it.** `fennec-core`'s `vector`, `text`, `sparse`, `sorted` and
 `composite` (an index over several fields, which needs `sorted`; the five
 are `indexes`, and with `language` below make `full`, on by default) are
 what a browser module may leave out: `make wasm FEATURES="text sorted"`,
@@ -36,14 +36,14 @@ reads vectors out of the store and needs only `text`. The checks for a
 missing index ask `EVERY_INDEX` first: the lookup of a field is a loop the
 compiler cannot prove ends, and one left in cost the full module 197 bytes
 brotli; asked first, `EVERY_INDEX` left it the size it had been before the
-features, to the byte. A crate that depends on `fenec-core` names `full`
-itself (the workspace takes it without default features), and `fenec-ql`
-and `fenec-abi` only as a dev dependency -- in their normal ones it would put
+features, to the byte. A crate that depends on `fennec-core` names `full`
+itself (the workspace takes it without default features), and `fennec-ql`
+and `fennec-abi` only as a dev dependency -- in their normal ones it would put
 them back into every browser module. Without `composite` an index over several fields is
 the scan's, and a unique one is asked by reading the rows, as it was
 without `sorted`.
 `tests/features.rs` and the unit tests run without them in `make test`,
-`web/fenec.test.js` hands files between the full module and the one
+`web/fennec.test.js` hands files between the full module and the one
 `make wasm-lite` makes, both ways, and CI runs clippy over none and each
 alone.
 
@@ -89,7 +89,7 @@ read, write, inner `get` and `lookup` level passes), as is a `create
 collection` or an `alter` declaring one and `order ... collate`; the
 file's other collections answer, and a drop takes the collection away.
 `facet`, `highlight` and `snippet` are refused where a select is checked,
-at its parse through `fenec_ql`, the sketches where their fold is made. The
+at its parse through `fennec_ql`, the sketches where their fold is made. The
 parser keeps all of it: its code for these is about 2 KB of the module
 (`facet_list` 1.0, a composite's keys 0.8, `collate` 0.3), well under 1 KB
 brotli, and the engine's refusal names the feature where a parse error
@@ -100,10 +100,10 @@ slots, the aggregate's reader, `order`'s keys, the hash, ordered and
 composite keys) and an object is also a document handed as a parameter --
 and `@ttl`, 0.7 KB, against refusing every collection whose rows expire.
 `tests/features.rs` runs without the indexes (`std-fs,language`) and
-without anything in `make test`, opening `tests/language.fenec`, which
+without anything in `make test`, opening `tests/language.fennec`, which
 only a build with the features can write (`tests/language_file.rs` holds
-it to the full build's answers, `FENEC_WRITE_FIXTURE=1` writes it again);
-`web/fenec.test.js` opens the full module's file in the one `make
+it to the full build's answers, `FENNEC_WRITE_FIXTURE=1` writes it again);
+`web/fennec.test.js` opens the full module's file in the one `make
 wasm-min` makes and holds it to each refusal; CI's clippy runs the module
 with none, each feature alone and each group, a check of no code made,
 about 10 s a set.
@@ -112,7 +112,7 @@ about 10 s a set.
 
 **What is core, and why one module ships.** What a general-purpose
 database is expected to do for any app is core and goes in every module:
-storage and FenecQL, the hash, ordered, unique and composite indexes, the
+storage and FennecQL, the hash, ordered, unique and composite indexes, the
 schema check, search -- `match`, `highlight` and `snippet`, facets,
 `near` with its graph, `fuse` -- and the standard query features. A
 plugin is an extra one kind of app needs: geo, sparse vectors, a
@@ -124,7 +124,7 @@ for sets of features and a choice of one per page, let alone a module a
 plugin loaded beside the engine, which would carry its own copy of the
 standard library's allocator and panic machinery and reach into the write
 path, the undo, the file and replication through a boundary. So
-`@fenecdb/web` ships the one full module, the features stay for a page
+`@fennecdb/web` ships the one full module, the features stay for a page
 that builds its own and for the tests of the invariant above, and bytes
 are won by making the core smaller (below). `count(distinct)`, `having`
 and `first`/`last` are standard, and are in the core.
@@ -166,7 +166,7 @@ and `reset_index_structures` (0.6 KB), each inlined natively alone now;
 and `facet`, inlined, was called from two arms of `facets` (2.5 KB, 0.5),
 one call now. Each export's closure was a `LocalKey::with` and a
 `RefCell` borrow of its own, 2.7 KB, 0.7 brotli, until the handles' table
-was reached through a pointer (`fenec-wasm`'s `table`: one thread, and no
+was reached through a pointer (`fennec-wasm`'s `table`: one thread, and no
 export calls another); `Parser::err` was ten copies of its `format!` (1.0,
 0.3), `Error`'s `Display` a `write!` a kind (0.5); the builtins a type,
 vtable, `arity` and `doc` each (0.9, 0.2), one `Builtin` in a table now --
@@ -177,7 +177,7 @@ indirect call took `lower()` over a scan 158 -> 160 ns a row (kept: 156
 (1.5 KB with the `Display` of an `i32` a counter's type brought, 0.6
 brotli -- `num::parse_i64`, held to `str::parse` over 60 000 strings);
 `from_utf8_lossy` (0.8 KB, 0.3: `Utf8Error` names the same sequences, held
-to it in `fenec-wasm`'s tests); a float's 8 bytes through
+to it in `fennec-wasm`'s tests); a float's 8 bytes through
 `try_into().unwrap()`, which kept `Debug` formatting and its `PadAdapter`
 (1.2 KB, 0.3); `clamp`'s check of its bounds, `usize`'s `Debug`, and a
 `char` formatted (0.5). The `in` union's stable sort of ids was there to
@@ -194,7 +194,7 @@ vectors, one `Value::floats` now, bytes from a list, a `put $n`'s
 documents, a list literal's constants, the folds a group's row takes --
 are loops (4.7 KB, 0.9). A derived index is a `OnceCell` in the browser,
 which has one thread to wait for (1.0 KB), and the rest is a few hundred
-bytes each: `fenec_abi::refused` out of line, the search scratch made at
+bytes each: `fennec_abi::refused` out of line, the search scratch made at
 compile time, the chunks' names a `static`, `count`'s answer made once.
 Tried and left out: `best_first` sorted unstable, a total order (1.1 KB,
 0.1 brotli, `match ... limit 1000` 1.4% slower);
@@ -204,7 +204,7 @@ KB, +0.2 brotli); `index_doc` and `index_vectors_batch` out of line
 inline threshold at 0 and at 25 (+6.9 and +18.8 KB). What is left is each
 crate's: `-Zshare-generics` is the default at opt-level "z" already, and
 `drop_glue<Statement>`, `Expr` and `Select` and the standard library's
-`#[inline]` code are compiled in fenec-ql, fenec-abi and the core each,
+`#[inline]` code are compiled in fennec-ql, fennec-abi and the core each,
 6.7 KB no stable flag merges; dlmalloc's 8.5 KB stays, against an
 allocator of the module's own under memory a page never gets back.
 Measured in turns against main, in process (load 3-5 from another
@@ -216,8 +216,8 @@ module in Node, interleaved over 21 rounds: `near`, a build, a filter,
 `match`, a read by id and a page of vectors as JSON within 1.5%, a put
 -3.3%, an `in` -6.1%; `make bench` at 30 000 x 128, twelve runs a side
 twice, its writes and ANN within 1%. The same source took 19.6 KB of code off
-`fenec-server` (2 407.4 -> 2 387.8 KB, `make size-report
-BIN=fenec-server`) and 17.5 KB off the shell (1 526.9 -> 1 509.4).
+`fennec-server` (2 407.4 -> 2 387.8 KB, `make size-report
+BIN=fennec-server`) and 17.5 KB off the shell (1 526.9 -> 1 509.4).
 
 ## Chunked memory
 
@@ -235,5 +235,5 @@ a `put` of 1 000 768-dim rows had 39 MB set aside for 7 000. 5 000 x 768
 written 1 000 a request held 100 MB and holds 58, written as text 130 and
 62, 10 000 of them 150 and 84; a put of 200 of them as text went 10.1 ->
 7.0 ms, and builds and searches as fast (`make wasm-speed`), for 768
-bytes brotli. `web/fenec.test.js` holds an index over three chunks to the
+bytes brotli. `web/fennec.test.js` holds an index over three chunks to the
 exact search, before and after an image.

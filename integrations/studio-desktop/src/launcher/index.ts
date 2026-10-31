@@ -698,7 +698,7 @@ $<HTMLFormElement>("bk-setup").addEventListener("submit", async (e) => {
 	await refresh();
 });
 
-const stem = (name: string) => name.replace(/\.fenec$/i, "");
+const stem = (name: string) => name.replace(/\.fennec$/i, "");
 
 async function openRestore(path: string) {
 	const d = row(path);

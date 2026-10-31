@@ -1,6 +1,6 @@
 // The category page's filters: a brand chosen still lists the other brands
 // (`facet brand disjunctive`), and a price band is a range of the price
-// (`facet price ranges`), each held to what fenec-server counts itself.
+// (`facet price ranges`), each held to what fennec-server counts itself.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SHOP, rows } from './helpers';

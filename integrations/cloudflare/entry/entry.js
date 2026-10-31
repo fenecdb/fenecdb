@@ -4,16 +4,16 @@
 // held write for as long as it is held.
 //
 // Where a tenant lives is learnt from the routers' answers, not asked of
-// anyone: every request asks for its tenant's home (`Fenec-Home: 1`), and
+// anyone: every request asks for its tenant's home (`Fennec-Home: 1`), and
 // the router that forwards it to the tenant's node names the node's region
-// in its answer (`fenec-shard`'s `region::HOME_HEADER`). A tenant this
+// in its answer (`fennec-shard`'s `region::HOME_HEADER`). A tenant this
 // isolate has not seen goes to the region nearest the client, whose router
 // serves it or relays it home -- one hop, which every router makes for a
 // tenant of another region -- and its next request goes home. A tenant
 // moved across regions since is relayed by the router it was sent to, as
 // a client sending it there would be, and the answer names the new home:
 // a stale home costs a hop, never an error. A read its client marked for a
-// replica (`Fenec-Read: replica`) goes to the region nearest the client
+// replica (`Fennec-Read: replica`) goes to the region nearest the client
 // first whatever the home, whose router answers it from the tenant's read
 // replica there or relays it home. So nothing remote is asked on
 // the way to a router: no lookup per request, no token reaching
@@ -22,15 +22,15 @@
 //
 // Kept apart from worker.js so Node tests read it without workerd.
 
-/** A tenant's name, as a node takes one (fenec-http's `check_name`). */
+/** A tenant's name, as a node takes one (fennec-http's `check_name`). */
 const TENANT = /^[a-z0-9_-]{1,64}$/;
 
 /** The header a request asks for its tenant's home in, and the answer names it in. */
-export const HOME = 'fenec-home';
+export const HOME = 'fennec-home';
 
 /**
  * The header the entry names its client in for the routers: `<address>
- * <seconds> <mark>`, the mark 16 bytes of HMAC-SHA256 of `fenec-client
+ * <seconds> <mark>`, the mark 16 bytes of HMAC-SHA256 of `fennec-client
  * <address> <seconds>` under the entry's token, base64url ({@link
  * clientMark}), the seconds the Unix time it was made at. Behind the entry
  * every request reaches a router from Cloudflare's addresses, so the
@@ -43,11 +43,11 @@ export const HOME = 'fenec-home';
  * the time, a mark seen once names that address alone, and for a minute:
  * a mark of the token alone, as a router's to a node, would let whoever saw
  * one claim any address for good. A router started with the same token
- * (`fenec-shard --entry-token`, `audit::entry`) checks the mark and a time
+ * (`fennec-shard --entry-token`, `audit::entry`) checks the mark and a time
  * within a minute of its clock, and takes the address for the request's;
  * every router drops the header from what it forwards.
  */
-export const CLIENT = 'fenec-client';
+export const CLIENT = 'fennec-client';
 
 /** How many tenants' homes an isolate keeps by default. */
 export const HOMES = 50_000;
@@ -73,34 +73,34 @@ export const BUFFER_AT = 1 << 20;
  */
 export const DOWN_MS = 10_000;
 
-/** The mark every answer a router writes carries (`fenec-shard`'s `region::SHARD_HEADER`). */
-export const SHARD = 'fenec-shard';
+/** The mark every answer a router writes carries (`fennec-shard`'s `region::SHARD_HEADER`). */
+export const SHARD = 'fennec-shard';
 
 /**
  * The mark of a router's 503 written as it took the connection, before it
  * read a byte of the request -- past its `--max-connections`, or at its
- * thread limit (`fenec_http::accept::UNSERVED_HEADER`): the request never
+ * thread limit (`fennec_http::accept::UNSERVED_HEADER`): the request never
  * ran there, so it goes on to the region's next router whatever it is, and
  * the router is not the one that answered last. Taken as any router's
  * answer, a router at its thread limit kept every request from the standby
  * beside it, where a reset of its connection had sent a read there.
  */
-export const UNSERVED = 'fenec-unserved';
+export const UNSERVED = 'fennec-unserved';
 
 /**
  * The mark of a standby router's 409 refusing a `/_shard/` change
- * (`fenec-shard`'s `region::FOLLOWS_HEADER`): it follows another router's
+ * (`fennec-shard`'s `region::FOLLOWS_HEADER`): it follows another router's
  * directory and ran nothing, so the change goes on to the next router, and
  * the standby is not the one that answered last.
  */
-export const FOLLOWS = 'fenec-follows';
+export const FOLLOWS = 'fennec-follows';
 
 /**
  * Answers Cloudflare gives a Worker's fetch where the origin was never
  * reached -- refused (521), unreachable (523), its TLS failed (525, 526),
  * no tunnel connector (530) -- so the router cannot have run the request.
  * Not 522: Cloudflare's page counts a lost acknowledgement of the request's
- * bytes among its time-outs. fenecdb sends none of them.
+ * bytes among its time-outs. fennecdb sends none of them.
  */
 const UNREACHED = new Set([521, 523, 525, 526, 530]);
 
@@ -109,11 +109,11 @@ const REPEATABLE = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /**
  * Whether `request` is a read its client marked for a replica
- * (`Fenec-Read: replica`), as fenec-http's `marks_read` takes the value:
+ * (`Fennec-Read: replica`), as fennec-http's `marks_read` takes the value:
  * every router and node runs it read-only, wherever it lands.
  */
 export function marked(request) {
-  return request.headers.get('fenec-read')?.trim().toLowerCase() === 'replica';
+  return request.headers.get('fennec-read')?.trim().toLowerCase() === 'replica';
 }
 
 /**
@@ -147,9 +147,9 @@ const DROPPED = new Set([
   'proxy-authenticate',
   'host',
   'content-length',
-  'fenec-router',
-  'fenec-global',
-  'fenec-verified',
+  'fennec-router',
+  'fennec-global',
+  'fennec-verified',
   HOME,
   CLIENT,
   'x-forwarded-for',
@@ -174,10 +174,10 @@ const DROPPED = new Set([
  * which says what became of the entry's connection to the router, not the
  * client's.
  */
-const ANSWER_DROPPED = ['connection', 'keep-alive', 'proxy-connection', 'te', 'trailer', 'transfer-encoding', 'upgrade', 'fenec-verified', HOME, 'set-cookie', UNSERVED];
+const ANSWER_DROPPED = ['connection', 'keep-alive', 'proxy-connection', 'te', 'trailer', 'transfer-encoding', 'upgrade', 'fennec-verified', HOME, 'set-cookie', UNSERVED];
 
 /**
- * The headers fenec-http's `cors::headers` writes under `--http-cors`: the
+ * The headers fennec-http's `cors::headers` writes under `--http-cors`: the
  * entry answers a preflight itself with them, and puts them on its own
  * answers, never on a router's -- two `Access-Control-Allow-Origin`s are
  * refused whole by a browser. entry.test.js holds them to a router's.
@@ -187,9 +187,9 @@ export function corsHeaders(origin) {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers':
-      'content-type, authorization, idempotency-key, fenec-after, fenec-history, fenec-wait, fenec-read, if-none-match, mcp-protocol-version, mcp-method, mcp-name',
+      'content-type, authorization, idempotency-key, fennec-after, fennec-history, fennec-wait, fennec-read, if-none-match, mcp-protocol-version, mcp-method, mcp-name',
     'Access-Control-Expose-Headers':
-      'fenec-seq, fenec-history, fenec-next, idempotent-replayed, etag, x-request-id, fenec-quota, retry-after',
+      'fennec-seq, fennec-history, fennec-next, idempotent-replayed, etag, x-request-id, fennec-quota, retry-after',
     'Access-Control-Max-Age': '600',
     Vary: 'Origin',
   };
@@ -291,7 +291,7 @@ export function configure(env) {
   };
 }
 
-/** base64url without padding, as fenec-http's `b64url_encode`. */
+/** base64url without padding, as fennec-http's `b64url_encode`. */
 function b64url(bytes) {
   let s = '';
   for (const b of bytes) s += String.fromCharCode(b);
@@ -305,9 +305,9 @@ export function markKey(token) {
   return crypto.subtle.importKey('raw', enc.encode(token), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
 }
 
-/** The mark of `address` at `seconds`: 16 bytes of HMAC-SHA256 of `fenec-client <address> <seconds>`, base64url. */
+/** The mark of `address` at `seconds`: 16 bytes of HMAC-SHA256 of `fennec-client <address> <seconds>`, base64url. */
 export async function clientMark(key, address, seconds) {
-  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', await key, enc.encode(`fenec-client ${address} ${seconds}`)));
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', await key, enc.encode(`fennec-client ${address} ${seconds}`)));
   return b64url(mac.subarray(0, 16));
 }
 
@@ -349,7 +349,7 @@ async function clientNamed(cfg, incoming) {
 }
 
 /**
- * A path decoded as fenec-http decodes one (`http::percent_decode`): `%XX`
+ * A path decoded as fennec-http decodes one (`http::percent_decode`): `%XX`
  * a byte, `+` a space, an invalid sequence left as it is, the bytes read as
  * UTF-8. The router and the node route by the path so decoded, from the
  * target the entry sends as it came, so the entry judges a path by the
@@ -375,12 +375,12 @@ export function percentDecode(s) {
   return new TextDecoder().decode(out.subarray(0, n));
 }
 
-/** The segments of a path as fenec-http's `Request::segments` has them, decoded first. */
+/** The segments of a path as fennec-http's `Request::segments` has them, decoded first. */
 export function segments(pathname) {
   return percentDecode(pathname).split('/').filter(Boolean);
 }
 
-/** Whether `--http-cors <cors>` lets the request's origin in (fenec-http's `cors::allows`). */
+/** Whether `--http-cors <cors>` lets the request's origin in (fennec-http's `cors::allows`). */
 function allows(cors, request) {
   return cors === '*' || (cors !== null && request.headers.get('origin') === cors);
 }
@@ -443,7 +443,7 @@ function homeKey(url, tenant) {
 }
 
 /** The name the Cache API keeps the homes under. */
-const CACHE = 'fenec-entry-homes';
+const CACHE = 'fennec-entry-homes';
 
 async function cached(state, url, tenant) {
   try {

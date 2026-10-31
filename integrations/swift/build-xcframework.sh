@@ -1,11 +1,11 @@
 #!/bin/sh
-# crates/fenec-ffi as an XCFramework for each Apple platform, in
+# crates/fennec-ffi as an XCFramework for each Apple platform, in
 # integrations/swift/build/:
 #
-#   FenecFFI.xcframework         a static library a slice, with the header and
+#   FennecFFI.xcframework        a static library a slice, with the header and
 #                                a module map: what Package.swift takes in
 #                                place of the release's download
-#   dynamic/FenecFFI.xcframework  (--dynamic, zipped as FenecFFIDynamic) FenecFFI.framework a slice, the
+#   dynamic/FennecFFI.xcframework  (--dynamic, zipped as FennecFFIDynamic) FennecFFI.framework a slice, the
 #                                shared library: what the Flutter plugin's
 #                                pods vendor
 #
@@ -30,7 +30,7 @@
 # declared against it: `flutter build ios` stopped at "Build input file
 # cannot be found". A dynamic framework is what Flutter's own docs give an
 # FFI plugin with a prebuilt binary: CocoaPods embeds it, nothing is
-# force-loaded, and Dart opens `FenecFFI.framework/FenecFFI`.
+# force-loaded, and Dart opens `FennecFFI.framework/FennecFFI`.
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -54,12 +54,12 @@ for a in "$@"; do
   esac
 done
 # CocoaPods links a vendored XCFramework by its own name, so the dynamic one
-# is called FenecFFI.xcframework too, as the frameworks inside it are --
-# named FenecFFIDynamic, the app's link asked for a framework of that name.
+# is called FennecFFI.xcframework too, as the frameworks inside it are --
+# named FennecFFIDynamic, the app's link asked for a framework of that name.
 # It is built in a directory of its own beside the static one, and only its
 # zip carries the other name.
-NAME=FenecFFI
-if $dynamic; then XDIR="$OUT/dynamic"; ZIPNAME=FenecFFIDynamic; else XDIR="$OUT"; ZIPNAME=FenecFFI; fi
+NAME=FennecFFI
+if $dynamic; then XDIR="$OUT/dynamic"; ZIPNAME=FennecFFIDynamic; else XDIR="$OUT"; ZIPNAME=FennecFFI; fi
 mkdir -p "$XDIR"
 XC="$XDIR/$NAME.xcframework"
 
@@ -67,17 +67,17 @@ XC="$XDIR/$NAME.xcframework"
 # cdylib too, which for iOS needs its SDK.
 static_lib() {
   "$RUSTUP" target add "$1" >/dev/null 2>&1 || true
-  (cd "$ROOT" && "$CARGO" rustc -q -p fenec-ffi --lib --profile ffi --target "$1" --crate-type staticlib)
-  echo "$ROOT/target/$1/ffi/libfenec_ffi.a"
+  (cd "$ROOT" && "$CARGO" rustc -q -p fennec-ffi --lib --profile ffi --target "$1" --crate-type staticlib)
+  echo "$ROOT/target/$1/ffi/libfennec_ffi.a"
 }
 
 # One shared library a target, its install name the framework's binary, so
 # the app's loader finds it through @rpath in its Frameworks directory.
 shared_lib() {
   "$RUSTUP" target add "$1" >/dev/null 2>&1 || true
-  (cd "$ROOT" && "$CARGO" rustc -q -p fenec-ffi --lib --profile ffi --target "$1" --crate-type cdylib \
+  (cd "$ROOT" && "$CARGO" rustc -q -p fennec-ffi --lib --profile ffi --target "$1" --crate-type cdylib \
     -- -C "link-arg=-Wl,-install_name,$2")
-  echo "$ROOT/target/$1/ffi/libfenec_ffi.dylib"
+  echo "$ROOT/target/$1/ffi/libfennec_ffi.dylib"
 }
 
 # A static slice: the library (several architectures made one with lipo),
@@ -89,15 +89,15 @@ static_slice() {
   libs=""
   for t in "$@"; do libs="$libs $(static_lib "$t")"; done
   # shellcheck disable=SC2086
-  lipo -create $libs -output "$XC/$id/libfenec_ffi.a"
-  cp "$ROOT/crates/fenec-ffi/include/fenec.h" "$XC/$id/Headers/"
+  lipo -create $libs -output "$XC/$id/libfennec_ffi.a"
+  cp "$ROOT/crates/fennec-ffi/include/fennec.h" "$XC/$id/Headers/"
   cat > "$XC/$id/Headers/module.modulemap" <<'EOF'
-module FenecFFI {
-    header "fenec.h"
+module FennecFFI {
+    header "fennec.h"
     export *
 }
 EOF
-  echo "$id  $(wc -c < "$XC/$id/libfenec_ffi.a") bytes (static, unlinked)" >&2
+  echo "$id  $(wc -c < "$XC/$id/libfennec_ffi.a") bytes (static, unlinked)" >&2
 }
 
 # A framework's Info.plist: the bundle's name, its binary and the lowest
@@ -112,13 +112,13 @@ framework_plist() {
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleExecutable</key>
-	<string>FenecFFI</string>
+	<string>FennecFFI</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.fenecdb.FenecFFI</string>
+	<string>com.fennecdb.FennecFFI</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>FenecFFI</string>
+	<string>FennecFFI</string>
 	<key>CFBundlePackageType</key>
 	<string>FMWK</string>
 	<key>CFBundleShortVersionString</key>
@@ -135,26 +135,26 @@ framework_plist() {
 EOF
 }
 
-# A dynamic slice: FenecFFI.framework. iOS's is flat, the binary and the
+# A dynamic slice: FennecFFI.framework. iOS's is flat, the binary and the
 # Info.plist side by side; macOS's is versioned (Versions/A, Current and
 # the links to it), which code signing there requires.
 dynamic_slice() {
   id=$1 platform=$2
   shift 2
-  fw="$XC/$id/FenecFFI.framework"
+  fw="$XC/$id/FennecFFI.framework"
   case "$platform" in
     MacOSX)
       mkdir -p "$fw/Versions/A/Resources"
-      install="@rpath/FenecFFI.framework/Versions/A/FenecFFI"
-      bin="$fw/Versions/A/FenecFFI"
+      install="@rpath/FennecFFI.framework/Versions/A/FennecFFI"
+      bin="$fw/Versions/A/FennecFFI"
       plist="$fw/Versions/A/Resources/Info.plist"
       minimum="<key>LSMinimumSystemVersion</key>
 	<string>$MACOSX_DEPLOYMENT_TARGET</string>"
       ;;
     *)
       mkdir -p "$fw"
-      install="@rpath/FenecFFI.framework/FenecFFI"
-      bin="$fw/FenecFFI"
+      install="@rpath/FennecFFI.framework/FennecFFI"
+      bin="$fw/FennecFFI"
       plist="$fw/Info.plist"
       minimum="<key>MinimumOSVersion</key>
 	<string>$IPHONEOS_DEPLOYMENT_TARGET</string>"
@@ -167,10 +167,10 @@ dynamic_slice() {
   framework_plist "$platform" "$minimum" > "$plist"
   if [ "$platform" = MacOSX ]; then
     ln -s A "$fw/Versions/Current"
-    ln -s Versions/Current/FenecFFI "$fw/FenecFFI"
+    ln -s Versions/Current/FennecFFI "$fw/FennecFFI"
     ln -s Versions/Current/Resources "$fw/Resources"
   fi
-  echo "$id  $(wc -c < "$bin") bytes (FenecFFI.framework)" >&2
+  echo "$id  $(wc -c < "$bin") bytes (FennecFFI.framework)" >&2
 }
 
 slice() {
@@ -186,13 +186,13 @@ entry() {
   id=$1 platform=$2 variant=$3
   shift 3
   if $dynamic; then
-    lib=FenecFFI.framework
+    lib=FennecFFI.framework
     case "$platform" in
-      macos) binary=FenecFFI.framework/Versions/A/FenecFFI ;;
-      *) binary=FenecFFI.framework/FenecFFI ;;
+      macos) binary=FennecFFI.framework/Versions/A/FennecFFI ;;
+      *) binary=FennecFFI.framework/FennecFFI ;;
     esac
   else
-    lib=libfenec_ffi.a binary=libfenec_ffi.a
+    lib=libfennec_ffi.a binary=libfennec_ffi.a
   fi
   printf '\t\t<dict>\n'
   printf '\t\t\t<key>BinaryPath</key>\n\t\t\t<string>%s</string>\n' "$binary"

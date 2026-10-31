@@ -16,7 +16,7 @@ import { h, fill } from './dom.js';
 import * as S from './statements-views.js';
 import { call, refused, statementsBlock, dialog } from './kit.js';
 
-/** An index as `/_schema` describes it, `{kind: 'hnsw', metric: 'cosine', m: 16}`, written as FenecQL names it. */
+/** An index as `/_schema` describes it, `{kind: 'hnsw', metric: 'cosine', m: 16}`, written as FennecQL names it. */
 function indexText(ix) {
   if (!ix) return '';
   const { kind, ...rest } = ix;
@@ -51,7 +51,7 @@ export function mount(host, ctx) {
     let schema;
     let text;
     try {
-      [schema, text] = await Promise.all([call(ctx, '/_schema'), call(ctx, '/_schema?as=fenecql')]);
+      [schema, text] = await Promise.all([call(ctx, '/_schema'), call(ctx, '/_schema?as=fennecql')]);
       if (!schema.ok) throw refused(schema);
       if (!text.ok) throw refused(text);
     } catch (e) {
@@ -60,7 +60,7 @@ export function mount(host, ctx) {
     }
     if (mine !== reading) return;
     described = schema.json;
-    texts = S.createTexts(text.json?.fenecql);
+    texts = S.createTexts(text.json?.fennecql);
     draw();
   }
 
@@ -139,7 +139,7 @@ export function mount(host, ctx) {
     });
     fill(
       body,
-      h('div', { class: 'sc-head' }, h('h2', {}, 'As FenecQL'), copy, h('button', { type: 'button', class: 'btn ghost small', onclick: () => ctx.query(`get ${name} limit 100`) }, 'Query it')),
+      h('div', { class: 'sc-head' }, h('h2', {}, 'As FennecQL'), copy, h('button', { type: 'button', class: 'btn ghost small', onclick: () => ctx.query(`get ${name} limit 100`) }, 'Query it')),
       statementsBlock(lines, 'statement q-block sc-create'),
       h('h2', {}, 'Fields'),
       h(

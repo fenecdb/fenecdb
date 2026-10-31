@@ -1,5 +1,5 @@
 #!/bin/sh
-# The Python integrations against a real fenec-server: built here, started on
+# The Python integrations against a real fennec-server: built here, started on
 # this machine, and tested from a python:3.13 container, which gets the same
 # interpreter everywhere -- a Homebrew Python whose pyexpat cannot load is
 # how this came to use one.
@@ -10,14 +10,14 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
 cargo=${CARGO:-cargo}
 [ -x "$HOME/.cargo/bin/cargo" ] && cargo="$HOME/.cargo/bin/cargo"
-"$cargo" build -q -p fenec-server --manifest-path "$root/Cargo.toml"
+"$cargo" build -q -p fennec-server --manifest-path "$root/Cargo.toml"
 
 dir=$(mktemp -d)
 token=python-tests
 # Outside loopback, so the container reaches it: a token is required there.
 # On a port the system picks, read off the server's `listening on:` line: a
 # run never meets another, or any other server, on one.
-"$root/target/debug/fenec-server" --file "$dir/python.fenec" \
+"$root/target/debug/fennec-server" --file "$dir/python.fennec" \
     --http 0.0.0.0:0 --http-token "$token" --cdc 2>"$dir/server.log" &
 server=$!
 trap 'kill $server 2>/dev/null; rm -rf "$dir"' EXIT INT TERM
@@ -34,8 +34,8 @@ port=$(sed -n 's/.*listening on: http:[^ ]*:\([0-9]*\) .*/\1/p' "$dir/server.log
 # daemon, a CI runner's, only knows it when told. The builder's golden file
 # lies outside the package, and goes in beside it.
 docker run --rm -v "$here:/src:ro" --add-host=host.docker.internal:host-gateway \
-    -v "$root/integrations/builder-golden.json:/golden.json:ro" -e FENEC_GOLDEN=/golden.json \
-    -e FENEC_URL="http://host.docker.internal:$port" -e FENEC_TOKEN="$token" \
+    -v "$root/integrations/builder-golden.json:/golden.json:ro" -e FENNEC_GOLDEN=/golden.json \
+    -e FENNEC_URL="http://host.docker.internal:$port" -e FENNEC_TOKEN="$token" \
     python:3.13-slim sh -c \
     "cp -r /src /work && cd /work &&
      pip install -q --root-user-action=ignore --disable-pip-version-check '.[test]' &&

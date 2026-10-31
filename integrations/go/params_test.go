@@ -1,4 +1,4 @@
-package fenecdb
+package fennecdb
 
 import (
 	"math"

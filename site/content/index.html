@@ -1,5 +1,5 @@
 <!--
-title: fenecdb — lives anywhere, hears everything
+title: fennecdb — lives anywhere, hears everything
 description: One database from the screen to the server: state your screens follow live, a replica that syncs with your server, a server that usually needs no cache in front, many clients writing to one file through one writer, a file per tenant in every region, and search built in. The engine compiles to 330 KB of gzipped WebAssembly and runs as a server any language reaches over HTTP.
 -->
 
@@ -172,7 +172,7 @@ description: One database from the screen to the server: state your screens foll
       merging.</p>
 
     <figure class="motion rise" data-scenes="flow">
-      <canvas role="img" aria-label="A phone with no network writes a task: it shows on the phone at once and waits in the queue in the phone's file. When the network is back, the write goes to fenec-server once, under its Idempotency-Key, and the server's change stream puts the task on another device's screen."></canvas>
+      <canvas role="img" aria-label="A phone with no network writes a task: it shows on the phone at once and waits in the queue in the phone's file. When the network is back, the write goes to fennec-server once, under its Idempotency-Key, and the server's change stream puts the task on another device's screen."></canvas>
     </figure>
 
     <p class="after rise">The browser's sync and the native one in Swift,
@@ -216,13 +216,13 @@ description: One database from the screen to the server: state your screens foll
   <div class="band-in">
     <h2 class="rise">Traffic that needs no cache</h2>
     <p class="lede rise">The operating system keeps the pages of the file in
-      memory, and a read decodes the row straight from them. fenecdb copies
+      memory, and a read decodes the row straight from them. fennecdb copies
       nothing in between, so there is no buffer pool of its own to warm, evict
       or keep in step with the database, and a separate cache in front of the
       server is usually unnecessary while the working set fits in memory.</p>
 
     <figure class="motion rise" data-scenes="traffic">
-      <canvas role="img" aria-label="A cache in front of the server is crossed out and fades away. Requests from eight clients go straight to fenec-server, which reads each row from its file mapped into memory, and the answers come back in the mark's light."></canvas>
+      <canvas role="img" aria-label="A cache in front of the server is crossed out and fades away. Requests from eight clients go straight to fennec-server, which reads each row from its file mapped into memory, and the answers come back in the mark's light."></canvas>
     </figure>
 
     <dl class="versus rise">
@@ -235,7 +235,7 @@ description: One database from the screen to the server: state your screens foll
     <p class="after rise">The first two figures are over 10 000 rows on loopback,
       an M1, one <code>POST /query</code> a request on a kept-alive connection
       (<a href="docs/benchmarks-requests.html#requests">method</a>). The YCSB figures are one
-      node, 1 000 000 records of 1 KB, fenec-server and Redis 7.4 in Docker
+      node, 1 000 000 records of 1 KB, fennec-server and Redis 7.4 in Docker
       (<a href="docs/benchmarks-ycsb.html#ycsb-redis">every cell</a>).</p>
     <p class="after rise">In Docker a read by key spends 0.023 ms inside the server of
       a 0.288 ms round trip and the rest is the network, so over the same network
@@ -316,17 +316,17 @@ description: One database from the screen to the server: state your screens foll
       1 to 3 µs more, and with a typo put into each of BEIR SciFact&rsquo;s
       queries, <code>fuzzy</code> takes its nDCG@10 from 0.636 back to 0.663,
       where the queries as written score 0.662.
-      <a href="docs/fenecql-search.html#the-text-clause">Text search</a>,
-      <a href="docs/fenecql-search.html#typos">typos and words begun</a>,
-      <a href="docs/fenecql-search.html#facets">facets</a>,
-      <a href="docs/fenecql-search.html#hybrid">words and meaning together</a> and
+      <a href="docs/fennecql-search.html#the-text-clause">Text search</a>,
+      <a href="docs/fennecql-search.html#typos">typos and words begun</a>,
+      <a href="docs/fennecql-search.html#facets">facets</a>,
+      <a href="docs/fennecql-search.html#hybrid">words and meaning together</a> and
       <a href="docs/benchmarks-text.html#retrieval-quality">how good the answers
-      are</a>; fenecdb beside
+      are</a>; fennecdb beside
       <a href="docs/vs-postgres.html">PostgreSQL</a>,
       <a href="docs/vs-sqlite.html">SQLite</a> and
       <a href="docs/vs-pglite.html">PGlite</a>. The
       <a href="playground.html">playground</a> runs the same engine in this
-      tab, with fenec studio over it.</p>
+      tab, with fennec studio over it.</p>
   </div>
 </section>
 
@@ -360,7 +360,7 @@ description: One database from the screen to the server: state your screens foll
     <p class="lede rise">Every language reaches the server over plain HTTP and
       JSON, and Swift, Kotlin and Dart can also keep the database in the app.
       Your data from PostgreSQL or SQLite and your AI framework come with it.
-      Each session is the same flow against <code>fenec-server</code>: make a
+      Each session is the same flow against <code>fennec-server</code>: make a
       collection, write two rows, read them back by a filter and an
       order.</p>
 
@@ -385,7 +385,7 @@ Dunes                 2021</pre>
       <ol class="session-script">
 <li data-name="Python" data-mark="py" data-file="search.py">
 <pre class="given" data-lang="python" data-bare>
-from fenecdb import Client
+from fennecdb import Client
 
 db = Client("http://127.0.0.1:8080", token="secret")
 </pre>
@@ -398,7 +398,7 @@ rows = db.query("get docs select title, year where year &gt;= $1 order year desc
 </li>
 <li data-name="JS / TS" data-mark="js" data-file="client.mjs">
 <pre class="given" data-lang="js" data-bare>
-import { connect } from '@fenecdb/web';
+import { connect } from '@fennecdb/web';
 
 const db = connect('http://127.0.0.1:8080', { token: 'secret' });
 </pre>
@@ -411,9 +411,9 @@ const rows = await db.from('docs').select('title', 'year').where('year', '&gt;='
 </li>
 <li data-name="Go" data-mark="go" data-file="main.go">
 <pre class="given" data-lang="go" data-bare>
-import fenecdb "github.com/fenecdb/fenecdb/integrations/go"
+import fennecdb "github.com/fennec-db/fennecdb/integrations/go"
 
-db := fenecdb.New("http://127.0.0.1:8080", fenecdb.WithToken("secret"))
+db := fennecdb.New("http://127.0.0.1:8080", fennecdb.WithToken("secret"))
 </pre>
 <pre class="typed" data-lang="go" data-bare>
 db.Exec(ctx, "create collection if not exists docs (title text @text, year int @sorted)")
@@ -424,9 +424,9 @@ rows, err := db.Query(ctx, "get docs select title, year where year &gt;= $1 orde
 </li>
 <li data-name=".NET" data-mark="C#" data-file="Program.cs">
 <pre class="given" data-lang="csharp" data-bare>
-using FenecDb;
+using FennecDb;
 
-using var db = new FenecClient("http://127.0.0.1:8080", new() { Token = "secret" });
+using var db = new FennecClient("http://127.0.0.1:8080", new() { Token = "secret" });
 </pre>
 <pre class="typed" data-lang="csharp" data-bare>
 await db.ExecAsync("create collection if not exists docs (title text @text, year int @sorted)");
@@ -521,10 +521,10 @@ rows = query("get docs select title, year where year &gt;= $1 order year desc li
 </li>
 <li data-name="Swift" data-mark="sw" data-file="Search.swift">
 <pre class="given" data-lang="swift" data-bare>
-import FenecDB
+import FennecDB
 
-// Or Fenec.open(path: path): the database in a file the app holds.
-let db = Fenec.connect(url: "http://127.0.0.1:8080", token: "secret")
+// Or Fennec.open(path: path): the database in a file the app holds.
+let db = Fennec.connect(url: "http://127.0.0.1:8080", token: "secret")
 </pre>
 <pre class="typed" data-lang="swift" data-bare>
 try await db.execute("create collection if not exists docs (title text @text, year int @sorted)")
@@ -535,10 +535,10 @@ let rows = try await db.query("get docs select title, year where year &gt;= $1 o
 </li>
 <li data-name="Kotlin" data-mark="kt" data-file="Search.kt">
 <pre class="given" data-lang="kotlin" data-bare>
-import com.fenecdb.*
+import com.fennecdb.*
 
-// Or Fenec.openAsync(path): the database in a file the app holds.
-val db = Fenec.connect("http://127.0.0.1:8080", token = "secret")
+// Or Fennec.openAsync(path): the database in a file the app holds.
+val db = Fennec.connect("http://127.0.0.1:8080", token = "secret")
 </pre>
 <pre class="typed" data-lang="kotlin" data-bare>
 db.execute("create collection if not exists docs (title text @text, year int @sorted)")
@@ -549,10 +549,10 @@ val rows = db.query("get docs select title, year where year &gt;= \$1 order year
 </li>
 <li data-name="Dart" data-mark="dart" data-file="search.dart">
 <pre class="given" data-lang="dart" data-bare>
-import 'package:fenecdb/fenecdb.dart';
+import 'package:fennecdb/fennecdb.dart';
 
-// Or Fenec.open(path): the database in a file the app holds.
-final db = Fenec.connect('http://127.0.0.1:8080', token: 'secret');
+// Or Fennec.open(path): the database in a file the app holds.
+final db = Fennec.connect('http://127.0.0.1:8080', token: 'secret');
 </pre>
 <pre class="typed" data-lang="dart" data-bare>
 await db.execute('create collection if not exists docs (title text @text, year int @sorted)');
@@ -563,7 +563,7 @@ final rows = await db.query(r'get docs select title, year where year &gt;= $1 or
 </li>
 <li data-name="curl" data-mark="$_" data-file="shell" data-shell>
 <pre class="given" data-lang="bash" data-bare>
-$ fenec-server --file app.fenec --http 127.0.0.1:8080 --http-token secret
+$ fennec-server --file app.fennec --http 127.0.0.1:8080 --http-token secret
 </pre>
 <pre class="typed" data-lang="bash" data-bare>
 $ curl -X POST localhost:8080/query -H 'authorization: Bearer secret' \
@@ -582,9 +582,9 @@ $ curl -X POST localhost:8080/query -H 'authorization: Bearer secret' \
 </li>
 <li data-name="SQLite" data-mark="sq" data-file="shell" data-shell data-group="Your data">
 <pre class="typed" data-lang="bash" data-bare>
-$ fenec import data.sqlite --table docs --into articles --index "category@hash" --dry-run
+$ fennec import data.sqlite --table docs --into articles --index "category@hash" --dry-run
 source   data.sqlite -&gt; docs
-target   articles.fenec -&gt; articles
+target   articles.fennec -&gt; articles
 
 create collection articles (
   title      text           &lt;- text
@@ -600,24 +600,24 @@ nothing was written (--dry-run); use --count for the row count
 </li>
 <li data-name="PostgreSQL" data-mark="pg" data-file="shell" data-shell data-group="Your data">
 <pre class="typed" data-lang="text" data-bare>
-$ fenec import postgres://app@db:5432/app --table docs --into articles \
+$ fennec import postgres://app@db:5432/app --table docs --into articles \
     --index "category@hash" --follow
 source   app@db:5432/app -&gt; docs
-target   articles.fenec -&gt; articles
-follow   slot fenec_articles (created), publication fenec_articles (created)
-note     the slot keeps the server's WAL until this follower confirms it; to stop following for good: select pg_drop_replication_slot('fenec_articles')
+target   articles.fennec -&gt; articles
+follow   slot fennec_articles (created), publication fennec_articles (created)
+note     the slot keeps the server's WAL until this follower confirms it; to stop following for good: select pg_drop_replication_slot('fennec_articles')
 copying  there is none yet
-100000 records, articles.fenec (339.37ms)
+100000 records, articles.fennec (339.37ms)
 following docs: ctrl-c stops, and the same command resumes
 42 transactions, 57 changes, at 0/2BEA458
 </pre>
 </li>
 <li data-name="LangChain" data-mark="lc" data-file="store.py" data-group="Your AI code">
 <pre class="given" data-lang="python" data-bare>
-from fenecdb.langchain import FenecVectorStore
+from fennecdb.langchain import FennecVectorStore
 </pre>
 <pre class="typed" data-lang="python" data-bare>
-store = FenecVectorStore(
+store = FennecVectorStore(
     embeddings, "handbook",
     url="http://127.0.0.1:8080", token="...",
     metadata_fields={"source": "text", "year": "int"},
@@ -628,11 +628,11 @@ store.similarity_search("how do I compact", k=4, filter={"source": "ops"})
 </li>
 <li data-name="LlamaIndex" data-mark="li" data-file="index.py" data-group="Your AI code">
 <pre class="given" data-lang="python" data-bare>
-from fenecdb.llama_index import FenecVectorStore
+from fennecdb.llama_index import FennecVectorStore
 from llama_index.core import StorageContext, VectorStoreIndex
 </pre>
 <pre class="typed" data-lang="python" data-bare>
-store = FenecVectorStore("handbook", url="http://127.0.0.1:8080", token="...",
+store = FennecVectorStore("handbook", url="http://127.0.0.1:8080", token="...",
                          metadata_fields={"author": "text", "year": "int"})
 index = VectorStoreIndex.from_documents(
     documents, storage_context=StorageContext.from_defaults(vector_store=store)
@@ -642,12 +642,12 @@ index.as_retriever(similarity_top_k=4).retrieve("how do I compact")
 </li>
 <li data-name="LangChain.js" data-mark="lc.js" data-file="store.js" data-group="Your AI code">
 <pre class="given" data-lang="js" data-bare>
-import { connect } from '@fenecdb/web';
-import { FenecVectorStore } from '@fenecdb/langchain';
+import { connect } from '@fennecdb/web';
+import { FennecVectorStore } from '@fennecdb/langchain';
 </pre>
 <pre class="typed" data-lang="js" data-bare>
 const db = connect('http://127.0.0.1:8080');
-const store = new FenecVectorStore(embeddings, {
+const store = new FennecVectorStore(embeddings, {
   client: db,
   collection: 'handbook',
   metadataFields: { source: 'text' },
@@ -661,7 +661,7 @@ await store.search('compact', 4, { mode: 'hybrid' });
 <pre class="given" data-lang="js" data-bare>
 import { generateText, stepCountIs } from 'ai';
 import { openai } from '@ai-sdk/openai';
-import { connect } from '@fenecdb/web';
+import { connect } from '@fennecdb/web';
 import { index, searchTool } from './rag.js';   // integrations/ai-sdk/rag.js
 </pre>
 <pre class="typed" data-lang="js" data-bare>
@@ -703,7 +703,7 @@ const { text } = await generateText({
     <p class="hero-cta rise">
       <a class="btn btn-fill" href="docs/quickstart.html">Get started</a>
       <a class="btn btn-line" href="docs/">Read the docs</a>
-      <a class="btn btn-line" href="https://github.com/fenecdb/fenecdb/tree/main/examples">See the examples</a>
+      <a class="btn btn-line" href="https://github.com/fennec-db/fennecdb/tree/main/examples">See the examples</a>
     </p>
   </div>
 </section>

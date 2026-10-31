@@ -1,5 +1,5 @@
 <!--
-title: Sharding: the global entry — fenecdb
+title: Sharding: the global entry — fennecdb
 description: How to give every tenant one URL, whichever region it lives in, with a Cloudflare Worker in front of the regions' routers.
 -->
 
@@ -23,7 +23,7 @@ npx wrangler secret put ACCESS_CLIENT_SECRET --config entry/wrangler.jsonc
 npx wrangler deploy --config entry/wrangler.jsonc
 
 # every router: the same token, so it believes the client the entry names
-FENEC_SHARD_ENTRY_TOKEN="$ENTRY_TOKEN" fenec-shard --token "$ROOT" ...
+FENNEC_SHARD_ENTRY_TOKEN="$ENTRY_TOKEN" fennec-shard --token "$ROOT" ...
 
 curl https://db.example.com/t/acme/query -H "Authorization: Bearer $TOKEN" \
      -d '{"query":"get notes count"}'
@@ -39,7 +39,7 @@ curl https://db.example.com/t/acme/query -H "Authorization: Bearer $TOKEN" \
   <li><b>A tenant moved to another region</b> is relayed by the router of
     the region it left, as any client's request is, and the answer names
     its new home: a stale home costs one hop, never an error.</li>
-  <li><b>A read marked for a replica</b> (<code>Fenec-Read: replica</code>,
+  <li><b>A read marked for a replica</b> (<code>Fennec-Read: replica</code>,
     <a href="sharding-read-replicas.html#read-replicas">read replicas</a>) goes to the region of the
     client's continent first, whatever the tenant's home: its router answers
     it from the tenant's read replica there, or relays it home — a hop, where
@@ -62,9 +62,9 @@ curl https://db.example.com/t/acme/query -H "Authorization: Bearer $TOKEN" \
   <li><b>A router that cannot be reached</b> is passed over for the region's
     standby router, and so is one that refused the connection as it took it
     — past its <code>--max-connections</code> or at its thread limit, its
-    <code>503</code> marked <code>Fenec-Unserved</code> — whatever the
+    <code>503</code> marked <code>Fennec-Unserved</code> — whatever the
     request, since it never ran there; a standby's <code>409</code> refusing
-    a <code>/_shard/</code> change (marked <code>Fenec-Follows</code>) is
+    a <code>/_shard/</code> change (marked <code>Fennec-Follows</code>) is
     passed over too, the primary's answer taken before it. An unmarked request of a tenant whose home the entry
     knows is never sent to another region: its region's routers all failing
     is a <code>503</code> with <code>Retry-After</code>. One it has not heard
@@ -79,8 +79,8 @@ curl https://db.example.com/t/acme/query -H "Authorization: Bearer $TOKEN" \
 
 <details class="deep"><summary>How the entry finds a home, what it passes on, and what it costs</summary>
 <p><b>Where a tenant lives.</b> Nothing remote is asked on the way: a
-request carries <code>Fenec-Home: 1</code>, and the router that forwards it
-to the tenant's node answers with <code>Fenec-Home: &lt;region&gt;</code>, the
+request carries <code>Fennec-Home: 1</code>, and the router that forwards it
+to the tenant's node answers with <code>Fennec-Home: &lt;region&gt;</code>, the
 node's — a router relaying it to another region names nothing of its own,
 and the answer it passes back carries the home router's. The entry takes the
 header off before the answer goes to the client: a router names the home on
@@ -118,7 +118,7 @@ connected, so a subscription or a held write is not cut; an invocation may
 have six connections waiting for their headers, and the entry has one. A
 router behind a hostname Cloudflare proxies must start its answer within
 the proxy read timeout (100 seconds, fixed below Enterprise): a
-<code>Fenec-Wait</code> holds a write 30 s at most, and a silent stream
+<code>Fennec-Wait</code> holds a write 30 s at most, and a silent stream
 writes a keep-alive every 20 s (<code>--http-keepalive</code>). The
 Worker's <code>request.signal</code> (the <code>enable_request_signal</code>
 flag) is handed to the fetch, so a client gone cancels the request to the
@@ -139,34 +139,34 @@ it.</p>
 
 <p><b>Headers.</b> Everything a client sends goes on —
 <code>Authorization</code>, <code>Idempotency-Key</code>,
-<code>Fenec-*</code>, <code>traceparent</code>, <code>X-Request-Id</code>
+<code>Fennec-*</code>, <code>traceparent</code>, <code>X-Request-Id</code>
 (Cloudflare's ray id where the client sent none, so the routers' and the
 nodes' lines carry it) — but the hop-by-hop headers, the routers' own marks
-(<code>Fenec-Router</code>, <code>Fenec-Global</code>,
-<code>Fenec-Verified</code>), which a router believes from another router
-alone, a <code>Fenec-Client</code> of the client's own, and every way a
+(<code>Fennec-Router</code>, <code>Fennec-Global</code>,
+<code>Fennec-Verified</code>), which a router believes from another router
+alone, a <code>Fennec-Client</code> of the client's own, and every way a
 client names an address
 (<code>X-Forwarded-For</code>, <code>X-Real-IP</code>,
 <code>Forwarded</code>, <code>True-Client-IP</code>,
-<code>CF-*</code>). <code>Fenec-Verified</code> and
-<code>Fenec-Home</code> are dropped from answers. The routers' CORS headers
+<code>CF-*</code>). <code>Fennec-Verified</code> and
+<code>Fennec-Home</code> are dropped from answers. The routers' CORS headers
 come back as they sent them; with <code>CORS</code> set to their
 <code>--http-cors</code>, the entry answers a preflight itself with the same
 headers, a round trip saved and a region that is down no reason for a page to
 see a network error, and puts them on its own answers alone — two
 <code>Access-Control-Allow-Origin</code>s are refused whole by a browser. A
 path is judged as the router and the node will read it, decoded as
-fenec-http decodes one: <code>/t/acme/%5Freplication</code> and
+fennec-http decodes one: <code>/t/acme/%5Freplication</code> and
 <code>/t/acme%2F_replication</code> are a tenant's replication stream to
 them, which a URL's own parsing leaves encoded.</p>
 
 <p><b>The client's address.</b> Behind the entry every request reaches a
 router from Cloudflare's addresses, so the wait after a refused token would
 count every client's refusals together, and any good token would start the
-count again. The entry names its client in <code>Fenec-Client:
+count again. The entry names its client in <code>Fennec-Client:
 &lt;address&gt; &lt;seconds&gt; &lt;mark&gt;</code>, the address Cloudflare's
 <code>CF-Connecting-IP</code>, the seconds the Unix time the entry made it
-at, the mark 16 bytes of HMAC-SHA256 of <code>fenec-client &lt;address&gt;
+at, the mark 16 bytes of HMAC-SHA256 of <code>fennec-client &lt;address&gt;
 &lt;seconds&gt;</code> under <code>ENTRY_TOKEN</code>, base64url. Bound to
 the address and the time, a mark seen names that one address for a minute,
 where a mark of the token alone would let whoever saw one name any address
@@ -178,8 +178,8 @@ href="https://developers.cloudflare.com/fundamentals/reference/http-headers/">HT
 headers</a> page), so any account's Worker could claim any address from
 those ranges.</p>
 
-<p>A router started with the entry's token — <code>fenec-shard
---entry-token</code>, or <code>FENEC_SHARD_ENTRY_TOKEN</code> — checks the mark against its own HMAC, in constant time, and
+<p>A router started with the entry's token — <code>fennec-shard
+--entry-token</code>, or <code>FENNEC_SHARD_ENTRY_TOKEN</code> — checks the mark against its own HMAC, in constant time, and
 the time within 60 seconds of its clock either way, and takes the address
 for that request's in the connection's place. A refused token waits by it,
 and a good one starts its count again and no other's; the audit log names
@@ -191,7 +191,7 @@ which names it to the node in turn. A header seen on the wire can be
 replayed for that minute, and names that one address: what the minute
 costs, where a mark of the token alone would name any address for good. A
 header that does not check, or a router without the flag, counts the
-connection's address, and <code>fenec_router_entry_clients_total</code>
+connection's address, and <code>fennec_router_entry_clients_total</code>
 says which (<code>named</code>, <code>bad_mark</code>, <code>stale</code>,
 or <code>absent</code> for a tenant's request carrying none, as every one
 from an entry whose <code>ENTRY_TOKEN</code> is unset does), the router's
@@ -224,7 +224,7 @@ there was before, against a second token held by every router.</p>
 
 <p><b>When a router cannot be reached.</b> A region's routers are tried in
 turn from the one that answered last. Every answer a router writes carries
-its mark, <code>Fenec-Shard: 1</code>, and an answer at a router's URL
+its mark, <code>Fennec-Shard: 1</code>, and an answer at a router's URL
 without it is not the router's — not <code>X-Request-Id</code>, which a
 router's answers carry too and a load balancer may write on its own 502.
 Cloudflare's own answers for an origin it never reached (521, 523,

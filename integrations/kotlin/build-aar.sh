@@ -1,5 +1,5 @@
 #!/bin/sh
-# The Android AAR: crates/fenec-ffi with its JNI functions for each ABI,
+# The Android AAR: crates/fennec-ffi with its JNI functions for each ABI,
 # linked by the NDK's clang, then the `android` module's release build.
 # Needs ANDROID_HOME (the SDK, Gradle's Android plugin reads it) and
 # ANDROID_NDK_HOME (the NDK); GitHub's Ubuntu runners have both.
@@ -45,16 +45,16 @@ for row in \
   env "CARGO_TARGET_${env_target}_LINKER=$BIN/${clang}${API}-clang" \
     "CC_${target}=$BIN/${clang}${API}-clang" \
     "AR_${target}=$BIN/llvm-ar" \
-    "$CARGO" rustc -q -p fenec-ffi --lib --features jni --profile ffi --target "$target" --crate-type cdylib \
+    "$CARGO" rustc -q -p fennec-ffi --lib --features jni --profile ffi --target "$target" --crate-type cdylib \
     --manifest-path "$ROOT/Cargo.toml"
   mkdir -p "$JNI/$abi"
-  cp "$ROOT/target/$target/ffi/libfenec_ffi.so" "$JNI/$abi/"
-  echo "$abi  $(wc -c < "$JNI/$abi/libfenec_ffi.so") bytes"
+  cp "$ROOT/target/$target/ffi/libfennec_ffi.so" "$JNI/$abi/"
+  echo "$abi  $(wc -c < "$JNI/$abi/libfennec_ffi.so") bytes"
 done
 
 cd "$ROOT/integrations/kotlin"
 gradle --no-daemon -q :android:assembleRelease
 mkdir -p "$OUT"
 version=$(sed -n 's/^ *version = "\(.*\)"/\1/p' build.gradle.kts)
-cp android/build/outputs/aar/android-release.aar "$OUT/fenecdb-android-$version.aar"
-echo "$OUT/fenecdb-android-$version.aar  $(wc -c < "$OUT/fenecdb-android-$version.aar") bytes"
+cp android/build/outputs/aar/android-release.aar "$OUT/fennecdb-android-$version.aar"
+echo "$OUT/fennecdb-android-$version.aar  $(wc -c < "$OUT/fennecdb-android-$version.aar") bytes"

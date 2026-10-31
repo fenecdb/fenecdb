@@ -22,7 +22,7 @@ sys.exit("no iPhone simulator")
 scheme=$(xcodebuild -list -json | python3 -c '
 import json, sys
 schemes = json.load(sys.stdin)["workspace"]["schemes"]
-print("FenecDB-Package" if "FenecDB-Package" in schemes else "FenecDB")
+print("FennecDB-Package" if "FennecDB-Package" in schemes else "FennecDB")
 ')
 # The result bundle where CI looks for it when a run fails (each test's
 # output, the crash logs); xcodebuild refuses a path that exists.

@@ -1,13 +1,13 @@
-// A LangChain.js vector store over fenecdb: the database in the page (a
-// `Fenec` from @fenecdb/web) or behind fenec-server's HTTP endpoint (a
-// `FenecHttp`) -- anything with `run(sql, params)`.
+// A LangChain.js vector store over fennecdb: the database in the page (a
+// `Fennec` from @fennecdb/web) or behind fennec-server's HTTP endpoint (a
+// `FennecHttp`) -- anything with `run(sql, params)`.
 //
-//   import { FenecVectorStore } from '@fenecdb/langchain';
-//   const store = new FenecVectorStore(embeddings, { client: db, collection: 'docs' });
+//   import { FennecVectorStore } from '@fennecdb/langchain';
+//   const store = new FennecVectorStore(embeddings, { client: db, collection: 'docs' });
 //   await store.addDocuments(documents);
 //   await store.similaritySearch('how do I compact', 4);
 //
-// The same store as fenecdb's Python one (integrations/python), the same
+// The same store as fennecdb's Python one (integrations/python), the same
 // collection: a document is a row -- its id, its text, its metadata as
 // JSON and its vector under `@hnsw`, over int8 or bit codes with `quant`.
 // The collection is made on the first write, when the embedding's size is
@@ -21,7 +21,7 @@
 import { VectorStore } from '@langchain/core/vectorstores';
 import { Document } from '@langchain/core/documents';
 
-// Names go into the statement's text, so they are held to FenecQL's.
+// Names go into the statement's text, so they are held to FennecQL's.
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const TYPES = new Set(['text', 'int', 'float', 'bool', 'timestamp']);
 const RESERVED = new Set(['id', 'lc_id', 'content', 'metadata', 'embedding']);
@@ -31,7 +31,7 @@ const QUANT = new Set([undefined, null, 'int8', 'bit']);
 /** `$first, $first+1, ...`: `n` of them, for an `in [...]`. */
 const placeholders = (first, n) => Array.from({ length: n }, (_, i) => `$${first + i}`).join(', ');
 
-export class FenecVectorStore extends VectorStore {
+export class FennecVectorStore extends VectorStore {
   /**
    * @param {import('@langchain/core/embeddings').EmbeddingsInterface} embeddings
    * @param {{client: {run(sql: string, params?: unknown[]): unknown}, collection?: string,
@@ -42,7 +42,7 @@ export class FenecVectorStore extends VectorStore {
     super(embeddings, args);
     const { client, collection = 'langchain', metric = 'cosine', metadataFields = {}, quant, fullText = false } = args ?? {};
     if (!client || typeof client.run !== 'function') {
-      throw new Error('client: a Fenec or FenecHttp from @fenecdb/web, or anything with run(sql, params)');
+      throw new Error('client: a Fennec or FennecHttp from @fennecdb/web, or anything with run(sql, params)');
     }
     if (!NAME.test(collection)) throw new Error(`not a collection name: ${collection}`);
     if (!METRICS.has(metric)) throw new Error(`metric is one of cosine, l2, dot, not ${metric}`);
@@ -64,7 +64,7 @@ export class FenecVectorStore extends VectorStore {
   }
 
   _vectorstoreType() {
-    return 'fenecdb';
+    return 'fennecdb';
   }
 
   // ------------------------------------------------------------ writing
@@ -76,7 +76,7 @@ export class FenecVectorStore extends VectorStore {
 
   /**
    * Writes the documents with their vectors. An id already there is
-   * replaced: its row taken out, then the new one put. On a `Fenec` the two
+   * replaced: its row taken out, then the new one put. On a `Fennec` the two
    * run as one block; over HTTP they are two requests.
    */
   async addVectors(vectors, documents, options = {}) {
@@ -171,11 +171,11 @@ export class FenecVectorStore extends VectorStore {
     const docs = texts.map(
       (text, i) => new Document({ pageContent: text, metadata: Array.isArray(metadatas) ? (metadatas[i] ?? {}) : (metadatas ?? {}) }),
     );
-    return FenecVectorStore.fromDocuments(docs, embeddings, args);
+    return FennecVectorStore.fromDocuments(docs, embeddings, args);
   }
 
   static async fromDocuments(docs, embeddings, args) {
-    const store = new FenecVectorStore(embeddings, args);
+    const store = new FennecVectorStore(embeddings, args);
     await store.addDocuments(docs);
     return store;
   }

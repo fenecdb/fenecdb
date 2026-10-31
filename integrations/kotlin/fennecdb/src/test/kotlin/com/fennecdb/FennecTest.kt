@@ -1,0 +1,289 @@
+package com.fennecdb
+
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
+import java.io.File
+import java.nio.file.Files
+import kotlin.math.sqrt
+import kotlin.test.Test
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+/** A file of its own in a directory of its own, as an app's files directory holds one. */
+fun scratch(): String = File(Files.createTempDirectory("fennecdb-kotlin").toFile(), "app.fennec").path
+
+class FennecTest {
+    @Test
+    fun aStatementAndItsRows() = runBlocking {
+        val db = Fennec.memory()
+        assertEquals(Answer.Ok("collection `notes` created"), db.run("create collection notes (title text, stars int, embed vector<3> @hnsw(cosine))"))
+        val n = db.execute(
+            "put notes [{title: \$1, stars: 5, embed: \$2}, {title: \$3, stars: 3, embed: \$4}]",
+            "oasis", floatArrayOf(1f, 0f, 0f), "dunes", floatArrayOf(0f, 1f, 0f),
+        )
+        assertEquals(2, n)
+        val rows = db.query("get notes select title, stars order stars desc")
+        assertEquals(listOf("oasis", "dunes"), rows.map { it.string("title") })
+        assertEquals(5L, rows[0]["stars"])
+        assertEquals(listOf("title", "stars"), rows[0].keys.toList())
+        db.close()
+    }
+
+    /** `near` scores as the engine computes them, to the Float: the vector goes over as its bytes. */
+    @Test
+    fun nearScoresAreExact() = runBlocking {
+        val db = Fennec.memory()
+        db.execute("create collection v (n int, e vector<2> @hnsw(l2))")
+        db.execute("put v [{n: 1, e: [1, 0]}, {n: 2, e: [0, 1]}, {n: 3, e: [0.5, 0.25]}]")
+        val rows = db.query("get v select n near e \$1 limit 3", floatArrayOf(1f, 0f))
+        assertEquals(listOf(1L, 3L, 2L), rows.map { it.long("n") })
+        val third = sqrt((0.5f - 1f) * (0.5f - 1f) + 0.25f * 0.25f)
+        assertEquals(listOf(0f, third, sqrt(2f)), rows.map { it.double("_score")!!.toFloat() })
+        // A list of numbers is a vector too, as a page's are.
+        assertEquals(2L, db.query("get v select n near e \$1 limit 1", listOf(0.0, 1.0)).first().long("n"))
+        assertContentEquals(floatArrayOf(0.5f, 0.25f), db.query("get v select e where n = 3").first().floats("e"))
+        db.close()
+    }
+
+    @Test
+    fun theBuilderWritesAndReads() = runBlocking {
+        val db = Fennec.memory()
+        db.execute("create collection notes (title text, stars int, at timestamp)")
+        val notes = db.from("notes")
+        val at = java.util.Date(1_789_821_296_789L)
+        assertEquals(2, notes.insert(listOf(mapOf("title" to "a", "stars" to 4, "at" to at), mapOf("title" to "b", "stars" to 2))))
+        assertEquals("put notes {title: \$1, stars: \$2}", notes.toInsert(mapOf("title" to "a", "stars" to 4)).text)
+        assertEquals("2026-09-19T12:34:56.789Z", notes.toInsert(mapOf("at" to at)).params[0])
+        assertEquals(listOf("a", "b"), notes.order("stars", "desc").rows().map { it.string("title") })
+        assertEquals(4L, notes.where("title", "a").first()?.long("stars"))
+        assertNull(notes.where("title", "zz").first())
+        assertEquals(2, notes.count())
+        assertEquals(1, notes.where("stars", ">", 3).update(mapOf("stars" to 5)))
+        assertEquals(1, notes.where("stars", 5).delete())
+        assertEquals(1, notes.countBlocking())
+        db.close()
+    }
+
+    /** A json field keeps a list of numbers as written: sent as Floats, it is sent again as JSON. */
+    @Test
+    fun aJsonFieldTakesItsListAsWritten() = runBlocking {
+        val db = Fennec.memory()
+        db.execute("create collection t (meta json)")
+        db.execute("put t {meta: \$1}", listOf(0.1, 0.2))
+        assertEquals(listOf(0.1, 0.2), db.query("get t select meta").first()["meta"])
+        db.close()
+    }
+
+    @Test
+    fun errorsCarryTheirKind() = runBlocking {
+        val db = Fennec.memory()
+        db.execute("create collection t (a int @unique)")
+        db.execute("put t {a: 1}")
+        for ((text, code) in listOf(
+            "get nowhere" to FennecException.Code.NOT_FOUND,
+            "broken query" to FennecException.Code.QUERY,
+            "create collection t (a int)" to FennecException.Code.EXISTS,
+            "put t {a: 1}" to FennecException.Code.DUPLICATE,
+            "put t {a: \"x\"}" to FennecException.Code.TYPE,
+        )) {
+            val e = assertFailsWith<FennecException>(text) { db.run(text) }
+            assertEquals(code, e.code, text)
+        }
+        val e = assertFailsWith<FennecException> { db.from("t; drop collection t") }
+        assertEquals(FennecException.Code.BUILDER, e.code)
+        assertEquals("invalid collection name: \"t; drop collection t\"", e.message)
+        assertFailsWith<FennecException> { db.from("t").where("a", 1).insert(mapOf("a" to 2)) }
+        db.close()
+        assertEquals("the database was closed", assertFailsWith<FennecException> { db.run("get t") }.message)
+        db.close()
+    }
+
+    /** A tenant node's quota refusal, as a remote reads it: the quota named, and a rate's wait -- its header over its body. */
+    @Test
+    fun aQuotaRefusalNamesTheQuotaAndTheWait() {
+        val rows = FennecRemote.refused(507, Json.parse("""{"error":"past its quota of 5 rows","quota":"rows"}""") as Row, null)
+        assertEquals(FennecException.Code.QUOTA, rows.code)
+        assertEquals(507, rows.status)
+        assertEquals("rows", rows.quota)
+        assertEquals(null, rows.retryAfter)
+        val rate = FennecRemote.refused(429, Json.parse("""{"error":"past","quota":"writes","retry_after":1}""") as Row, "3")
+        assertEquals("writes", rate.quota)
+        assertEquals(3.0, rate.retryAfter)
+        // To the millisecond where the body says it, over the whole second.
+        val soon = FennecRemote.refused(
+            429, Json.parse("""{"error":"past","quota":"writes","retry_after":1,"retry_after_ms":2}""") as Row, "1",
+        )
+        assertEquals(0.002, soon.retryAfter)
+        val memory = FennecRemote.refused(507, Json.parse("""{"error":"data ceiling"}""") as Row, null)
+        assertEquals(null, memory.quota)
+        assertEquals(FennecException.Code.IO, memory.code)
+        // A tenant being moved says the wait in its body as a quota does.
+        val moved = FennecRemote.refused(503, Json.parse("""{"error":"the tenant is being moved; retry shortly","retry_after":1}""") as Row, null)
+        assertEquals(null, moved.quota)
+        assertEquals(503, moved.status)
+        assertEquals(1.0, moved.retryAfter)
+    }
+
+    /** `require 1` over a row that is not there is refused as UNMET, and the write is put back. */
+    @Test
+    fun aRequireNotMetWritesNothing() = runBlocking {
+        val db = Fennec.memory()
+        db.execute("create collection accounts (balance int)")
+        db.execute("put accounts {id: 1, balance: 5}")
+        val e = assertFailsWith<FennecException> {
+            db.from("accounts").where("id", 2).update(mapOf("balance" to 0), require = 1)
+        }
+        assertEquals(FennecException.Code.UNMET, e.code, e.message)
+        assertEquals(listOf(5L), db.query("get accounts select balance").map { it.long("balance") })
+        assertEquals(1, db.from("accounts").where("id", 1).update(mapOf("balance" to 3), require = 1))
+        db.close()
+    }
+
+    /** A require that says why: the exception's `reason` is the statement's own words, the library's and a server's alike. */
+    @Test
+    fun anUnmetRequireSaysItsReason() = runBlocking {
+        val db = Fennec.memory()
+        db.execute("create collection accounts (name text, balance int)")
+        db.execute("put accounts {id: 1, name: \"a\", balance: 5}")
+        val accounts = db.from("accounts")
+        val funds = assertFailsWith<FennecException> {
+            accounts.where("name", "a").where("balance", ">=", 9)
+                .update(mapOf("balance" to Computed.inc(-9)), require = 1, reason = "insufficient funds")
+        }
+        assertEquals(FennecException.Code.UNMET, funds.code, funds.message)
+        assertEquals("insufficient funds", funds.reason)
+        val read = assertFailsWith<FennecException> {
+            accounts.where("id", 2).limit(1).require(1, reason = "it's not there").rows()
+        }
+        assertEquals(FennecException.Code.UNMET, read.code, read.message)
+        assertEquals("it's not there", read.reason)
+        val none = assertFailsWith<FennecException> { accounts.where("id", 2).delete(require = 1) }
+        assertEquals(FennecException.Code.UNMET, none.code, none.message)
+        assertEquals(null, none.reason)
+        db.close()
+        val remote = FennecRemote.refused(
+            412,
+            Json.parse("""{"error":"no such account (`set accounts` wrote 0 rows, and requires 1)","reason":"no such account"}""") as Row,
+            null,
+        )
+        assertEquals(FennecException.Code.UNMET, remote.code)
+        assertEquals("no such account", remote.reason)
+        val batch = FennecRemote.refused(412, Json.parse("""{"error":"unmet: x","completed":0,"at":1,"reason":"x"}""") as Row, null)
+        assertEquals(1, batch.at)
+        assertEquals("x", batch.reason)
+        assertEquals(null, FennecRemote.refused(412, Json.parse("""{"error":"unmet"}""") as Row, null).reason)
+    }
+
+    @Test
+    fun aFileIsThereAgainAndOpenOnce() = runBlocking {
+        val path = scratch()
+        var db = Fennec.openAsync(path)
+        db.execute("create collection t (title text, e vector<2> @hnsw(cosine))")
+        for (i in 0 until 20) db.execute("put t {title: \$1, e: \$2}", "n$i", floatArrayOf(i / 10f, 1f))
+        assertEquals(FennecException.Code.LOCKED, assertFailsWith<FennecException> { Fennec.open(path) }.code)
+        db.checkpoint()
+        db.close()
+        db = Fennec.open(path, Fennec.NO_SYNC)
+        assertEquals(20, db.from("t").count())
+        db.execute("put t {title: \"after\"}")
+        db.flush()
+        db.sync()
+        db.close()
+        db = Fennec.open(path, Fennec.IN_MEMORY)
+        assertEquals(21, db.from("t").count())
+        assertEquals("n0", db.from("t").select("title").near("e", floatArrayOf(0f, 1f)).limit(1).rows().first().string("title"))
+        db.close()
+    }
+
+    /** An open leaves a `@text` index for its first read; [Fennec.warm] builds it beforehand, once. */
+    @Test
+    fun warmBuildsWhatAnOpenLeft() = runBlocking {
+        val path = scratch()
+        var db = Fennec.openAsync(path)
+        db.execute("create collection docs (body text @text)")
+        db.execute("""put docs [{body: "rust is fast"}, {body: "go is simple"}]""")
+        db.close()
+        db = Fennec.openAsync(path)
+        assertEquals(1, db.warm(listOf("docs")))
+        assertEquals(listOf("rust is fast"), db.from("docs").select("body").match("body", "rust").rows().map { it.string("body") })
+        assertEquals(0, db.warm())
+        db.close()
+    }
+
+    @Test
+    fun manyCoroutinesShareOneDatabase() = runBlocking {
+        val db = Fennec.open(scratch())
+        db.execute("create collection t (w int, e vector<2> @hnsw(l2))")
+        (0 until 8).map { w ->
+            async(kotlinx.coroutines.Dispatchers.IO) {
+                for (i in 0 until 20) {
+                    if (w % 2 == 0) {
+                        db.execute("put t {w: \$1, e: \$2}", w, floatArrayOf(w.toFloat(), i.toFloat()))
+                    } else {
+                        db.query("get t near e \$1 limit 3", floatArrayOf(0f, 1f))
+                    }
+                }
+            }
+        }.awaitAll()
+        assertEquals(80, db.from("t").count())
+        db.close()
+    }
+
+    @Test
+    fun javaCallsBlock() {
+        val db = Fennec.memory()
+        db.executeBlocking("create collection t (a int)")
+        assertEquals(1, db.executeBlocking("put t {a: \$1}", 7))
+        assertEquals(7L, db.queryBlocking("get t").first().long("a"))
+        assertEquals(1, db.from("t").rowsBlocking().size)
+        db.close()
+    }
+
+    @Test
+    fun valuesWriteAndReadAsJson() {
+        val v = linkedMapOf("s" to "a\"b\n\u0001ç😀", "n" to -1L, "f" to 0.5, "ok" to true, "none" to null, "list" to listOf(1L, 2.5))
+        val text = Json.write(v)
+        assertEquals("{\"s\":\"a\\\"b\\n\\u0001ç😀\",\"n\":-1,\"f\":0.5,\"ok\":true,\"none\":null,\"list\":[1,2.5]}", text)
+        assertEquals(v, Json.parse(text))
+        assertEquals("😀", (Json.parse("{\"e\":\"\\ud83d\\ude00\"}") as Row).string("e"))
+        val tie = 7.038531e-26f
+        assertEquals(tie, Json.number(tie).toDouble().toFloat())
+        assertEquals("0.1", Json.number(0.1f))
+        assertEquals("1969-12-31T23:59:59.999Z", Json.iso(-1))
+        assertTrue(Fennec.version.split('.').size == 3)
+    }
+
+    /** `highlight` answers marks in a row, `facet` counts beside the rows -- over every match, not the page. */
+    @Test
+    fun highlightsAndFacets() = runBlocking {
+        val db = Fennec.memory()
+        db.execute("create collection docs (body text @text, kind text)")
+        db.from("docs").insert(
+            listOf(
+                mapOf("body" to "rust is fast", "kind" to "lang"),
+                mapOf("body" to "rust never sleeps", "kind" to "song"),
+                mapOf("body" to "go is simple", "kind" to "lang"),
+            ),
+        )
+        val marked = db.from("docs").select("body").highlight("body").match("body", "rust").rows()
+        assertEquals(2, marked.size)
+        for (r in marked) assertEquals(listOf(listOf(0L, 4L)), r["highlight(body)"])
+        val tagged = db.from("docs").highlight("body", "[", "]").match("body", "rust").rows()
+        assertEquals(setOf("[rust] is fast", "[rust] never sleeps"), tagged.map { it.string("highlight(body)") }.toSet())
+        val snip = db.from("docs").select("body").snippet("body", 2).match("body", "rust").first()!!.row("snippet(body)")!!
+        assertEquals(listOf(listOf(0L, 4L)), snip["marks"])
+        assertTrue(snip.string("text")!!.startsWith("rust"))
+
+        val a = db.from("docs").facet("kind").order("body").limit(1).answer()
+        assertEquals(1, a.rows.size)
+        assertEquals(mapOf("kind" to listOf(FacetCount("lang", 2), FacetCount("song", 1))), a.facets)
+        // Rows alone stay rows; a query without facets answers none.
+        assertEquals(1, db.from("docs").facet("kind").limit(1).rows().size)
+        assertEquals(emptyMap(), db.from("docs").answer().facets)
+        db.close()
+    }
+}

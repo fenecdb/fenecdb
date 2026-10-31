@@ -1,6 +1,6 @@
 // The two ways to open the app's database. The components cannot tell them
 // apart: both have `from` and `live`, and the same queries run on both.
-import { Fenec, connect, persist, restore, sync, type SyncOptions } from '@fenecdb/web';
+import { Fennec, connect, persist, restore, sync, type SyncOptions } from '@fennecdb/web';
 import { notes, SEEDS, embed } from './tables.js';
 
 type NotesQuery = {
@@ -15,7 +15,7 @@ async function seed(q: NotesQuery) {
 
 /** A database in the page, kept in this browser's IndexedDB. */
 export async function local(wasm: string | BufferSource) {
-  const db = await Fenec.open(wasm, { schema: { notes } });
+  const db = await Fennec.open(wasm, { schema: { notes } });
   if (!(await restore(db, 'notes'))) await seed(db.from(notes));
   // Kept after every write to notes: only the writes since, not the image.
   db.live(db.from(notes).select('id').limit(1), () => void persist(db, 'notes'));

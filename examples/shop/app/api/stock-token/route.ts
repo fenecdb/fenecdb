@@ -3,7 +3,7 @@
 import { tokenFor } from '../../../lib/db';
 import { json } from '../../../lib/http';
 
-const PUBLIC_URL = process.env.FENEC_PUBLIC_URL ?? process.env.FENEC_URL ?? 'http://127.0.0.1:8080';
+const PUBLIC_URL = process.env.FENNEC_PUBLIC_URL ?? process.env.FENNEC_URL ?? 'http://127.0.0.1:8080';
 
 export async function GET() {
   return json({ url: PUBLIC_URL, token: tokenFor('stock-viewer', 'stock') });

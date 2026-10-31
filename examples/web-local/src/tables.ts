@@ -1,8 +1,8 @@
 // The Notes schema in code, Drizzle's way: the same collection every
 // example declares (examples/README.md). The open makes what is missing.
-import { fenecTable, text, boolean, timestamp, vector, index } from '@fenecdb/web/schema';
+import { fennecTable, text, boolean, timestamp, vector, index } from '@fennecdb/web/schema';
 
-export const notes = fenecTable('notes', {
+export const notes = fennecTable('notes', {
   title: text(),
   body: text(),
   tags: text().array(),

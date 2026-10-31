@@ -3,20 +3,20 @@
 // a few accounts with money in them. Runs with the operator's token and the
 // node's admin token; everything after the schema goes through the ledger
 // as the console's server would, under the app's scoped token.
-import { ADMIN_TOKEN, CURRENCIES, FENEC_URL, OPERATOR_TOKEN, SCHEMA, tenantUrl } from './config.ts';
+import { ADMIN_TOKEN, CURRENCIES, FENNEC_URL, OPERATOR_TOKEN, SCHEMA, tenantUrl } from './config.ts';
 import { Ledger, WORLD } from './ledger.ts';
 import { HttpStore } from './store.ts';
 import { Tokens } from './tokens.ts';
 import { hashPassword } from './users.ts';
 
-export async function createTenant(tenant: string, node = FENEC_URL): Promise<void> {
+export async function createTenant(tenant: string, node = FENNEC_URL): Promise<void> {
   const res = await fetch(`${node}/_admin/tenants/${tenant}`, { method: 'PUT', headers: { authorization: `Bearer ${ADMIN_TOKEN}` } });
   if (!res.ok && res.status !== 409) throw new Error(`create tenant ${tenant}: ${res.status} ${await res.text()}`);
   const base = `${node}/t/${tenant}`;
   const applied = await fetch(`${base}/_schema/apply`, {
     method: 'POST',
     headers: { authorization: `Bearer ${OPERATOR_TOKEN}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ format: 1, fenecql: SCHEMA }),
+    body: JSON.stringify({ format: 1, fennecql: SCHEMA }),
   });
   if (!applied.ok) throw new Error(`schema of ${tenant}: ${applied.status} ${await applied.text()}`);
   const root = new HttpStore(base, OPERATOR_TOKEN);

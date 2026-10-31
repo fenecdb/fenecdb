@@ -1,6 +1,6 @@
 # Examples
 
-One app, **Notes**, in every language fenecdb speaks, so they can be read
+One app, **Notes**, in every language fennecdb speaks, so they can be read
 side by side. Each folder is a small working app with a README: what it
 shows, what it needs, the commands to run it, and the ten lines that matter.
 
@@ -17,8 +17,8 @@ create collection notes (
 )
 ```
 
-declared in code: `fenecTable` from `@fenecdb/web/schema` in TypeScript, a
-`schema.fenecql` handed to the SDK's `schema(...)` everywhere else. Each
+declared in code: `fennecTable` from `@fennecdb/web/schema` in TypeScript, a
+`schema.fennecql` handed to the SDK's `schema(...)` everywhere else. Each
 creates notes, searches them with `match`, filters them by tag or by
 `done`, orders them by date, and ranks them by `near` and `fuse` over the
 same four seeded notes. Where the platform has one, a live query redraws
@@ -29,33 +29,33 @@ restarts.
 | --- | --- | --- | --- | --- |
 | [`web-local`](web-local) | TypeScript, Vite | local | the engine in the page, kept in IndexedDB; a live list and a search box | `npm install && npm run dev` |
 | [`react`](react) | React, TypeScript | local, or synced | `useLiveQuery`; one line in `src/db.ts` switches the page's database for a replica `sync()`ed with a server | `npm install && npm run dev` |
-| [`node-server`](node-server) | Node, TypeScript | server | `@fenecdb/web/client`: the builder over HTTP and live queries on the server, no WebAssembly | `npm install && npm start` |
-| [`python`](python) | Python | server | the `fenecdb` client and its builder; the change stream as `watch`; a LangChain store | `python notes.py` |
+| [`node-server`](node-server) | Node, TypeScript | server | `@fennecdb/web/client`: the builder over HTTP and live queries on the server, no WebAssembly | `npm install && npm start` |
+| [`python`](python) | Python | server | the `fennecdb` client and its builder; the change stream as `watch`; a LangChain store | `python notes.py` |
 | [`go`](go) | Go | server | the Go SDK, rows into structs, a subscription | `go mod tidy && go run .` |
-| [`dotnet`](dotnet) | C#, .NET 8 | server | `FenecDb`, rows into records, `SubscribeAsync` | `dotnet run` |
-| [`rust`](rust) | Rust | local | `fenec-core` embedded in a CLI, FenecQL with parameters | `cargo run` |
+| [`dotnet`](dotnet) | C#, .NET 8 | server | `FennecDb`, rows into records, `SubscribeAsync` | `dotnet run` |
+| [`rust`](rust) | Rust | local | `fennec-core` embedded in a CLI, FennecQL with parameters | `cargo run` |
 | [`swift`](swift) | Swift, SwiftUI | local | a macOS app (the same views on iOS) over a file in Application Support, `LiveQuery`; a CLI | `swift run NotesApp` |
 | [`kotlin-android`](kotlin-android) | Kotlin, Compose | local | an Android app over a file in `filesDir`, a live `Flow`; a JVM CLI | `gradle :app:installDebug` |
 | [`flutter`](flutter) | Dart, Flutter | local | a Flutter app over a file in Application Support, `StreamBuilder` over a live query | `flutter run` |
 | [`shop`](shop) | Next.js, TypeScript | server | not the Notes app: a desert-gear shop of 10 000 products -- category pages with facets, search with highlights, carts under scoped tokens, a checkout that cannot oversell -- with its tests, Lighthouse scores and load test | `npm install && npm run db`, then `npm run seed && npm run build && npm start` |
-| [`mcp-agent`](mcp-agent) | Node, the Anthropic SDK | MCP | not the Notes app: Claude with fenecdb's MCP tools over `fenec mcp`, recalling across runs what it was told | `npm install && node agent.mjs "..."` |
+| [`mcp-agent`](mcp-agent) | Node, the Anthropic SDK | MCP | not the Notes app: Claude with fennecdb's MCP tools over `fennec mcp`, recalling across runs what it was told | `npm install && node agent.mjs "..."` |
 | [`ledger`](ledger) | Node, TypeScript | server | not the Notes app: a double-entry payments ledger on a tenant node -- transfers, refunds and holds as guarded `/batch` blocks with idempotency keys, an append-only journal, reconciliation, the journal streamed to a sink, scoped and tenant-bound tokens -- held by 16 clients' 20 000 operations, a `kill -9` under load and its security tests, an operator console | `npm install && npm run db`, then `npm run setup && npm start` |
-| [`saas`](saas) | Node, TypeScript | server | not the Notes app: Trellis, a team workspace -- sign-up, sessions and single sign-on owned by the app, a tenant per organisation behind `fenec-shard` on three nodes with replicas, roles and teams as per-operation and field grants and list claims, live boards and search under each person's token -- held by its token attacks, a role matrix against the router, a tenant moved and a node killed under load, and measured | `npm install && npm run dev` |
+| [`saas`](saas) | Node, TypeScript | server | not the Notes app: Trellis, a team workspace -- sign-up, sessions and single sign-on owned by the app, a tenant per organisation behind `fennec-shard` on three nodes with replicas, roles and teams as per-operation and field grants and list claims, live boards and search under each person's token -- held by its token attacks, a role matrix against the router, a tenant moved and a node killed under load, and measured | `npm install && npm run dev` |
 | [`analytics`](analytics) | Node, TypeScript | server | not the Notes app: Kestrel, product analytics on a tenant node -- a 572-byte tracker, beacons written once with idempotency keys into an append-only `@ttl` collection, rollups kept exactly once from `/_changes`, a dashboard of SVG charts reading raw events for a day and rollups past it (`bucket`, `count(distinct)`, disjunctive facets, a funnel, retention, a poll-based live "now"), tenant-bound tokens, and a market data view (bars and VWAP by `first`/`last` and `bucket`) -- with its correctness, security and Lighthouse tests and measurements at 10 million events | `npm install && npm run db`, then `npm run setup && npm run build && npm start` |
-| [`dispatch`](dispatch) | Next.js, TypeScript | server | not the Notes app: Plover, courier dispatch -- a delivery company a tenant behind `fenec-shard` with its plan's quota, orders as jobs claimed by the nearest courier under a lease (or held at the server with `Fenec-Wait` until one comes), couriers on a live map of a generated city (`geo`, `near`, `@ttl`), `nocase` emails, `@unique(company, code)`, `@sorted(courier, delivered_at desc)`, couriers and customers under scoped tokens, Insights and a Grafana dashboard -- held by 50 couriers claiming at once, a courier killed under its lease, two companies' quotas side by side and its security tests; the gaps it found listed | `npm install && npm run cluster`, then `npm run setup && npm run simulate` and `npm run dev` |
-| [`recipes`](recipes) | Node, shell | server | not the Notes app: what a backend platform bundles, done with `fenec-server` and a standard service -- [auth](https://fenecdb.com/docs/auth) (a stand-in identity provider, a JWKS kept fresh, the flags that hold a token to its application, a policy, a tenant claim), [files](https://fenecdb.com/docs/files) (presigned S3 or R2 links after a scoped read, the object deleted with its row) and [functions](https://fenecdb.com/docs/functions) (a Worker, a job queue, a signed webhook) -- each script a run the docs paste, held to them by `make recipes-test` | `npm install` (the node demos), then `sh auth.sh`, `node files-demo.mjs` (Docker), `node functions-demo.mjs` |
-| [`integrations/cloudflare/example`](../integrations/cloudflare/example) | JavaScript | Durable Object | a database kept in a Durable Object's storage (`@fenecdb/cloudflare`); not the Notes app | `npx wrangler dev` |
+| [`dispatch`](dispatch) | Next.js, TypeScript | server | not the Notes app: Plover, courier dispatch -- a delivery company a tenant behind `fennec-shard` with its plan's quota, orders as jobs claimed by the nearest courier under a lease (or held at the server with `Fennec-Wait` until one comes), couriers on a live map of a generated city (`geo`, `near`, `@ttl`), `nocase` emails, `@unique(company, code)`, `@sorted(courier, delivered_at desc)`, couriers and customers under scoped tokens, Insights and a Grafana dashboard -- held by 50 couriers claiming at once, a courier killed under its lease, two companies' quotas side by side and its security tests; the gaps it found listed | `npm install && npm run cluster`, then `npm run setup && npm run simulate` and `npm run dev` |
+| [`recipes`](recipes) | Node, shell | server | not the Notes app: what a backend platform bundles, done with `fennec-server` and a standard service -- [auth](https://fenecdb.com/docs/auth) (a stand-in identity provider, a JWKS kept fresh, the flags that hold a token to its application, a policy, a tenant claim), [files](https://fenecdb.com/docs/files) (presigned S3 or R2 links after a scoped read, the object deleted with its row) and [functions](https://fenecdb.com/docs/functions) (a Worker, a job queue, a signed webhook) -- each script a run the docs paste, held to them by `make recipes-test` | `npm install` (the node demos), then `sh auth.sh`, `node files-demo.mjs` (Docker), `node functions-demo.mjs` |
+| [`integrations/cloudflare/example`](../integrations/cloudflare/example) | JavaScript | Durable Object | a database kept in a Durable Object's storage (`@fennecdb/cloudflare`); not the Notes app | `npx wrangler dev` |
 
-*Server* means the example talks to a `fenec-server` over HTTP; start one
+*Server* means the example talks to a `fennec-server` over HTTP; start one
 first:
 
 ```sh
-fenec-server --file notes.fenec --http 127.0.0.1:8080 --http-token secret
+fennec-server --file notes.fennec --http 127.0.0.1:8080 --http-token secret
 ```
 
-A release binary is on the [releases page](https://github.com/fenecdb/fenecdb/releases),
-or `cargo build --release -p fenec-server` builds one here. Every example
-reads `FENEC_URL` and `FENEC_TOKEN`; `secret` is a development default,
+A release binary is on the [releases page](https://github.com/fennec-db/fennecdb/releases),
+or `cargo build --release -p fennec-server` builds one here. Every example
+reads `FENNEC_URL` and `FENNEC_TOKEN`; `secret` is a development default,
 never one to deploy.
 
 ## The toy embedding
@@ -76,8 +76,8 @@ Each example depends on the published packages at the release's version
 (`make version` moves them with every other package). CI runs every one on
 what this checkout builds instead, each its own way: npm packs of `web/`
 and `integrations/react`, `PYTHONPATH`, a Go `replace`, a .NET project
-reference (`-p:FenecLocal`), Cargo paths, SwiftPM's local package
-(`FENEC_LOCAL=1`), a Gradle composite build (`FENEC_LOCAL=1`) and pub's
+reference (`-p:FennecLocal`), Cargo paths, SwiftPM's local package
+(`FENNEC_LOCAL=1`), a Gradle composite build (`FENNEC_LOCAL=1`) and pub's
 overrides.
 
 ```sh

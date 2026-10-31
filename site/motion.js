@@ -315,7 +315,7 @@ const SCENES = [
       const landed = 1.7;
       mark(c, L.mx, L.my, L.ms, a, t - (landed - 0.6));
       box(c, L.fx, L.fy, L.fw, L.fh, { r: 10, fill: P.deep, stroke: P.sun, alpha: a, line: 1.8, glow: flash(t, landed, 1, 0) });
-      mono(c, 'app.fenec', fcx, L.fy + L.fh / 2 + 6, { size: 16, color: P.hot, align: 'center', alpha: a });
+      mono(c, 'app.fennec', fcx, L.fy + L.fh / 2 + 6, { size: 16, color: P.hot, align: 'center', alpha: a });
 
       // The write: a new task, into the file.
       const w = ease(span(t, 0.7, 1.1));
@@ -432,7 +432,7 @@ const SCENES = [
       // Into the file: the queue is a collection of the replica's own.
       const fy = py + ph - 96;
       box(c, px + 16, fy, pw - 32, 70, { r: 8, fill: '#0C0819', alpha: a, glow: flash(t, 1.7, 0.8) });
-      mono(c, 'app.fenec', px + 30, fy + 26, { alpha: a });
+      mono(c, 'app.fennec', px + 30, fy + 26, { alpha: a });
       mono(c, '_sync_queue', px + 30, fy + 52, { size: 15, color: P.sand, alpha: a });
       mono(c, String(queued), px + pw - 30, fy + 52, { size: 15, color: queued ? P.oasis : P.dim, align: 'right', alpha: a });
       streak(c, [[px + pw / 2, ny + 44], [px + pw / 2, fy]], span(t, 1.3, 1.7), { tail: 0.5 });
@@ -450,8 +450,8 @@ const SCENES = [
       // The server: its ears catch the write as it lands.
       box(c, sx, sy, sw, sh, { r: 16, fill: P.panel, stroke: P.sun, alpha: a, line: 2, glow: flash(t, 5, 0.9) });
       mark(c, sx + sw / 2, sy + 62, ms, a, t - 4.4);
-      mono(c, 'fenec-server', sx + sw / 2, sy + sh - 18, { size: n ? 16 : 18, color: P.hot, align: 'center', alpha: a });
-      mono(c, '200  Fenec-Seq: 4182', L.ans[0], L.ans[1], { size: 15, color: P.oasis, align: 'center', alpha: answered });
+      mono(c, 'fennec-server', sx + sw / 2, sy + sh - 18, { size: n ? 16 : 18, color: P.hot, align: 'center', alpha: a });
+      mono(c, '200  Fennec-Seq: 4182', L.ans[0], L.ans[1], { size: 15, color: P.oasis, align: 'center', alpha: answered });
       streak(c, [...L.w1].reverse().map(([x, y]) => [x, y + 14]), span(t, 5, 5.4), { w: 2 });
       under('sent once, under its key', L.under[1], ease(span(t, 5.6, 6.2)));
 
@@ -526,7 +526,7 @@ const SCENES = [
       const inside = (x) => clamp(x, L.fx + 8, L.fx + L.fw - 8);
 
       // The file, and the disk under it.
-      mono(c, 'app.fenec', L.fx, L.fy - 12, { size: 15, color: P.hot, alpha: a });
+      mono(c, 'app.fennec', L.fx, L.fy - 12, { size: 15, color: P.hot, alpha: a });
       box(c, L.fx, L.fy, L.fw, L.fh, { r: 10, fill: P.deep, stroke: P.sun, alpha: a, line: 1.8 });
       disk(c, ...L.disk, { alpha: a, glow: Math.max(0, ...syncs.map((s) => flash(t, s, 0.7))) });
       mono(c, 'disk', L.disk[0], L.disk[1] + 46, { align: 'center', alpha: a });
@@ -625,10 +625,10 @@ const SCENES = [
       // The server, and the mapped file behind it with nothing between.
       box(c, L.sx, L.sy, L.sw, L.sh, { r: 16, fill: P.panel, stroke: P.sun, alpha: a, line: 2 });
       mark(c, ...L.mark, a, t - 1.6);
-      mono(c, 'fenec-server', L.sx + L.sw / 2, L.sy + L.sh - 18, { size: n ? 15 : 17, color: P.hot, align: 'center', alpha: a });
+      mono(c, 'fennec-server', L.sx + L.sw / 2, L.sy + L.sh - 18, { size: n ? 15 : 17, color: P.hot, align: 'center', alpha: a });
       wire(c, [L.out, n ? [240, L.fy] : [L.fx, 280]], P.rule, 2, a);
       box(c, L.fx, L.fy, L.fw, L.fh, { r: 14, fill: P.deep, stroke: P.sun, alpha: a, line: 1.8 });
-      mono(c, 'app.fenec', L.fx + 16, L.fy + 26, { size: 15, color: P.hot, alpha: a });
+      mono(c, 'app.fennec', L.fx + 16, L.fy + 26, { size: 15, color: P.hot, alpha: a });
       mono(c, 'mapped into memory', L.fx + L.fw - 16, L.fy + 26, { size: 13, align: 'right', alpha: a });
 
       // Requests: in as sand, answered in the mark's light. Request j is
@@ -767,7 +767,7 @@ const SCENES = [
        and `fuse` adds each one's 1 / (60 + rank) from both lists, so what
        both found comes first. Words first, as a search box asks: meaning is
        what a vector field adds. The documents, their places and both
-       rankings are an example; the arithmetic of the fusion is fenecdb's. */
+       rankings are an example; the arithmetic of the fusion is fennecdb's. */
     key: 'search',
     d: 10,
     h: 560, nh: 830,
@@ -927,7 +927,7 @@ const SCENES = [
       // The server: the token checked at its door, the rules at its back.
       box(c, L.sx, L.sy, L.sw, L.sh, { r: 16, fill: P.panel, stroke: P.sun, alpha: a, line: 2 });
       mark(c, ...L.mark, a, t - 0.4);
-      mono(c, 'fenec-server', L.sx + L.sw / 2, L.sy + L.sh - (n ? 16 : 22), { size: n ? 15 : 17, color: P.hot, align: 'center', alpha: a });
+      mono(c, 'fennec-server', L.sx + L.sw / 2, L.sy + L.sh - (n ? 16 : 22), { size: n ? 15 : 17, color: P.hot, align: 'center', alpha: a });
       const okG = Math.max(0, ...asks.map((q) => t > q.T + 0.5 ? flash(t, q.T + 0.5, 0.6) : 0));
       const badR = Math.max(0, ...asks.filter((q) => q.bad).map((q) => t > q.T + 0.8 ? flash(t, q.T + 0.8, 0.9) : 0));
       const okR = Math.max(0, ...asks.filter((q) => !q.bad).map((q) => t > q.T + 0.8 ? flash(t, q.T + 0.8, 0.6) : 0));
@@ -943,7 +943,7 @@ const SCENES = [
       door(R, okR, badR, 'rules', 1);
 
       // The rows, a user's each, in the app's file.
-      mono(c, 'app.fenec', L.fx, L.fy - 12, { size: 15, color: P.hot, alpha: a });
+      mono(c, 'app.fennec', L.fx, L.fy - 12, { size: 15, color: P.hot, alpha: a });
       mono(c, 'notes', L.fx + L.fw, L.fy - 12, { size: 13, align: 'right', alpha: a });
       box(c, L.fx, L.fy, L.fw, L.fh, { r: 12, fill: P.deep, stroke: P.sun, alpha: a, line: 1.8 });
       wire(c, L.toFile, P.rule, 2, a);

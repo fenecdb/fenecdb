@@ -1,10 +1,10 @@
-// A stand-in for an identity provider, to try fenec-server's token checks
+// A stand-in for an identity provider, to try fennec-server's token checks
 // with nothing to sign up for. It does what a provider does and no more: it
 // holds an RSA key, publishes the public half as a JWKS (`jwks.json`), and
 // signs RS256 tokens that name their key in `kid` (and, once asked to, ES256
 // with a P-256 key, as Supabase's EC signing keys do). The claims of each
 // provider's token (`shapes`) are the shapes its documentation describes,
-// with made-up values; the signature is this script's, so fenec-server
+// with made-up values; the signature is this script's, so fennec-server
 // accepts them only from a JWKS file this script wrote.
 //
 //   node idp.mjs init <dir>                  a key, and the JWKS holding it
@@ -72,7 +72,7 @@ function readJwks(dir) {
 
 /**
  * A key of your own service, apart from the provider's: what a backend or a
- * Worker signs the short tokens it calls fenec-server with. The private half
+ * Worker signs the short tokens it calls fennec-server with. The private half
  * stays in `<kid>.pem` (the service's secret); the public half is in
  * `service-jwks.json`, which `merge` and refresh-jwks.sh add to the file the
  * server reads. A real provider's JWKS never holds it.
@@ -98,7 +98,7 @@ export function merge(dir, out) {
 
 /** A token the service signs for itself: `iss` the services', `sub` its name, 5 minutes long. */
 export function serviceToken(dir, sub, claims = {}, { kid = 'svc-1', ttl = 300 } = {}) {
-  return token(dir, { iss: 'urn:fenec:services', sub, ...claims }, { kid, ttl });
+  return token(dir, { iss: 'urn:fennec:services', sub, ...claims }, { kid, ttl });
 }
 
 /** An RS256 token for `claims`, signed with the newest key, an hour long. */

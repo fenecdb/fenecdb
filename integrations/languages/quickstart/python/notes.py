@@ -1,4 +1,4 @@
-from fenecdb import Client, FenecError
+from fennecdb import Client, FennecError
 
 db = Client("http://127.0.0.1:8080")
 
@@ -12,5 +12,5 @@ print("search:", ", ".join(h["title"] for h in hits))
 
 try:
     db.query("get nowhere")
-except FenecError as e:
+except FennecError as e:
     print("refused:", e.status, e)

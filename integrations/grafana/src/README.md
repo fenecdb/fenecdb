@@ -1,7 +1,7 @@
-# fenecdb
+# fennecdb
 
-fenecdb's rows in Grafana. Each query is FenecQL, run by the plugin's backend
-over fenec-server's HTTP endpoint, with the dashboard's time range, interval
+fennecdb's rows in Grafana. Each query is FennecQL, run by the plugin's backend
+over fennec-server's HTTP endpoint, with the dashboard's time range, interval
 and variables bound as parameters -- never written into the statement -- so
 alert rules run the same queries as the panels.
 

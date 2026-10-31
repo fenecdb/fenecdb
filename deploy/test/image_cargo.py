@@ -8,14 +8,14 @@ whatever their mtimes, and a build that fails when they are not.
 First, both Dockerfiles build their binaries through the script and copy
 them from /built: either put back to a plain `cargo build` passed the rest.
 Then a workspace of a library, read through include_bytes! from a file
-outside itself as fenec-http reads the studio's, and two binaries using it
+outside itself as fennec-http reads the studio's, and two binaries using it
 is built in rust:alpine by the script, its /work a volume of the test's own
 as the Dockerfiles' is a cache mount:
 
 - a tree whose every file is older than the last build, one of them
   changed, builds the change: with target/ alone in the cache, as the
   images were built before, cargo compiled nothing and a branch's image
-  carried main's fenec-shard;
+  carried main's fennec-shard;
 - the same tree again compiles nothing;
 - a file changed in the kept tree with an old time, the context changed
   alike -- cargo's freshness lied to, whatever the cause -- fails the
@@ -45,7 +45,7 @@ SCRIPT = os.path.join(ROOT, "tools", "image-cargo.sh")
 # The build stage's own first layers, so the layer is shared with it.
 BASE = "FROM rust:alpine\nRUN apk add --no-cache musl-dev rsync\n"
 # Its own names, so two runs at once remove only their own.
-IMAGE = f"fenec-image-cargo-test-{os.getpid()}"
+IMAGE = f"fennec-image-cargo-test-{os.getpid()}"
 VOLUME = IMAGE
 # 2020-01-01: older than any build the test makes.
 OLD = 1577836800

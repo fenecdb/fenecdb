@@ -65,7 +65,7 @@ export class Tenant extends Example {
   async rows(reset) {
     const s = this.ctx.storage;
     const tables = s.sql
-      ? [...s.sql.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'fenec:%' ORDER BY name").raw()].map(([n]) => n)
+      ? [...s.sql.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'fennec:%' ORDER BY name").raw()].map(([n]) => n)
       : [];
     const out = { ...this.counts, alarm: await s.getAlarm(), tables };
     if (reset) Object.assign(this.counts, { sql: 0, kv: 0, alarms: 0, rang: 0, opens: 0 });

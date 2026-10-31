@@ -1,10 +1,10 @@
 <!--
-title: Quickstart: in the browser — fenecdb
-description: Run fenecdb in a page with no server: a Vite project, one npm package and a script that opens a database, writes two rows, queries and searches them, then keeps the database in IndexedDB between visits.
+title: Quickstart: in the browser — fennecdb
+description: Run fennecdb in a page with no server: a Vite project, one npm package and a script that opens a database, writes two rows, queries and searches them, then keeps the database in IndexedDB between visits.
 -->
 
 <h1>Quickstart: in the browser</h1>
-<p class="kicker">A database in the page. <code>@fenecdb/web</code> is the engine as
+<p class="kicker">A database in the page. <code>@fennecdb/web</code> is the engine as
 WebAssembly and a dependency-free client, so a script opens a database, writes
 rows and queries them with no server. A few lines and a Vite project, and about
 five minutes.</p>
@@ -18,7 +18,7 @@ would rather type than install.</p>
     <p>Make a project and install the package.</p>
 <pre data-lang="bash">npm create vite@latest my-app -- --template vanilla --no-immediate
 cd my-app
-npm install @fenecdb/web</pre>
+npm install @fennecdb/web</pre>
     <p>With <code>--template</code> and <code>--no-immediate</code> Vite asks
     nothing and starts nothing: it makes the folder and stops, and the install
     brings Vite along with the package.</p>
@@ -27,10 +27,10 @@ npm install @fenecdb/web</pre>
     <p>Replace <code>src/main.js</code> with this. It opens a database, makes a
     collection, writes two rows and shows what two queries return: the rows from
     2020 on, newest first, and a search for a word spelled wrong.</p>
-<pre data-lang="js" data-label="src/main.js">import { Fenec } from '@fenecdb/web';
-import wasm from '@fenecdb/web/fenec.wasm?url';
+<pre data-lang="js" data-label="src/main.js">import { Fennec } from '@fennecdb/web';
+import wasm from '@fennecdb/web/fennec.wasm?url';
 
-const db = await Fenec.open(wasm);
+const db = await Fennec.open(wasm);
 
 db.run('create collection notes (title text @text, year int @sorted)');
 db.run('put notes {title: $1, year: $2}', ['Dunes', 2021]);
@@ -63,8 +63,8 @@ document.body.append(out);</pre>
 </ol>
 
 <ul>
-  <li><b>The module is a URL.</b> <code>Fenec.open</code> takes the address of
-    <code>fenec.wasm</code>, which Vite gives for a file imported with
+  <li><b>The module is a URL.</b> <code>Fennec.open</code> takes the address of
+    <code>fennec.wasm</code>, which Vite gives for a file imported with
     <code>?url</code>; <code>npm run build</code> copies it into
     <code>dist/assets</code> and the page asks for it there. No Vite
     configuration is needed.</li>
@@ -85,10 +85,10 @@ IndexedDB, the image once and then only the writes since, and
 <code>restore</code> reads it back. This version writes the rows on the first
 visit alone, and says which visit it is.</p>
 
-<pre data-lang="js" data-label="src/main.js">import { Fenec, persist, restore } from '@fenecdb/web';
-import wasm from '@fenecdb/web/fenec.wasm?url';
+<pre data-lang="js" data-label="src/main.js">import { Fennec, persist, restore } from '@fennecdb/web';
+import wasm from '@fennecdb/web/fennec.wasm?url';
 
-const db = await Fenec.open(wasm);
+const db = await Fennec.open(wasm);
 
 const kept = await restore(db);   // what an earlier visit stored, if one did
 if (!kept) {
@@ -120,14 +120,14 @@ Reload it once more, and the rows come from IndexedDB.</p>
 start again, clear the site's data in your browser's developer tools.</p>
 
 <details class="deep"><summary>No bundler, no npm, and Node</summary>
-<p>Another bundler does what Vite does: import <code>@fenecdb/web</code> and
-hand <code>Fenec.open</code> the module's URL, however that bundler spells a
+<p>Another bundler does what Vite does: import <code>@fennecdb/web</code> and
+hand <code>Fennec.open</code> the module's URL, however that bundler spells a
 file's address. A page whose queries run on a server imports
-<code>@fenecdb/web/client</code> and loads no module at all (<a
+<code>@fennecdb/web/client</code> and loads no module at all (<a
 href="javascript.html#packages">Which package</a>).</p>
 
 <p>With no bundler, any static file server shows the same page: serve
-<code>node_modules</code> as it is and hand <code>Fenec.open</code> the module's
+<code>node_modules</code> as it is and hand <code>Fennec.open</code> the module's
 path. Save this as <code>index.html</code> beside <code>node_modules</code>, run
 <code>python3 -m http.server 8000</code> (or <code>npx serve</code>) and open
 <code>http://localhost:8000</code>; it shows the first visit's two lines.</p>
@@ -136,9 +136,9 @@ path. Save this as <code>index.html</code> beside <code>node_modules</code>, run
 &lt;meta charset="utf-8"&gt;
 &lt;pre id="out"&gt;loading…&lt;/pre&gt;
 &lt;script type="module"&gt;
-import { Fenec } from './node_modules/@fenecdb/web/fenec.js';
+import { Fennec } from './node_modules/@fennecdb/web/fennec.js';
 
-const db = await Fenec.open('./node_modules/@fenecdb/web/fenec.wasm');
+const db = await Fennec.open('./node_modules/@fennecdb/web/fennec.wasm');
 
 db.run('create collection notes (title text @text, year int @sorted)');
 db.run('put notes {title: $1, year: $2}', ['Dunes', 2021]);
@@ -160,17 +160,17 @@ document.querySelector('#out').textContent =
 </div>
 
 <p>No npm: the same files, the module and the <code>collate/</code> data beside
-it, are <code>fenec-web-v{{version}}.tar.gz</code> on the <a
-href="https://github.com/fenecdb/fenecdb/releases/tag/v{{version}}">release</a>.</p>
+it, are <code>fennec-web-v{{version}}.tar.gz</code> on the <a
+href="https://github.com/fennec-db/fennecdb/releases/tag/v{{version}}">release</a>.</p>
 
 <p>In Node, where <code>fetch</code> cannot resolve a relative path, hand
-<code>Fenec.open</code> the bytes:</p>
+<code>Fennec.open</code> the bytes:</p>
 
 <pre data-lang="js" data-label="query.mjs">import { readFile } from 'node:fs/promises';
-import { Fenec } from '@fenecdb/web';
+import { Fennec } from '@fennecdb/web';
 
-const wasm = await readFile(new URL(import.meta.resolve('@fenecdb/web/fenec.wasm')));
-const db = await Fenec.open(wasm);
+const wasm = await readFile(new URL(import.meta.resolve('@fennecdb/web/fennec.wasm')));
+const db = await Fennec.open(wasm);
 
 db.run('create collection notes (title text @text, year int @sorted)');
 db.run('put notes {title: $1, year: $2}', ['Dunes', 2021]);
@@ -191,7 +191,7 @@ console.log(db.run('get notes where year &gt;= $1 order year desc', [2020]).rows
   <li><a href="sync.html">Sync</a>
     <p>A replica in the page that reads without the network and writes on its own, with a server keeping every page's writes.</p></li>
   <li><a href="quickstart.html">Quickstart: the server</a>
-    <p>The same collection on <code>fenec-server</code>, reached over HTTP from any language, with a page that runs no module at all.</p></li>
-  <li><a href="fenecql.html">FenecQL</a>
+    <p>The same collection on <code>fennec-server</code>, reached over HTTP from any language, with a page that runs no module at all.</p></li>
+  <li><a href="fennecql.html">FennecQL</a>
     <p>The language: a tour from the first write to a lookup and a total.</p></li>
 </ul>

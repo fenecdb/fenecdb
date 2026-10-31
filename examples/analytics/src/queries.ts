@@ -1,4 +1,4 @@
-// The dashboard's questions, each one FenecQL statement under the site's
+// The dashboard's questions, each one FennecQL statement under the site's
 // viewer token, sent side by side: each runs on a connection of the node's
 // under the read lock, so a page takes as long as its slowest question
 // rather than their sum. A /batch of them would read one state, but one
@@ -12,7 +12,7 @@
 // kept 30 days only, so 90 days could not be answered from them at all.
 // The switch is at `RAW_UNTIL`; README, "Measured", has the latencies
 // either side of it.
-import { FenecError } from '@fenecdb/web/client';
+import { FennecError } from '@fennecdb/web/client';
 import { db } from './db.ts';
 import { DAY, dayOf, HOUR, interval, iso, MINUTE, WEEK, weekOf } from './time.ts';
 
@@ -28,7 +28,7 @@ export const isRange = (r: unknown): r is Range => typeof r === 'string' && r in
 
 /** Ranges up to this read the raw events; longer ones, unfiltered, the rollups. */
 export const RAW_UNTIL = DAY;
-/** How long the raw events are kept (schema.fenecql's @ttl). */
+/** How long the raw events are kept (schema.fennecql's @ttl). */
 export const RAW_KEPT = 30 * DAY;
 
 export const FACETS = ['country', 'device', 'browser'] as const;
@@ -192,7 +192,7 @@ export async function dashboard(site: string, range: Range, filters: Filters, no
       // `count(distinct)` refuses past a million values rather than count
       // short: a month of a busy site, filtered by little. Past it the
       // visitors are counted in a HyperLogLog sketch, within about 1%.
-      if (!(e instanceof FenecError) || !/count\(distinct/.test(e.message)) throw e;
+      if (!(e instanceof FennecError) || !/count\(distinct/.test(e.message)) throw e;
       notice = 'More than a million visitors in this range: they are estimated (approx_count_distinct), within about 1%.';
       answers = await questions('approx_count_distinct(user)');
     }

@@ -13,7 +13,7 @@
 // together under one 30 s lease, and run one after the other, would lapse on
 // the ninth while the first was still being done. A handler is also given the
 // time the lease has left, and a signal that fires then.
-import { connect, expr, inc, raw } from '@fenecdb/web/client';
+import { connect, expr, inc, raw } from '@fennecdb/web/client';
 
 /**
  * `token` is `() => Promise<token>`: the worker's own (service-token.mjs), asked
@@ -22,10 +22,10 @@ import { connect, expr, inc, raw } from '@fenecdb/web/client';
  * lapse (it lives five minutes) before the ack that needs it.
  */
 export async function work({
-  fenec, token, handlers, id = Math.random().toString(36).slice(2, 6), lease = 30_000, wait = 30_000,
+  fennec, token, handlers, id = Math.random().toString(36).slice(2, 6), lease = 30_000, wait = 30_000,
   maxAttempts = 3, backoff = 1000, signal, log = console.log,
 }) {
-  const jobs = async () => connect(fenec, { token: await token() }).from('jobs');
+  const jobs = async () => connect(fennec, { token: await token() }).from('jobs');
   while (!signal?.aborted) {
     const owner = `${id}:${Date.now()}`; // a claim, not the worker: two claims of one job tell apart
     let claimed;

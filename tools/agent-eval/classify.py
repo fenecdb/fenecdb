@@ -86,7 +86,7 @@ CARRIES = {
     "EXISTS": {"table alias", "qualified name (t.col)"},
 }
 
-FENECQL = [
+FENNECQL = [
     ("get", r"^\s*(explain\s+)?get\b"),
     ("put", r"^\s*put\b"),
     ("insert", r"^\s*insert\b(?![\s\S]*\bvalues\b)"),
@@ -98,8 +98,8 @@ FENECQL = [
     ("match", r"\bmatch\b"),
     ("~ (contains)", r"~"),
     ("if absent else set", r"\bif\s+absent\b"),
-    ("group (FenecQL)", r"\bgroup\s+(?!by\b)\w"),
-    ("order (FenecQL)", r"\border\s+(?!by\b)\w"),
+    ("group (FennecQL)", r"\bgroup\s+(?!by\b)\w"),
+    ("order (FennecQL)", r"\border\s+(?!by\b)\w"),
     ("count (suffix)", r"\bcount\s*$"),
     ("json path meta.x", r"\bmeta\.\w+"),
     ("require", r"\brequire\s+\d"),
@@ -124,7 +124,7 @@ def masked(statement):
     return "".join(out)
 
 
-# Read in the literal itself: PostgreSQL's `~` is a regex match, FenecQL's a
+# Read in the literal itself: PostgreSQL's `~` is a regex match, FennecQL's a
 # substring one, so `email ~ '@example\.org$'` runs and matches nothing.
 REGEX_TILDE = ("~ given a regex (PostgreSQL's ~)", r"~\s*['\"][^'\"]*(\^|\$['\"]|\.\*|\(\?i\)|\\\.|\[)")
 

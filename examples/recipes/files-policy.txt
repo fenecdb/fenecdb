@@ -19,5 +19,5 @@ files         update(name)            where owner = $jwt.sub
 # them, and moves a pending one to ready, a transition because one filter asked
 # of the row before and after would refuse the move it grants (`new.` is the
 # row as the write leaves it).
-files         read                    where $jwt.sub = 'files-backend' and $jwt.iss = 'urn:fenec:services'
-files         update(state)           where state = "pending" and new.state = "ready" and $jwt.sub = 'files-backend' and $jwt.iss = 'urn:fenec:services'
+files         read                    where $jwt.sub = 'files-backend' and $jwt.iss = 'urn:fennec:services'
+files         update(state)           where state = "pending" and new.state = "ready" and $jwt.sub = 'files-backend' and $jwt.iss = 'urn:fennec:services'

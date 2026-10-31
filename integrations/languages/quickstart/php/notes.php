@@ -1,6 +1,6 @@
 <?php
 
-// One FenecQL statement; the answer is its status and the decoded JSON body.
+// One FennecQL statement; the answer is its status and the decoded JSON body.
 function query(string $q, array $params = []): array {
     $ch = curl_init('http://127.0.0.1:8080/query');
     curl_setopt_array($ch, [

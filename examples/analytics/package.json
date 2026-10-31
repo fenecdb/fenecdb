@@ -1,8 +1,8 @@
 {
-  "name": "fenecdb-analytics",
+  "name": "fennecdb-analytics",
   "private": true,
   "type": "module",
-  "description": "Kestrel, product analytics on fenec-server: a tiny tracker, batched idempotent ingest, rollups kept from the change stream, a dashboard of SVG charts, and a market data view",
+  "description": "Kestrel, product analytics on fennec-server: a tiny tracker, batched idempotent ingest, rollups kept from the change stream, a dashboard of SVG charts, and a market data view",
   "scripts": {
     "db": "sh scripts/db.sh",
     "setup": "tsx scripts/setup.ts",
@@ -16,7 +16,7 @@
     "ci": "sh scripts/ci.sh"
   },
   "dependencies": {
-    "@fenecdb/web": "0.1.10"
+    "@fennecdb/web": "0.1.10"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

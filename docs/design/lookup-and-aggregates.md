@@ -209,7 +209,7 @@ distinct users an hour over a week 125 ms against 7.7 s (`make
 analytics-bench`). The browser module grew 19.5 KB, 6.8 KB brotli, the
 test build 6.6: the parser's calls and `case` (2.2 KB raw), binding and
 folding (8 KB), the checks and names (1.4 KB), `bucket`'s calendar.
-`site/content/docs/analytics.html` is the recipes, each FenecQL block run
+`site/content/docs/analytics.html` is the recipes, each FennecQL block run
 by `tests/analytics_docs.rs` through `redis_docs.rs`'s runner.
 
 ## HyperLogLog and having
@@ -269,10 +269,10 @@ in time order ask one piece for months of them. A time before 2000 in a
 named zone is refused rather than answered by rules the table does not
 hold; an offset answers any time. Native builds carry the table
 (`include_bytes!`); the browser module is handed it as it is handed the
-collation chunks -- listed after them as `zones` by `fenec_collation`,
-taken by `fenec_add_chunk`, `make wasm` putting it in `web/collate/` -- a
+collation chunks -- listed after them as `zones` by `fennec_collation`,
+taken by `fennec_add_chunk`, `make wasm` putting it in `web/collate/` -- a
 statement naming a zone before refused with `chunks: ["zones"]`, which
-`Fenec.query` fetches and runs again (8.5 KB brotli of every page
+`Fennec.query` fetches and runs again (8.5 KB brotli of every page
 otherwise). A select list binds a constant zone once a query (`Calc::Bucket`
 with the zone); a `where`'s `bucket` keeps the zone it named last
 (`tz::cached`); the count off an ordered index looks a zoned group up by

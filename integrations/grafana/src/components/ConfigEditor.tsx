@@ -2,9 +2,9 @@ import React, { ChangeEvent } from 'react';
 import { DataSourcePluginOptionsEditorProps } from '@grafana/data';
 import { Field, FieldSet, Input, SecretInput } from '@grafana/ui';
 
-import { FenecOptions, FenecSecureData } from '../types';
+import { FennecOptions, FennecSecureData } from '../types';
 
-type Props = DataSourcePluginOptionsEditorProps<FenecOptions, FenecSecureData>;
+type Props = DataSourcePluginOptionsEditorProps<FennecOptions, FennecSecureData>;
 
 /**
  * The server, the token and the tenant: every request goes to this URL and
@@ -14,18 +14,18 @@ type Props = DataSourcePluginOptionsEditorProps<FenecOptions, FenecSecureData>;
  */
 export function ConfigEditor({ options, onOptionsChange }: Props) {
   const { jsonData, secureJsonFields } = options;
-  const setJson = (patch: Partial<FenecOptions>) => onOptionsChange({ ...options, jsonData: { ...jsonData, ...patch } });
+  const setJson = (patch: Partial<FennecOptions>) => onOptionsChange({ ...options, jsonData: { ...jsonData, ...patch } });
   const number = (e: ChangeEvent<HTMLInputElement>) => (e.target.value === '' ? undefined : Number(e.target.value));
 
   return (
-    <FieldSet label="fenec-server">
+    <FieldSet label="fennec-server">
       <Field
         label="URL"
-        description="The server's address, as Grafana's server reaches it: http://fenecdb:8080. Queries never change it."
+        description="The server's address, as Grafana's server reaches it: http://fennecdb:8080. Queries never change it."
         required
       >
         <Input
-          id="fenecdb-url"
+          id="fennecdb-url"
           width={50}
           value={options.url}
           placeholder="http://127.0.0.1:8080"
@@ -37,7 +37,7 @@ export function ConfigEditor({ options, onOptionsChange }: Props) {
         description="The server's --http-token, or a JSON Web Token whose policy reads what the dashboards show and writes nothing."
       >
         <SecretInput
-          id="fenecdb-token"
+          id="fennecdb-token"
           width={50}
           isConfigured={!!secureJsonFields?.token}
           value={options.secureJsonData?.token ?? ''}
@@ -54,9 +54,9 @@ export function ConfigEditor({ options, onOptionsChange }: Props) {
           }
         />
       </Field>
-      <Field label="Tenant" description="A tenant of a node or a router (--dir, fenec-shard): requests go to /t/<tenant>/.">
+      <Field label="Tenant" description="A tenant of a node or a router (--dir, fennec-shard): requests go to /t/<tenant>/.">
         <Input
-          id="fenecdb-tenant"
+          id="fennecdb-tenant"
           width={30}
           value={jsonData.tenant ?? ''}
           placeholder="none"
@@ -65,10 +65,10 @@ export function ConfigEditor({ options, onOptionsChange }: Props) {
       </Field>
       <Field
         label="Wait (ms)"
-        description="How long a query sent after a change (a query's After) waits for it on a replica: Fenec-Wait, 5000 unless given, 30000 at most."
+        description="How long a query sent after a change (a query's After) waits for it on a replica: Fennec-Wait, 5000 unless given, 30000 at most."
       >
         <Input
-          id="fenecdb-wait"
+          id="fennecdb-wait"
           type="number"
           min={0}
           width={20}
@@ -79,7 +79,7 @@ export function ConfigEditor({ options, onOptionsChange }: Props) {
       </Field>
       <Field label="Timeout (s)" description="Each request's bound, 30 unless given.">
         <Input
-          id="fenecdb-timeout"
+          id="fennecdb-timeout"
           type="number"
           min={0}
           width={20}

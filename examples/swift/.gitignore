@@ -1,6 +1,6 @@
 .build/
 .swiftpm/
 Package.resolved
-*.fenec
-*.fenec~
+*.fennec
+*.fennec~
 *.lock

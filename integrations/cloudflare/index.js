@@ -1,18 +1,18 @@
-// fenecdb in a Cloudflare Durable Object: the database in the object's
+// fennecdb in a Cloudflare Durable Object: the database in the object's
 // memory, kept in its storage as a file would hold it -- an image, then the
 // writes since -- so the object comes back with it after an eviction or a
 // deploy.
 //
 //   import { DurableObject } from 'cloudflare:workers';
-//   import { Fenec } from '@fenecdb/web';
-//   import { maintain, persist, release, restore, schedule } from '@fenecdb/cloudflare';
-//   import wasm from '@fenecdb/web/fenec.wasm';
+//   import { Fennec } from '@fennecdb/web';
+//   import { maintain, persist, release, restore, schedule } from '@fennecdb/cloudflare';
+//   import wasm from '@fennecdb/web/fennec.wasm';
 //
 //   export class Tenant extends DurableObject {
 //     db() {
 //       // Opened with every other event held back, once.
-//       return (this.fenec ??= this.ctx.blockConcurrencyWhile(async () => {
-//         const db = await Fenec.open(wasm);
+//       return (this.fennec ??= this.ctx.blockConcurrencyWhile(async () => {
+//         const db = await Fennec.open(wasm);
 //         await restore(db, this.ctx.storage);
 //         return db;
 //       }));
@@ -32,7 +32,7 @@
 //       const db = await this.db();
 //       const done = await maintain(db, this.ctx.storage).catch(async (e) => {
 //         await release(db); // nothing more of it stored: the retry restores
-//         this.fenec = null;
+//         this.fennec = null;
 //         throw e;
 //       });
 //       if (done.error) throw done.error; // stored, the alarm not set: tried again
@@ -42,9 +42,9 @@
 // README.md lets a database whose writes were not stored go too, and
 // example/worker.js opens it again when `maintain` asks for a reload.
 //
-// One object is one database, as a tenant is one file on a fenec-server node:
+// One object is one database, as a tenant is one file on a fennec-server node:
 // the object's single thread is the single writer. Nothing here imports the
-// engine; `fenec` is a `Fenec` from `@fenecdb/web`, opened by the caller.
+// engine; `fennec` is a `Fennec` from `@fennecdb/web`, opened by the caller.
 //
 // Two layouts, by what the storage has. A SQLite-backed object -- the only
 // kind a new account makes -- has `storage.sql`, and a generation is a table
@@ -123,10 +123,10 @@ const released = new WeakSet();
  * of it: every call after rejects, and the database has to be opened
  * again and restored, as the writes since the last flush were never kept.
  */
-export function persist(fenec, storage, options = {}) {
-  const [s, fresh] = stateOf(fenec, storage, options);
+export function persist(fennec, storage, options = {}) {
+  const [s, fresh] = stateOf(fennec, storage, options);
   if (s.failed) return refused(s);
-  if (take(fenec, s) || fresh) {
+  if (take(fennec, s) || fresh) {
     const { done } = s.next;
     kick(s);
     return done;
@@ -141,11 +141,11 @@ export function persist(fenec, storage, options = {}) {
  * another. A Durable Object can call it from an alarm, when no request
  * waits. Resolves to the bytes written, 0 when it wrote no image.
  */
-export function checkpoint(fenec, storage, options = {}) {
+export function checkpoint(fennec, storage, options = {}) {
   const { min = FLOOR } = options;
-  const [s, fresh] = stateOf(fenec, storage, options);
+  const [s, fresh] = stateOf(fennec, storage, options);
   if (s.failed) return refused(s);
-  take(fenec, s);
+  take(fennec, s);
   const log = s.log + (s.next?.logBytes ?? 0);
   // Nothing since the image, or too little to pay for writing it again.
   if (!fresh && !s.next?.image && (log === 0 || log < min)) {
@@ -159,22 +159,22 @@ export function checkpoint(fenec, storage, options = {}) {
 }
 
 /**
- * Loads the database `persist` keeps under `key` into `fenec`, and has
+ * Loads the database `persist` keeps under `key` into `fennec`, and has
  * later `persist` calls go on from it. Resolves to false when there is none.
  * Each row or value is copied into the module's memory as it is read and
  * let go of (`loadParts`), never joined into one array first.
  */
-export async function restore(fenec, storage, { key = 'fenec' } = {}) {
-  if (released.has(fenec)) throw failure({ key, released: true });
+export async function restore(fennec, storage, { key = 'fennec' } = {}) {
+  if (released.has(fennec)) throw failure({ key, released: true });
   const found = storage.sql ? keptRows(storage.sql, key) : await keptValues(storage, key);
   if (!found) return false;
-  const taken = await load(fenec, found.length, found.parts);
-  fenec.journal();
-  const s = state(fenec, storage, key);
+  const taken = await load(fennec, found.length, found.parts);
+  fennec.journal();
+  const s = state(fennec, storage, key);
   // A last write cut short is cut off by the load: appended after, a write
   // would be read back as the rest of it, so the next flush is an image.
   Object.assign(s, found.at, { torn: taken < found.length });
-  kept.set(fenec, s);
+  kept.set(fennec, s);
   return true;
 }
 
@@ -190,9 +190,9 @@ export async function restore(fenec, storage, { key = 'fenec' } = {}) {
  * whose id the first then stored again over it, its own write lost on the
  * next restore.
  */
-export async function release(fenec) {
-  released.add(fenec);
-  const s = kept.get(fenec);
+export async function release(fennec) {
+  released.add(fennec);
+  const s = kept.get(fennec);
   if (!s) return;
   s.released = true;
   s.failed ??= new Error('released');
@@ -213,7 +213,7 @@ export async function release(fenec) {
 
 /**
  * How long past its time a row stays before `maintain` deletes it: a
- * server's sweep period (`fenec_http::sweep::GRACE`), so a reaper reading
+ * server's sweep period (`fennec_http::sweep::GRACE`), so a reaper reading
  * `expired()` as often finds every row past its time before it goes -- a
  * hold's money, a reservation's stock -- and gives it back.
  */
@@ -285,17 +285,17 @@ const RELOAD_MAX = 16 << 20;
  * module's statistics and, for each collection whose rows expire, a step
  * of its index.
  */
-export function due(fenec, storage, options = {}) {
-  const { key = 'fenec', min = FLOOR } = options;
-  const s = kept.get(fenec);
+export function due(fennec, storage, options = {}) {
+  const { key = 'fennec', min = FLOOR } = options;
+  const s = kept.get(fennec);
   const ours = s?.key === key;
   if (ours && s.failed) return null;
-  const now = clock(fenec);
+  const now = clock(fennec);
   if (ours) {
-    const { image, reload } = owed(s, held(fenec), min);
+    const { image, reload } = owed(s, held(fennec), min);
     if (image || (reload && !s.reloadAsked)) return now;
   }
-  return sweepAt(fenec, ours ? s : null, now, options);
+  return sweepAt(fennec, ours ? s : null, now, options);
 }
 
 /**
@@ -310,17 +310,17 @@ export function due(fenec, storage, options = {}) {
  * alarm: a request then folds the writes into an image only once they
  * outgrow the whole image, where it did at half, which `maintain` takes.
  */
-export async function schedule(fenec, storage, options = {}) {
-  const { key = 'fenec', quiet = 5_000, every = EVERY } = options;
-  const s = kept.get(fenec);
+export async function schedule(fennec, storage, options = {}) {
+  const { key = 'fennec', quiet = 5_000, every = EVERY } = options;
+  const s = kept.get(fennec);
   if (s?.key === key) s.alarmed = true;
-  const now = clock(fenec);
+  const now = clock(fennec);
   // An alarm that rings no later than this could set covers whatever is
   // due, and `due` need not be asked: 8 us a write in the module, 29 with
   // a collection of 100 000 rows that expire, against a put's 5.
   const set = alarms.get(storage)?.at;
   if (set != null && set >= now && set <= now + quiet + every) return set;
-  const at = due(fenec, storage, options);
+  const at = due(fennec, storage, options);
   if (at === null) return null;
   return arm(storage, Math.max(at, now + quiet), every, false, now);
 }
@@ -340,22 +340,22 @@ export async function schedule(fenec, storage, options = {}) {
  * for Cloudflare to try the alarm again, keeping the database.
  *
  * With `reload`, storage holds an image without the dead records, and a
- * new `Fenec` restored from it gives back what the module holds: let this
+ * new `Fennec` restored from it gives back what the module holds: let this
  * one go once no call uses it, and the next restores (`restore`). The
  * module's memory never shrinks, and a restore into it would not either.
  *
  * Fails as `persist` does: storage that stops part way leaves the last
  * whole database, and this one has to be opened again and restored.
  */
-export async function maintain(fenec, storage, options = {}) {
+export async function maintain(fennec, storage, options = {}) {
   const { min = FLOOR, every = EVERY } = options;
-  const [s] = stateOf(fenec, storage, options);
+  const [s] = stateOf(fennec, storage, options);
   if (s.failed) await refused(s);
-  const now = clock(fenec);
-  const swept = sweep(fenec, now, options);
+  const now = clock(fennec);
+  const swept = sweep(fennec, now, options);
   if (swept.expiring) s.sweptAt = now;
-  take(fenec, s);
-  const { image, reload } = owed(s, held(fenec), min);
+  take(fennec, s);
+  const { image, reload } = owed(s, held(fennec), min);
   if (image) whole(batch(s));
   let wrote = 0;
   if (s.next) {
@@ -364,7 +364,7 @@ export async function maintain(fenec, storage, options = {}) {
     wrote = await b.done;
   } else await settled(s);
   if (reload) s.reloadAsked = true;
-  const next = swept.more ? now : sweepAt(fenec, s, now, options);
+  const next = swept.more ? now : sweepAt(fennec, s, now, options);
   const done = { swept: swept.rows, more: swept.more, image: image ? wrote : 0, reload, next: null, error: null };
   // Asked even with nothing next: the alarm that rang is forgotten, or
   // `schedule` took it for one still set, and set none again. Its failure
@@ -380,7 +380,7 @@ export async function maintain(fenec, storage, options = {}) {
   return done;
 }
 
-const clock = (fenec) => fenec.now?.() ?? Date.now();
+const clock = (fennec) => fennec.now?.() ?? Date.now();
 
 const iso = (ms) => new Date(ms).toISOString();
 
@@ -400,10 +400,10 @@ function time(text) {
 }
 
 /** The record bytes the module holds, and those of versions no read reaches. */
-function held(fenec) {
+function held(fennec) {
   let bytes = 0;
   let dead = 0;
-  for (const c of fenec.stats?.() ?? []) {
+  for (const c of fennec.stats?.() ?? []) {
     bytes += c.bytes;
     dead += c.dead_bytes;
   }
@@ -432,7 +432,7 @@ function owed(s, mem, min) {
 }
 
 /**
- * A name FenecQL reads, as its lexer does (`is_alphabetic` or `_`, then
+ * A name FennecQL reads, as its lexer does (`is_alphabetic` or `_`, then
  * `is_alphanumeric` or `_`): the sweep's statements name collections and
  * fields as text. ASCII alone, a collection `müşteri` or a field `zamanı`
  * was never swept nor its rows' times asked, kept for good.
@@ -442,9 +442,9 @@ const NAME = /^[\p{Alphabetic}_][\p{Alphabetic}\p{N}_]*$/u;
 const UNIT = { ms: 1, s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 };
 
 /** The collections whose rows expire: their field and its `@ttl`, from the schemas the module answers. */
-function expiring(fenec) {
+function expiring(fennec) {
   const out = [];
-  for (const c of fenec.schemas()) {
+  for (const c of fennec.schemas()) {
     if (!NAME.test(c.name)) continue;
     for (const f of c.fields) {
       const m = /^ttl\(([0-9]+)(ms|s|m|h|d)\)$/.exec(f.index);
@@ -460,10 +460,10 @@ function expiring(fenec) {
  * `order` on the field walks its index to the batch and stops, where the
  * range alone gathered every row past its time again for each batch. No
  * new export of the module: the server's `Database::expired` and `sweep`
- * are native, and FenecQL says the same in the module as it is.
+ * are native, and FennecQL says the same in the module as it is.
  */
-function sweep(fenec, now, { grace = GRACE, sweep: most = SWEEP } = {}) {
-  const collections = expiring(fenec);
+function sweep(fennec, now, { grace = GRACE, sweep: most = SWEEP } = {}) {
+  const collections = expiring(fennec);
   let rows = 0;
   let more = false;
   for (const { name, field, ttl } of collections) {
@@ -471,10 +471,10 @@ function sweep(fenec, now, { grace = GRACE, sweep: most = SWEEP } = {}) {
     for (;;) {
       const n = Math.min(BATCH, most - rows);
       if (n <= 0) {
-        more ||= fenec.rows(`get ${name} select id where expired() and ${field} <= $1 limit 1`, cut).length > 0;
+        more ||= fennec.rows(`get ${name} select id where expired() and ${field} <= $1 limit 1`, cut).length > 0;
         break;
       }
-      const { count } = fenec.run(`del ${name} where expired() and ${field} <= $1 order ${field} limit $2`, [...cut, n]);
+      const { count } = fennec.run(`del ${name} where expired() and ${field} <= $1 order ${field} limit $2`, [...cut, n]);
       rows += count;
       if (count < n) break;
     }
@@ -488,11 +488,11 @@ function sweep(fenec, now, { grace = GRACE, sweep: most = SWEEP } = {}) {
  * time come first in their field's order, the living after them: a step of
  * the index each, the nulls -- which never expire -- left out by `>`.
  */
-function sweepAt(fenec, s, now, { grace = GRACE, every = EVERY } = {}) {
+function sweepAt(fennec, s, now, { grace = GRACE, every = EVERY } = {}) {
   let next = null;
-  for (const { name, field, ttl } of expiring(fenec)) {
-    const [row] = fenec.rows(`get ${name} select ${field} where expired() order ${field} limit 1`);
-    const first = row ?? fenec.rows(`get ${name} select ${field} where ${field} > $1 order ${field} limit 1`, [iso(now - ttl)])[0];
+  for (const { name, field, ttl } of expiring(fennec)) {
+    const [row] = fennec.rows(`get ${name} select ${field} where expired() order ${field} limit 1`);
+    const first = row ?? fennec.rows(`get ${name} select ${field} where ${field} > $1 order ${field} limit 1`, [iso(now - ttl)])[0];
     if (!first) continue;
     let at = time(first[field]) + ttl + grace;
     // A time JavaScript has no date for: once `NaN`, every collection's
@@ -543,9 +543,9 @@ function arm(storage, at, slack, ringing, now) {
 
 // ------------------------------------------------------------- the flushes
 
-function state(fenec, storage, key) {
+function state(fennec, storage, key) {
   return {
-    fenec, storage, key, sql: !!storage.sql, piece: 0,
+    fennec, storage, key, sql: !!storage.sql, piece: 0,
     gen: null, image: 0, log: 0, pieces: [0, 0], torn: false,
     next: null, flushing: null, failed: null,
     // Let go of (`release`): it refuses everything, as a failed one does.
@@ -560,19 +560,19 @@ function state(fenec, storage, key) {
 }
 
 /** The database's state, made -- its journal started, an image due -- when new to `key`. */
-function stateOf(fenec, storage, { key = 'fenec', piece } = {}) {
-  let s = kept.get(fenec);
+function stateOf(fennec, storage, { key = 'fennec', piece } = {}) {
+  let s = kept.get(fennec);
   // A database let go of stays so, under any key and if it had no state:
   // a state made afresh would have written an image.
-  if (released.has(fenec)) {
-    s ??= Object.assign(state(fenec, storage, key), { released: true, failed: new Error('released') });
+  if (released.has(fennec)) {
+    s ??= Object.assign(state(fennec, storage, key), { released: true, failed: new Error('released') });
     return [s, false];
   }
   const fresh = s?.key !== key;
   if (fresh) {
-    fenec.journal();
-    s = state(fenec, storage, key);
-    kept.set(fenec, s);
+    fennec.journal();
+    s = state(fennec, storage, key);
+    kept.set(fennec, s);
     whole(batch(s));
   }
   s.piece = piece ?? (s.sql ? ROW : PIECE);
@@ -581,8 +581,8 @@ function stateOf(fenec, storage, { key = 'fenec', piece } = {}) {
 
 const failure = (s) =>
   s.released
-    ? new Error(`fenecdb: ${s.key} was let go of (release): open it again and restore`)
-    : new Error(`fenecdb: ${s.key} was not stored, and the database holds writes its storage does not: open it again and restore`, {
+    ? new Error(`fennecdb: ${s.key} was let go of (release): open it again and restore`)
+    : new Error(`fennecdb: ${s.key} was not stored, and the database holds writes its storage does not: open it again and restore`, {
         cause: s.failed,
       });
 
@@ -621,8 +621,8 @@ function whole(b) {
 }
 
 /** The writes since the last drain into the flush `into()` gives; false when there were none. */
-function absorb(fenec, into) {
-  const { replace, bytes } = fenec.drain();
+function absorb(fennec, into) {
+  const { replace, bytes } = fennec.drain();
   if (!replace && bytes.length === 0) return false;
   const b = into();
   // An image taken at the flush holds them already.
@@ -637,7 +637,7 @@ function absorb(fenec, into) {
   return true;
 }
 
-const take = (fenec, s) => absorb(fenec, () => batch(s));
+const take = (fennec, s) => absorb(fennec, () => batch(s));
 
 /** Resolves once what was drained so far is stored, rejects when it was not. */
 function settled(s) {
@@ -663,7 +663,7 @@ function kick(s) {
   // returns, so nothing runs between the drain and them.
   const run = (async () => {
     if (s.failed) throw failure(s);
-    absorb(s.fenec, () => b);
+    absorb(s.fennec, () => b);
     const fold = s.alarmed ? BACKSTOP : FOLD;
     if (s.torn || (b.image === null && s.log + b.logBytes > Math.max(s.image * fold, FLOOR))) whole(b);
     const n = s.sql ? flushRows(s, b) : await flushValues(s, b);
@@ -686,10 +686,10 @@ function kick(s) {
  * them. The module takes the image at the first chunk, which is asked for
  * here, so nothing lands between the drain and it.
  */
-function snapshot(fenec) {
-  fenec.drain();
-  if (!fenec.snapshotChunks) return [fenec.snapshot()];
-  const it = fenec.snapshotChunks();
+function snapshot(fennec) {
+  fennec.drain();
+  if (!fennec.snapshotChunks) return [fennec.snapshot()];
+  const it = fennec.snapshotChunks();
   const first = it.next();
   return (function* () {
     if (first.done) return;
@@ -708,8 +708,8 @@ function snapshot(fenec) {
 function imageOf(s, b) {
   if (b.image !== true) return [[b.image], 0];
   // Read before the snapshot, which takes the database as it stands.
-  const { dead } = held(s.fenec);
-  return [snapshot(s.fenec), dead];
+  const { dead } = held(s.fennec);
+  return [snapshot(s.fennec), dead];
 }
 
 /**
@@ -901,7 +901,7 @@ async function keptValues(storage, key) {
           yield v;
           n++;
         }
-        if (n === from) throw new Error(`fenecdb: ${key} is missing pieces of generation ${gen} (${part})`);
+        if (n === from) throw new Error(`fennecdb: ${key} is missing pieces of generation ${gen} (${part})`);
       }
     }
   };
@@ -909,11 +909,11 @@ async function keptValues(storage, key) {
 }
 
 /**
- * `fenec.loadParts` where the module's glue has it, and the parts joined
+ * `fennec.loadParts` where the module's glue has it, and the parts joined
  * and loaded at once where it is older.
  */
-async function load(fenec, length, parts) {
-  if (fenec.loadParts) return fenec.loadParts(length, parts);
+async function load(fennec, length, parts) {
+  if (fennec.loadParts) return fennec.loadParts(length, parts);
   const bytes = new Uint8Array(length);
   let off = 0;
   for await (const p of parts()) {
@@ -922,6 +922,6 @@ async function load(fenec, length, parts) {
     bytes.set(v, off);
     off += v.length;
   }
-  if (off !== length) throw new Error(`fenecdb: what is kept holds ${off} bytes where ${length} were written`);
-  return fenec.loadAsync(bytes);
+  if (off !== length) throw new Error(`fennecdb: what is kept holds ${off} bytes where ${length} were written`);
+  return fennec.loadAsync(bytes);
 }

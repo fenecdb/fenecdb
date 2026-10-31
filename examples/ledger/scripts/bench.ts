@@ -1,5 +1,5 @@
 // Transfers a second and their latency: one client and sixteen, under
-// `--sync always` and `--sync 250`, each against a fenec-server of its own
+// `--sync always` and `--sync 250`, each against a fennec-server of its own
 // over a new directory. Every transfer is the whole block -- the rate
 // limit's two statements, the two guards, the debit, the credit, the two
 // entries and the record -- sent as one /batch with an Idempotency-Key.

@@ -1,7 +1,7 @@
 {
-  "name": "@fenecdb/react",
+  "name": "@fennecdb/react",
   "version": "0.1.12",
-  "description": "useLiveQuery for fenecdb: a query's rows over the database in the page, rendered again as they change",
+  "description": "useLiveQuery for fennecdb: a query's rows over the database in the page, rendered again as they change",
   "license": "Apache-2.0",
   "type": "module",
   "main": "index.js",
@@ -11,7 +11,7 @@
     "react": ">=18"
   },
   "keywords": [
-    "fenecdb",
+    "fennecdb",
     "react",
     "live-query",
     "local-first",
@@ -21,7 +21,7 @@
   "homepage": "https://fenecdb.com/docs/sync",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/fenecdb/fenecdb.git",
+    "url": "git+https://github.com/fennec-db/fennecdb.git",
     "directory": "integrations/react"
   },
   "publishConfig": {

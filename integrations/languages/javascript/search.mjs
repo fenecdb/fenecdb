@@ -2,8 +2,8 @@
 // Run by ../run-tests.sh.
 import assert from 'node:assert/strict';
 
-const url = process.env.FENEC_URL ?? 'http://127.0.0.1:8080';
-const token = process.env.FENEC_TOKEN;
+const url = process.env.FENNEC_URL ?? 'http://127.0.0.1:8080';
+const token = process.env.FENNEC_TOKEN;
 
 async function query(q, params = []) {
   const res = await fetch(`${url}/query`, {

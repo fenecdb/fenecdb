@@ -3,7 +3,7 @@
 import pytest
 
 from conftest import TOKEN, URL, fresh
-from fenecdb import Client, FenecError, expr, raw
+from fennecdb import Client, FennecError, expr, raw
 
 
 def test_a_statement_and_a_batch(client):
@@ -27,11 +27,11 @@ def test_a_statement_and_a_batch(client):
 
 
 def test_a_refusal_says_why_and_how(client):
-    with pytest.raises(FenecError) as e:
+    with pytest.raises(FennecError) as e:
         client.query("get no_such_collection_here")
     assert e.value.status == 404
     assert "no_such_collection_here" in str(e.value)
-    with pytest.raises(FenecError) as e:
+    with pytest.raises(FennecError) as e:
         client.query("get x wher")
     assert e.value.status == 400
 
@@ -39,29 +39,29 @@ def test_a_refusal_says_why_and_how(client):
 def test_a_quota_names_itself_and_the_wait():
     """A tenant node's quota refusal, as the client raises it: the quota
     and, where coming back helps, how long to wait."""
-    import fenecdb
+    import fennecdb
 
-    with pytest.raises(FenecError) as e:
-        fenecdb._answer(507, b'{"error":"past its quota of 5 rows","quota":"rows"}')
+    with pytest.raises(FennecError) as e:
+        fennecdb._answer(507, b'{"error":"past its quota of 5 rows","quota":"rows"}')
     assert (e.value.status, e.value.quota, e.value.retry_after) == (507, "rows", None)
-    with pytest.raises(FenecError) as e:
-        fenecdb._answer(
+    with pytest.raises(FennecError) as e:
+        fennecdb._answer(
             429, b'{"error":"past its quota of 2 writes a second","quota":"writes","retry_after":3}'
         )
     assert (e.value.status, e.value.quota, e.value.retry_after) == (429, "writes", 3)
     # To the millisecond where the body says it, over the whole second.
-    with pytest.raises(FenecError) as e:
-        fenecdb._answer(
+    with pytest.raises(FennecError) as e:
+        fennecdb._answer(
             429,
             b'{"error":"past","quota":"writes","retry_after":1,"retry_after_ms":2}',
         )
     assert (e.value.quota, e.value.retry_after) == ("writes", 0.002)
-    with pytest.raises(FenecError) as e:
-        fenecdb._answer(507, b'{"error":"past","quota":"bytes","completed":0,"at":1}')
+    with pytest.raises(FennecError) as e:
+        fennecdb._answer(507, b'{"error":"past","quota":"bytes","completed":0,"at":1}')
     assert (e.value.quota, e.value.at, e.value.completed) == ("bytes", 1, 0)
     # A tenant being moved or failed over says the wait as a quota does.
-    with pytest.raises(FenecError) as e:
-        fenecdb._answer(503, b'{"error":"the tenant is being moved; retry shortly","retry_after":1}')
+    with pytest.raises(FennecError) as e:
+        fennecdb._answer(503, b'{"error":"the tenant is being moved; retry shortly","retry_after":1}')
     assert (e.value.status, e.value.quota, e.value.retry_after) == (503, None, 1)
 
 
@@ -69,10 +69,10 @@ def test_a_write_whose_outcome_is_unknown_says_so():
     """A write a tenant's node answered after its lease lapsed, told apart
     from the server's own error by its body's outcome, with where it left
     the node's database; a 500 that says none is one as before."""
-    import fenecdb
+    import fennecdb
 
-    with pytest.raises(FenecError) as e:
-        fenecdb._answer(
+    with pytest.raises(FennecError) as e:
+        fennecdb._answer(
             500,
             b'{"error":"the write landed","outcome":"unknown","seq":7,'
             b'"history":"1-00000000000000ab","completed":2,"at":3}',
@@ -84,8 +84,8 @@ def test_a_write_whose_outcome_is_unknown_says_so():
         "1-00000000000000ab",
     )
     assert (e.value.completed, e.value.at) == (2, 3)
-    with pytest.raises(FenecError) as e:
-        fenecdb._answer(500, b'{"error":"sync error: disk full"}')
+    with pytest.raises(FennecError) as e:
+        fennecdb._answer(500, b'{"error":"sync error: disk full"}')
     assert (e.value.outcome, e.value.seq) == (None, None)
 
 
@@ -93,24 +93,24 @@ def test_a_require_that_refused_says_its_reason():
     """A `require n else '<reason>'` that refused, as the client raises it:
     the statement's own words beside the message, and a batch's stop's
     beside its `at`; None where the statement gave none."""
-    import fenecdb
+    import fennecdb
 
-    with pytest.raises(FenecError) as e:
-        fenecdb._answer(
+    with pytest.raises(FennecError) as e:
+        fennecdb._answer(
             412,
             b'{"error":"no such account (`set accounts` wrote 0 rows, and requires 1)",'
             b'"reason":"no such account"}',
         )
     assert (e.value.status, e.value.reason, e.value.at) == (412, "no such account", None)
-    with pytest.raises(FenecError) as e:
-        fenecdb._answer(
+    with pytest.raises(FennecError) as e:
+        fennecdb._answer(
             412,
             b'{"error":"unmet: no account to credit (`set accounts` wrote 0 rows, and requires 1)",'
             b'"completed":0,"at":1,"reason":"no account to credit"}',
         )
     assert (e.value.at, e.value.completed, e.value.reason) == (1, 0, "no account to credit")
-    with pytest.raises(FenecError) as e:
-        fenecdb._answer(412, b'{"error":"`set accounts` wrote 0 rows, and requires 1"}')
+    with pytest.raises(FennecError) as e:
+        fennecdb._answer(412, b'{"error":"`set accounts` wrote 0 rows, and requires 1"}')
     assert e.value.reason is None
 
 
@@ -120,7 +120,7 @@ def test_a_write_that_does_not_write_its_count_is_refused_and_put_back(client):
     try:
         client.collection(name).insert({"name": "a", "balance": 10})
         accounts = client.collection(name)
-        with pytest.raises(FenecError) as e:
+        with pytest.raises(FennecError) as e:
             accounts.where("name", "nobody").update({"balance": 0}, require=1)
         assert e.value.status == 412
         assert "requires 1" in str(e.value)
@@ -128,7 +128,7 @@ def test_a_write_that_does_not_write_its_count_is_refused_and_put_back(client):
         # A batch whose second write is unmet keeps nothing of the first.
         met = accounts.where("name", "a").to_update({"balance": 0}, require=1)
         unmet = accounts.where("name", "nobody").to_delete(require=1)
-        with pytest.raises(FenecError) as e:
+        with pytest.raises(FennecError) as e:
             client.batch([met, unmet])
         assert e.value.status == 412
         # The second statement stopped it, and nothing of the batch stayed.
@@ -144,18 +144,18 @@ def test_a_write_that_does_not_write_its_count_is_refused_and_put_back(client):
         credit = accounts.where("name", "nobody").to_update(
             {"balance": 50}, require=1, reason="no account to credit"
         )
-        with pytest.raises(FenecError) as e:
+        with pytest.raises(FennecError) as e:
             client.batch([debit, credit])
         assert (e.value.status, e.value.at, e.value.reason) == (412, 0, "insufficient funds")
-        with pytest.raises(FenecError) as e:
+        with pytest.raises(FennecError) as e:
             client.batch([credit])
         assert (e.value.at, e.value.reason) == (0, "no account to credit")
         # Written into the text, its quote and backslash come back as given.
-        with pytest.raises(FenecError) as e:
+        with pytest.raises(FennecError) as e:
             accounts.where("name", "nobody").delete(require=1, reason="it's a \\ b")
         assert e.value.reason == "it's a \\ b"
         # A read's guard says its reason too.
-        with pytest.raises(FenecError) as e:
+        with pytest.raises(FennecError) as e:
             accounts.where("name", "nobody").require(1, reason="no such account").rows()
         assert (e.value.status, e.value.reason) == (412, "no such account")
         assert client.query(f"get {name} select balance") == [{"balance": 5}]
@@ -178,7 +178,7 @@ def test_a_range_facet_answers_its_bounds_and_a_disjunctive_one_counts_past_its_
 
 
 def test_a_refusal_outside_a_batch_names_no_statement(client):
-    with pytest.raises(FenecError) as e:
+    with pytest.raises(FennecError) as e:
         client.query("get no_such_collection_here")
     assert (e.value.at, e.value.completed) == (None, None)
 
@@ -194,7 +194,7 @@ def test_an_idempotency_key_makes_a_write_once(client):
         assert client.query(put, ["once"], idempotency_key=f"{name}-1") == {"affected": 1}
         assert client.replayed
         assert client.query(f"get {name} count") == [{"count": 1}]
-        with pytest.raises(FenecError) as e:
+        with pytest.raises(FennecError) as e:
             client.query(put, ["another"], idempotency_key=f"{name}-1")
         assert e.value.status == 422
 
@@ -225,7 +225,7 @@ def test_a_write_names_its_change_and_a_read_can_wait_for_it(client):
         assert client.seq and client.seq > 0
         # On the primary the write is there already: answered at once.
         assert client.query(f"get {name} count", after=client.seq) == [{"count": 1}]
-        with pytest.raises(FenecError) as e:
+        with pytest.raises(FennecError) as e:
             client.query(f"get {name} count", after="soon")
         assert e.value.status == 400
     finally:
@@ -233,7 +233,7 @@ def test_a_write_names_its_change_and_a_read_can_wait_for_it(client):
 
 
 def test_a_schema_is_compared_and_applied_only_when_asked(client):
-    from fenecdb import SchemaError
+    from fennecdb import SchemaError
 
     name = fresh("schema")
     v1 = f"create collection {name} (title text required, n int @hash)"
@@ -319,7 +319,7 @@ def _server(plan):
 
 
 def test_a_connection_the_server_closed_is_opened_again_before_a_request():
-    from fenecdb import Client
+    from fennecdb import Client
 
     port, seen, closed = _server(["close", "answer"])
     c = Client(f"http://127.0.0.1:{port}")
@@ -330,7 +330,7 @@ def test_a_connection_the_server_closed_is_opened_again_before_a_request():
 
 
 def test_a_request_sent_is_never_sent_again():
-    from fenecdb import Client
+    from fennecdb import Client
 
     port, seen, _ = _server(["answer", "drop", "answer"])
     c = Client(f"http://127.0.0.1:{port}")

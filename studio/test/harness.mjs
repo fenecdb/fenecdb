@@ -1,7 +1,7 @@
-// A fenec-server with the studio on, a database seeded for it, and a
+// A fennec-server with the studio on, a database seeded for it, and a
 // headless Chrome: what the end-to-end tests and the screenshots share.
 //
-// The server is the workspace's (`FENEC_SERVER`, else target/debug, else
+// The server is the workspace's (`FENNEC_SERVER`, else target/debug, else
 // target/release); Chrome is `CHROME_PATH`, else the newest one puppeteer
 // keeps in its cache. Each run takes a directory of its own under the
 // system's temporary one and removes it.
@@ -33,21 +33,21 @@ function binary(name, env) {
   if (!found) throw new Error(`no ${name}: cargo build -p ${name}, or set ${env}`);
   return found;
 }
-const serverBinary = () => binary('fenec-server', 'FENEC_SERVER');
+const serverBinary = () => binary('fennec-server', 'FENNEC_SERVER');
 
 export const ROUTER = 'studio-test-router-token';
 
 /**
- * fenec-shard with the studio on, in front of the tenant node at `node`
+ * fennec-shard with the studio on, in front of the tenant node at `node`
  * (started with `tenants: true`), and `tenants` placed on it. `token` is
  * the router's own: the nodes' data token makes one token for both, as the
  * admin view's list of tenants needs. `extra` goes on its command line.
  */
 export async function startRouter(node, tenants, { token = ROUTER, extra = [] } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'fenec-studio-router-'));
-  const args = ['--listen', '127.0.0.1:0', '--directory', join(dir, 'shard.fenec'), '--token', token, '--auth-delay', '0', '--studio', ...extra];
-  const child = spawn(binary('fenec-shard', 'FENEC_SHARD'), args, { stdio: ['ignore', 'ignore', 'pipe'] });
-  const { url, log } = await listening(child, 'fenec-shard');
+  const dir = mkdtempSync(join(tmpdir(), 'fennec-studio-router-'));
+  const args = ['--listen', '127.0.0.1:0', '--directory', join(dir, 'shard.fennec'), '--token', token, '--auth-delay', '0', '--studio', ...extra];
+  const child = spawn(binary('fennec-shard', 'FENNEC_SHARD'), args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  const { url, log } = await listening(child, 'fennec-shard');
   const admin = (method, path, body) =>
     fetch(`${url}${path}`, { method, headers: { authorization: `Bearer ${token}` }, body: body && JSON.stringify(body) });
   for (let i = 0; ; i++) {
@@ -56,7 +56,7 @@ export async function startRouter(node, tenants, { token = ROUTER, extra = [] } 
     } catch {
       /* not yet */
     }
-    if (child.exitCode !== null || i > 400) throw new Error(`fenec-shard did not start: ${log()}`);
+    if (child.exitCode !== null || i > 400) throw new Error(`fennec-shard did not start: ${log()}`);
     await new Promise((r) => setTimeout(r, 25));
   }
   const r = await admin('PUT', '/_shard/nodes/n1', { addr: new URL(node.url).host, token: ADMIN });
@@ -76,31 +76,31 @@ export async function startRouter(node, tenants, { token = ROUTER, extra = [] } 
 }
 
 /**
- * A standby fenec-shard following a primary router that is not there, so
+ * A standby fennec-shard following a primary router that is not there, so
  * its directory never arrives: every tenant's request is its 503. The
  * primary is port 1, where no test can listen -- a port found free could
  * be another test's server by the time the standby asked it. `extra` goes
  * on its command line.
  */
 export async function startStandby({ extra = [] } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'fenec-studio-standby-'));
+  const dir = mkdtempSync(join(tmpdir(), 'fennec-studio-standby-'));
   const args = [
     '--listen', '127.0.0.1:0',
-    '--directory', join(dir, 'shard.fenec'),
+    '--directory', join(dir, 'shard.fennec'),
     '--replication-token', 'studio-test-replication',
     '--replica-of', 'http://127.0.0.1:1',
     '--auth-delay', '0',
     ...extra,
   ];
-  const child = spawn(binary('fenec-shard', 'FENEC_SHARD'), args, { stdio: ['ignore', 'ignore', 'pipe'] });
-  const { url, log } = await listening(child, 'fenec-shard');
+  const child = spawn(binary('fennec-shard', 'FENNEC_SHARD'), args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  const { url, log } = await listening(child, 'fennec-shard');
   for (let i = 0; ; i++) {
     try {
       if ((await fetch(`${url}/t/any/collections`)).status === 503) break;
     } catch {
       /* not yet */
     }
-    if (child.exitCode !== null || i > 400) throw new Error(`fenec-shard did not start: ${log()}`);
+    if (child.exitCode !== null || i > 400) throw new Error(`fennec-shard did not start: ${log()}`);
     await new Promise((r) => setTimeout(r, 25));
   }
   return {
@@ -236,11 +236,11 @@ export function jwt(claims) {
 
 /** The server started with the studio on, and stopped by `stop()`. */
 export async function startServer({ studio = true, tenants = false, extra = [] } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'fenec-studio-'));
+  const dir = mkdtempSync(join(tmpdir(), 'fennec-studio-'));
   writeFileSync(join(dir, 'policy.txt'), POLICY);
   writeFileSync(join(dir, 'jwt.secret'), SECRET);
   const args = [
-    ...(tenants ? ['--dir', join(dir, 'tenants'), '--admin-token', ADMIN] : ['--file', join(dir, 'data.fenec')]),
+    ...(tenants ? ['--dir', join(dir, 'tenants'), '--admin-token', ADMIN] : ['--file', join(dir, 'data.fennec')]),
     '--http', '127.0.0.1:0',
     '--http-token', TOKEN,
     '--jwt-secret-file', join(dir, 'jwt.secret'),
@@ -252,7 +252,7 @@ export async function startServer({ studio = true, tenants = false, extra = [] }
     ...extra,
   ];
   const child = spawn(serverBinary(), args, { stdio: ['ignore', 'ignore', 'pipe'] });
-  const { url, log } = await listening(child, 'fenec-server');
+  const { url, log } = await listening(child, 'fennec-server');
   // And answering: the health check answers once it is up.
   for (let i = 0; ; i++) {
     try {
@@ -261,8 +261,8 @@ export async function startServer({ studio = true, tenants = false, extra = [] }
     } catch {
       /* not yet */
     }
-    if (child.exitCode !== null) throw new Error(`fenec-server exited: ${log()}`);
-    if (i > 400) throw new Error(`fenec-server did not start: ${log()}`);
+    if (child.exitCode !== null) throw new Error(`fennec-server exited: ${log()}`);
+    if (i > 400) throw new Error(`fennec-server did not start: ${log()}`);
     await new Promise((r) => setTimeout(r, 25));
   }
   return {
@@ -346,7 +346,7 @@ export const STATUSES = ['paid', 'open', 'refunded', 'shipped'];
 /**
  * `orders`: `n` rows, an owner each in turn, so a quarter are alice's;
  * `docs`, with a graph and a text index; `odd`, whose fields are named as
- * FenecQL's keywords and outside ASCII.
+ * FennecQL's keywords and outside ASCII.
  */
 export async function seed(url, n = 100_000) {
   await query(

@@ -1,12 +1,12 @@
-// What a caller writes against web/fenec.d.ts, type-checked under --strict
+// What a caller writes against web/fennec.d.ts, type-checked under --strict
 // (`make types-check`): each line is one the types must take, and each
 // `@ts-expect-error` one they must refuse -- a declaration gone loose takes
 // everything, and that is a drift too.
 
 import {
-  Fenec,
-  FenecHttp,
-  FenecError,
+  Fennec,
+  FennecHttp,
+  FennecError,
   and,
   bucket,
   connect,
@@ -31,10 +31,10 @@ import {
   type Timestamp,
   type TypedFrom,
   type Vector,
-} from '../fenec.js';
+} from '../fennec.js';
 import * as client from '../client.js';
 
-// As `fenec types` writes a collection: a field not `required` reads null.
+// As `fennec types` writes a collection: a field not `required` reads null.
 type Article = {
   title: string;
   body: string | null;
@@ -52,10 +52,10 @@ type Schema = { articles: Article; reviews: Review; places: Place };
 const expect = <T>(value: T): T => value;
 
 export async function local(bytes: Uint8Array, module: WebAssembly.Module) {
-  const db = await Fenec.open<Schema>(bytes);
+  const db = await Fennec.open<Schema>(bytes);
   // A Worker hands the module compiled.
-  await Fenec.open<Schema>(module);
-  await Fenec.open('./fenec.wasm', { collation: (name: string) => fetch(`/collate/${name}.bin`) });
+  await Fennec.open<Schema>(module);
+  await Fennec.open('./fennec.wasm', { collation: (name: string) => fetch(`/collate/${name}.bin`) });
 
   const titles = await db.from('articles').select('title', 'year').where('year', '>=', 2024).rows();
   expect<{ title: string; year: number | null }[]>(titles);
@@ -268,7 +268,7 @@ export async function local(bytes: Uint8Array, module: WebAssembly.Module) {
   try {
     await db.from('articles').where('id', 1).update({ year: inc(-1) }, { require: 1, reason: 'no such article' });
   } catch (e) {
-    if (e instanceof FenecError && e.status === 412) expect<string | undefined>(e.reason);
+    if (e instanceof FennecError && e.status === 412) expect<string | undefined>(e.reason);
   }
   // A claim: the oldest rows picked and answered as written; a pop.
   const claimed = await db
@@ -314,7 +314,7 @@ export async function local(bytes: Uint8Array, module: WebAssembly.Module) {
   // @ts-expect-error -- wait is milliseconds
   db.from('articles').order('id').limit(1).delete({ wait: '30s' });
 
-  const [sql, params] = db.from('articles').where('year', 2024).toFenecQL();
+  const [sql, params] = db.from('articles').where('year', 2024).toFennecQL();
   expect<string>(sql);
   expect<unknown[]>(params);
 
@@ -343,23 +343,23 @@ export async function local(bytes: Uint8Array, module: WebAssembly.Module) {
 
   await persist(db, 'app');
   // A file of the origin private file system, in a directory of the page's.
-  const file = await openFile(db, 'app.fenec', { dir: await navigator.storage.getDirectory() });
+  const file = await openFile(db, 'app.fennec', { dir: await navigator.storage.getDirectory() });
   expect<Uint8Array>(file.bytes());
   // @ts-expect-error -- a directory is a handle, not its name
-  openFile(db, 'app.fenec', { dir: 'data' });
+  openFile(db, 'app.fennec', { dir: 'data' });
   expect<boolean>(await restore(db, 'app'));
   db.close();
 }
 
 export async function remote() {
   const http = connect<Schema>('http://127.0.0.1:8080', { token: 't' });
-  expect<FenecHttp<Schema>>(http);
+  expect<FennecHttp<Schema>>(http);
   const rows: Row<Article>[] = await http.from('articles').rows();
   expect<string>(rows[0].title);
-  await Fenec.connect<Schema>('http://127.0.0.1:8080').from('reviews').where('stars', 5).rows();
+  await Fennec.connect<Schema>('http://127.0.0.1:8080').from('reviews').where('stars', 5).rows();
 
   const typed: TypedFrom<Schema> = from as TypedFrom<Schema>;
-  typed('articles').where('year', '>=', 2024).toFenecQL();
+  typed('articles').where('year', '>=', 2024).toFennecQL();
 
   const replica = await sync<Schema>({ url: 'http://127.0.0.1:8080', shapes: [{ collection: 'articles' }] });
   await replica.from('articles').where('year', 2024).rows();
@@ -367,7 +367,7 @@ export async function remote() {
   try {
     await http.rows('get nothing');
   } catch (e) {
-    if (e instanceof FenecError) expect<string>(e.message);
+    if (e instanceof FennecError) expect<string>(e.message);
   }
 
   // Live queries over the server: a builder query knows what it reads, a
@@ -394,25 +394,25 @@ export async function remote() {
   try {
     await http.batch(['get articles']);
   } catch (e) {
-    if (e instanceof FenecError) expect<number | undefined>(e.at);
+    if (e instanceof FennecError) expect<number | undefined>(e.at);
   }
   // @ts-expect-error -- a statement is a query, a text or [text, params]
   void http.batch([42]);
   // The same batch over a database in the page, and its schema described.
-  const local = await Fenec.open<Schema>('./fenec.wasm');
+  const local = await Fennec.open<Schema>('./fennec.wasm');
   const inPage = await local.batch([local.from('articles').toInsert({ title: 'a' }), ['get articles where year > $1', [2020]]]);
   expect<number | null>(inPage.seq);
-  expect<string>(local.describe('fenecql').fenecql);
+  expect<string>(local.describe('fennecql').fennecql);
   expect<string>(local.describe().collections[0].name);
   // @ts-expect-error -- a statement is a query, a text or [text, params]
   void local.batch([42]);
   await http.run('put articles {title: $1}', ['a'], { idempotencyKey: 'k2' });
-  expect<FenecHttp<Schema>>(http.withIdempotencyKey('k3'));
+  expect<FennecHttp<Schema>>(http.withIdempotencyKey('k3'));
   expect<number | null>(http.seq);
 
-  // `@fenecdb/web/client`: the same classes and builder, no engine.
+  // `@fennecdb/web/client`: the same classes and builder, no engine.
   const bare = client.connect<Schema>('http://127.0.0.1:8080');
-  expect<FenecHttp<Schema>>(bare);
+  expect<FennecHttp<Schema>>(bare);
   // Reads near a read replica: the builder's on their own, a text said to read.
   const near = client.connect<Schema>('http://127.0.0.1:8080/t/acme', { reads: 'nearest' });
   await near.run('get articles', [], { read: true });
@@ -421,9 +421,9 @@ export async function remote() {
   client.connect<Schema>('http://127.0.0.1:8080', { reads: 'far' });
   // @ts-expect-error -- read is a boolean
   void near.run('get articles', [], { read: 'yes' });
-  expect<string>(client.from('articles').where('year', 2024).toFenecQL()[0]);
+  expect<string>(client.from('articles').where('year', 2024).toFennecQL()[0]);
   // @ts-expect-error -- the client holds no engine
-  void client.Fenec;
+  void client.Fennec;
   // @ts-expect-error -- nor the sync layer
   void client.sync;
 

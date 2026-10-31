@@ -20,5 +20,5 @@ text, m = re.subn(r'^let checksum = "[^"]*"', f'let checksum = "{checksum}"', te
 if n != 1 or m != 1:
     sys.exit("Package.swift: no `let release` or `let checksum` line")
 open(path, "w").write(text)
-print(f"Package.swift: FenecFFI {version}, checksum {checksum}")
+print(f"Package.swift: FennecFFI {version}, checksum {checksum}")
 EOF

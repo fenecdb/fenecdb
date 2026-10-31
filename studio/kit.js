@@ -1,5 +1,5 @@
 // What the views opened after the rows share: a request as the server
-// answers it -- status, time, `Fenec-Seq`, `X-Request-Id` -- and a statement
+// answers it -- status, time, `Fennec-Seq`, `X-Request-Id` -- and a statement
 // drawn in the docs' colours with text nodes alone. Fetched with the first
 // of them, never on the first load.
 
@@ -35,7 +35,7 @@ export async function fetched({ server, base, token }, path, { method = 'GET', b
   } catch {
     /* Prometheus's text, or a proxy's page */
   }
-  const seq = res.headers.get('fenec-seq');
+  const seq = res.headers.get('fennec-seq');
   return { status: res.status, ok: res.ok, ms, json, text, seq: seq === null ? null : Number(seq), requestId: res.headers.get('x-request-id') };
 }
 
@@ -48,10 +48,10 @@ export function refused(r) {
   return e;
 }
 
-/** FenecQL in the docs' colours: a `<code>` of spans and text nodes. */
-export function fenecql(text, cls = 'q') {
+/** FennecQL in the docs' colours: a `<code>` of spans and text nodes. */
+export function fennecql(text, cls = 'q') {
   const el = h('code', { class: cls });
-  for (const [kind, part] of tokens(text, 'fenecql')) {
+  for (const [kind, part] of tokens(text, 'fennecql')) {
     el.append(kind ? h('span', { class: kind }, part) : part);
   }
   return el;
@@ -62,7 +62,7 @@ export function statementsBlock(lines, cls = 'statement q-block') {
   const pre = h('pre', { class: cls });
   lines.forEach((line, i) => {
     if (i) pre.append('\n');
-    pre.append(fenecql(line, 'q'));
+    pre.append(fennecql(line, 'q'));
   });
   return pre;
 }

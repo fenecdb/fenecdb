@@ -1,4 +1,4 @@
-import wasm from '@fenecdb/web/fenec.wasm?url';
+import wasm from '@fennecdb/web/fennec.wasm?url';
 import { open, add, finish, query } from './notes.js';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;

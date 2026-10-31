@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
 public class Notes {
     static final HttpClient HTTP = HttpClient.newHttpClient();
 
-    // One FenecQL statement, as the JSON {"query": ..., "params": [...]}.
+    // One FennecQL statement, as the JSON {"query": ..., "params": [...]}.
     static HttpResponse<String> query(String json) throws Exception {
         var req = HttpRequest.newBuilder(URI.create("http://127.0.0.1:8080/query"))
             .header("Content-Type", "application/json")

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install fenecdb: `fenec`, the shell, and `fenec-server`, from a release.
+# Install fennecdb: `fennec`, the shell, and `fennec-server`, from a release.
 #
 #   curl -fsSL https://fenecdb.com/install.sh | sh
 #
@@ -8,16 +8,16 @@
 #   - works out the platform: macOS or Linux, arm64 or x86_64;
 #   - downloads the release's tarball and its SHA256SUMS from GitHub, over
 #     https, and checks the tarball against the sum before it unpacks it;
-#   - puts `fenec` and `fenec-server` in a bin/ directory of your own: no sudo,
+#   - puts `fennec` and `fennec-server` in a bin/ directory of your own: no sudo,
 #     and no shell startup file is touched. It says how to put the directory
 #     on your PATH, and that is the only thing left to you.
 #
 # Settings, all optional:
 #
-#   FENEC_VERSION   X.Y.Z (or vX.Y.Z); the latest release when unset
-#   FENEC_INSTALL   where it goes: $FENEC_INSTALL/bin; default ~/.fenecdb
-#   FENEC_BASE_URL  where releases are fetched from, for a mirror or a test:
-#                   https://github.com/fenecdb/fenecdb/releases by default,
+#   FENNEC_VERSION  X.Y.Z (or vX.Y.Z); the latest release when unset
+#   FENNEC_INSTALL  where it goes: $FENNEC_INSTALL/bin; default ~/.fennecdb
+#   FENNEC_BASE_URL where releases are fetched from, for a mirror or a test:
+#                   https://github.com/fennec-db/fennecdb/releases by default,
 #                   and it must be https (http only for localhost)
 #
 # The checksums come from the same release as the tarball: they catch a
@@ -33,7 +33,7 @@ say() {
 }
 
 err() {
-    printf 'fenecdb install: %s\n' "$*" >&2
+    printf 'fennecdb install: %s\n' "$*" >&2
 }
 
 die() {
@@ -43,16 +43,16 @@ die() {
 
 usage() {
     cat <<'EOF'
-Install fenecdb (fenec, the shell, and fenec-server) from a release.
+Install fennecdb (fennec, the shell, and fennec-server) from a release.
 
     curl -fsSL https://fenecdb.com/install.sh | sh
     curl -fsSL https://fenecdb.com/install.sh | sh -s -- --help
 
-  FENEC_VERSION   X.Y.Z; the latest release when unset
-  FENEC_INSTALL   installs into $FENEC_INSTALL/bin; default ~/.fenecdb
+  FENNEC_VERSION  X.Y.Z; the latest release when unset
+  FENNEC_INSTALL  installs into $FENNEC_INSTALL/bin; default ~/.fennecdb
 
 macOS and Linux on arm64 and x86_64. On Windows, use the Docker image
-(ghcr.io/fenecdb/fenec-server) or run this inside WSL.
+(ghcr.io/fennec-db/fennec-server) or run this inside WSL.
 EOF
 }
 
@@ -63,7 +63,7 @@ detect_target() {
     case $cpu in
         arm64 | aarch64) arch=aarch64 ;;
         x86_64 | amd64) arch=x86_64 ;;
-        *) die "no fenecdb release for the processor '$cpu' (arm64 and x86_64 only). The Docker image, ghcr.io/fenecdb/fenec-server, is another way." ;;
+        *) die "no fennecdb release for the processor '$cpu' (arm64 and x86_64 only). The Docker image, ghcr.io/fennec-db/fennec-server, is another way." ;;
     esac
     case $os in
         Darwin)
@@ -79,9 +79,9 @@ detect_target() {
             target="$arch-unknown-linux-musl"
             ;;
         MINGW* | MSYS* | CYGWIN* | Windows_NT)
-            die "fenecdb does not run on Windows yet. Use the Docker image (docker run ghcr.io/fenecdb/fenec-server) or run this script inside WSL."
+            die "fennecdb does not run on Windows yet. Use the Docker image (docker run ghcr.io/fennec-db/fennec-server) or run this script inside WSL."
             ;;
-        *) die "no fenecdb release for '$os' (macOS and Linux only). The Docker image, ghcr.io/fenecdb/fenec-server, runs anywhere Docker does." ;;
+        *) die "no fennecdb release for '$os' (macOS and Linux only). The Docker image, ghcr.io/fennec-db/fennec-server, runs anywhere Docker does." ;;
     esac
 }
 
@@ -173,26 +173,26 @@ main() {
             ;;
     esac
 
-    base=${FENEC_BASE_URL:-https://github.com/fenecdb/fenecdb/releases}
+    base=${FENNEC_BASE_URL:-https://github.com/fennec-db/fennecdb/releases}
     base=${base%/}
     # https, or http to this machine for a test: the host is read up to its
     # port, and a user or password (an `@`) is refused, since
     # http://localhost:x@example.com is a request to example.com.
     case $base in
-        *@* | *[[:space:]]*) die "FENEC_BASE_URL holds a user, a password or a space: $base" ;;
+        *@* | *[[:space:]]*) die "FENNEC_BASE_URL holds a user, a password or a space: $base" ;;
         https://?*) ;;
         *)
             printf '%s\n' "$base" | grep -Eq '^http://(localhost|127\.0\.0\.1)(:[0-9]+)?(/|$)' ||
-                die "FENEC_BASE_URL must be https (http only for localhost): $base"
+                die "FENNEC_BASE_URL must be https (http only for localhost): $base"
             ;;
     esac
 
-    if [ -n "${FENEC_INSTALL:-}" ]; then
-        home=$FENEC_INSTALL
+    if [ -n "${FENNEC_INSTALL:-}" ]; then
+        home=$FENNEC_INSTALL
     elif [ -n "${HOME:-}" ]; then
-        home=$HOME/.fenecdb
+        home=$HOME/.fennecdb
     else
-        die "HOME is not set: say where to install with FENEC_INSTALL"
+        die "HOME is not set: say where to install with FENNEC_INSTALL"
     fi
     # The directory is told back as a PATH line, which a relative one would
     # not be good for from any other directory.
@@ -217,7 +217,7 @@ main() {
 
     detect_target
 
-    tmp=$(mktemp -d "${TMPDIR:-/tmp}/fenecdb-install.XXXXXX")
+    tmp=$(mktemp -d "${TMPDIR:-/tmp}/fennecdb-install.XXXXXX")
     trap cleanup EXIT
     trap 'exit 129' HUP
     trap 'exit 130' INT
@@ -226,25 +226,25 @@ main() {
     # The version: the one asked for, else the latest release's, which the
     # release's own SHA256SUMS names in the tarballs it lists.
     sums=$tmp/SHA256SUMS
-    if [ -n "${FENEC_VERSION:-}" ]; then
-        version=${FENEC_VERSION#v}
+    if [ -n "${FENNEC_VERSION:-}" ]; then
+        version=${FENNEC_VERSION#v}
         case $version in
-            *[!0-9A-Za-z.+-]* | "") die "FENEC_VERSION '$FENEC_VERSION' is not a version like 0.1.11" ;;
+            *[!0-9A-Za-z.+-]* | "") die "FENNEC_VERSION '$FENNEC_VERSION' is not a version like 0.1.11" ;;
         esac
-        say "Looking for fenecdb $version"
+        say "Looking for fennecdb $version"
         fetch "$base/download/v$version/SHA256SUMS" "$sums" ||
             die "could not download $base/download/v$version/SHA256SUMS: is there a release v$version?"
     else
-        say "Looking for the latest fenecdb release"
+        say "Looking for the latest fennecdb release"
         fetch "$base/latest/download/SHA256SUMS" "$sums" ||
             die "could not download $base/latest/download/SHA256SUMS"
-        version=$(sed -n "s/^[0-9a-f]\{64\}  *\**fenec-v\([^ ]*\)-$target\.tar\.gz\$/\1/p" "$sums" | head -n 1)
+        version=$(sed -n "s/^[0-9a-f]\{64\}  *\**fennec-v\([^ ]*\)-$target\.tar\.gz\$/\1/p" "$sums" | head -n 1)
         case $version in
             *[!0-9A-Za-z.+-]* | "") die "the latest release lists no build for $target" ;;
         esac
     fi
 
-    name=fenec-v$version-$target.tar.gz
+    name=fennec-v$version-$target.tar.gz
     want=$(awk -v n="$name" '{ f = $2; sub(/^\*/, "", f); if (f == n) { print $1; exit } }' "$sums")
     [ -n "$want" ] || die "release v$version lists no $name: it has no build for this platform"
 
@@ -259,13 +259,13 @@ main() {
     say "Checksum ok ($want)"
 
     tar -xzf "$tmp/$name" -C "$tmp" || die "could not unpack $name"
-    src=$tmp/fenec-v$version-$target
-    for b in fenec fenec-server; do
+    src=$tmp/fennec-v$version-$target
+    for b in fennec fennec-server; do
         [ -f "$src/$b" ] || die "$name holds no $b"
     done
 
-    mkdir -p "$bindir" || die "could not make $bindir: say where to install with FENEC_INSTALL"
-    for b in fenec fenec-server; do
+    mkdir -p "$bindir" || die "could not make $bindir: say where to install with FENNEC_INSTALL"
+    for b in fennec fennec-server; do
         # Written beside and renamed over: a running server's file is not
         # overwritten in place ("Text file busy"), and a failure part of the
         # way leaves the old one whole.
@@ -277,15 +277,15 @@ main() {
     done
 
     say ""
-    say "Installed fenecdb $version ($target) in $bindir:"
-    say "  fenec          the shell:  fenec scratch.fenec"
-    say "  fenec-server   the server: fenec-server --file notes.fenec"
+    say "Installed fennecdb $version ($target) in $bindir:"
+    say "  fennec         the shell:  fennec scratch.fennec"
+    say "  fennec-server  the server: fennec-server --file notes.fennec"
 
     # Does it start? Its version is the first line of --help.
-    if line=$("$bindir/fenec-server" --help 2>&1 | head -n 1) && [ -n "$line" ]; then
+    if line=$("$bindir/fennec-server" --help 2>&1 | head -n 1) && [ -n "$line" ]; then
         say "  ($line)"
     else
-        err "installed, but $bindir/fenec-server did not start on this machine"
+        err "installed, but $bindir/fennec-server did not start on this machine"
     fi
 
     case ":${PATH:-}:" in
@@ -304,10 +304,10 @@ main() {
             say "or ~/.profile) to keep it. For fish: fish_add_path \"$shown\"."
             ;;
     esac
-    other=$(command -v fenec 2>/dev/null || true)
-    if [ -n "$other" ] && [ "$other" != "$bindir/fenec" ]; then
+    other=$(command -v fennec 2>/dev/null || true)
+    if [ -n "$other" ] && [ "$other" != "$bindir/fennec" ]; then
         say ""
-        say "Note: 'fenec' on your PATH is $other, not this one."
+        say "Note: 'fennec' on your PATH is $other, not this one."
     fi
 
     say ""

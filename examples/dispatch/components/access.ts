@@ -3,7 +3,7 @@
 // for the person, swapped for a fresh one every two minutes. A token
 // swapped is a connection of its own, so every stream opened on it reopens.
 import { useEffect, useMemo, useState } from 'react';
-import { connect, type FenecHttp } from '@fenecdb/web/client';
+import { connect, type FennecHttp } from '@fennecdb/web/client';
 
 export interface Access {
   token: string;
@@ -11,7 +11,7 @@ export interface Access {
   expires: number;
 }
 
-export function useConnection(initial: Access): FenecHttp {
+export function useConnection(initial: Access): FennecHttp {
   const [access, setAccess] = useState(initial);
   useEffect(() => {
     const every = setInterval(async () => {

@@ -1,8 +1,8 @@
 {
-  "name": "fenecdb-ledger",
+  "name": "fennecdb-ledger",
   "private": true,
   "type": "module",
-  "description": "Quire, a double-entry ledger on fenec-server: transfers, refunds and holds as guarded /batch blocks, an append-only journal, reconciliation, a change-stream sink, and an operator console",
+  "description": "Quire, a double-entry ledger on fennec-server: transfers, refunds and holds as guarded /batch blocks, an append-only journal, reconciliation, a change-stream sink, and an operator console",
   "scripts": {
     "db": "sh scripts/db.sh",
     "setup": "tsx scripts/setup.ts",
@@ -15,7 +15,7 @@
     "ci": "sh scripts/ci.sh"
   },
   "dependencies": {
-    "@fenecdb/web": "0.1.10"
+    "@fennecdb/web": "0.1.10"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

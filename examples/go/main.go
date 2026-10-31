@@ -1,4 +1,4 @@
-// Notes over fenec-server's HTTP endpoint, with the Go SDK.
+// Notes over fennec-server's HTTP endpoint, with the Go SDK.
 //
 //	go run .                            seeds if empty, then lists
 //	go run . add <title> <body> [tag ...]
@@ -22,10 +22,10 @@ import (
 	"strings"
 	"time"
 
-	fenecdb "github.com/fenecdb/fenecdb/integrations/go"
+	fennecdb "github.com/fennec-db/fennecdb/integrations/go"
 )
 
-//go:embed schema.fenecql
+//go:embed schema.fennecql
 var schema string
 
 type Note struct {
@@ -88,13 +88,13 @@ func env(name, fallback string) string {
 	return fallback
 }
 
-func add(ctx context.Context, db *fenecdb.Client, title, body string, tags []string, done bool, at string) error {
-	_, err := db.From("notes").Insert(ctx, fenecdb.D(
+func add(ctx context.Context, db *fennecdb.Client, title, body string, tags []string, done bool, at string) error {
+	_, err := db.From("notes").Insert(ctx, fennecdb.D(
 		"title", title, "body", body, "tags", tags, "done", done, "at", at, "embed", embed(title+" "+body)))
 	return err
 }
 
-func seed(ctx context.Context, db *fenecdb.Client) error {
+func seed(ctx context.Context, db *fennecdb.Client) error {
 	n, err := db.From("notes").Count(ctx)
 	if err != nil || n > 0 {
 		return err
@@ -107,7 +107,7 @@ func seed(ctx context.Context, db *fenecdb.Client) error {
 	return nil
 }
 
-func list(ctx context.Context, db *fenecdb.Client, tag string, open bool) ([]Note, error) {
+func list(ctx context.Context, db *fennecdb.Client, tag string, open bool) ([]Note, error) {
 	q := db.From("notes").Select("id", "title", "tags", "done", "at").Order("at", "desc").Limit(20)
 	if tag != "" {
 		q = q.Where("tags", "has", tag)
@@ -115,7 +115,7 @@ func list(ctx context.Context, db *fenecdb.Client, tag string, open bool) ([]Not
 	if open {
 		q = q.Where("done", "=", false)
 	}
-	return fenecdb.RowsAs[Note](ctx, q)
+	return fennecdb.RowsAs[Note](ctx, q)
 }
 
 func titles(notes []Note) []string {
@@ -136,18 +136,18 @@ func show(notes []Note) {
 	}
 }
 
-func search(ctx context.Context, db *fenecdb.Client, words string) (match, fused []Note, err error) {
+func search(ctx context.Context, db *fennecdb.Client, words string) (match, fused []Note, err error) {
 	notes := db.From("notes").Select("id", "title")
-	if match, err = fenecdb.RowsAs[Note](ctx, notes.Match("body", words).Limit(5)); err != nil {
+	if match, err = fennecdb.RowsAs[Note](ctx, notes.Match("body", words).Limit(5)); err != nil {
 		return
 	}
-	fused, err = fenecdb.RowsAs[Note](ctx, notes.Match("body", words).Near("embed", embed(words)).Fuse().Limit(5))
+	fused, err = fennecdb.RowsAs[Note](ctx, notes.Match("body", words).Near("embed", embed(words)).Fuse().Limit(5))
 	return
 }
 
 // watch prints the open notes again whenever they change: a subscription
 // to the collection's rows that are not done, over server-sent events.
-func watch(ctx context.Context, db *fenecdb.Client) error {
+func watch(ctx context.Context, db *fennecdb.Client) error {
 	events, err := db.Subscribe(ctx, "notes", url.Values{"done": {"eq.false"}, "select": {"id"}})
 	if err != nil {
 		return err
@@ -166,7 +166,7 @@ func watch(ctx context.Context, db *fenecdb.Client) error {
 	return nil
 }
 
-func smoke(ctx context.Context, db *fenecdb.Client) error {
+func smoke(ctx context.Context, db *fennecdb.Client) error {
 	check := func(step string, ok bool) {
 		if !ok {
 			fmt.Println("FAIL", step)
@@ -203,7 +203,7 @@ func smoke(ctx context.Context, db *fenecdb.Client) error {
 		return err
 	}
 	check("match", match[0].Title == "Release checklist")
-	near, err := fenecdb.RowsAs[Note](ctx, db.From("notes").Near("embed", embed("flights to Istanbul")).Limit(1))
+	near, err := fennecdb.RowsAs[Note](ctx, db.From("notes").Near("embed", embed("flights to Istanbul")).Limit(1))
 	if err != nil {
 		return err
 	}
@@ -242,8 +242,8 @@ func smoke(ctx context.Context, db *fenecdb.Client) error {
 }
 
 func run(ctx context.Context, args []string) error {
-	db := fenecdb.New(env("FENEC_URL", "http://127.0.0.1:8080"),
-		fenecdb.WithToken(env("FENEC_TOKEN", "secret"))) // a dev default; never ship one
+	db := fennecdb.New(env("FENNEC_URL", "http://127.0.0.1:8080"),
+		fennecdb.WithToken(env("FENNEC_TOKEN", "secret"))) // a dev default; never ship one
 	// Makes what is missing; refuses what would lose data.
 	if _, err := db.Schema(ctx, schema, nil, true); err != nil {
 		return err

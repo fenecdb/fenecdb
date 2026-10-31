@@ -1,4 +1,4 @@
-// Live reads shared by every viewer of a page: one `FenecHttp.live` a site
+// Live reads shared by every viewer of a page: one `FennecHttp.live` a site
 // for its "now", and one for the market's quotes, each polling (`{ poll }`)
 // rather than holding a stream. A poll is answered 304 by the server, the
 // query not run, while nothing it reads was written -- `pulse` and `quotes`

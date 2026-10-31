@@ -8,7 +8,7 @@ import { addresses, along, metresBetween, rng, route, toMetres, type Point } fro
 import { claimNearest, deliver, giveBack, heartbeat, pickUp, type Job } from './dispatch';
 import { placeOrder } from './orders';
 import { merchants, people, wave, type CompanySpec, type Person } from './world';
-import { FenecError } from './db';
+import { FennecError } from './db';
 import type { Who } from './tokens';
 
 export interface SimOptions {
@@ -141,7 +141,7 @@ export async function courierShift(
     } catch (e) {
       if (stop.aborted) break;
       stats.errors++;
-      o.log?.(`${p.uid}: a claim failed: ${(e as Error).message}${e instanceof FenecError ? ` (${e.status})` : ''}`);
+      o.log?.(`${p.uid}: a claim failed: ${(e as Error).message}${e instanceof FennecError ? ` (${e.status})` : ''}`);
       await sleep(2000, stop);
       continue;
     }

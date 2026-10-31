@@ -6,13 +6,13 @@ from langchain_core.documents import Document
 from langchain_tests.integration_tests import VectorStoreIntegrationTests
 
 from conftest import TOKEN, URL, fresh
-from fenecdb.langchain import FenecVectorStore
+from fennecdb.langchain import FennecVectorStore
 
 
-class TestFenecVectorStore(VectorStoreIntegrationTests):
+class TestFennecVectorStore(VectorStoreIntegrationTests):
     @pytest.fixture()
     def vectorstore(self):
-        store = FenecVectorStore(self.get_embeddings(), fresh("lc"), url=URL, token=TOKEN)
+        store = FennecVectorStore(self.get_embeddings(), fresh("lc"), url=URL, token=TOKEN)
         try:
             yield store
         finally:
@@ -21,7 +21,7 @@ class TestFenecVectorStore(VectorStoreIntegrationTests):
 
 @pytest.fixture()
 def store():
-    s = FenecVectorStore(
+    s = FennecVectorStore(
         VectorStoreIntegrationTests.get_embeddings(),
         fresh("lc"),
         url=URL,
@@ -62,7 +62,7 @@ def test_relevance_is_one_for_the_same_text(store):
 
 def test_from_texts_and_delete_everything():
     embeddings = VectorStoreIntegrationTests.get_embeddings()
-    s = FenecVectorStore.from_texts(
+    s = FennecVectorStore.from_texts(
         ["one", "two"],
         embeddings,
         metadatas=[{"n": 1}, {"n": 2}],
@@ -83,16 +83,16 @@ def test_names_that_would_reach_the_query_text_are_refused():
     embeddings = VectorStoreIntegrationTests.get_embeddings()
     for bad in ["docs; drop collection x", "1docs", ""]:
         with pytest.raises(ValueError):
-            FenecVectorStore(embeddings, bad)
+            FennecVectorStore(embeddings, bad)
     with pytest.raises(ValueError):
-        FenecVectorStore(embeddings, "ok", metadata_fields={"a b": "text"})
+        FennecVectorStore(embeddings, "ok", metadata_fields={"a b": "text"})
     with pytest.raises(ValueError):
-        FenecVectorStore(embeddings, "ok", metadata_fields={"lc_id": "text"})
+        FennecVectorStore(embeddings, "ok", metadata_fields={"lc_id": "text"})
 
 
 @pytest.fixture()
 def worded():
-    s = FenecVectorStore(
+    s = FennecVectorStore(
         VectorStoreIntegrationTests.get_embeddings(),
         fresh("lc"),
         url=URL,
@@ -139,6 +139,6 @@ def test_modes_and_codes_are_checked(store):
         store.similarity_search("alpha", mode="bm25")
     embeddings = VectorStoreIntegrationTests.get_embeddings()
     with pytest.raises(ValueError):
-        FenecVectorStore(embeddings, "ok", metric="l2", quant="bit")
+        FennecVectorStore(embeddings, "ok", metric="l2", quant="bit")
     with pytest.raises(ValueError):
-        FenecVectorStore(embeddings, "ok", quant="pq")
+        FennecVectorStore(embeddings, "ok", quant="pq")

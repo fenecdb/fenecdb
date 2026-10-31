@@ -1,4 +1,4 @@
-// A page on another origin talking to fenec-shard (`--http-cors`) in a
+// A page on another origin talking to fennec-shard (`--http-cors`) in a
 // headless Chrome, through the real client (`web/client.js`): the router's
 // own answers -- an unknown tenant's 404, a standby's 503, an unreachable
 // node's 502 -- reach the page as the refusals they are, where they read as
@@ -47,11 +47,11 @@ async function startApp() {
 function outcome(p, url, text) {
   return p.evaluate(
     async (url, text, token) => {
-      const { connect, FenecError } = await import(`${location.origin}/web/client.js`);
+      const { connect, FennecError } = await import(`${location.origin}/web/client.js`);
       try {
         return { rows: await connect(url, { token }).rows(text) };
       } catch (e) {
-        return { status: e.status ?? null, retryAfter: e.retryAfter ?? null, message: e.message, refused: e instanceof FenecError };
+        return { status: e.status ?? null, retryAfter: e.retryAfter ?? null, message: e.message, refused: e instanceof FennecError };
       }
     },
     url,

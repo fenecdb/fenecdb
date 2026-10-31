@@ -9,7 +9,7 @@
 // whose request is refused says so rather than showing nothing.
 
 import { h, fill, bytes, number } from './dom.js';
-import { call, fenecql, ms } from './kit.js';
+import { call, fennecql, ms } from './kit.js';
 
 /** How often the numbers are read again while the view is open. */
 const EVERY = 5_000;
@@ -169,7 +169,7 @@ export function mount(host, ctx) {
                 'td',
                 { class: 'ad-shape' },
                 runnable
-                  ? h('button', { type: 'button', class: 'ad-open', title: 'Open in the query editor', onclick: () => ctx.query(s.query) }, fenecql(s.query))
+                  ? h('button', { type: 'button', class: 'ad-open', title: 'Open in the query editor', onclick: () => ctx.query(s.query) }, fennecql(s.query))
                   : h('span', { class: 'mono' }, s.query),
                 s.tenant ? h('span', { class: 'ad-tenant' }, s.tenant) : null,
               ),
@@ -209,35 +209,35 @@ export function mount(host, ctx) {
       const s = quantile(m, family, q, match);
       return s === null ? '–' : ms(s * 1000);
     };
-    if (total(m, 'fenec_router_requests_total') !== null) {
-      const req = total(m, 'fenec_router_requests_total');
+    if (total(m, 'fennec_router_requests_total') !== null) {
+      const req = total(m, 'fennec_router_requests_total');
       add('Requests', number(req), per('req', req));
-      add('Latency', `p50 ${p(0.5, 'fenec_router_request_duration_seconds', {})}`, `p99 ${p(0.99, 'fenec_router_request_duration_seconds', {})}`);
-      add('Upstream errors', number(total(m, 'fenec_router_upstream_errors_total') ?? 0));
-      add('Nodes', number(total(m, 'fenec_router_nodes') ?? 0));
-      add('Moves', number(total(m, 'fenec_router_moves_total') ?? 0));
+      add('Latency', `p50 ${p(0.5, 'fennec_router_request_duration_seconds', {})}`, `p99 ${p(0.99, 'fennec_router_request_duration_seconds', {})}`);
+      add('Upstream errors', number(total(m, 'fennec_router_upstream_errors_total') ?? 0));
+      add('Nodes', number(total(m, 'fennec_router_nodes') ?? 0));
+      add('Moves', number(total(m, 'fennec_router_moves_total') ?? 0));
     } else {
-      const reads = total(m, 'fenec_statements_total', { kind: 'read' }) ?? 0;
-      const writes = total(m, 'fenec_statements_total', { kind: 'write' }) ?? 0;
-      const errors = total(m, 'fenec_statement_errors_total') ?? 0;
+      const reads = total(m, 'fennec_statements_total', { kind: 'read' }) ?? 0;
+      const writes = total(m, 'fennec_statements_total', { kind: 'write' }) ?? 0;
+      const errors = total(m, 'fennec_statement_errors_total') ?? 0;
       add('Reads', number(reads), per('reads', reads));
       add('Writes', number(writes), per('writes', writes));
       add('Errors', number(errors), per('errors', errors));
-      add('Read latency', `p50 ${p(0.5, 'fenec_statement_duration_seconds', { kind: 'read' })}`, `p99 ${p(0.99, 'fenec_statement_duration_seconds', { kind: 'read' })}`);
-      add('Write latency', `p50 ${p(0.5, 'fenec_statement_duration_seconds', { kind: 'write' })}`, `p99 ${p(0.99, 'fenec_statement_duration_seconds', { kind: 'write' })}`);
-      const file = total(m, 'fenec_file_bytes') ?? total(m, 'fenec_tenants_disk_bytes');
-      if (file !== null) add('File', bytes(file), null, total(m, 'fenec_tenants') !== null ? `${number(total(m, 'fenec_tenants'))} tenants` : null);
-      const dead = total(m, 'fenec_reclaimable_bytes');
+      add('Read latency', `p50 ${p(0.5, 'fennec_statement_duration_seconds', { kind: 'read' })}`, `p99 ${p(0.99, 'fennec_statement_duration_seconds', { kind: 'read' })}`);
+      add('Write latency', `p50 ${p(0.5, 'fennec_statement_duration_seconds', { kind: 'write' })}`, `p99 ${p(0.99, 'fennec_statement_duration_seconds', { kind: 'write' })}`);
+      const file = total(m, 'fennec_file_bytes') ?? total(m, 'fennec_tenants_disk_bytes');
+      if (file !== null) add('File', bytes(file), null, total(m, 'fennec_tenants') !== null ? `${number(total(m, 'fennec_tenants'))} tenants` : null);
+      const dead = total(m, 'fennec_reclaimable_bytes');
       if (dead !== null) add('Reclaimable', bytes(dead), null, 'what a compact gives back');
-      const mem = total(m, 'fenec_memory_bytes');
+      const mem = total(m, 'fennec_memory_bytes');
       if (mem !== null) add('Memory', bytes(mem));
-      const docs = total(m, 'fenec_documents');
+      const docs = total(m, 'fennec_documents');
       if (docs !== null) add('Rows', number(docs));
-      add('Compactions', number(total(m, 'fenec_auto_compactions_total') ?? 0), null, 'run on their own');
-      const conns = total(m, 'fenec_connections');
+      add('Compactions', number(total(m, 'fennec_auto_compactions_total') ?? 0), null, 'run on their own');
+      const conns = total(m, 'fennec_connections');
       if (conns !== null) add('Connections', number(conns));
     }
-    const started = total(m, 'fenec_start_time_seconds');
+    const started = total(m, 'fennec_start_time_seconds');
     if (started) add('Up', since(now / 1000 - started));
     before = { at: now, values };
     fill(

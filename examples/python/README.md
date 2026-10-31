@@ -1,11 +1,11 @@
 # Notes -- Python (server)
 
-A notes CLI over a `fenec-server`, with the `fenecdb` client: the standard
+A notes CLI over a `fennec-server`, with the `fennecdb` client: the standard
 library alone, every query sent over HTTP.
 
 ## What it shows
 
-- the schema in `schema.fenecql`, applied with `db.schema(..., migrate=True)`
+- the schema in `schema.fennecql`, applied with `db.schema(..., migrate=True)`
   at every start, and four notes seeded into an empty collection;
 - creating notes through the query builder, and marking one done;
 - full-text search with `match`, fused with `near` over a toy embedding
@@ -17,15 +17,15 @@ library alone, every query sent over HTTP.
 
 ## Prerequisites
 
-Python 3.10 or newer, and `fenec-server`: a [release
-binary](https://github.com/fenecdb/fenecdb/releases), or
-`cargo build --release -p fenec-server` at the repository's root
-(`target/release/fenec-server`).
+Python 3.10 or newer, and `fennec-server`: a [release
+binary](https://github.com/fennec-db/fennecdb/releases), or
+`cargo build --release -p fennec-server` at the repository's root
+(`target/release/fennec-server`).
 
 ## Run
 
 ```sh
-fenec-server --file notes.fenec --http 127.0.0.1:8080 --http-token secret --cdc
+fennec-server --file notes.fennec --http 127.0.0.1:8080 --http-token secret --cdc
 ```
 
 ```sh
@@ -41,14 +41,14 @@ python notes.py watch                    # Ctrl-C to stop; add a note from anoth
 python notes.py smoke                    # the whole tour, checked: what CI runs
 ```
 
-`FENEC_URL` and `FENEC_TOKEN` point it at another server; `secret` is a
+`FENNEC_URL` and `FENNEC_TOKEN` point it at another server; `secret` is a
 development default, never one to deploy.
 
 ## The core
 
 ```python
 db = Client(URL, token=TOKEN)
-db.schema(open("schema.fenecql").read(), migrate=True)   # made, or checked
+db.schema(open("schema.fennecql").read(), migrate=True)   # made, or checked
 notes = db.collection("notes")
 notes.insert({"title": t, "body": b, "tags": ["home"], "done": False,
               "at": datetime.now(timezone.utc).isoformat(), "embed": embed(f"{t} {b}")})
@@ -63,12 +63,12 @@ notes.where("id", 3).update({"done": True})
 ## LangChain
 
 The same package holds a LangChain vector store over a collection of its
-own (`pip install "fenecdb[langchain]"`):
+own (`pip install "fennecdb[langchain]"`):
 
 ```python
-from fenecdb.langchain import FenecVectorStore
+from fennecdb.langchain import FennecVectorStore
 
-store = FenecVectorStore(embeddings, "docs", url=URL, token=TOKEN, full_text=True)
+store = FennecVectorStore(embeddings, "docs", url=URL, token=TOKEN, full_text=True)
 store.add_texts(["Find cheap flights to Istanbul for the conference in spring."])
 store.similarity_search("trip to Istanbul", k=4, mode="hybrid")   # match and near, fused
 ```
@@ -83,7 +83,7 @@ bytes) hashed into 64 dimensions, so `near` and `fuse` have something to
 rank without a download. It matches spelling, not meaning; every Notes
 example computes the same vectors. A real app calls a model here -- an
 embeddings API, or `sentence-transformers` locally -- and declares
-`vector<N>` with that model's `N` in `schema.fenecql`.
+`vector<N>` with that model's `N` in `schema.fennecql`.
 
 ## Against this repository's build
 
@@ -94,5 +94,5 @@ cd examples/python
 PYTHONPATH=../../integrations/python python notes.py smoke
 ```
 
-`examples/run-tests.sh python` does that against a `fenec-server` it builds
+`examples/run-tests.sh python` does that against a `fennec-server` it builds
 and starts.

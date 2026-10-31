@@ -1,6 +1,6 @@
 {
-  "title": "fenecdb",
-  "description": "fenec-server and fenec-shard through the Agent's OpenMetrics check (monitoring/datadog/conf.yaml) and the logs pipeline (pipeline.json). Every metric here is held to a real /_metrics scrape by crates/fenec-shard/tests/datadog.rs.",
+  "title": "fennecdb",
+  "description": "fennec-server and fennec-shard through the Agent's OpenMetrics check (monitoring/datadog/conf.yaml) and the logs pipeline (pipeline.json). Every metric here is held to a real /_metrics scrape by crates/fennec-shard/tests/datadog.rs.",
   "layout_type": "ordered",
   "template_variables": [
     {
@@ -29,7 +29,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "max:fenecdb.storage_failed{$host}",
+                      "query": "max:fennecdb.storage_failed{$host}",
                       "aggregator": "max"
                     }
                   ],
@@ -66,7 +66,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.statements.count{$host}.as_rate()",
+                      "query": "sum:fennecdb.statements.count{$host}.as_rate()",
                       "aggregator": "avg"
                     }
                   ],
@@ -91,7 +91,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.statement_errors.count{$host}.as_rate()",
+                      "query": "sum:fennecdb.statement_errors.count{$host}.as_rate()",
                       "aggregator": "avg"
                     }
                   ],
@@ -116,7 +116,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.refused.count{$host}.as_rate()",
+                      "query": "sum:fennecdb.refused.count{$host}.as_rate()",
                       "aggregator": "avg"
                     }
                   ],
@@ -141,7 +141,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.memory_bytes{$host}",
+                      "query": "sum:fennecdb.memory_bytes{$host}",
                       "aggregator": "last"
                     }
                   ],
@@ -168,7 +168,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.build_info{$host} by {version}"
+                      "query": "sum:fennecdb.build_info{$host} by {version}"
                     }
                   ],
                   "formulas": [
@@ -203,7 +203,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.statements.count{$host} by {kind}.as_rate()"
+                      "query": "sum:fennecdb.statements.count{$host} by {kind}.as_rate()"
                     }
                   ],
                   "formulas": [
@@ -229,7 +229,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.statement_errors.count{$host} by {kind}.as_rate()"
+                      "query": "sum:fennecdb.statement_errors.count{$host} by {kind}.as_rate()"
                     }
                   ],
                   "formulas": [
@@ -255,17 +255,17 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "p50:fenecdb.statement_duration_seconds.bucket{$host} by {kind}"
+                      "query": "p50:fennecdb.statement_duration_seconds.bucket{$host} by {kind}"
                     },
                     {
                       "data_source": "metrics",
                       "name": "q2",
-                      "query": "p95:fenecdb.statement_duration_seconds.bucket{$host} by {kind}"
+                      "query": "p95:fennecdb.statement_duration_seconds.bucket{$host} by {kind}"
                     },
                     {
                       "data_source": "metrics",
                       "name": "q3",
-                      "query": "p99:fenecdb.statement_duration_seconds.bucket{$host} by {kind}"
+                      "query": "p99:fennecdb.statement_duration_seconds.bucket{$host} by {kind}"
                     }
                   ],
                   "formulas": [
@@ -297,12 +297,12 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.statement_duration_seconds.sum{$host} by {kind}.as_count()"
+                      "query": "sum:fennecdb.statement_duration_seconds.sum{$host} by {kind}.as_count()"
                     },
                     {
                       "data_source": "metrics",
                       "name": "q2",
-                      "query": "sum:fenecdb.statement_duration_seconds.count{$host} by {kind}.as_count()"
+                      "query": "sum:fennecdb.statement_duration_seconds.count{$host} by {kind}.as_count()"
                     }
                   ],
                   "formulas": [
@@ -328,7 +328,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.slow_statements.count{$host}.as_count()"
+                      "query": "sum:fennecdb.slow_statements.count{$host}.as_count()"
                     }
                   ],
                   "formulas": [
@@ -354,7 +354,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.refused.count{$host}.as_count()"
+                      "query": "sum:fennecdb.refused.count{$host}.as_count()"
                     }
                   ],
                   "formulas": [
@@ -380,7 +380,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.connections{$host} by {host}"
+                      "query": "sum:fennecdb.connections{$host} by {host}"
                     }
                   ],
                   "formulas": [
@@ -415,7 +415,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.change_sequence{$host} by {host}"
+                      "query": "sum:fennecdb.change_sequence{$host} by {host}"
                     }
                   ],
                   "formulas": [
@@ -441,7 +441,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.documents{$host} by {collection}"
+                      "query": "sum:fennecdb.documents{$host} by {collection}"
                     }
                   ],
                   "formulas": [
@@ -467,12 +467,12 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.dead_bytes{$host} by {collection}"
+                      "query": "sum:fennecdb.dead_bytes{$host} by {collection}"
                     },
                     {
                       "data_source": "metrics",
                       "name": "q2",
-                      "query": "sum:fenecdb.data_bytes{$host} by {collection}"
+                      "query": "sum:fennecdb.data_bytes{$host} by {collection}"
                     }
                   ],
                   "formulas": [
@@ -498,12 +498,12 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.file_bytes{$host}"
+                      "query": "sum:fennecdb.file_bytes{$host}"
                     },
                     {
                       "data_source": "metrics",
                       "name": "q2",
-                      "query": "sum:fenecdb.reclaimable_bytes{$host}"
+                      "query": "sum:fennecdb.reclaimable_bytes{$host}"
                     }
                   ],
                   "formulas": [
@@ -532,7 +532,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.auto_compactions.count{$host}.as_count()"
+                      "query": "sum:fennecdb.auto_compactions.count{$host}.as_count()"
                     }
                   ],
                   "formulas": [
@@ -558,7 +558,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.vectors_unlinked{$host} by {host}"
+                      "query": "sum:fennecdb.vectors_unlinked{$host} by {host}"
                     }
                   ],
                   "formulas": [
@@ -593,7 +593,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "max:fenecdb.replica_behind{$host} by {host}"
+                      "query": "max:fennecdb.replica_behind{$host} by {host}"
                     }
                   ],
                   "formulas": [
@@ -619,7 +619,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "min:fenecdb.replica_connected{$host} by {host}"
+                      "query": "min:fennecdb.replica_connected{$host} by {host}"
                     }
                   ],
                   "formulas": [
@@ -645,7 +645,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "max:fenecdb.replica_last_contact_seconds{$host} by {host}"
+                      "query": "max:fennecdb.replica_last_contact_seconds{$host} by {host}"
                     }
                   ],
                   "formulas": [
@@ -671,7 +671,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.replicas{$host} by {host}"
+                      "query": "sum:fennecdb.replicas{$host} by {host}"
                     }
                   ],
                   "formulas": [
@@ -697,12 +697,12 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.replica_reconnects.count{$host}.as_count()"
+                      "query": "sum:fennecdb.replica_reconnects.count{$host}.as_count()"
                     },
                     {
                       "data_source": "metrics",
                       "name": "q2",
-                      "query": "sum:fenecdb.replica_images.count{$host}.as_count()"
+                      "query": "sum:fennecdb.replica_images.count{$host}.as_count()"
                     }
                   ],
                   "formulas": [
@@ -740,12 +740,12 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.tenants{$host} by {host}"
+                      "query": "sum:fennecdb.tenants{$host} by {host}"
                     },
                     {
                       "data_source": "metrics",
                       "name": "q2",
-                      "query": "sum:fenecdb.tenants_open{$host} by {host}"
+                      "query": "sum:fennecdb.tenants_open{$host} by {host}"
                     }
                   ],
                   "formulas": [
@@ -774,7 +774,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.tenants_disk_bytes{$host} by {host}"
+                      "query": "sum:fennecdb.tenants_disk_bytes{$host} by {host}"
                     }
                   ],
                   "formulas": [
@@ -800,7 +800,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "max:fenecdb.router_tenants{$host} by {node}"
+                      "query": "max:fennecdb.router_tenants{$host} by {node}"
                     }
                   ],
                   "formulas": [
@@ -835,7 +835,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.router_requests.count{$host} by {route,code}.as_rate()"
+                      "query": "sum:fennecdb.router_requests.count{$host} by {route,code}.as_rate()"
                     }
                   ],
                   "formulas": [
@@ -861,12 +861,12 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "p99:fenecdb.router_request_duration_seconds.bucket{$host,route:tenant}"
+                      "query": "p99:fennecdb.router_request_duration_seconds.bucket{$host,route:tenant}"
                     },
                     {
                       "data_source": "metrics",
                       "name": "q2",
-                      "query": "p99:fenecdb.router_upstream_duration_seconds.bucket{$host}"
+                      "query": "p99:fennecdb.router_upstream_duration_seconds.bucket{$host}"
                     }
                   ],
                   "formulas": [
@@ -895,7 +895,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.router_upstream_errors.count{$host} by {node}.as_count()"
+                      "query": "sum:fennecdb.router_upstream_errors.count{$host} by {node}.as_count()"
                     }
                   ],
                   "formulas": [
@@ -921,7 +921,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.router_moves.count{$host} by {outcome}.as_count()"
+                      "query": "sum:fennecdb.router_moves.count{$host} by {outcome}.as_count()"
                     }
                   ],
                   "formulas": [
@@ -947,7 +947,7 @@
                     {
                       "data_source": "metrics",
                       "name": "q1",
-                      "query": "sum:fenecdb.router_refused.count{$host}.as_count()"
+                      "query": "sum:fennecdb.router_refused.count{$host}.as_count()"
                     }
                   ],
                   "formulas": [
@@ -978,7 +978,7 @@
                   "response_format": "event_list",
                   "query": {
                     "data_source": "logs_stream",
-                    "query_string": "source:fenecdb @event:slow",
+                    "query_string": "source:fennecdb @event:slow",
                     "indexes": [],
                     "storage": "hot"
                   },
@@ -1025,7 +1025,7 @@
                   "response_format": "event_list",
                   "query": {
                     "data_source": "logs_stream",
-                    "query_string": "source:fenecdb @event:refused",
+                    "query_string": "source:fennecdb @event:refused",
                     "indexes": [],
                     "storage": "hot"
                   },
@@ -1068,7 +1068,7 @@
                   "response_format": "event_list",
                   "query": {
                     "data_source": "logs_stream",
-                    "query_string": "source:fenecdb @event:(schema OR admin)",
+                    "query_string": "source:fennecdb @event:(schema OR admin)",
                     "indexes": [],
                     "storage": "hot"
                   },

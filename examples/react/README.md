@@ -2,12 +2,12 @@
 
 A notes app in React whose list is `useLiveQuery`. It runs over a database
 in the page; one line in `src/db.ts` makes it a replica synced with a
-`fenec-server` instead, and the components do not change.
+`fennec-server` instead, and the components do not change.
 
 ## What it shows
 
-- the schema declared in code (`src/tables.ts`, `fenecTable` from
-  `@fenecdb/web/schema`), every query typed by it;
+- the schema declared in code (`src/tables.ts`, `fennecTable` from
+  `@fennecdb/web/schema`), every query typed by it;
 - `useLiveQuery(db.from(notes)...)`: the rows, rendered again after every
   write -- this tab's, or, synced, another client's streamed from the
   server;
@@ -20,9 +20,9 @@ in the page; one line in `src/db.ts` makes it a replica synced with a
 
 ## Prerequisites
 
-Node 22 or newer. For the synced line, `fenec-server`: a [release
-binary](https://github.com/fenecdb/fenecdb/releases), or
-`cargo build --release -p fenec-server` at the repository's root.
+Node 22 or newer. For the synced line, `fennec-server`: a [release
+binary](https://github.com/fennec-db/fennecdb/releases), or
+`cargo build --release -p fennec-server` at the repository's root.
 
 ## Run
 
@@ -37,7 +37,7 @@ npm run smoke                            # both ways, headless in Node: what CI 
 To sync with a server, start one that lets the page's origin in:
 
 ```sh
-fenec-server --file notes.fenec --http 127.0.0.1:8080 --http-token secret \
+fennec-server --file notes.fennec --http 127.0.0.1:8080 --http-token secret \
   --http-cors http://localhost:5173
 ```
 
@@ -49,7 +49,7 @@ export const db = await synced(SERVER, TOKEN, wasm);
 ```
 
 Open the page in two browsers: a note added in one shows in the other.
-`VITE_FENEC_URL` and `VITE_FENEC_TOKEN` point it at another server. The
+`VITE_FENNEC_URL` and `VITE_FENNEC_TOKEN` point it at another server. The
 `secret` default is for development: the server's own token can change its
 schema, and a real app hands each user a JWT scoped to their rows
 ([Sync](https://fenecdb.com/docs/sync)).
@@ -58,7 +58,7 @@ schema, and a real app hands each user a JWT scoped to their rows
 
 ```tsx
 // src/db.ts: the one line
-export const db = await local(wasm);                      // Fenec.open(wasm, { schema: { notes } })
+export const db = await local(wasm);                      // Fennec.open(wasm, { schema: { notes } })
 // export const db = await synced(SERVER, TOKEN, wasm);   // sync({ url, schema, shapes: [{ collection: notes }] })
 
 // src/App.tsx: the same either way
@@ -81,8 +81,8 @@ dimensions), or a server's embeddings API does; declare
 
 ## Against this repository's build
 
-CI installs `@fenecdb/web` and `@fenecdb/react` packed from this checkout
+CI installs `@fennecdb/web` and `@fennecdb/react` packed from this checkout
 rather than npm's: `examples/run-tests.sh react` copies the folder, points
 both dependencies at the tarballs, installs, runs `npm run smoke` against a
-`fenec-server` it starts and `npm run build`, then switches the line in
+`fennec-server` it starts and `npm run build`, then switches the line in
 `src/db.ts` and type-checks the components again.

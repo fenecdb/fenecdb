@@ -1,4 +1,4 @@
-// Notes in a fenecdb file in the app's own directory. The list is a live
+// Notes in a fennecdb file in the app's own directory. The list is a live
 // query, run again after every write; the search box ranks by the words
 // and the toy vector together (lib/notes.dart).
 import 'package:flutter/material.dart';
@@ -10,7 +10,7 @@ import 'notes.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final dir = await getApplicationSupportDirectory();
-  final notes = await Notes.open('${dir.path}/notes.fenec', await rootBundle.loadString('schema.fenecql'));
+  final notes = await Notes.open('${dir.path}/notes.fennec', await rootBundle.loadString('schema.fennecql'));
   runApp(MaterialApp(title: 'Notes', home: NotesPage(notes)));
 }
 

@@ -69,7 +69,7 @@ export type Plan = {
 	mcp: boolean;
 	metrics: boolean;
 	/**
-	 * A replication token in its environment, which `fenec backup` asks for its
+	 * A replication token in its environment, which `fennec backup` asks for its
 	 * image with: only for a file whose backups are set up (`backups`), since the
 	 * token also turns the server's change feed on, `/_changes` answering every
 	 * write with the data token, from the network for a database served there.
@@ -133,8 +133,8 @@ export function commandShown(p: Plan, home = ""): string {
 		if (a.startsWith("--") || lines.length === 0) lines.push(a);
 		else lines[lines.length - 1] += ` ${a}`;
 	}
-	const secrets = `FENEC_HTTP_TOKEN=••••${p.replication ? " FENEC_REPLICATION_TOKEN=••••" : ""}`;
-	return `${secrets} fenec-server ${lines.join(" \\\n  ")}`;
+	const secrets = `FENNEC_HTTP_TOKEN=••••${p.replication ? " FENNEC_REPLICATION_TOKEN=••••" : ""}`;
+	return `${secrets} fennec-server ${lines.join(" \\\n  ")}`;
 }
 
 const SYNC_WORDS: Record<Sync, string> = { always: "every write synced", "250": "synced every 250 ms", off: "synced when the system writes" };
@@ -165,15 +165,15 @@ export type Snippets = { curl: string; js: string; py: string; env: string };
 
 /**
  * How an app connects, for the Servers list's "Connect from your app". The
- * token stays out: each reads `FENEC_TOKEN` from its environment, and the
+ * token stays out: each reads `FENNEC_TOKEN` from its environment, and the
  * token is copied from the serve sheet.
  */
 export function snippets(url: string, collection = "orders"): Snippets {
 	const q = `get ${collection} limit 5`;
 	return {
-		curl: `curl -s ${url}/query \\\n  -H "Authorization: Bearer $FENEC_TOKEN" \\\n  -d '{"query": "${q}"}'`,
-		js: `import { connect } from '@fenecdb/web/client';\n\nconst db = connect('${url}', { token: process.env.FENEC_TOKEN });\nconst rows = await db.run('${q}');`,
-		py: `import os\nfrom fenecdb import Client\n\ndb = Client("${url}", token=os.environ["FENEC_TOKEN"])\nrows = db.query("${q}")`,
-		env: `FENEC_URL=${url}\nFENEC_TOKEN=<copy it from Settings>`,
+		curl: `curl -s ${url}/query \\\n  -H "Authorization: Bearer $FENNEC_TOKEN" \\\n  -d '{"query": "${q}"}'`,
+		js: `import { connect } from '@fennecdb/web/client';\n\nconst db = connect('${url}', { token: process.env.FENNEC_TOKEN });\nconst rows = await db.run('${q}');`,
+		py: `import os\nfrom fennecdb import Client\n\ndb = Client("${url}", token=os.environ["FENNEC_TOKEN"])\nrows = db.query("${q}")`,
+		env: `FENNEC_URL=${url}\nFENNEC_TOKEN=<copy it from Settings>`,
 	};
 }

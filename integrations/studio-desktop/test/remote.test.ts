@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { after, test } from "node:test";
 import { describeNetworkError, originOf, probeRemote, sendsTokenInTheClear, tokenMayStay } from "../src/bun/remote.ts";
 
-// A stand-in for what a fenec-server answers: the studio's page before any
+// A stand-in for what a fennec-server answers: the studio's page before any
 // token, /_whoami with one. `studio: false` is a server started without
 // --studio (or older than it), which answers an unknown path with 404.
 function fake(opts: { studio: boolean; token?: string; router?: string }): Promise<{ origin: string; server: Server; seen: string[] }> {
@@ -80,16 +80,16 @@ test("a redirect on the studio's own page is a message too", async () => {
 	assert.deepEqual(elsewhere.seen, []);
 });
 
-test("the token goes only to a server that has said it is fenecdb: its own 401, a JSON body naming an error", async () => {
-	// A sign-in page in front, whatever it is: a 401 that is not fenecdb's.
+test("the token goes only to a server that has said it is fennecdb: its own 401, a JSON body naming an error", async () => {
+	// A sign-in page in front, whatever it is: a 401 that is not fennecdb's.
 	const proxy = await stand((url, _, res) => (url === "/_studio/" ? studioPage(res) : res.writeHead(401, { "content-type": "text/html" }).end("<h1>sign in</h1>")));
 	assert.deepEqual(await probeRemote(proxy.origin, "secret-token", null), { kind: "ok" });
 	assert.ok(proxy.seen.every((line) => !line.includes("secret-token")), `never sent: ${proxy.seen.join(" | ")}`);
-	// fenecdb's own: asked without, then with.
-	const fenec = await start({ studio: true, token: "secret-token" });
-	assert.deepEqual(await probeRemote(fenec.origin, "secret-token", null), { kind: "ok" });
-	assert.ok(fenec.seen.some((l) => l.includes("/_whoami") && !l.includes("secret-token")), "asked without the token first");
-	assert.ok(fenec.seen.some((l) => l.includes("/_whoami") && l.includes("Bearer secret-token")), "and with it after");
+	// fennecdb's own: asked without, then with.
+	const fennec = await start({ studio: true, token: "secret-token" });
+	assert.deepEqual(await probeRemote(fennec.origin, "secret-token", null), { kind: "ok" });
+	assert.ok(fennec.seen.some((l) => l.includes("/_whoami") && !l.includes("secret-token")), "asked without the token first");
+	assert.ok(fennec.seen.some((l) => l.includes("/_whoami") && l.includes("Bearer secret-token")), "and with it after");
 });
 
 test("a server that takes no token is not given one", async () => {

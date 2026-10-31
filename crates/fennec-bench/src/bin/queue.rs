@@ -1,0 +1,1113 @@
+//! A job queue's claim: `make queue-bench`.
+//!
+//!   * one worker claiming batches of 10 from a million ready jobs, the claim
+//!     a statement (`set ... order run_at limit 10 returning *`), through
+//!     `@sorted` on the ready time and through a scan of the same rows;
+//!   * 16 threads under the lock a server takes, claiming batches of 10
+//!     and acking each job until the million are done -- and the same with
+//!     the claim a client sends without `returning`: read the ready page,
+//!     compare-and-set it, read back which jobs it won, three statements
+//!     and a race lost whenever another worker read the same page;
+//!   * the same over HTTP against fennec-server, 16 clients: a claim and a
+//!     `/batch` of its acks, two round trips a batch, against the three
+//!     statements' three.
+//!
+//!   * a claim held until a job comes (`Fennec-Wait`), against a worker
+//!     polling every 10 and 100 ms: how soon a job enqueued, or a delayed
+//!     one come due, reaches a worker, and what the server spends meanwhile;
+//!     100 and 1 000 held claims on an empty queue for 10 s -- the server's
+//!     CPU, resident memory and threads, beside as many clients polling and
+//!     as many subscriptions -- and the million jobs over HTTP again with
+//!     the header on every claim, and beside 16 claims held on a queue that
+//!     stays empty (`held`);
+//!   * a put of another collection beside 0, 50 and 150 claims held, each a
+//!     group of its own, as couriers' claims are (`held other`); and one job
+//!     at a time to 10, 100 and 1 000 such claims, every one of which would
+//!     take it: from the put to a worker holding it, the runs and looks a
+//!     job costs, and how often the claim held longest took it (`held
+//!     contested`); and one order at a time to 10, 100 and 1 000 couriers
+//!     each claiming the order nearest it -- how often the nearest took it
+//!     (`held nearest`).
+//!
+//! `JOBS=200000` runs it over fewer jobs.
+
+#[path = "../http.rs"]
+mod http;
+
+use fennec_core::prelude::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, RwLock};
+use std::time::Instant;
+
+const THREADS: usize = 16;
+const BATCH: usize = 10;
+
+const CLAIM: &str = "set jobs {owner: $1, run_at: now() + 600000, attempts: attempts + 1} \
+                     where run_at <= now() order run_at limit 10 returning *";
+const ACK: &str = "del jobs where id = $1 and owner = $2 require 1";
+/// The client's claim without `returning`: the ready page read ...
+const READ: &str = "get jobs select id where run_at <= now() order run_at limit 10";
+
+fn jobs() -> usize {
+    std::env::var("JOBS")
+        .ok()
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(1_000_000)
+}
+
+fn run(db: &mut Database, sql: &str) {
+    db.execute(&fennec_ql::parse_one(sql).unwrap()).unwrap();
+}
+
+/// `n` jobs, ready a millisecond apart up to now, the oldest first: the
+/// ready time indexed (`@sorted`) or not.
+fn queue(db: &mut Database, n: usize, index: &str) {
+    run(
+        db,
+        &format!(
+            "create collection jobs (kind text, payload json, run_at timestamp {index}, \
+             owner text, attempts int)"
+        ),
+    );
+    let now = fennec_core::time::now_ms().unwrap();
+    for b in 0..n.div_ceil(1000) {
+        let docs: Vec<String> = (b * 1000..((b + 1) * 1000).min(n))
+            .map(|i| {
+                format!(
+                    "{{kind: \"mail\", payload: {{\"to\": \"user{i}@example.com\", \"n\": {i}}}, \
+                     run_at: {}, attempts: 0}}",
+                    now - (n - i) as i64
+                )
+            })
+            .collect();
+        run(db, &format!("put jobs [{}]", docs.join(", ")));
+    }
+}
+
+fn percentiles(mut us: Vec<f64>) -> String {
+    us.sort_by(|a, b| a.total_cmp(b));
+    let at = |p: f64| us[((us.len() as f64 * p) as usize).min(us.len() - 1)];
+    format!(
+        "p50 {:.1} us, p99 {:.1}, max {:.1}",
+        at(0.5),
+        at(0.99),
+        us[us.len() - 1]
+    )
+}
+
+fn ids_of(r: &Response) -> Vec<i64> {
+    match r {
+        Response::Rows(rs) => rs.rows.iter().map(|r| r.id as i64).collect(),
+        r => panic!("{r:?}"),
+    }
+}
+
+/// One worker's claims, each timed: through the index, and a scan.
+fn latency(n: usize) {
+    for (index, claims) in [("@sorted", 2000), ("", 20)] {
+        let mut db = Database::new();
+        queue(&mut db, n, index);
+        let claim = fennec_ql::parse_one(CLAIM).unwrap();
+        let owner = [Value::Text("w".into())];
+        let mut us = Vec::with_capacity(claims);
+        for _ in 0..claims {
+            let at = Instant::now();
+            let r = db.execute_with(&claim, &owner).unwrap();
+            us.push(at.elapsed().as_secs_f64() * 1e6);
+            assert_eq!(ids_of(&r).len(), BATCH);
+        }
+        let how = if index.is_empty() {
+            "a scan, no index"
+        } else {
+            "@sorted run_at"
+        };
+        println!(
+            "  one worker, a claim of {BATCH} over {n} jobs, {how}: {}",
+            percentiles(us)
+        );
+    }
+}
+
+/// `threads` workers under a server's lock, until every job is acked: the
+/// claim one statement, or the three a client sends without `returning`.
+fn workers(n: usize, three: bool) {
+    let mut db = Database::new();
+    queue(&mut db, n, "@sorted");
+    let db = Arc::new(RwLock::new(db));
+    let lost = Arc::new(AtomicUsize::new(0));
+    let at = Instant::now();
+    let hs: Vec<_> = (0..THREADS)
+        .map(|t| {
+            let (db, lost) = (db.clone(), lost.clone());
+            std::thread::spawn(move || {
+                let claim = fennec_ql::parse_one(CLAIM).unwrap();
+                let ack = fennec_ql::parse_one(ACK).unwrap();
+                let read = fennec_ql::parse_one(READ).unwrap();
+                let (mut done, mut us) = (0usize, Vec::new());
+                for k in 0.. {
+                    let owner = Value::Text(format!("w{t}:{k}"));
+                    let began = Instant::now();
+                    let ids = if three {
+                        let page = ids_of(&db.read().unwrap().query(&read, &[]).unwrap());
+                        if page.is_empty() {
+                            break;
+                        }
+                        let list = (0..page.len())
+                            .map(|i| format!("${}", i + 2))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        let mut params = vec![owner.clone()];
+                        params.extend(page.iter().map(|&i| Value::Int(i)));
+                        let cas = format!(
+                            "set jobs {{owner: $1, run_at: now() + 600000, attempts: attempts + 1}} \
+                             where id in [{list}] and run_at <= now()"
+                        );
+                        db.write()
+                            .unwrap()
+                            .execute_with(&fennec_ql::parse_one(&cas).unwrap(), &params)
+                            .unwrap();
+                        let back = format!("get jobs select id where id in [{list}] and owner = $1");
+                        let won = ids_of(
+                            &db.read()
+                                .unwrap()
+                                .query(&fennec_ql::parse_one(&back).unwrap(), &params)
+                                .unwrap(),
+                        );
+                        lost.fetch_add(page.len() - won.len(), Ordering::Relaxed);
+                        won
+                    } else {
+                        let r = db
+                            .write()
+                            .unwrap()
+                            .execute_with(&claim, std::slice::from_ref(&owner))
+                            .unwrap();
+                        let ids = ids_of(&r);
+                        if ids.is_empty() {
+                            break;
+                        }
+                        ids
+                    };
+                    us.push(began.elapsed().as_secs_f64() * 1e6);
+                    for id in ids {
+                        let r = db
+                            .write()
+                            .unwrap()
+                            .execute_with(&ack, &[Value::Int(id), owner.clone()])
+                            .unwrap();
+                        assert_eq!(r, Response::Affected(1));
+                        done += 1;
+                    }
+                }
+                (done, us)
+            })
+        })
+        .collect();
+    let (mut done, mut us) = (0, Vec::new());
+    for h in hs {
+        let (d, u) = h.join().unwrap();
+        done += d;
+        us.extend(u);
+    }
+    let s = at.elapsed().as_secs_f64();
+    assert_eq!(done, n, "every job acked once");
+    let claims = us.len();
+    let how = if three {
+        "read, compare-and-set, read back"
+    } else {
+        "set ... returning, one statement"
+    };
+    println!(
+        "  {THREADS} threads, {how}: {n} jobs claimed and acked in {s:.2} s, {:.0} jobs/s, \
+         {:.0} claims/s; a claim {}{}",
+        n as f64 / s,
+        claims as f64 / s,
+        percentiles(us),
+        if three {
+            format!(
+                "; {} jobs read and lost to another worker",
+                lost.load(Ordering::Relaxed)
+            )
+        } else {
+            String::new()
+        }
+    );
+}
+
+/// The same over HTTP: 16 clients against fennec-server, a claim and a
+/// `/batch` of its acks, or the three statements and the acks.
+fn over_http(n: usize, three: bool) {
+    let dir = std::env::temp_dir().join(format!("fennecbench-queue-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("queue.fennec");
+    let _ = std::fs::remove_file(&file);
+    {
+        let mut db = fennec_core::fs::open(&file).unwrap();
+        queue(&mut db, n, "@sorted");
+        db.checkpoint().unwrap();
+    }
+    let port = http::free_port();
+    let server = http::start_fennec(&file, port, "queue-bench", &[]);
+    let addr = format!("127.0.0.1:{port}");
+    let lost = Arc::new(AtomicUsize::new(0));
+    let at = Instant::now();
+    let hs: Vec<_> = (0..THREADS)
+        .map(|t| {
+            let (addr, lost) = (addr.clone(), lost.clone());
+            std::thread::spawn(move || {
+                let mut c = http::Http::connect(&addr);
+                let (mut done, mut us) = (0usize, Vec::new());
+                for k in 0.. {
+                    let owner = format!("\"w{t}:{k}\"");
+                    let began = Instant::now();
+                    let ids = if three {
+                        let page = http::ids(c.query(READ, ""));
+                        if page.is_empty() {
+                            break;
+                        }
+                        let list = (0..page.len())
+                            .map(|i| format!("${}", i + 2))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        let params = std::iter::once(owner.clone())
+                            .chain(page.iter().map(|i| i.to_string()))
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        c.query(
+                            &format!(
+                                "set jobs {{owner: $1, run_at: now() + 600000, attempts: attempts + 1}} \
+                                 where id in [{list}] and run_at <= now()"
+                            ),
+                            &params,
+                        );
+                        let won = http::ids(c.query(
+                            &format!("get jobs select id where id in [{list}] and owner = $1"),
+                            &params,
+                        ));
+                        lost.fetch_add(page.len() - won.len(), Ordering::Relaxed);
+                        won
+                    } else {
+                        let ids = http::ids(c.query(CLAIM, &owner));
+                        if ids.is_empty() {
+                            break;
+                        }
+                        ids
+                    };
+                    us.push(began.elapsed().as_secs_f64() * 1e6);
+                    if ids.is_empty() {
+                        continue;
+                    }
+                    let acks: Vec<String> = ids
+                        .iter()
+                        .map(|id| {
+                            format!(
+                                "{{\"query\":{},\"params\":[{id},{owner}]}}",
+                                http::json_string(ACK)
+                            )
+                        })
+                        .collect();
+                    c.post("/batch", "application/x-ndjson", acks.join("\n").as_bytes());
+                    done += ids.len();
+                }
+                (done, us)
+            })
+        })
+        .collect();
+    let (mut done, mut us) = (0, Vec::new());
+    for h in hs {
+        let (d, u) = h.join().unwrap();
+        done += d;
+        us.extend(u);
+    }
+    let s = at.elapsed().as_secs_f64();
+    server.terminate();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(done, n, "every job acked once");
+    let how = if three {
+        "read, compare-and-set, read back: three round trips"
+    } else {
+        "set ... returning: one round trip"
+    };
+    println!(
+        "  {THREADS} HTTP clients, {how}, acks a /batch: {n} jobs in {s:.2} s, {:.0} jobs/s; \
+         a claim {}{}",
+        n as f64 / s,
+        percentiles(us),
+        if three {
+            format!(
+                "; {} jobs read and lost to another client",
+                lost.load(Ordering::Relaxed)
+            )
+        } else {
+            String::new()
+        }
+    );
+}
+
+// ------------------------------------------------------------ held claims
+
+/// Microseconds since the bench began, the clock a job's `sent` is on.
+fn micros() -> i64 {
+    static EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    EPOCH.get_or_init(Instant::now).elapsed().as_micros() as i64
+}
+
+/// The server's CPU seconds so far, resident bytes and threads.
+fn usage(pid: u32) -> (f64, u64, u64) {
+    let ps = |args: &[&str]| {
+        let out = std::process::Command::new("ps")
+            .args(args)
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let pid = pid.to_string();
+    let line = ps(&["-o", "time=,rss=", "-p", &pid]);
+    let mut parts = line.split_whitespace();
+    // `[[dd-]hh:]mm:ss.cc`
+    let cpu = parts.next().map_or(0.0, |t| {
+        t.split(['-', ':'])
+            .fold(0.0, |acc, p| acc * 60.0 + p.parse::<f64>().unwrap_or(0.0))
+    });
+    let rss = parts
+        .next()
+        .and_then(|r| r.parse::<u64>().ok())
+        .unwrap_or(0)
+        * 1024;
+    // Linux names the threads' count; macOS lists them a line each.
+    let threads = match ps(&["-o", "nlwp=", "-p", &pid]).trim().parse::<u64>() {
+        Ok(n) => n,
+        Err(_) => ps(&["-M", "-p", &pid]).lines().count().saturating_sub(1) as u64,
+    };
+    (cpu, rss, threads)
+}
+
+/// An empty queue in a fresh server's file, and the server.
+fn empty_queue(extra: &[&str]) -> (http::Server, String, std::path::PathBuf) {
+    let dir = std::env::temp_dir().join(format!("fennecbench-held-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("held.fennec");
+    let _ = std::fs::remove_file(&file);
+    let port = http::free_port();
+    let server = http::start_fennec(&file, port, "queue-bench", extra);
+    let addr = format!("127.0.0.1:{port}");
+    http::Http::connect(&addr).query(
+        "create collection jobs (kind text, sent int, run_at timestamp @sorted, owner text, \
+         attempts int)",
+        "",
+    );
+    (server, addr, dir)
+}
+
+/// A claim held beside a busy queue: of jobs a year overdue, which none
+/// is, so its look is a step of the index and finds nothing, at every
+/// claim and ack the busy workers write.
+const ASIDE: &str = "set jobs {owner: $1} where run_at <= now() - 31536000000 and kind = $2 \
+                     order run_at limit 1 returning id, sent";
+
+const HELD_CLAIM: &str = "set jobs {owner: $1, run_at: now() + 600000, attempts: attempts + 1} \
+                          where run_at <= now() and kind = $2 order run_at limit 1 \
+                          returning id, kind, sent, run_at";
+
+/// How a worker waits for a job: held by the server, or polling.
+#[derive(Clone, Copy)]
+enum Wait {
+    Held,
+    Poll(u64),
+}
+
+impl Wait {
+    fn name(self) -> String {
+        match self {
+            Wait::Held => "held (Fennec-Wait)".into(),
+            Wait::Poll(ms) => format!("polling every {ms} ms"),
+        }
+    }
+}
+
+/// A worker `claimers` started: the jobs it held, as (job's `sent`,
+/// received) in us, and the claims it sent.
+type Claimer = std::thread::JoinHandle<(Vec<(i64, i64)>, usize)>;
+
+/// `workers` claiming jobs of `kind` as they come until each has claimed a
+/// stop job (`sent` -1): what each saw, as (job's `sent`, received), in us,
+/// and how many claims it sent.
+fn claimers(
+    addr: &str,
+    workers: usize,
+    (claim, kind): (&'static str, &'static str),
+    wait: Wait,
+) -> Vec<Claimer> {
+    (0..workers)
+        .map(|w| {
+            let addr = addr.to_string();
+            std::thread::spawn(move || {
+                let mut c = http::Http::connect(&addr);
+                let (mut got, mut claims) = (Vec::new(), 0);
+                for k in 0.. {
+                    let owner = format!("\"{kind}{w}:{k}\"");
+                    let params = format!("{owner},\"{kind}\"");
+                    claims += 1;
+                    let body = match wait {
+                        Wait::Held => c
+                            .query_with(claim, &params, "Fennec-Wait: 30000\r\n")
+                            .to_vec(),
+                        Wait::Poll(_) => c.query(claim, &params).to_vec(),
+                    };
+                    let at = micros();
+                    let sent = http::ints(&body, "sent");
+                    if sent.is_empty() {
+                        if let Wait::Poll(ms) = wait {
+                            std::thread::sleep(std::time::Duration::from_millis(ms));
+                        }
+                        continue;
+                    }
+                    if sent.contains(&-1) {
+                        break;
+                    }
+                    for s in sent {
+                        got.push((s, at));
+                        RECEIVED.fetch_add(1, Ordering::AcqRel);
+                    }
+                    for id in http::ids(&body) {
+                        c.query(ACK, &format!("{id},{owner}"));
+                    }
+                }
+                (got, claims)
+            })
+        })
+        .collect()
+}
+
+/// Jobs the workers `claimers` started have held: a part waits for all
+/// of them before it stops the workers, whose stop jobs, the oldest, would
+/// otherwise go before the last jobs.
+static RECEIVED: AtomicUsize = AtomicUsize::new(0);
+
+fn received(n: usize) {
+    let until = Instant::now() + std::time::Duration::from_secs(60);
+    while RECEIVED.load(Ordering::Acquire) < n {
+        assert!(
+            Instant::now() < until,
+            "{} of {n} jobs held",
+            RECEIVED.load(Ordering::Acquire)
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+/// Ends the workers `claimers` started on `kind`: a stop job each.
+fn stop(addr: &str, workers: usize, kind: &str) {
+    let mut c = http::Http::connect(addr);
+    for _ in 0..workers {
+        c.query(
+            "put jobs {kind: $1, sent: -1, run_at: 0, attempts: 0}",
+            &format!("\"{kind}\""),
+        );
+    }
+}
+
+fn ms_percentiles(mut us: Vec<f64>) -> String {
+    us.sort_by(|a, b| a.total_cmp(b));
+    let at = |p: f64| us[((us.len() as f64 * p) as usize).min(us.len() - 1)];
+    format!(
+        "p50 {:.2} ms, p99 {:.2}, max {:.2}",
+        at(0.5) / 1e3,
+        at(0.99) / 1e3,
+        us[us.len() - 1] / 1e3
+    )
+}
+
+/// 8 workers waiting for 1 000 jobs enqueued one at a time, 2 to 20 ms
+/// apart: from a job's put sent to a worker holding it, and the server's
+/// CPU meanwhile.
+fn pickup(wait: Wait) {
+    const WORKERS: usize = 8;
+    const N: usize = 1000;
+    let (server, addr, dir) = empty_queue(&["--max-connections", "200"]);
+    RECEIVED.store(0, Ordering::Release);
+    let hs = claimers(&addr, WORKERS, (HELD_CLAIM, "mail"), wait);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let (cpu0, _, _) = usage(server.pid());
+    let began = Instant::now();
+    let mut c = http::Http::connect(&addr);
+    let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+    for _ in 0..N {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        std::thread::sleep(std::time::Duration::from_micros(2000 + seed % 18_000));
+        c.query(
+            "put jobs {kind: \"mail\", sent: $1, run_at: now(), attempts: 0}",
+            &micros().to_string(),
+        );
+    }
+    received(N);
+    let took = began.elapsed().as_secs_f64();
+    let (cpu1, _, _) = usage(server.pid());
+    stop(&addr, WORKERS, "mail");
+    let (mut lat, mut claims) = (Vec::new(), 0);
+    for h in hs {
+        let (got, k) = h.join().unwrap();
+        lat.extend(got.iter().map(|(s, at)| (at - s) as f64));
+        claims += k;
+    }
+    assert_eq!(lat.len(), N, "every job picked up once");
+    server.terminate();
+    let _ = std::fs::remove_dir_all(&dir);
+    println!(
+        "  {WORKERS} workers, {}: a job enqueued to a worker holding it {}; \
+         {claims} claims sent, the server's CPU {:.1}% of a core",
+        wait.name(),
+        ms_percentiles(lat),
+        (cpu1 - cpu0) / took * 100.0
+    );
+}
+
+/// 400 jobs delayed 50 to 2 000 ms, all enqueued at once, 8 workers
+/// waiting: how long after its time each is held by a worker.
+fn delayed(wait: Wait) {
+    const WORKERS: usize = 8;
+    const N: usize = 400;
+    let (server, addr, dir) = empty_queue(&["--max-connections", "200"]);
+    RECEIVED.store(0, Ordering::Release);
+    let hs = claimers(&addr, WORKERS, (HELD_CLAIM, "mail"), wait);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let mut c = http::Http::connect(&addr);
+    let now = fennec_core::time::now_ms().unwrap();
+    let docs: Vec<String> = (0..N)
+        .map(|i| {
+            let due = now + 50 + (i as i64 * 7919) % 1950;
+            // `sent` carries the job's time on the bench's clock.
+            let sent = micros() + (due - now) * 1000;
+            format!("{{kind: \"mail\", sent: {sent}, run_at: {due}, attempts: 0}}")
+        })
+        .collect();
+    c.query(&format!("put jobs [{}]", docs.join(", ")), "");
+    let began = Instant::now();
+    let (cpu0, _, _) = usage(server.pid());
+    while began.elapsed() < std::time::Duration::from_millis(2300) {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    received(N);
+    let (cpu1, _, _) = usage(server.pid());
+    stop(&addr, WORKERS, "mail");
+    let mut lat = Vec::new();
+    for h in hs {
+        lat.extend(h.join().unwrap().0.iter().map(|(s, at)| (at - s) as f64));
+    }
+    assert_eq!(lat.len(), N, "every job picked up once");
+    assert!(
+        lat.iter().all(|l| *l > -2000.0),
+        "none taken before its time"
+    );
+    server.terminate();
+    let _ = std::fs::remove_dir_all(&dir);
+    println!(
+        "  {WORKERS} workers, {}: a delayed job from its time to a worker holding it {}; \
+         the server's CPU {:.1}% of a core",
+        wait.name(),
+        ms_percentiles(lat),
+        (cpu1 - cpu0) / 2.3 * 100.0
+    );
+}
+
+/// `n` clients waiting on an empty queue for 10 s, held or polling every
+/// 100 ms, or as many subscriptions to it: the server's CPU, and its
+/// resident memory and threads past what it held before they came.
+fn idle(n: usize, how: &str) {
+    let (server, addr, dir) =
+        empty_queue(&["--max-connections", "5000", "--http-max-streams", "5000"]);
+    let (_, rss0, threads0) = usage(server.pid());
+    let mut subs = Vec::new();
+    let hs = match how {
+        "held" => claimers(&addr, n, (HELD_CLAIM, "mail"), Wait::Held),
+        "poll" => claimers(&addr, n, (HELD_CLAIM, "mail"), Wait::Poll(100)),
+        _ => {
+            for _ in 0..n {
+                use std::io::{Read, Write};
+                let mut s = std::net::TcpStream::connect(&addr).unwrap();
+                s.write_all(b"GET /jobs/changes HTTP/1.1\r\nHost: b\r\n\r\n")
+                    .unwrap();
+                let mut seed = [0u8; 256];
+                let _ = s.read(&mut seed).unwrap();
+                subs.push(s);
+            }
+            Vec::new()
+        }
+    };
+    // Every client in: held, its claim run once and answered nothing.
+    let mut m = http::Http::connect(&addr);
+    let until = Instant::now() + std::time::Duration::from_secs(60);
+    if how == "held" {
+        while !String::from_utf8_lossy(m.get("/_metrics"))
+            .contains(&format!("fennec_held_requests {n}\n"))
+        {
+            assert!(Instant::now() < until, "{n} never held");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    } else {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+    let (cpu0, rss1, threads1) = usage(server.pid());
+    std::thread::sleep(std::time::Duration::from_secs(10));
+    let (cpu1, rss2, _) = usage(server.pid());
+    let rss = rss1.max(rss2);
+    if how != "subscriptions" {
+        stop(&addr, n, "mail");
+    }
+    for h in hs {
+        h.join().unwrap();
+    }
+    drop(subs);
+    server.terminate();
+    let _ = std::fs::remove_dir_all(&dir);
+    let what = match how {
+        "held" => "claims held",
+        "poll" => "clients polling every 100 ms",
+        _ => "subscriptions",
+    };
+    println!(
+        "  {n} {what}, 10 s on an empty queue: the server's CPU {:.2}% of a core, \
+         +{:.1} MB resident ({:.1} KB each), +{} threads",
+        (cpu1 - cpu0) / 10.0 * 100.0,
+        (rss as f64 - rss0 as f64) / 1e6,
+        (rss as f64 - rss0 as f64) / n as f64 / 1e3,
+        threads1.saturating_sub(threads0)
+    );
+}
+
+/// The million jobs over HTTP again, each claim sent with `Fennec-Wait`
+/// (`header`), or beside `aside` claims held that no job is for ([`ASIDE`]),
+/// whose group's head every write to the collection wakes to look.
+fn busy(n: usize, header: bool, aside: usize) {
+    let dir = std::env::temp_dir().join(format!("fennecbench-busy-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("queue.fennec");
+    let _ = std::fs::remove_file(&file);
+    {
+        let mut db = fennec_core::fs::open(&file).unwrap();
+        queue(&mut db, n, "@sorted");
+        // What a held claim's stop job is told by.
+        run(&mut db, "alter collection jobs add field sent int");
+        db.checkpoint().unwrap();
+    }
+    let port = http::free_port();
+    let server = http::start_fennec(&file, port, "queue-bench", &[]);
+    let addr = format!("127.0.0.1:{port}");
+    let idle = claimers(&addr, aside, (ASIDE, "none"), Wait::Held);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let at = Instant::now();
+    let hs: Vec<_> = (0..THREADS)
+        .map(|t| {
+            let addr = addr.clone();
+            std::thread::spawn(move || {
+                let mut c = http::Http::connect(&addr);
+                let (mut done, mut us) = (0usize, Vec::new());
+                for k in 0.. {
+                    let owner = format!("\"w{t}:{k}\"");
+                    let began = Instant::now();
+                    let ids = match header {
+                        true => http::ids(c.query_with(CLAIM, &owner, "Fennec-Wait: 1\r\n")),
+                        false => http::ids(c.query(CLAIM, &owner)),
+                    };
+                    us.push(began.elapsed().as_secs_f64() * 1e6);
+                    if ids.is_empty() {
+                        break;
+                    }
+                    let acks: Vec<String> = ids
+                        .iter()
+                        .map(|id| {
+                            format!(
+                                "{{\"query\":{},\"params\":[{id},{owner}]}}",
+                                http::json_string(ACK)
+                            )
+                        })
+                        .collect();
+                    c.post("/batch", "application/x-ndjson", acks.join("\n").as_bytes());
+                    done += ids.len();
+                }
+                (done, us)
+            })
+        })
+        .collect();
+    let (mut done, mut us) = (0, Vec::new());
+    for h in hs {
+        let (d, u) = h.join().unwrap();
+        done += d;
+        us.extend(u);
+    }
+    let s = at.elapsed().as_secs_f64();
+    // What the held claims cost while the busy ones ran: their heads' looks.
+    let metrics = String::from_utf8_lossy(http::Http::connect(&addr).get("/_metrics")).into_owned();
+    let looks = metrics
+        .lines()
+        .find_map(|l| l.strip_prefix("fennec_held_looks_total "))
+        .and_then(|n| n.trim().parse::<u64>().ok())
+        .unwrap_or(0);
+    stop(&addr, aside, "none");
+    for h in idle {
+        h.join().unwrap();
+    }
+    server.terminate();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(done, n, "every job acked once");
+    let how = match (header, aside) {
+        (true, _) => "each claim with Fennec-Wait".to_string(),
+        (false, 0) => "no claim held".to_string(),
+        (false, a) => format!("beside {a} claims held that no job is for"),
+    };
+    println!(
+        "  {THREADS} HTTP clients, {how}: {n} jobs in {s:.2} s, {:.0} jobs/s; a claim {}{}",
+        n as f64 / s,
+        percentiles(us),
+        match aside {
+            0 => String::new(),
+            _ => format!("; {:.0} looks/s by the held claims", looks as f64 / s),
+        }
+    );
+}
+
+/// A metric's value in a scrape of `/_metrics`, 0 where it is not.
+fn metric(c: &mut http::Http, name: &str) -> u64 {
+    let text = String::from_utf8_lossy(c.get("/_metrics")).into_owned();
+    let prefix = format!("{name} ");
+    text.lines()
+        .find_map(|l| l.strip_prefix(prefix.as_str()))
+        .and_then(|n| n.trim().parse::<u64>().ok())
+        .unwrap_or(0)
+}
+
+/// Waits until `n` requests are held on the server `c` reaches.
+fn until_held(c: &mut http::Http, n: u64) {
+    let until = Instant::now() + std::time::Duration::from_secs(120);
+    while metric(c, "fennec_held_requests") != n {
+        assert!(Instant::now() < until, "{n} never held");
+        std::thread::sleep(std::time::Duration::from_micros(200));
+    }
+}
+
+/// `held` claims held that no job is for, each a group of its own -- a
+/// courier's claim, whose point is in its filter -- for 30 s, beside one
+/// writer putting rows of another collection one at a time: a position
+/// beat's time, which the claims held on `jobs` have no business in.
+fn other(held: usize) {
+    const WRITES: usize = 20_000;
+    let (server, addr, dir) =
+        empty_queue(&["--max-connections", "5000", "--http-max-streams", "5000"]);
+    let mut c = http::Http::connect(&addr);
+    c.query("create collection positions (x int, y int)", "");
+    let hs: Vec<_> = (0..held)
+        .map(|w| {
+            let addr = addr.clone();
+            std::thread::spawn(move || {
+                let mut c = http::Http::connect(&addr);
+                // Answered at the server's SIGTERM, with nothing.
+                c.query_with(
+                    ASIDE,
+                    &format!("\"w{w}\",\"aside{w}\""),
+                    "Fennec-Wait: 30000\r\n",
+                );
+            })
+        })
+        .collect();
+    until_held(&mut c, held as u64);
+    let looks = metric(&mut c, "fennec_held_looks_total");
+    let mut us = Vec::with_capacity(WRITES);
+    let began = Instant::now();
+    for i in 0..WRITES {
+        let t = Instant::now();
+        c.query(
+            "put positions {id: $1, x: $2, y: $2}",
+            &format!("{},{i}", 1 + i % 150),
+        );
+        us.push(t.elapsed().as_secs_f64() * 1e6);
+    }
+    let s = began.elapsed().as_secs_f64();
+    let looks = metric(&mut c, "fennec_held_looks_total") - looks;
+    server.terminate();
+    for h in hs {
+        let _ = h.join();
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    println!(
+        "  a put of another collection beside {held} claims held, each its own group: {}; \
+         {:.0} looks/s by the held claims",
+        percentiles(us),
+        looks as f64 / s
+    );
+}
+
+/// A claim every job matches, a group of each worker's own: its third
+/// parameter, a bound no job's `sent` is under, differs worker by worker,
+/// as a courier's point does.
+const OWN_CLAIM: &str = "set jobs {owner: $1, run_at: now() + 600000, attempts: attempts + 1} \
+                         where run_at <= now() and kind = $2 and sent > $3 order run_at \
+                         limit 1 returning id, kind, sent";
+
+/// One job at a time to `n` claims held, each a group of its own that the
+/// job matches: from its put sent to a worker holding it, the runs and the
+/// heads' looks a job costs, and how often the claim held longest took it.
+/// A courier's claim: the order nearest its point, a group of its own.
+const NEAREST: &str = "set orders {courier: $1, run_at: now() + 600000} where run_at <= now() \
+                       order distance(pickup, $2) limit 1 returning id, sent";
+
+/// Metres between two points, as `distance()` measures them.
+fn metres(a: (f64, f64), b: (f64, f64)) -> f64 {
+    let r = 6_372_797.56f64;
+    let (la1, la2) = (a.1.to_radians(), b.1.to_radians());
+    let (dla, dlo) = ((b.1 - a.1).to_radians(), (b.0 - a.0).to_radians());
+    let h = (dla / 2.0).sin().powi(2) + la1.cos() * la2.cos() * (dlo / 2.0).sin().powi(2);
+    2.0 * r * h.sqrt().asin()
+}
+
+/// One order at a time, at a point of its own in a city of 10 km, to `n`
+/// couriers waiting at points of theirs, each claim the order nearest it
+/// (`order distance(pickup, $2) limit 1`): from the put to a courier
+/// holding it, the runs a job costs, how often the nearest courier took it
+/// and how much further the one that did was.
+fn nearest(n: usize) {
+    let jobs = if n >= 1000 { 100 } else { 300 };
+    let (server, addr, dir) =
+        empty_queue(&["--max-connections", "5000", "--http-max-streams", "5000"]);
+    let mut c = http::Http::connect(&addr);
+    c.query(
+        "create collection orders (pickup geo @geo, sent int, run_at timestamp @sorted, \
+         courier text)",
+        "",
+    );
+    let mut seed = 0x2545_f491_4f6c_dd1du64;
+    let mut rnd = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        (seed % 1_000_000) as f64 / 1_000_000.0
+    };
+    // About 10 km across, at 41 degrees north.
+    let mut spot = move || (29.0 + rnd() * 0.12, 41.0 + rnd() * 0.09);
+    let points: Vec<(f64, f64)> = (0..n).map(|_| spot()).collect();
+    let (tx, rx) = std::sync::mpsc::channel::<(usize, i64, i64)>();
+    let mut hs = Vec::with_capacity(n);
+    for (w, p) in points.iter().copied().enumerate() {
+        let addr = addr.clone();
+        let tx = tx.clone();
+        hs.push(std::thread::spawn(move || {
+            let mut c = http::Http::connect(&addr);
+            for k in 0.. {
+                let params = format!("\"c{w}:{k}\",[{},{}]", p.0, p.1);
+                let body = c
+                    .query_with(NEAREST, &params, "Fennec-Wait: 30000\r\n")
+                    .to_vec();
+                let at = micros();
+                let sent = http::ints(&body, "sent");
+                if sent.contains(&-1) {
+                    break;
+                }
+                for s in sent {
+                    tx.send((w, s, at)).unwrap();
+                }
+            }
+        }));
+        until_held(&mut c, w as u64 + 1);
+    }
+    let runs0 = metric(&mut c, "fennec_held_runs_total");
+    let (cpu0, _, _) = usage(server.pid());
+    let (mut lat, mut nearest, mut further) = (Vec::with_capacity(jobs), 0, Vec::new());
+    for _ in 0..jobs {
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let at = spot();
+        c.query(
+            "put orders {pickup: $1, sent: $2, run_at: now()}",
+            &format!("[{},{}],{}", at.0, at.1, micros()),
+        );
+        let (w, sent, got) = rx.recv().unwrap();
+        lat.push((got - sent) as f64);
+        let best = (0..n)
+            .min_by(|&a, &b| metres(points[a], at).total_cmp(&metres(points[b], at)))
+            .unwrap();
+        if best == w {
+            nearest += 1;
+        }
+        further.push(metres(points[w], at) - metres(points[best], at));
+        until_held(&mut c, n as u64);
+    }
+    let (cpu1, _, _) = usage(server.pid());
+    let runs = metric(&mut c, "fennec_held_runs_total") - runs0;
+    // A stop order at each courier's own point, the one nearest it.
+    for p in &points {
+        c.query(
+            "put orders {pickup: $1, sent: -1, run_at: 0}",
+            &format!("[{},{}]", p.0, p.1),
+        );
+    }
+    for h in hs {
+        h.join().unwrap();
+    }
+    server.terminate();
+    let _ = std::fs::remove_dir_all(&dir);
+    further.sort_by(|a, b| a.total_cmp(b));
+    println!(
+        "  {n} couriers waiting, each the order nearest it, {jobs} orders one at a time: put to \
+         held {}; {:.2} runs an order, the server's CPU {:.1} ms an order; the nearest took it \
+         {:.0}%, the one that did a median of {:.0} m further",
+        ms_percentiles(lat),
+        runs as f64 / jobs as f64,
+        (cpu1 - cpu0) * 1e3 / jobs as f64,
+        nearest as f64 * 100.0 / jobs as f64,
+        further[further.len() / 2]
+    );
+}
+
+/// Each job waits for the last one's taker to be held again, so which
+/// claim was held longest is the order they came back in.
+fn contested(n: usize) {
+    let jobs = if n >= 1000 { 100 } else { 300 };
+    let (server, addr, dir) =
+        empty_queue(&["--max-connections", "5000", "--http-max-streams", "5000"]);
+    let mut c = http::Http::connect(&addr);
+    let (tx, rx) = std::sync::mpsc::channel::<(usize, i64, i64)>();
+    let mut hs = Vec::with_capacity(n);
+    // The workers in the order they sent their claims, the longest held
+    // first: a claim whose wait ran out is sent again, to the back.
+    let order = Arc::new(std::sync::Mutex::new(
+        std::collections::VecDeque::with_capacity(n),
+    ));
+    for w in 0..n {
+        let addr = addr.clone();
+        let tx = tx.clone();
+        let order = Arc::clone(&order);
+        hs.push(std::thread::spawn(move || {
+            let mut c = http::Http::connect(&addr);
+            for k in 0.. {
+                let owner = format!("\"c{w}:{k}\"");
+                let params = format!("{owner},\"mail\",{}", -1_000_000 - w as i64);
+                {
+                    let mut order = order.lock().unwrap();
+                    order.retain(|&o| o != w);
+                    order.push_back(w);
+                }
+                let body = c
+                    .query_with(OWN_CLAIM, &params, "Fennec-Wait: 30000\r\n")
+                    .to_vec();
+                let at = micros();
+                let sent = http::ints(&body, "sent");
+                if sent.contains(&-1) {
+                    break;
+                }
+                for (s, id) in sent.iter().zip(http::ids(&body)) {
+                    c.query(ACK, &format!("{id},{owner}"));
+                    tx.send((w, *s, at)).unwrap();
+                }
+            }
+        }));
+        until_held(&mut c, w as u64 + 1);
+    }
+    let (runs0, looks0) = (
+        metric(&mut c, "fennec_held_runs_total"),
+        metric(&mut c, "fennec_held_looks_total"),
+    );
+    let (cpu0, _, _) = usage(server.pid());
+    let (mut lat, mut longest) = (Vec::with_capacity(jobs), 0);
+    for _ in 0..jobs {
+        // Past the gap a claim that found nothing keeps between two looks
+        // (`LOOK_GAP`, a millisecond): a job put the moment the last was
+        // taken meets the claims that looked for it in their gap, and is
+        // taken as the gap ends, whoever arbitrates it.
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let first = order.lock().unwrap().front().copied();
+        c.query(
+            "put jobs {kind: \"mail\", sent: $1, run_at: now(), attempts: 0}",
+            &micros().to_string(),
+        );
+        let (w, sent, at) = rx.recv().unwrap();
+        lat.push((at - sent) as f64);
+        if first == Some(w) {
+            longest += 1;
+        }
+        until_held(&mut c, n as u64);
+    }
+    let (cpu1, _, _) = usage(server.pid());
+    let runs = metric(&mut c, "fennec_held_runs_total") - runs0;
+    let looks = metric(&mut c, "fennec_held_looks_total") - looks0;
+    for _ in 0..n {
+        c.query(
+            "put jobs {kind: \"mail\", sent: -1, run_at: 0, attempts: 0}",
+            "",
+        );
+    }
+    for h in hs {
+        h.join().unwrap();
+    }
+    server.terminate();
+    let _ = std::fs::remove_dir_all(&dir);
+    println!(
+        "  {n} claims held, each its own group, {jobs} jobs one at a time: put to held {}; \
+         {:.2} runs and {:.1} looks a job, the server's CPU {:.1} ms a job; the claim held \
+         longest took it {:.0}%",
+        ms_percentiles(lat),
+        runs as f64 / jobs as f64,
+        looks as f64 / jobs as f64,
+        (cpu1 - cpu0) * 1e3 / jobs as f64,
+        longest as f64 * 100.0 / jobs as f64
+    );
+}
+
+fn main() {
+    let n = jobs();
+    let only = std::env::args().nth(1);
+    let wants = |part: &str| only.as_deref().is_none_or(|o| o == part);
+    println!("a job queue's claim, {n} jobs:");
+    if wants("latency") {
+        latency(n);
+    }
+    if wants("threads") {
+        workers(n, false);
+        workers(n, true);
+    }
+    if wants("http") {
+        over_http(n, false);
+        over_http(n, true);
+    }
+    if wants("held") {
+        // `held busy`, `held idle`: one of its parts.
+        let sub = std::env::args().nth(2);
+        let part = |p: &str| sub.as_deref().is_none_or(|s| s == p);
+        println!("a claim held until a job comes (Fennec-Wait), against polling:");
+        if part("pickup") {
+            for w in [Wait::Held, Wait::Poll(10), Wait::Poll(100)] {
+                pickup(w);
+            }
+        }
+        if part("delayed") {
+            for w in [Wait::Held, Wait::Poll(10), Wait::Poll(100)] {
+                delayed(w);
+            }
+        }
+        if part("idle") {
+            for clients in [100, 1000] {
+                for how in ["held", "poll", "subscriptions"] {
+                    idle(clients, how);
+                }
+            }
+        }
+        if part("busy") {
+            busy(n, false, 0);
+            busy(n, true, 0);
+            busy(n, false, 16);
+        }
+        if part("other") {
+            for held in [0, 50, 150] {
+                other(held);
+            }
+        }
+        if part("contested") {
+            for held in [10, 100, 1000] {
+                contested(held);
+            }
+        }
+        if part("nearest") {
+            for held in [10, 100, 1000] {
+                nearest(held);
+            }
+        }
+    }
+}

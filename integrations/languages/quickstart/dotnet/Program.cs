@@ -1,6 +1,6 @@
-using FenecDb;
+using FennecDb;
 
-using var db = new FenecClient("http://127.0.0.1:8080");
+using var db = new FennecClient("http://127.0.0.1:8080");
 
 await db.ExecAsync("put notes {title: $1, year: $2, kind: $3}", ["Sand and stars", 2023, "book"]);
 
@@ -14,7 +14,7 @@ try
 {
     await db.QueryAsync("get nowhere");
 }
-catch (FenecException e)
+catch (FennecException e)
 {
     Console.WriteLine($"refused: {e.Status} {e.Message}");
 }

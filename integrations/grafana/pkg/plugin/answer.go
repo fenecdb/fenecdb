@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-// An answer as fenec-server wrote it, in its order: encoding/json's maps
+// An answer as fennec-server wrote it, in its order: encoding/json's maps
 // lose the order of a row's keys, which is the select list's, and a panel
 // shows its columns in that order -- Infinity's backend parser sorted them
 // by name, and every panel needed Grafana's Organize transformation to
@@ -48,7 +48,7 @@ type answer struct {
 func parseAnswer(raw []byte) (answer, error) {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 {
-		return answer{}, fmt.Errorf("fenec-server answered nothing")
+		return answer{}, fmt.Errorf("fennec-server answered nothing")
 	}
 	if raw[0] == '[' {
 		rows, err := parseRows(raw)
@@ -216,7 +216,7 @@ type table struct {
 // flatten lays the rows out as one table. A `lookup` nests each parent's
 // children inside it, under the looked-up collection's name; a table has
 // no nesting, so it gets what ResultSet::flatten gives every flat
-// transport (crates/fenec-core/src/query.rs): the parent's columns, then
+// transport (crates/fennec-core/src/query.rs): the parent's columns, then
 // each level's under `<collection>.<field>`, one row per root-to-leaf
 // path, and nulls from the first level that ran out.
 func flatten(rows []row, lookups []string) table {

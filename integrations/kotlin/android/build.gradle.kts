@@ -1,5 +1,5 @@
-// The AAR: the fenecdb library's Kotlin with the native library for each
-// ABI (`build/jniLibs/<abi>/libfenec_ffi.so`, which build-aar.sh fills with
+// The AAR: the fennecdb library's Kotlin with the native library for each
+// ABI (`build/jniLibs/<abi>/libfennec_ffi.so`, which build-aar.sh fills with
 // the NDK). Configured only where an Android SDK is installed
 // (settings.gradle.kts).
 plugins {
@@ -10,7 +10,7 @@ plugins {
 }
 
 android {
-    namespace = "com.fenecdb"
+    namespace = "com.fennecdb"
     compileSdk = 34
 
     defaultConfig {
@@ -22,7 +22,7 @@ android {
 
     sourceSets["main"].apply {
         // One source of the library: the JVM module's.
-        java.srcDir("../fenecdb/src/main/kotlin")
+        java.srcDir("../fennecdb/src/main/kotlin")
         jniLibs.srcDir("build/jniLibs")
     }
 
@@ -61,15 +61,15 @@ publishing {
     }
     publications {
         create<MavenPublication>("android") {
-            artifactId = "fenecdb-android"
+            artifactId = "fennecdb-android"
             afterEvaluate { from(components["release"]) }
             pom {
-                name.set("fenecdb-android")
-                description.set("fenecdb embedded in an Android app: a file on the device, live queries as a Flow")
-                url.set("https://github.com/fenecdb/fenecdb")
+                name.set("fennecdb-android")
+                description.set("fennecdb embedded in an Android app: a file on the device, live queries as a Flow")
+                url.set("https://github.com/fennec-db/fennecdb")
                 licenses { license { name.set("Apache-2.0"); url.set("https://www.apache.org/licenses/LICENSE-2.0") } }
-                developers { developer { id.set("fenecdb"); name.set("fenecdb") } }
-                scm { url.set("https://github.com/fenecdb/fenecdb") }
+                developers { developer { id.set("fennecdb"); name.set("fennecdb") } }
+                scm { url.set("https://github.com/fennec-db/fennecdb") }
             }
         }
     }

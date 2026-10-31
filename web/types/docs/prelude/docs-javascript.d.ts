@@ -1,9 +1,9 @@
 // What the examples on javascript.html take from the page around them.
 
-type DocsSchema = import('../fenec-schema.js').FenecSchema;
+type DocsSchema = import('../fennec-schema.js').FennecSchema;
 
 /** The database the page opened above the example. */
-declare const db: import('../../../fenec.js').Fenec<DocsSchema>;
+declare const db: import('../../../fennec.js').Fennec<DocsSchema>;
 /** Vectors from the page's embedding model. */
 declare const embedding: Float32Array;
 declare const queryVector: Float32Array;

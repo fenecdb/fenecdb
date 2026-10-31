@@ -9,7 +9,7 @@
 // rows of 128 dimensions with quiet moments between them, in which an
 // alarm may ring and write an image, and rows that expire swept. ROWS_CONFIG
 // names another directory of the counted Worker -- one made from another
-// commit's example -- to count its rows the same way. Needs web/fenec.wasm
+// commit's example -- to count its rows the same way. Needs web/fennec.wasm
 // (make wasm) and `npm ci` here.
 
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -48,7 +48,7 @@ const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
 const total = (c) => c.sql + c.kv + c.alarms;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const state = await mkdtemp(join(tmpdir(), 'fenecdb-rows-'));
+const state = await mkdtemp(join(tmpdir(), 'fennecdb-rows-'));
 let w = await serve(state);
 try {
   console.log('writers  writes  rows: sql  values  alarms  a write  p50 ms');

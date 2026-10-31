@@ -1,10 +1,10 @@
 // Plover's tenants, placed and filled: the platform's, and one a company,
-// each made through the router with its schema (FenecQL, from lib/schema.ts)
+// each made through the router with its schema (FennecQL, from lib/schema.ts)
 // and a company's with its plan's quota. Then the people, couriers and
 // merchants, and days of past deliveries for the dashboards. Run again, it
 // adds what is missing: a tenant that exists is kept (409), rows go in with
 // `put ... if absent`, which passes over a row whose unique key is taken.
-import { toFenecQL } from '@fenecdb/web/schema';
+import { toFennecQL } from '@fennecdb/web/schema';
 import { platform, company } from './schema';
 import { PLANS, type Quota } from './plans';
 import { COMPANIES, DEMO_PASSWORD, merchants, people, wave, type CompanySpec } from './world';
@@ -12,7 +12,7 @@ import { PLATFORM, tenantOf } from './config';
 import { addresses, metresBetween, rng, route } from './city';
 import { hashPassword } from './passwords';
 import { operatorDb, retrying, routerUrl, type Db } from './db';
-import { connect } from '@fenecdb/web/client';
+import { connect } from '@fennecdb/web/client';
 import { OPERATOR_TOKEN } from './config';
 import { nodeFetch } from './fetch';
 
@@ -70,7 +70,7 @@ async function migrate(tenant: string, schema: typeof platform | typeof company)
 export async function setup(o: SetupOptions): Promise<void> {
   const log = o.log ?? (() => {});
   const specs = o.companies ?? COMPANIES;
-  if (!(await placeTenant(o, PLATFORM, toFenecQL(platform)))) await migrate(PLATFORM, platform);
+  if (!(await placeTenant(o, PLATFORM, toFennecQL(platform)))) await migrate(PLATFORM, platform);
   const plat = operatorDb(PLATFORM);
   // One hash for every seeded account: they share the demo password, and
   // scrypt at 2^14 takes 40 ms a hash -- 700 of them would be half a minute.
@@ -81,7 +81,7 @@ export async function setup(o: SetupOptions): Promise<void> {
     // Placed without its quota and given it after the load: the plan's
     // bytes a second would hold a backfill of days of orders to a minute or
     // more of 429s, the operator's token included.
-    const fresh = await placeTenant(o, tenant, toFenecQL(company));
+    const fresh = await placeTenant(o, tenant, toFennecQL(company));
     if (!fresh) await migrate(tenant, company);
     log(`${tenant}: ${fresh ? 'placed' : 'there, its schema brought up to the code'}`);
     await putAll(plat, 'companies', [{ slug: c.slug, name: c.name, plan: c.plan, created: now }]);

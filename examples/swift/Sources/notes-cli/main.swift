@@ -1,4 +1,4 @@
-import FenecDB
+import FennecDB
 import Foundation
 import NotesKit
 
@@ -37,7 +37,7 @@ func smoke() async throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("notes-smoke-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
-    let file = dir.appendingPathComponent("notes.fenec")
+    let file = dir.appendingPathComponent("notes.fennec")
 
     var notes = try await Notes.open(file)
     let db = notes.db
@@ -84,7 +84,7 @@ do {
         try await smoke()
         exit(0)
     }
-    let path = ProcessInfo.processInfo.environment["NOTES_FILE"] ?? "notes.fenec"
+    let path = ProcessInfo.processInfo.environment["NOTES_FILE"] ?? "notes.fennec"
     let notes = try await Notes.open(URL(fileURLWithPath: path))
     switch args.first ?? "list" {
     case "add" where args.count >= 3:

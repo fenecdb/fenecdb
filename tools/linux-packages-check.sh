@@ -13,13 +13,13 @@
 # version has `-` (0.2.0-rc1 is 0.2.0~rc1, which sorts before 0.2.0), and the
 # check holds it to that.
 #
-# FENEC_BINARY_VERSION is the version the binaries say they are, when that is
+# FENNEC_BINARY_VERSION is the version the binaries say they are, when that is
 # not VERSION: a test that names a release's tarballs for another version.
 #
-# The binaries of 0.1.13 and later are asked `fenec --version` and
-# `fenec-server --version`, each held to `<name> <version>` on stdout; those
+# The binaries of 0.1.13 and later are asked `fennec --version` and
+# `fennec-server --version`, each held to `<name> <version>` on stdout; those
 # of a release before it, which have no such flag, name their version on the
-# first line of `fenec-server --help` alone. Which is decided by the
+# first line of `fennec-server --help` alone. Which is decided by the
 # binaries' version, not the package's: CI checks the latest release, which
 # may be one from before the flag. tools/homebrew-formula.py cuts over at the
 # same release (VERSION_FLAG).
@@ -65,14 +65,14 @@ esac
 # nfpm's semver schema: the first `-` of the version becomes `~`.
 pkgversion=$(printf '%s\n' "$version" | sed 's/-/~/')
 base=${version%%-*}
-deb=fenecdb_${version}-1_$arch.deb
-rpm=fenecdb-$version-1.$rpmarch.rpm
-binary_version=${FENEC_BINARY_VERSION:-$version}
+deb=fennecdb_${version}-1_$arch.deb
+rpm=fennecdb-$version-1.$rpmarch.rpm
+binary_version=${FENNEC_BINARY_VERSION:-$version}
 if at_least "$binary_version" 0.1.13; then version_flag=yes; else version_flag=no; fi
 
 # What each container's shell knows: assertions that print what they found,
 # and the run both packages must pass once installed. Each binary names its
-# version on stdout under --version, or, before 0.1.13, fenec-server on the
+# version on stdout under --version, or, before 0.1.13, fennec-server on the
 # first line of --help; the shell is run on a script, in memory.
 lib=$(
     cat <<'EOF'
@@ -83,21 +83,21 @@ isexec() { [ -x "$2" ] || fails "$1: $2 is not an executable file"; }
 isfile() { [ -f "$2" ] || fails "$1: $2 is not a file"; }
 gone() { [ ! -e "$2" ] || fails "$1: $2 is still there"; }
 run_it() {
-    isexec "installed fenec" /usr/bin/fenec
-    isexec "installed fenec-server" /usr/bin/fenec-server
+    isexec "installed fennec" /usr/bin/fennec
+    isexec "installed fennec-server" /usr/bin/fennec-server
     if [ "$VERSION_FLAG" = yes ]; then
         # stdout alone: what a script reads from it.
-        for b in fenec fenec-server; do
+        for b in fennec fennec-server; do
             first=$("/usr/bin/$b" --version) || fails "$b --version exited with an error, printing [$first]"
             eq "$b --version" "$first" "$b ${BINARY_VERSION}"
         done
     else
-        first=$(/usr/bin/fenec-server --help 2>&1 | head -n 1) || true
-        eq "fenec-server --help, first line" "$first" "fenec-server ${BINARY_VERSION}"
+        first=$(/usr/bin/fennec-server --help 2>&1 | head -n 1) || true
+        eq "fennec-server --help, first line" "$first" "fennec-server ${BINARY_VERSION}"
     fi
-    out=$(printf 'create collection t (n int)\nput t {id: 1, n: 7}\nget t\n' | /usr/bin/fenec 2>&1) ||
-        fails "fenec exited with an error, saying [$out]"
-    printf '%s\n' "$out" | grep -q '^1 *7$' || fails "fenec answered [$out], wanted a row 1 7"
+    out=$(printf 'create collection t (n int)\nput t {id: 1, n: 7}\nget t\n' | /usr/bin/fennec 2>&1) ||
+        fails "fennec exited with an error, saying [$out]"
+    printf '%s\n' "$out" | grep -q '^1 *7$' || fails "fennec answered [$out], wanted a row 1 7"
     echo "ran: $first"
 }
 EOF
@@ -106,22 +106,22 @@ EOF
 deb_checks=$(
     cat <<'EOF'
 f=/pkg/$FILE
-eq "deb Package" "$(dpkg-deb -f "$f" Package)" fenecdb
+eq "deb Package" "$(dpkg-deb -f "$f" Package)" fennecdb
 eq "deb Version" "$(dpkg-deb -f "$f" Version)" "$PKGVERSION-1"
 eq "deb Architecture" "$(dpkg-deb -f "$f" Architecture)" "$ARCH"
 eq "deb Homepage" "$(dpkg-deb -f "$f" Homepage)" https://fenecdb.com
 eq "deb Depends" "$(dpkg-deb -f "$f" Depends)" ""
 dpkg -i "$f"
-eq "installed version" "$(dpkg-query -W -f='${Version}' fenecdb)" "$PKGVERSION-1"
+eq "installed version" "$(dpkg-query -W -f='${Version}' fennecdb)" "$PKGVERSION-1"
 if [ "$VERSION" != "$BASE" ]; then
     dpkg --compare-versions "$PKGVERSION-1" lt "$BASE-1" ||
         fails "the pre-release $PKGVERSION-1 does not sort before $BASE-1"
 fi
-isfile "deb licence" /usr/share/doc/fenecdb/copyright
+isfile "deb licence" /usr/share/doc/fennecdb/copyright
 run_it
-dpkg -r fenecdb
-gone "after dpkg -r" /usr/bin/fenec
-gone "after dpkg -r" /usr/bin/fenec-server
+dpkg -r fennecdb
+gone "after dpkg -r" /usr/bin/fennec
+gone "after dpkg -r" /usr/bin/fennec-server
 echo removed
 EOF
 )
@@ -130,7 +130,7 @@ rpm_checks=$(
     cat <<'EOF'
 f=/pkg/$FILE
 q() { rpm -qp --queryformat "$1" "$f"; }
-eq "rpm Name" "$(q '%{NAME}')" fenecdb
+eq "rpm Name" "$(q '%{NAME}')" fennecdb
 eq "rpm Version" "$(q '%{VERSION}')" "$PKGVERSION"
 eq "rpm Release" "$(q '%{RELEASE}')" 1
 eq "rpm Arch" "$(q '%{ARCH}')" "$RPMARCH"
@@ -142,12 +142,12 @@ if [ "$VERSION" != "$BASE" ]; then
         "$(rpm --eval "%{lua: print(rpm.vercmp('$PKGVERSION', '$BASE'))}")" -1
 fi
 dnf -q install -y "$f"
-eq "installed version" "$(rpm -q --queryformat '%{VERSION}-%{RELEASE}' fenecdb)" "$PKGVERSION-1"
-isfile "rpm licence" /usr/share/licenses/fenecdb/LICENSE
+eq "installed version" "$(rpm -q --queryformat '%{VERSION}-%{RELEASE}' fennecdb)" "$PKGVERSION-1"
+isfile "rpm licence" /usr/share/licenses/fennecdb/LICENSE
 run_it
-dnf -q remove -y fenecdb
-gone "after dnf remove" /usr/bin/fenec
-gone "after dnf remove" /usr/bin/fenec-server
+dnf -q remove -y fennecdb
+gone "after dnf remove" /usr/bin/fennec
+gone "after dnf remove" /usr/bin/fennec-server
 echo removed
 EOF
 )

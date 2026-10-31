@@ -6,7 +6,7 @@ import { crossSite, json, readBody } from '../../../../lib/http';
 import { current, whoOf } from '../../../../lib/session';
 import { claimNearest, deliver, giveBack, heartbeat, pickUp, readyNear } from '../../../../lib/dispatch';
 import { CLAIM_WAIT_MS } from '../../../../lib/config';
-import { FenecError } from '../../../../lib/db';
+import { FennecError } from '../../../../lib/db';
 import type { Point } from '../../../../lib/city';
 
 const point = (v: unknown): Point | null =>
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
     }
   } catch (e) {
     if (req.signal.aborted) return json({ error: 'gone' }, 499);
-    if (e instanceof FenecError && e.status) return json({ error: e.message, quota: e.quota ?? null, retryAfter: e.retryAfter ?? null }, e.status);
+    if (e instanceof FennecError && e.status) return json({ error: e.message, quota: e.quota ?? null, retryAfter: e.retryAfter ?? null }, e.status);
     throw e;
   }
 }

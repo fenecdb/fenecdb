@@ -10,7 +10,7 @@ updates:
     commit-message:
       prefix: ''
 
-  # fenec-bench is the one crate allowed external dependencies (rusqlite,
+  # fennec-bench is the one crate allowed external dependencies (rusqlite,
   # postgres). It is `publish = false` and never enters a product build, so
   # these are grouped into a single PR rather than raised one at a time.
   - package-ecosystem: cargo

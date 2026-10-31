@@ -1,11 +1,11 @@
-"""Notes over fenec-server's HTTP endpoint, with the fenecdb client.
+"""Notes over fennec-server's HTTP endpoint, with the fennecdb client.
 
     python notes.py                      seeds if empty, then lists
     python notes.py add <title> <body> [tag ...]
     python notes.py list [--tag T] [--open]
     python notes.py search <words>
     python notes.py done <id>
-    python notes.py watch                needs fenec-server --cdc
+    python notes.py watch                needs fennec-server --cdc
     python notes.py smoke                what CI runs
 """
 
@@ -16,11 +16,11 @@ import sys
 import time
 from datetime import datetime, timezone
 
-from fenecdb import Client
+from fennecdb import Client
 
-URL = os.environ.get("FENEC_URL", "http://127.0.0.1:8080")
-TOKEN = os.environ.get("FENEC_TOKEN", "secret")  # a dev default; never ship one
-SCHEMA = (pathlib.Path(__file__).parent / "schema.fenecql").read_text()
+URL = os.environ.get("FENNEC_URL", "http://127.0.0.1:8080")
+TOKEN = os.environ.get("FENNEC_TOKEN", "secret")  # a dev default; never ship one
+SCHEMA = (pathlib.Path(__file__).parent / "schema.fennecql").read_text()
 
 SEEDS = [
     ("Groceries", "Buy milk, eggs and fresh bread for the weekend.", ["home", "shopping"], False, "2026-09-28T09:00:00Z"),

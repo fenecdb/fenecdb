@@ -1,6 +1,6 @@
 // Every statement the studio sends, held to its text and its parameters:
 // a value never reaches the text, whatever it holds, and a name that
-// FenecQL cannot write is refused rather than spliced.
+// FennecQL cannot write is refused rather than spliced.
 //
 //   node --test studio/test/statements.test.mjs
 
@@ -52,7 +52,7 @@ test('a cell is written by id, the value a parameter, the count required', () =>
   }
 });
 
-test('odd names that FenecQL writes are written; the rest are refused', () => {
+test('odd names that FennecQL writes are written; the rest are refused', () => {
   assert.equal(S.setCell('odd', 'ölçü', 1, 1).text, 'set odd {ölçü: $1} where id = $2 require 1');
   assert.equal(S.setCell('odd', 'limit', 1, 1).text, 'set odd {limit: $1} where id = $2 require 1');
   assert.equal(S.setCell('odd', '_x9', 1, 1).text, 'set odd {_x9: $1} where id = $2 require 1');
@@ -171,7 +171,7 @@ test('an edit reads what was typed as the field holds it', () => {
 });
 
 test('the metrics and a token are read, not believed', () => {
-  const m = parseMetrics('fenec_file_bytes 120\nfenec_reclaimable_bytes 7\nfenec_data_bytes{collection="a"} 100\nfenec_dead_bytes{collection="a"} 5\n# HELP x\n');
+  const m = parseMetrics('fennec_file_bytes 120\nfennec_reclaimable_bytes 7\nfennec_data_bytes{collection="a"} 100\nfennec_dead_bytes{collection="a"} 5\n# HELP x\n');
   assert.deepEqual(m, { file: 120, reclaimable: 7, data: { a: 100 }, dead: { a: 5 } });
   const t = ['e30', Buffer.from(JSON.stringify({ sub: 'ali', exp: 9 })).toString('base64url'), 'sig'].join('.');
   globalThis.atob ??= (s) => Buffer.from(s, 'base64').toString('binary');
@@ -238,7 +238,7 @@ test('a plan is asked of a get as typed, explain in front, the same parameters',
 
 // ------------------------------------------------------------------ the schema
 
-test('a schema change names only what FenecQL writes, and checks each option', () => {
+test('a schema change names only what FennecQL writes, and checks each option', () => {
   assert.deepEqual(S.createIndex('orders', 'total', { kind: 'sorted' }), { text: 'create index on orders (total) @sorted', params: [] });
   assert.equal(S.createIndex('docs', 'title', { kind: 'text', prefix: 6, chars: true }).text, 'create index on docs (title) @text(prefix=6, chars)');
   assert.equal(S.createIndex('docs', 'title', { kind: 'text', prefix: '' }).text, 'create index on docs (title) @text');
@@ -327,21 +327,21 @@ test('an answer\'s columns are read off its rows; the metrics off their text', a
   const { prometheus, total, quantile } = await import('../admin.js');
   const m = prometheus(
     [
-      '# TYPE fenec_statements_total counter',
-      'fenec_statements_total{kind="read"} 90',
-      'fenec_statements_total{kind="write"} 10',
-      'fenec_statement_duration_seconds_bucket{kind="read",le="0.001"} 50',
-      'fenec_statement_duration_seconds_bucket{kind="read",le="0.01"} 90',
-      'fenec_statement_duration_seconds_bucket{kind="read",le="+Inf"} 100',
-      'fenec_data_bytes{collection="a \\"b\\""} 7',
+      '# TYPE fennec_statements_total counter',
+      'fennec_statements_total{kind="read"} 90',
+      'fennec_statements_total{kind="write"} 10',
+      'fennec_statement_duration_seconds_bucket{kind="read",le="0.001"} 50',
+      'fennec_statement_duration_seconds_bucket{kind="read",le="0.01"} 90',
+      'fennec_statement_duration_seconds_bucket{kind="read",le="+Inf"} 100',
+      'fennec_data_bytes{collection="a \\"b\\""} 7',
     ].join('\n'),
   );
-  assert.equal(total(m, 'fenec_statements_total'), 100);
-  assert.equal(total(m, 'fenec_statements_total', { kind: 'write' }), 10);
-  assert.equal(total(m, 'fenec_nothing'), null);
+  assert.equal(total(m, 'fennec_statements_total'), 100);
+  assert.equal(total(m, 'fennec_statements_total', { kind: 'write' }), 10);
+  assert.equal(total(m, 'fennec_nothing'), null);
   assert.equal(m.at(-1).labels.collection, 'a "b"');
-  assert.equal(quantile(m, 'fenec_statement_duration_seconds', 0.5, { kind: 'read' }), 0.001);
-  assert.ok(Math.abs(quantile(m, 'fenec_statement_duration_seconds', 0.7, { kind: 'read' }) - 0.0055) < 1e-12);
+  assert.equal(quantile(m, 'fennec_statement_duration_seconds', 0.5, { kind: 'read' }), 0.001);
+  assert.ok(Math.abs(quantile(m, 'fennec_statement_duration_seconds', 0.7, { kind: 'read' }) - 0.0055) < 1e-12);
 });
 
 // Each view is a module of its own, fetched when it opens: what it adds,
@@ -370,13 +370,13 @@ test('the first load is under 120 KB gzipped', () => {
   assert.ok(total < 120_000, `${total} bytes gzipped`);
 });
 
-// fenec-server's page never reaches the database in the page: the
+// fennec-server's page never reaches the database in the page: the
 // modules its first load names, and every module they import statically,
 // hold no local transport, no worker and no module glue -- those load only
 // where a page asks for them (the site's playground, `data-mode="local"`).
 test('the server\'s first load holds nothing of the database in the page', () => {
   const here = dirname(fileURLToPath(import.meta.url));
-  const where = (f) => (['client.js', 'builder.js', 'http.js', 'fenec.js'].includes(f) ? join(here, '..', '..', 'web', f) : join(here, '..', f));
+  const where = (f) => (['client.js', 'builder.js', 'http.js', 'fennec.js'].includes(f) ? join(here, '..', '..', 'web', f) : join(here, '..', f));
   const page = readFileSync(join(here, '..', 'index.html'), 'utf8');
   const seen = new Set();
   const walk = (f) => {
@@ -387,12 +387,12 @@ test('the server\'s first load holds nothing of the database in the page', () =>
     for (const [, dep] of src.matchAll(/^(?:import|export)\s[^;]*?from\s+'\.\/([\w-]+\.js)'/gm)) walk(dep);
   };
   for (const [, f] of page.matchAll(/(?:src|href)="([\w-]+\.js)"/g)) walk(f);
-  for (const local of ['local.js', 'engine.js', 'worker.js', 'fenec.js', 'playground.js', 'playground-data.js']) {
-    assert.ok(!seen.has(local), `${local} is on fenec-server's first load`);
+  for (const local of ['local.js', 'engine.js', 'worker.js', 'fennec.js', 'playground.js', 'playground-data.js']) {
+    assert.ok(!seen.has(local), `${local} is on fennec-server's first load`);
   }
   assert.ok(seen.has('app.js') && seen.has('connect.js') && seen.has('client.js'), [...seen].join(', '));
-  assert.ok(!page.includes('local.css'), 'the playground\'s stylesheet is on fenec-server\'s first load');
+  assert.ok(!page.includes('local.css'), 'the playground\'s stylesheet is on fennec-server\'s first load');
   // Nor is the local transport embedded in the server: its files are the site's.
-  const embedded = readFileSync(join(here, '..', '..', 'crates', 'fenec-http', 'src', 'studio.rs'), 'utf8');
+  const embedded = readFileSync(join(here, '..', '..', 'crates', 'fennec-http', 'src', 'studio.rs'), 'utf8');
   for (const local of ['local.js', 'local.css', 'engine.js', 'worker.js']) assert.ok(!embedded.includes(`"studio/${local}"`), local);
 });

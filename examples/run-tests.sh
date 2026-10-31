@@ -3,7 +3,7 @@
 # examples-test`): each example's `smoke` -- create, search, filter, a live
 # update where the platform has one, a reopen where the engine is local --
 # run on the packages built here rather than the published ones. A server
-# example gets a fenec-server of its own over a new file. Every server, here
+# example gets a fennec-server of its own over a new file. Every server, here
 # and in the examples' own scripts, listens on a port the system picks and
 # says which, so two runs -- or a run beside any other suite -- never meet
 # on one.
@@ -27,7 +27,7 @@ trap 'stop; rm -rf "$dir"' EXIT INT TERM
 # On :0, the url read off the server's `listening on: http://<address>` line.
 serve() {
     rm -f "$dir/server.log"
-    "$root/target/debug/fenec-server" --file "$dir/$1.fenec" --http 127.0.0.1:0 \
+    "$root/target/debug/fennec-server" --file "$dir/$1.fennec" --http 127.0.0.1:0 \
         --http-token "$token" --cdc 2>"$dir/server.log" &
     server=$!
     i=0
@@ -64,11 +64,11 @@ copy() {
     echo "$dir/$1"
 }
 
-# @fenecdb/web and @fenecdb/react as npm would publish them, packed here.
+# @fennecdb/web and @fennecdb/react as npm would publish them, packed here.
 packed() {
     [ -f "$dir/packs/done" ] && return 0
     # To stderr: what an npm example prints on stdout is its directory.
-    [ -f "$root/web/fenec.wasm" ] || (cd "$root" && make -s wasm) >&2
+    [ -f "$root/web/fennec.wasm" ] || (cd "$root" && make -s wasm) >&2
     mkdir -p "$dir/packs"
     (cd "$root/web" && npm pack -q --pack-destination "$dir/packs" >/dev/null)
     (cd "$root/integrations/react" && npm pack -q --pack-destination "$dir/packs" >/dev/null)
@@ -80,9 +80,9 @@ npm_example() {
     packed
     w=$(copy "$1")
     (cd "$w" &&
-        npm pkg set "dependencies.@fenecdb/web=file:$(ls "$dir"/packs/fenecdb-web-*.tgz)" &&
-        if grep -q '"@fenecdb/react"' package.json; then
-            npm pkg set "dependencies.@fenecdb/react=file:$(ls "$dir"/packs/fenecdb-react-*.tgz)"
+        npm pkg set "dependencies.@fennecdb/web=file:$(ls "$dir"/packs/fennecdb-web-*.tgz)" &&
+        if grep -q '"@fennecdb/react"' package.json; then
+            npm pkg set "dependencies.@fennecdb/react=file:$(ls "$dir"/packs/fennecdb-react-*.tgz)"
         fi &&
         npm install -q --no-audit --no-fund --loglevel=error) >&2
     echo "$w"
@@ -92,7 +92,7 @@ run_node_server() {
     has node || { missing node "node-server"; return; }
     w=$(npm_example node-server)
     serve node-server
-    (cd "$w" && FENEC_URL="$url" FENEC_TOKEN="$token" npm run -s smoke)
+    (cd "$w" && FENNEC_URL="$url" FENNEC_TOKEN="$token" npm run -s smoke)
     stop
 }
 
@@ -106,7 +106,7 @@ run_react() {
     has node || { missing node "react"; return; }
     w=$(npm_example react)
     serve react
-    (cd "$w" && FENEC_URL="$url" FENEC_TOKEN="$token" npm run -s smoke && npm run -s build)
+    (cd "$w" && FENNEC_URL="$url" FENNEC_TOKEN="$token" npm run -s smoke && npm run -s build)
     stop
     # The one line switched to the synced replica: the components still type-check.
     sed -i.bak -e 's#^export const db = await local#// &#' -e 's#^// \(export const db = await synced\)#\1#' "$w/src/db.ts"
@@ -120,7 +120,7 @@ run_react() {
 run_shop() {
     has node || { missing node "shop"; return; }
     w=$(npm_example shop)
-    (cd "$w" && FENEC_SERVER="${SHOP_FENEC_SERVER:-$root/target/debug/fenec-server}" sh scripts/ci.sh)
+    (cd "$w" && FENNEC_SERVER="${SHOP_FENNEC_SERVER:-$root/target/debug/fennec-server}" sh scripts/ci.sh)
 }
 
 # The ledger (examples/ledger/scripts/ci.sh): a tenant node of its own over a
@@ -129,21 +129,21 @@ run_shop() {
 run_ledger() {
     has node || { missing node "ledger"; return; }
     w=$(npm_example ledger)
-    [ -x "${LEDGER_FENEC_CLI:-$root/target/debug/fenec}" ] || "$cargo" build -q -p fenec-cli --manifest-path "$root/Cargo.toml"
-    (cd "$w" && FENEC_SERVER="${LEDGER_FENEC_SERVER:-$root/target/debug/fenec-server}" \
-        FENEC_CLI="${LEDGER_FENEC_CLI:-$root/target/debug/fenec}" sh scripts/ci.sh)
+    [ -x "${LEDGER_FENNEC_CLI:-$root/target/debug/fennec}" ] || "$cargo" build -q -p fennec-cli --manifest-path "$root/Cargo.toml"
+    (cd "$w" && FENNEC_SERVER="${LEDGER_FENNEC_SERVER:-$root/target/debug/fennec-server}" \
+        FENNEC_CLI="${LEDGER_FENNEC_CLI:-$root/target/debug/fennec}" sh scripts/ci.sh)
 }
 
 # Trellis (examples/saas/scripts/ci.sh): lint, and its auth, token, role,
 # realtime, search and operations tests, each file over a cluster of its
-# own -- three tenant nodes and fenec-shard; SAAS_BENCH=1 adds the
+# own -- three tenant nodes and fennec-shard; SAAS_BENCH=1 adds the
 # measurements.
 run_saas() {
     has node || { missing node "saas"; return; }
     w=$(npm_example saas)
-    [ -x "${SAAS_FENEC_SHARD:-$root/target/debug/fenec-shard}" ] || "$cargo" build -q -p fenec-shard --manifest-path "$root/Cargo.toml"
-    (cd "$w" && FENEC_SERVER="${SAAS_FENEC_SERVER:-$root/target/debug/fenec-server}" \
-        FENEC_SHARD="${SAAS_FENEC_SHARD:-$root/target/debug/fenec-shard}" sh scripts/ci.sh)
+    [ -x "${SAAS_FENNEC_SHARD:-$root/target/debug/fennec-shard}" ] || "$cargo" build -q -p fennec-shard --manifest-path "$root/Cargo.toml"
+    (cd "$w" && FENNEC_SERVER="${SAAS_FENNEC_SERVER:-$root/target/debug/fennec-server}" \
+        FENNEC_SHARD="${SAAS_FENNEC_SHARD:-$root/target/debug/fennec-shard}" sh scripts/ci.sh)
 }
 
 # Kestrel (examples/analytics/scripts/ci.sh): a tenant node and the app of
@@ -153,19 +153,19 @@ run_saas() {
 run_analytics() {
     has node || { missing node "analytics"; return; }
     w=$(npm_example analytics)
-    (cd "$w" && FENEC_SERVER="${ANALYTICS_FENEC_SERVER:-$root/target/debug/fenec-server}" sh scripts/ci.sh)
+    (cd "$w" && FENNEC_SERVER="${ANALYTICS_FENNEC_SERVER:-$root/target/debug/fennec-server}" sh scripts/ci.sh)
 }
 
 # Plover (examples/dispatch/scripts/ci.sh): lint; its claims, lease, quota
 # and security tests, each file over a cluster of its own -- two tenant
-# nodes and fenec-shard; the site built and started over another, and its
+# nodes and fennec-shard; the site built and started over another, and its
 # pages tested; DISPATCH_BENCH=1 adds the measurements.
 run_dispatch() {
     has node || { missing node "dispatch"; return; }
     w=$(npm_example dispatch)
-    [ -x "${DISPATCH_FENEC_SHARD:-$root/target/debug/fenec-shard}" ] || "$cargo" build -q -p fenec-shard --manifest-path "$root/Cargo.toml"
-    (cd "$w" && FENEC_SERVER="${DISPATCH_FENEC_SERVER:-$root/target/debug/fenec-server}" \
-        FENEC_SHARD="${DISPATCH_FENEC_SHARD:-$root/target/debug/fenec-shard}" sh scripts/ci.sh)
+    [ -x "${DISPATCH_FENNEC_SHARD:-$root/target/debug/fennec-shard}" ] || "$cargo" build -q -p fennec-shard --manifest-path "$root/Cargo.toml"
+    (cd "$w" && FENNEC_SERVER="${DISPATCH_FENNEC_SERVER:-$root/target/debug/fennec-server}" \
+        FENNEC_SHARD="${DISPATCH_FENNEC_SHARD:-$root/target/debug/fennec-shard}" sh scripts/ci.sh)
 }
 
 # The recipes (examples/recipes/ci.sh): auth.sh, the files demo against an
@@ -175,14 +175,14 @@ run_dispatch() {
 run_recipes() {
     has node || { missing node "recipes"; return; }
     w=$(npm_example recipes)
-    (cd "$w" && FENEC_SERVER="${RECIPES_FENEC_SERVER:-$root/target/debug/fenec-server}" \
+    (cd "$w" && FENNEC_SERVER="${RECIPES_FENNEC_SERVER:-$root/target/debug/fennec-server}" \
         RECIPES_GOLDEN="$root/examples/recipes/golden" RECIPES_PAGES="$root/site/content/docs" sh ci.sh)
 }
 
 run_python() {
     has python3 || { missing python3 "python"; return; }
     serve python
-    (cd "$here/python" && PYTHONPATH="$root/integrations/python" FENEC_URL="$url" FENEC_TOKEN="$token" \
+    (cd "$here/python" && PYTHONPATH="$root/integrations/python" FENNEC_URL="$url" FENNEC_TOKEN="$token" \
         python3 notes.py smoke)
     stop
 }
@@ -190,18 +190,18 @@ run_python() {
 run_go() {
     has go || { missing go "go"; return; }
     w=$(copy go)
-    (cd "$w" && go mod edit -replace "github.com/fenecdb/fenecdb/integrations/go=$root/integrations/go" && go vet ./...)
+    (cd "$w" && go mod edit -replace "github.com/fennec-db/fennecdb/integrations/go=$root/integrations/go" && go vet ./...)
     serve go
-    (cd "$w" && FENEC_URL="$url" FENEC_TOKEN="$token" go run . smoke)
+    (cd "$w" && FENNEC_URL="$url" FENNEC_TOKEN="$token" go run . smoke)
     stop
 }
 
 run_dotnet() {
     has dotnet || { missing dotnet "dotnet"; return; }
     w=$(copy dotnet)
-    (cd "$w" && dotnet build -v q -nologo -p:FenecLocal="$root" >/dev/null)
+    (cd "$w" && dotnet build -v q -nologo -p:FennecLocal="$root" >/dev/null)
     serve dotnet
-    (cd "$w" && FENEC_URL="$url" FENEC_TOKEN="$token" dotnet run --no-build -p:FenecLocal="$root" -- smoke)
+    (cd "$w" && FENNEC_URL="$url" FENNEC_TOKEN="$token" dotnet run --no-build -p:FennecLocal="$root" -- smoke)
     stop
 }
 
@@ -209,15 +209,15 @@ run_rust() {
     # The tag's crates become this checkout's: a [patch] of a git source
     # still fetches the tag, which a release names before it is pushed.
     w=$(copy rust)
-    sed -E "s#^(fenec-[a-z]+) = \{ git = \"[^\"]+\", tag = \"[^\"]+\"#\1 = { path = \"$root/crates/\1\"#" \
+    sed -E "s#^(fennec-[a-z]+) = \{ git = \"[^\"]+\", tag = \"[^\"]+\"#\1 = { path = \"$root/crates/\1\"#" \
         "$here/rust/Cargo.toml" >"$w/Cargo.toml"
     (cd "$w" && "$cargo" run -q --target-dir "$root/target/examples" -- smoke)
 }
 
 run_swift() {
     [ "$(uname)" = Darwin ] && has swift || { missing swift "swift"; return; }
-    [ -d "$root/integrations/swift/build/FenecFFI.xcframework" ] || "$root/integrations/swift/build-xcframework.sh" --macos
-    (cd "$here/swift" && FENEC_LOCAL=1 swift build -q && FENEC_LOCAL=1 swift run -q notes-cli smoke)
+    [ -d "$root/integrations/swift/build/FennecFFI.xcframework" ] || "$root/integrations/swift/build-xcframework.sh" --macos
+    (cd "$here/swift" && FENNEC_LOCAL=1 swift build -q && FENNEC_LOCAL=1 swift run -q notes-cli smoke)
 }
 
 run_kotlin_android() {
@@ -231,7 +231,7 @@ run_flutter() {
 }
 
 all="node-server web-local react shop ledger saas analytics dispatch recipes python go dotnet rust swift kotlin-android flutter"
-"$cargo" build -q -p fenec-server --manifest-path "$root/Cargo.toml"
+"$cargo" build -q -p fennec-server --manifest-path "$root/Cargo.toml"
 for e in ${*:-$all}; do
     echo "== $e"
     case $e in

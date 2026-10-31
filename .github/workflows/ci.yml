@@ -56,33 +56,33 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
       # The browser build compiles code the native one does not: the SIMD
-      # kernels, the graph builder without threads, fenec-core without
+      # kernels, the graph builder without threads, fennec-core without
       # std-fs.
-      - run: cargo clippy -p fenec-wasm -p fenec-abi -p fenec-core -p fenec-ql --target wasm32-unknown-unknown -- -D warnings
+      - run: cargo clippy -p fennec-wasm -p fennec-abi -p fennec-core -p fennec-ql --target wasm32-unknown-unknown -- -D warnings
 
       # A module made without some of its features (`make wasm FEATURES=...`)
       # compiles what the full one does not: the stand-ins in off.rs, the
       # folds of no value, and the engine with its paths through them dead.
       # None, each feature alone, each group; a set of two is each alone's
       # code twice over, which these already compile. A check with no code
-      # made: about 10 s a set. And fenec-core's tests and examples without
+      # made: about 10 s a set. And fennec-core's tests and examples without
       # the indexes, and without anything.
       - run: |
           for f in "" vector text sparse sorted composite geo nocase facets highlight analytics collate indexes language; do
-            cargo clippy -p fenec-wasm -p fenec-core --target wasm32-unknown-unknown --no-default-features ${f:+--features=$f} -- -D warnings
+            cargo clippy -p fennec-wasm -p fennec-core --target wasm32-unknown-unknown --no-default-features ${f:+--features=$f} -- -D warnings
           done
-      - run: cargo clippy -p fenec-core --no-default-features --features std-fs,language --all-targets -- -D warnings
-      - run: cargo clippy -p fenec-core --no-default-features --features std-fs --all-targets -- -D warnings
+      - run: cargo clippy -p fennec-core --no-default-features --features std-fs,language --all-targets -- -D warnings
+      - run: cargo clippy -p fennec-core --no-default-features --features std-fs --all-targets -- -D warnings
 
       # The native library with the JNI functions the Kotlin binding calls,
       # which the workspace's run builds without.
-      - run: cargo clippy -p fenec-ffi --features jni --all-targets -- -D warnings
+      - run: cargo clippy -p fennec-ffi --features jni --all-targets -- -D warnings
 
       # SQL's joins held to what SQLite answers for the same rows: in the
       # bench crate, where SQLite is, which `make test` leaves out. About
       # 32 s to build and 0.3 s to run, with this job's target cached.
       - name: SQL's joins answer what SQLite answers
-        run: cargo test -p fenec-bench --test joins_sqlite
+        run: cargo test -p fennec-bench --test joins_sqlite
 
   test:
     name: test (${{ matrix.os }})
@@ -113,10 +113,10 @@ jobs:
           key: ${{ matrix.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: ${{ matrix.os }}-cargo-
 
-      # The browser bundle comes first: web/fenec.sync.test.js and the
-      # end-to-end half of web/fenec.test.js skip themselves when
-      # web/fenec.wasm is missing, so without this the JS side is a no-op.
-      # The module without the indexes is what web/fenec.test.js hands the
+      # The browser bundle comes first: web/fennec.sync.test.js and the
+      # end-to-end half of web/fennec.test.js skip themselves when
+      # web/fennec.wasm is missing, so without this the JS side is a no-op.
+      # The module without the indexes is what web/fennec.test.js hands the
       # full one's files to, and back, and holds its `near` to the full
       # one's `near ... exact`.
       - name: Build WASM
@@ -143,11 +143,11 @@ jobs:
           python3 site/test_highlight.py
 
       # Rust first, then the JS tests -- `cargo test` is also what builds the
-      # fenec-server binary that the sync tests run against.
+      # fennec-server binary that the sync tests run against.
       - name: Test
         run: make test
 
-      # A node measures its lease on the boot clock (fenec-http's
+      # A node measures its lease on the boot clock (fennec-http's
       # `lease::Moment`), which counts the time a machine was suspended. No
       # runner suspends, so its boot and monotonic clocks read alike and no
       # test tells them apart -- but in a time namespace whose boot clock is a
@@ -158,20 +158,20 @@ jobs:
       - name: The lease is measured on the boot clock
         if: matrix.os == 'ubuntu-latest'
         run: |
-          bin=$(cargo test --workspace --exclude fenec-bench --lib --bins --tests --no-run \
+          bin=$(cargo test --workspace --exclude fennec-bench --lib --bins --tests --no-run \
             --message-format=json \
-            | jq -r 'select(.profile.test == true and .target.name == "fenec_http") | .executable')
+            | jq -r 'select(.profile.test == true and .target.name == "fennec_http") | .executable')
           sudo unshare --time --boottime 86400 "$bin" --exact \
             lease::tests::the_boot_clock_is_the_systems_and_runs_as_instant_does \
             | tee /dev/stderr | grep -q 'test result: ok. 1 passed'
 
-      # fenec studio (`--studio`) in the runner's Chrome against the debug
-      # fenec-server `make test` built: signed in with the server's token
+      # fennec studio (`--studio`) in the runner's Chrome against the debug
+      # fennec-server `make test` built: signed in with the server's token
       # and as one user of a policy, a scroll through 100 000 rows held to
       # no long task; then the site's playground, the same studio over a
       # database in the page, from the site it builds. About 50 s,
       # puppeteer-core and no browser download.
-      - name: fenec studio end to end
+      - name: fennec studio end to end
         if: matrix.os == 'ubuntu-latest'
         run: CHROME_PATH="$(command -v google-chrome)" make studio-test
 
@@ -205,7 +205,7 @@ jobs:
           BASE: ${{ github.base_ref }}
         run: |
           sudo apt-get install -y --no-install-recommends brotli
-          python3 crates/fenec-wasm/size_report.py HEAD^1 "$BASE"
+          python3 crates/fennec-wasm/size_report.py HEAD^1 "$BASE"
 
   integrations:
     name: integrations (python, react)
@@ -232,12 +232,12 @@ jobs:
 
       # LangChain's standard vector store suite and the tests LlamaIndex's
       # own integrations run, from a python:3.13 container, against a
-      # fenec-server started on the runner.
+      # fennec-server started on the runner.
       - name: Python stores
         run: make python-test
 
       # The docs' example for each language -- Python, JavaScript, Go, C#,
-      # Java, PHP, Ruby and Rust -- over HTTP against a fenec-server on the
+      # Java, PHP, Ruby and Rust -- over HTTP against a fennec-server on the
       # runner, each with its language's own HTTP client.
       - name: Languages over HTTP
         run: make languages-test
@@ -247,11 +247,11 @@ jobs:
       - name: Builder golden file
         run: node web/golden.mjs --check
 
-      # The FenecQL pages' builder tabs: each JavaScript and Python tab run
+      # The FennecQL pages' builder tabs: each JavaScript and Python tab run
       # as the page shows it and held to the statement its golden case
       # makes, and the Go, .NET, Swift, Kotlin and Dart tests of the tabs --
       # which those SDKs' jobs run -- what the pages' tabs make.
-      - name: Builder tabs on the FenecQL pages
+      - name: Builder tabs on the FennecQL pages
         timeout-minutes: 5
         run: python3 site/builder_tabs.py --check
 
@@ -264,13 +264,13 @@ jobs:
       - name: .NET SDK
         run: make dotnet-test
 
-      # useLiveQuery against a stand-in and a real fenec-server and replica; the
+      # useLiveQuery against a stand-in and a real fennec-server and replica; the
       # sync layer loads the browser module.
       - name: React hook
         run: make wasm react-test
 
       # The LangChain.js store over a database in the page and over the
-      # HTTP endpoint of a fenec-server started here.
+      # HTTP endpoint of a fennec-server started here.
       - name: LangChain.js store
         run: make langchain-test
 
@@ -284,7 +284,7 @@ jobs:
       - name: MCP
         run: make mcp-test
 
-      # web/fenec.d.ts held to web/fenec.js: every export and method the
+      # web/fennec.d.ts held to web/fennec.js: every export and method the
       # module has declared, and a caller's code type-checked under --strict;
       # then every TypeScript example in the docs against the same types.
       - name: TypeScript declarations
@@ -308,7 +308,7 @@ jobs:
   # examples/: the Notes app in each language that runs on the runner, on
   # this checkout's build -- npm packs of web/ and integrations/react, the
   # Python client by PYTHONPATH, a Go replace, a .NET project reference,
-  # Cargo paths -- each its smoke against a fenec-server of its own or the
+  # Cargo paths -- each its smoke against a fennec-server of its own or the
   # engine in process, the Vite apps built besides. Swift, Kotlin and
   # Flutter run in the mobile jobs, beside their bindings.
   examples:
@@ -339,7 +339,7 @@ jobs:
           make wasm
           examples/run-tests.sh node-server web-local react python go dotnet rust
 
-  # examples/shop: the Next.js shop over a release fenec-server -- the
+  # examples/shop: the Next.js shop over a release fennec-server -- the
   # catalog seeded, the site built, its lint, its correctness, security and
   # SEO tests, and Lighthouse CI's budgets in the runner's Chrome. A job of
   # its own: a Next build and twelve Lighthouse runs would double the
@@ -370,11 +370,11 @@ jobs:
       - name: The shop
         run: |
           make wasm
-          cargo build --release -p fenec-server
-          SHOP_FENEC_SERVER="$PWD/target/release/fenec-server" SHOP_LIGHTHOUSE=1 \
+          cargo build --release -p fennec-server
+          SHOP_FENNEC_SERVER="$PWD/target/release/fennec-server" SHOP_LIGHTHOUSE=1 \
             CHROME_PATH="$(command -v google-chrome)" examples/run-tests.sh shop
 
-  # examples/ledger: the payments ledger over a release fenec-server tenant
+  # examples/ledger: the payments ledger over a release fennec-server tenant
   # node -- 16 clients making 20 000 operations in process and over HTTP and
   # every invariant after, the security tests, the change-stream sink, a
   # sealed backup restored, and a server killed with SIGKILL under the load. A job of its own, like the
@@ -405,12 +405,12 @@ jobs:
       - name: The ledger
         run: |
           make wasm
-          cargo build --release -p fenec-server -p fenec-cli
-          LEDGER_FENEC_SERVER="$PWD/target/release/fenec-server" LEDGER_FENEC_CLI="$PWD/target/release/fenec" \
+          cargo build --release -p fennec-server -p fennec-cli
+          LEDGER_FENNEC_SERVER="$PWD/target/release/fennec-server" LEDGER_FENNEC_CLI="$PWD/target/release/fennec" \
             examples/run-tests.sh ledger
 
-  # examples/saas: Trellis, the team workspace, over release fenec-server
-  # tenant nodes and fenec-shard -- its auth and token attack tests, the
+  # examples/saas: Trellis, the team workspace, over release fennec-server
+  # tenant nodes and fennec-shard -- its auth and token attack tests, the
   # role matrix against the router, scoped subscriptions and search, a
   # tenant moved and a node killed under load. A job of its own, like the
   # ledger's: release binaries, and a cluster a test file.
@@ -440,12 +440,12 @@ jobs:
       - name: Trellis
         run: |
           make wasm
-          cargo build --release -p fenec-server -p fenec-shard
-          SAAS_FENEC_SERVER="$PWD/target/release/fenec-server" SAAS_FENEC_SHARD="$PWD/target/release/fenec-shard" \
+          cargo build --release -p fennec-server -p fennec-shard
+          SAAS_FENNEC_SERVER="$PWD/target/release/fennec-server" SAAS_FENNEC_SHARD="$PWD/target/release/fennec-shard" \
             examples/run-tests.sh saas
 
   # examples/recipes: the docs' guides to auth, files in S3 or R2, and functions
-  # and webhooks, each run against this checkout's debug fenec-server and
+  # and webhooks, each run against this checkout's debug fennec-server and
   # web/ -- auth.sh, the files demo against SeaweedFS (pinned) in Docker, which
   # ubuntu-latest has, and the functions demo with the Worker under a pinned
   # wrangler, installed by the script -- and each output held to
@@ -480,8 +480,8 @@ jobs:
           make wasm
           make recipes-test
 
-  # examples/dispatch: Plover, courier dispatch over release fenec-server
-  # tenant nodes and fenec-shard -- 50 couriers claiming at once and waiting
+  # examples/dispatch: Plover, courier dispatch over release fennec-server
+  # tenant nodes and fennec-shard -- 50 couriers claiming at once and waiting
   # at the server, a courier killed under its lease, two companies' quotas
   # side by side, its scoped-token tests, and the Next.js site built and
   # its pages tested. A job of its own, like the saas one's: release
@@ -512,12 +512,12 @@ jobs:
       - name: Plover
         run: |
           make wasm
-          cargo build --release -p fenec-server -p fenec-shard
-          DISPATCH_FENEC_SERVER="$PWD/target/release/fenec-server" DISPATCH_FENEC_SHARD="$PWD/target/release/fenec-shard" \
+          cargo build --release -p fennec-server -p fennec-shard
+          DISPATCH_FENNEC_SERVER="$PWD/target/release/fennec-server" DISPATCH_FENNEC_SHARD="$PWD/target/release/fennec-shard" \
             examples/run-tests.sh dispatch
 
   # examples/analytics: Kestrel, product analytics over a release
-  # fenec-server tenant node -- 40 days of history folded by the rollup
+  # fennec-server tenant node -- 40 days of history folded by the rollup
   # worker, its correctness tests against brute force (rollups, funnel,
   # retention, bars, VWAP), its security and SEO tests, its latency budgets
   # and Lighthouse CI's in the runner's Chrome. A job of its own, like the
@@ -548,19 +548,19 @@ jobs:
       - name: Kestrel
         run: |
           make wasm
-          cargo build --release -p fenec-server
-          ANALYTICS_FENEC_SERVER="$PWD/target/release/fenec-server" ANALYTICS_LIGHTHOUSE=1 \
+          cargo build --release -p fennec-server
+          ANALYTICS_FENNEC_SERVER="$PWD/target/release/fennec-server" ANALYTICS_LIGHTHOUSE=1 \
             CHROME_PATH="$(command -v google-chrome)" examples/run-tests.sh analytics
 
-  # fenecdb-datasource (integrations/grafana) as a release would ship it --
+  # fennecdb-datasource (integrations/grafana) as a release would ship it --
   # its frontend's types, lint, tests and webpack build, its backend built
   # by mage for linux/amd64 and arm64 -- then monitoring/'s compose as a
-  # user starts it: fenec-server's image and Grafana's with the plugin built
-  # from this checkout, the seed, every panel of both "fenecdb data"
+  # user starts it: fennec-server's image and Grafana's with the plugin built
+  # from this checkout, the seed, every panel of both "fennecdb data"
   # dashboards asked of Grafana (through Infinity and through the plugin)
-  # and held to fenec-server's own answer, the plugin's alert rule
+  # and held to fennec-server's own answer, the plugin's alert rule
   # evaluated, and what the data sources must refuse. Last, the backend's
-  # Go tests, against the fenec-server of the image just built.
+  # Go tests, against the fennec-server of the image just built.
   grafana:
     name: monitoring (Grafana)
     runs-on: ubuntu-latest
@@ -592,18 +592,18 @@ jobs:
         working-directory: integrations/grafana
         run: |
           go run github.com/magefile/mage@v1.17.2 -v build:linux build:linuxARM64
-          ls -l dist/gpx_fenecdb_linux_amd64 dist/gpx_fenecdb_linux_arm64
+          ls -l dist/gpx_fennecdb_linux_amd64 dist/gpx_fennecdb_linux_arm64
 
       - name: The data dashboards end to end
         run: make grafana-check
 
-      # The image's fenec-server is a static binary: the runner runs it.
+      # The image's fennec-server is a static binary: the runner runs it.
       - name: The plugin's backend tests
         working-directory: integrations/grafana
         run: |
-          docker create --name fenec-server fenecdb
-          docker cp fenec-server:/usr/local/bin/fenec-server "$RUNNER_TEMP/fenec-server"
-          FENEC_SERVER="$RUNNER_TEMP/fenec-server" go test -count=1 ./pkg/...
+          docker create --name fennec-server fennecdb
+          docker cp fennec-server:/usr/local/bin/fennec-server "$RUNNER_TEMP/fennec-server"
+          FENNEC_SERVER="$RUNNER_TEMP/fennec-server" go test -count=1 ./pkg/...
 
   # deploy/: the alert rules under promtool, every systemd unit booted in
   # two privileged containers running systemd, and the failover drill --
@@ -646,32 +646,50 @@ jobs:
       - name: The Homebrew formula
         run: |
           python3 tools/test_homebrew_formula.py
-          python3 tools/homebrew-formula.py --check packaging/homebrew/Formula/fenecdb.rb
-          python3 tools/homebrew-formula.py --verify packaging/homebrew/Formula/fenecdb.rb
+          python3 tools/homebrew-formula.py --check packaging/homebrew/Formula/fennecdb.rb
+
+      # The release before the rename (0.1.12) names its tarballs fenec-v*,
+      # so the two steps reading the latest release's tarballs wait for one
+      # published as fennec. Remove this step and the two `if`s once one is.
+      - name: Whether the latest release is named fennec
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view -R "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' | grep -q '^fennec-v'; then
+            echo "fennec=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::The latest release predates the fennec name: the formula's sums and its packages are checked once one is published."
+          fi
+
+      - name: The Homebrew formula's sums, the latest release's
+        if: steps.latest.outputs.fennec == '1'
+        run: python3 tools/homebrew-formula.py --verify packaging/homebrew/Formula/fennecdb.rb
 
       # The latest release's tarball, packed as it is and again named as a
       # pre-release (0.2.0-rc1 is 0.2.0~rc1 in a package), which the first
       # release of a series would otherwise be the first to meet.
       - name: The .deb and .rpm of the latest release's tarball
+        if: steps.latest.outputs.fennec == '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
           tools/install-nfpm.sh "$RUNNER_TEMP/nfpm"
           export PATH="$RUNNER_TEMP/nfpm:$PATH"
-          gh release download -R "$GITHUB_REPOSITORY" -p 'fenec-v*-x86_64-unknown-linux-musl.tar.gz' -D "$RUNNER_TEMP/tarballs"
+          gh release download -R "$GITHUB_REPOSITORY" -p 'fennec-v*-x86_64-unknown-linux-musl.tar.gz' -D "$RUNNER_TEMP/tarballs"
           file=$(basename "$RUNNER_TEMP"/tarballs/*.tar.gz)
-          version=${file#fenec-v}
+          version=${file#fennec-v}
           version=${version%%-x86_64*}
           tools/linux-packages.sh "$version" "$RUNNER_TEMP/tarballs" "$RUNNER_TEMP/packages" amd64
           tools/linux-packages-check.sh "$version" "$RUNNER_TEMP/packages" amd64
           pre="$version-rc1"
           mkdir "$RUNNER_TEMP/pre" "$RUNNER_TEMP/pre-tarballs"
           tar -xzf "$RUNNER_TEMP/tarballs/$file" -C "$RUNNER_TEMP/pre"
-          mv "$RUNNER_TEMP/pre/fenec-v$version-x86_64-unknown-linux-musl" "$RUNNER_TEMP/pre/fenec-v$pre-x86_64-unknown-linux-musl"
-          tar -czf "$RUNNER_TEMP/pre-tarballs/fenec-v$pre-x86_64-unknown-linux-musl.tar.gz" -C "$RUNNER_TEMP/pre" "fenec-v$pre-x86_64-unknown-linux-musl"
+          mv "$RUNNER_TEMP/pre/fennec-v$version-x86_64-unknown-linux-musl" "$RUNNER_TEMP/pre/fennec-v$pre-x86_64-unknown-linux-musl"
+          tar -czf "$RUNNER_TEMP/pre-tarballs/fennec-v$pre-x86_64-unknown-linux-musl.tar.gz" -C "$RUNNER_TEMP/pre" "fennec-v$pre-x86_64-unknown-linux-musl"
           tools/linux-packages.sh "$pre" "$RUNNER_TEMP/pre-tarballs" "$RUNNER_TEMP/pre-packages" amd64
-          FENEC_BINARY_VERSION="$version" tools/linux-packages-check.sh "$pre" "$RUNNER_TEMP/pre-packages" amd64
+          FENNEC_BINARY_VERSION="$version" tools/linux-packages-check.sh "$pre" "$RUNNER_TEMP/pre-packages" amd64
 
   build:
     name: build (release + cli profile)
@@ -693,15 +711,15 @@ jobs:
           restore-keys: ubuntu-latest-build-
 
       # `make small` is the smallest shell binary and the only build of the
-      # CLI without its default features, import and backup. fenec-core
+      # CLI without its default features, import and backup. fennec-core
       # without std-fs is the browser build's, in the test and clippy jobs.
       - name: Build the CLI (cli profile, no default features)
         run: make small
 
       - name: Build the server (release)
-        run: cargo build --release -p fenec-server
+        run: cargo build --release -p fennec-server
 
-  # The native library an app links (crates/fenec-ffi) on Android and the
+  # The native library an app links (crates/fennec-ffi) on Android and the
   # JVM, and its Kotlin, Dart and Flutter bindings: the Kotlin library's
   # JVM tests against the Linux build, the AAR with the library built by
   # the NDK for each ABI, the Dart package's tests, the Flutter plugin's,
@@ -754,7 +772,7 @@ jobs:
           integrations/kotlin/build-aar.sh dist-mobile
 
       # The Notes example over a Gradle composite build of integrations/kotlin
-      # (FENEC_LOCAL): the JVM CLI's smoke against the library built above,
+      # (FENNEC_LOCAL): the JVM CLI's smoke against the library built above,
       # then the Compose app built as an APK.
       - name: Notes (Kotlin, Compose)
         timeout-minutes: 20
@@ -780,12 +798,12 @@ jobs:
       - name: The Flutter plugin in an Android app
         run: |
           set -eu
-          integrations/dart/fenecdb_flutter/prepare.sh
-          cd integrations/dart/fenecdb_flutter/example
-          flutter create --platforms=android --project-name fenecdb_flutter_example .
+          integrations/dart/fennecdb_flutter/prepare.sh
+          cd integrations/dart/fennecdb_flutter/example
+          flutter create --platforms=android --project-name fennecdb_flutter_example .
           rm -rf test
           flutter build apk --debug
-          unzip -l build/app/outputs/flutter-apk/app-debug.apk | grep libfenec_ffi.so
+          unzip -l build/app/outputs/flutter-apk/app-debug.apk | grep libfennec_ffi.so
 
       # The Notes example: its logic's smoke under flutter test, then the
       # app built as an APK, on this checkout's packages (pub overrides).
@@ -795,7 +813,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: fenecdb-android
+          name: fennecdb-android
           path: dist-mobile/*.aar
           if-no-files-found: error
 
@@ -809,8 +827,8 @@ jobs:
         with:
           name: test-reports-android
           path: |
-            integrations/kotlin/fenecdb/build/reports/tests/
-            integrations/kotlin/fenecdb/build/test-results/
+            integrations/kotlin/fennecdb/build/reports/tests/
+            integrations/kotlin/fennecdb/build/test-results/
           retention-days: 7
           if-no-files-found: ignore
 
@@ -845,18 +863,18 @@ jobs:
       - name: XCFramework (macOS, iOS, the simulator)
         run: integrations/swift/build-xcframework.sh --zip
 
-      # FenecFFI.framework a slice, the shared library: what the Flutter
+      # FennecFFI.framework a slice, the shared library: what the Flutter
       # plugin's pods vendor and CocoaPods embeds.
       - name: Dynamic XCFramework (the Flutter plugin's)
         run: integrations/swift/build-xcframework.sh --dynamic --zip
 
       # Package.swift takes the XCFramework just built; the sync tests
-      # start a fenec-server, kill it and start it again, and the
-      # read-routing tests put fenec-shard routers in front of two.
+      # start a fennec-server, kill it and start it again, and the
+      # read-routing tests put fennec-shard routers in front of two.
       - name: Swift (macOS)
         timeout-minutes: 20
         run: |
-          cargo build -p fenec-server -p fenec-shard
+          cargo build -p fennec-server -p fennec-shard
           swift test
 
       # The same tests with Swift's cooperative pool cut to one thread: a
@@ -871,14 +889,14 @@ jobs:
         timeout-minutes: 20
         run: integrations/swift/test-ios.sh
 
-      # The Notes example on the package at the root (FENEC_LOCAL): the
+      # The Notes example on the package at the root (FENNEC_LOCAL): the
       # SwiftUI app and the CLI built, the CLI's smoke run, and the views'
       # library built for the iOS simulator.
       - name: Notes (Swift)
         timeout-minutes: 20
         working-directory: examples/swift
         env:
-          FENEC_LOCAL: '1'
+          FENNEC_LOCAL: '1'
         run: |
           swift build
           swift run notes-cli smoke
@@ -897,19 +915,19 @@ jobs:
       - name: The Flutter plugin in an iOS app
         run: |
           set -eu
-          integrations/dart/fenecdb_flutter/prepare.sh
-          cd integrations/dart/fenecdb_flutter/example
-          flutter create --platforms=ios --project-name fenecdb_flutter_example .
+          integrations/dart/fennecdb_flutter/prepare.sh
+          cd integrations/dart/fennecdb_flutter/example
+          flutter create --platforms=ios --project-name fennecdb_flutter_example .
           rm -rf test
           flutter build ios --simulator --debug --no-codesign
 
       - uses: actions/upload-artifact@v7
         with:
-          name: fenecdb-xcframework
+          name: fennecdb-xcframework
           path: |
-            integrations/swift/build/FenecFFI.xcframework.zip
-            integrations/swift/build/FenecFFI.xcframework.zip.checksum
-            integrations/swift/build/FenecFFIDynamic.xcframework.zip
+            integrations/swift/build/FennecFFI.xcframework.zip
+            integrations/swift/build/FennecFFI.xcframework.zip.checksum
+            integrations/swift/build/FennecFFIDynamic.xcframework.zip
           if-no-files-found: error
 
       # `swift test` names a failing test and its issue in the log; the

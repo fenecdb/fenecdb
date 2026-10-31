@@ -65,16 +65,16 @@ jobs:
           version="${tag#v}"
           mkdir -p dist
           for t in ${{ matrix.targets }}; do
-            # `fenec` takes the cli profile (panic = abort): a single process
+            # `fennec` takes the cli profile (panic = abort): a single process
             # with nothing to recover from, and ~12% smaller without the
-            # unwind tables. `fenec-server` stays on release, where a panicking
+            # unwind tables. `fennec-server` stays on release, where a panicking
             # connection thread unwinds and drops only its own session.
-            cargo build --profile cli --target "$t" -p fenec-cli
-            cargo build --release   --target "$t" -p fenec-server
+            cargo build --profile cli --target "$t" -p fennec-cli
+            cargo build --release   --target "$t" -p fennec-server
 
-            stage="fenec-v${version}-${t}"
+            stage="fennec-v${version}-${t}"
             mkdir -p "$stage"
-            cp "target/$t/cli/fenec" "target/$t/release/fenec-server" "$stage/"
+            cp "target/$t/cli/fennec" "target/$t/release/fennec-server" "$stage/"
             cp LICENSE README.md CONTRIBUTING.md "$stage/"
             tar -czf "dist/${stage}.tar.gz" "$stage"
             rm -rf "$stage"
@@ -108,15 +108,15 @@ jobs:
           fi
           version="${tag#v}"
           make wasm
-          mkdir -p dist "fenec-web-v${version}"
+          mkdir -p dist "fennec-web-v${version}"
           # What a page actually needs: the module, with every index, the
           # bundle and the types, the collation data the module fetches
-          # beside it, and a note on the files. fenec.js imports builder.js and
+          # beside it, and a note on the files. fennec.js imports builder.js and
           # http.js; client.js is the two without the engine.
-          cp web/fenec.js web/builder.js web/http.js web/client.js web/fenec.wasm web/fenec.d.ts web/client.d.ts LICENSE "fenec-web-v${version}/"
-          cp web/README.md "fenec-web-v${version}/README.md"
-          cp -r web/collate "fenec-web-v${version}/"
-          tar -czf "dist/fenec-web-v${version}.tar.gz" "fenec-web-v${version}"
+          cp web/fennec.js web/builder.js web/http.js web/client.js web/fennec.wasm web/fennec.d.ts web/client.d.ts LICENSE "fennec-web-v${version}/"
+          cp web/README.md "fennec-web-v${version}/README.md"
+          cp -r web/collate "fennec-web-v${version}/"
+          tar -czf "dist/fennec-web-v${version}.tar.gz" "fennec-web-v${version}"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -160,15 +160,15 @@ jobs:
           fi
           mkdir -p dist
           gh run download "$run" -R "${{ github.repository }}" -n "xcframework-v$version" -D dist
-          got=$(sha256sum dist/FenecFFI.xcframework.zip | cut -d' ' -f1)
+          got=$(sha256sum dist/FennecFFI.xcframework.zip | cut -d' ' -f1)
           if [ "$got" != "$want" ]; then
             echo "::error::run $run's zip is $got; Package.swift names $want"
             exit 1
           fi
-          echo "FenecFFI.xcframework.zip from run $run, checksum $got"
+          echo "FennecFFI.xcframework.zip from run $run, checksum $got"
           # The Flutter plugin's frameworks, built by the same run.
-          test -f dist/FenecFFIDynamic.xcframework.zip || {
-            echo "::error::run $run kept no FenecFFIDynamic.xcframework.zip"
+          test -f dist/FennecFFIDynamic.xcframework.zip || {
+            echo "::error::run $run kept no FennecFFIDynamic.xcframework.zip"
             exit 1
           }
 
@@ -176,9 +176,9 @@ jobs:
         with:
           name: dist-apple
           path: |
-            dist/FenecFFI.xcframework.zip
-            dist/FenecFFI.xcframework.zip.checksum
-            dist/FenecFFIDynamic.xcframework.zip
+            dist/FennecFFI.xcframework.zip
+            dist/FennecFFI.xcframework.zip.checksum
+            dist/FennecFFIDynamic.xcframework.zip
           if-no-files-found: error
 
   # The Android AAR: the Kotlin library with the native library for
@@ -292,7 +292,7 @@ jobs:
     env:
       # BuildKit is what the Dockerfile's --mount=type=cache needs.
       DOCKER_BUILDKIT: '1'
-      IMAGE: ghcr.io/${{ github.repository_owner }}/fenec-server
+      IMAGE: ghcr.io/${{ github.repository_owner }}/fennec-server
     steps:
       - uses: actions/checkout@v7
         with:
@@ -329,7 +329,7 @@ jobs:
     needs: image
     runs-on: ubuntu-latest
     env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/fenec-server
+      IMAGE: ghcr.io/${{ github.repository_owner }}/fennec-server
     steps:
       - name: Log in to ghcr.io
         run: echo '${{ github.token }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
@@ -370,7 +370,7 @@ jobs:
           cat SHA256SUMS
 
       # A Go module in a subdirectory is fetched by a tag naming its
-      # directory: `go get github.com/fenecdb/fenecdb/integrations/go@vX.Y.Z`
+      # directory: `go get github.com/fennec-db/fennecdb/integrations/go@vX.Y.Z`
       # looks for integrations/go/vX.Y.Z, and vX.Y.Z alone is none of its
       # versions. Pushed beside the release's own, at the same commit, once
       # the builds above have passed; a push with the workflow's token starts

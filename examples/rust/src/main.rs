@@ -1,4 +1,4 @@
-//! Notes with fenec-core embedded: the database is a file this program
+//! Notes with fennec-core embedded: the database is a file this program
 //! opens, no server.
 //!
 //!     cargo run                            seeds if empty, then lists
@@ -8,10 +8,10 @@
 //!     cargo run -- done <id>
 //!     cargo run -- smoke                   what CI runs, over a file of its own
 
-use fenec_core::prelude::*;
-use fenec_core::value::Value;
+use fennec_core::prelude::*;
+use fennec_core::value::Value;
 
-const SCHEMA: &str = include_str!("../schema.fenecql");
+const SCHEMA: &str = include_str!("../schema.fennecql");
 
 const SEEDS: [(&str, &str, &[&str], bool, &str); 4] = [
     ("Groceries", "Buy milk, eggs and fresh bread for the weekend.", &["home", "shopping"], false, "2026-09-28T09:00:00Z"),
@@ -46,9 +46,9 @@ impl Notes {
     /// Opens the file and makes what the schema declares and it lacks; a
     /// difference that would lose data is refused.
     fn open(path: &str) -> Result<Notes> {
-        let mut db = fenec_core::fs::open(path)?;
-        let request = format!(r#"{{"format": 1, "fenecql": {}}}"#, json_string(SCHEMA));
-        let outcome = fenec_abi::schema(&mut db, &request, true, None)?;
+        let mut db = fennec_core::fs::open(path)?;
+        let request = format!(r#"{{"format": 1, "fennecql": {}}}"#, json_string(SCHEMA));
+        let outcome = fennec_abi::schema(&mut db, &request, true, None)?;
         if let Some(r) = outcome.plan.refusals.first() {
             return Err(Error::Query(format!("schema: {r:?}")));
         }
@@ -58,7 +58,7 @@ impl Notes {
     /// One statement, its values as `$1`, `$2`, ... -- never in the text.
     fn run(&mut self, text: &str, params: &[Value]) -> Result<Response> {
         let mut last = Response::Affected(0);
-        for stmt in fenec_ql::parse(text)? {
+        for stmt in fennec_ql::parse(text)? {
             last = self.db.execute_with(&stmt, params)?;
         }
         Ok(last)
@@ -167,10 +167,10 @@ fn smoke() -> Result<()> {
             std::process::exit(1);
         }
     }
-    let dir = std::env::temp_dir().join(format!("fenec-notes-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("fennec-notes-{}", std::process::id()));
     std::fs::create_dir_all(&dir).map_err(|e| Error::Query(e.to_string()))?;
-    let path = dir.join("notes.fenec");
-    let path = path.to_str().unwrap_or("notes.fenec");
+    let path = dir.join("notes.fennec");
+    let path = path.to_str().unwrap_or("notes.fennec");
     {
         let mut notes = Notes::open(path)?;
         notes.seed()?;
@@ -204,7 +204,7 @@ fn main() -> Result<()> {
     if arg(0) == "smoke" {
         return smoke();
     }
-    let path = std::env::var("NOTES_FILE").unwrap_or_else(|_| "notes.fenec".into());
+    let path = std::env::var("NOTES_FILE").unwrap_or_else(|_| "notes.fennec".into());
     let mut notes = Notes::open(&path)?;
     match arg(0) {
         "add" => {

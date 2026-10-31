@@ -1,8 +1,8 @@
 {
-  "name": "fenecdb-dispatch",
+  "name": "fennecdb-dispatch",
   "private": true,
   "type": "module",
-  "description": "Plover, courier dispatch for delivery companies: Next.js App Router over fenec-shard and tenant nodes -- orders claimed by the nearest courier under a lease, couriers on a live map, a tenant a company held to its plan's quota",
+  "description": "Plover, courier dispatch for delivery companies: Next.js App Router over fennec-shard and tenant nodes -- orders claimed by the nearest courier under a lease, couriers on a live map, a tenant a company held to its plan's quota",
   "scripts": {
     "cluster": "tsx scripts/cluster.ts",
     "setup": "tsx scripts/setup.ts",
@@ -18,7 +18,7 @@
     "ci": "sh scripts/ci.sh"
   },
   "dependencies": {
-    "@fenecdb/web": "0.1.10",
+    "@fennecdb/web": "0.1.10",
     "next": "16.3.8",
     "react": "19.3.0",
     "react-dom": "19.3.0",
